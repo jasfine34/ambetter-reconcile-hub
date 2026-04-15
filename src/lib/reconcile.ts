@@ -1,5 +1,5 @@
 import { NPN_MAP, DEFAULT_COMMISSION_ESTIMATE } from './constants';
-import { cleanId, isQualifiedEDEStatus } from './normalize';
+import { cleanId, isQualifiedEDEStatus, normalizePolicyStatus } from './normalize';
 import type { NormalizedRecord } from './normalize';
 
 export interface ReconciledMember {
@@ -63,6 +63,27 @@ function reclean(r: NormalizedRecord): void {
   r.exchange_policy_id = cleanId(r.exchange_policy_id);
   r.issuer_policy_id = cleanId(r.issuer_policy_id);
   r.policy_number = cleanId(r.policy_number);
+  // Normalize status and effective_date for EDE filtering
+  if (r.source_type === 'EDE') {
+    r.status = normalizePolicyStatus(r.status);
+    // Normalize effective_date to YYYY-MM-DD
+    if (r.effective_date) {
+      const raw = String(r.effective_date).trim();
+      // Try parsing various formats
+      const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/);
+      if (isoMatch) {
+        r.effective_date = `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+      } else {
+        const slashMatch = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+        if (slashMatch) {
+          let [, m, d, y] = slashMatch;
+          let yr = parseInt(y);
+          if (yr < 100) yr += 2000;
+          r.effective_date = `${yr}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+        }
+      }
+    }
+  }
 }
 
 /**
