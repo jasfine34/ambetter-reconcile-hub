@@ -1,5 +1,5 @@
 import { NPN_MAP, DEFAULT_COMMISSION_ESTIMATE } from './constants';
-import { cleanId, isQualifiedEDEStatus } from './normalize';
+import { cleanId, isQualifiedEDEStatus, normalizePolicyStatus } from './normalize';
 import type { NormalizedRecord } from './normalize';
 
 export interface ReconciledMember {
@@ -52,6 +52,8 @@ export interface MatchDebugStats {
   edeRawTotal: number;
   edeAfterFilter: number;
   edeUniqueKeysAfterFilter: number;
+  edeInvalidDateCount: number;
+  edeEffDateSamples: string[];
 }
 
 /**
@@ -63,6 +65,27 @@ function reclean(r: NormalizedRecord): void {
   r.exchange_policy_id = cleanId(r.exchange_policy_id);
   r.issuer_policy_id = cleanId(r.issuer_policy_id);
   r.policy_number = cleanId(r.policy_number);
+  // Normalize status and effective_date for EDE filtering
+  if (r.source_type === 'EDE') {
+    r.status = normalizePolicyStatus(r.status);
+    // Normalize effective_date to YYYY-MM-DD
+    if (r.effective_date) {
+      const raw = String(r.effective_date).trim();
+      // Try parsing various formats
+      const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/);
+      if (isoMatch) {
+        r.effective_date = `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+      } else {
+        const slashMatch = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+        if (slashMatch) {
+          let [, m, d, y] = slashMatch;
+          let yr = parseInt(y);
+          if (yr < 100) yr += 2000;
+          r.effective_date = `${yr}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+        }
+      }
+    }
+  }
 }
 
 /**
@@ -97,16 +120,24 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     edeRawTotal: 0,
     edeAfterFilter: 0,
     edeUniqueKeysAfterFilter: 0,
+    edeInvalidDateCount: 0,
+    edeEffDateSamples: [],
   };
 
   for (const r of records) {
     if (r.source_type === 'EDE') {
       debug.totalEDE++;
       debug.edeRawTotal++;
-      const st = (r.status || '').toLowerCase();
-      debug.edeStatusBreakdown[st] = (debug.edeStatusBreakdown[st] || 0) + 1;
+      const st = r.status || '';
+      debug.edeStatusBreakdown[st || '(empty)'] = (debug.edeStatusBreakdown[st || '(empty)'] || 0) + 1;
       if (r.issuer_subscriber_id) debug.edeWithIssuerSubId++;
-      if (isQualifiedEDEStatus(st) && r.effective_date === '2026-01-01') {
+      // Collect effective_date samples
+      if (debug.edeEffDateSamples.length < 5 && r.effective_date) {
+        debug.edeEffDateSamples.push(r.effective_date);
+      }
+      if (!r.effective_date) {
+        debug.edeInvalidDateCount++;
+      } else if (isQualifiedEDEStatus(st) && r.effective_date === '2026-01-01') {
         debug.edeAfterFilter++;
       }
     } else if (r.source_type === 'BACK_OFFICE') {

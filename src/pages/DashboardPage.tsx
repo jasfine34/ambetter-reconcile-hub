@@ -178,15 +178,24 @@ export default function DashboardPage() {
               <span className="text-muted-foreground">Unique member_keys after filter: <strong className="text-foreground">{debugStats.edeUniqueKeysAfterFilter}</strong></span>
               <span className="text-muted-foreground">Expected Enrollments (reconciled): <strong className="text-foreground">{metrics.expected}</strong></span>
               <span className="text-muted-foreground">All EDE unfiltered: <strong className="text-foreground">{metrics.totalEdeRaw}</strong></span>
+              <span className="text-muted-foreground">Invalid date rows: <strong className="text-foreground">{debugStats.edeInvalidDateCount}</strong></span>
             </div>
             <div className="flex flex-wrap gap-4 text-sm border-t pt-2">
               <span className="text-muted-foreground font-medium">Status breakdown:</span>
               {Object.entries(debugStats.edeStatusBreakdown).sort((a, b) => b[1] - a[1]).map(([status, count]) => (
                 <span key={status} className="text-muted-foreground">
-                  {status || '(empty)'}: <strong className="text-foreground">{count as number}</strong>
+                  {status}: <strong className="text-foreground">{count as number}</strong>
                 </span>
               ))}
             </div>
+            {debugStats.edeEffDateSamples.length > 0 && (
+              <div className="flex flex-wrap gap-4 text-sm border-t pt-2">
+                <span className="text-muted-foreground font-medium">Effective date samples:</span>
+                {debugStats.edeEffDateSamples.map((d, i) => (
+                  <span key={i} className="text-muted-foreground font-mono">{d}</span>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
