@@ -28,6 +28,8 @@ export interface ReconciledMember {
   issue_type: string;
   issue_notes: string;
   source_count: number;
+  commission_record_count: number;
+  has_mixed_sources: boolean;
 }
 
 export interface MatchDebugStats {
