@@ -41,8 +41,17 @@ function isAmbetterEDE(row: Record<string, string>): boolean {
 }
 
 function isAmbetterCommission(row: Record<string, string>): boolean {
+  // Check Database column first, then fall back to any column containing "ambetter"
   const db = (row['Database'] || row['database'] || '').toLowerCase();
-  return db.includes('ambetter');
+  if (db.includes('ambetter')) return true;
+  // Some commission CSVs may not have a Database column — check Company ID or any value
+  const companyId = (row['Company ID'] || '').toLowerCase();
+  if (companyId.includes('ambetter')) return true;
+  // If no Database or Company ID match, check if Policy Number exists (accept all rows from commission files)
+  // since the user is uploading Ambetter-specific commission statements
+  const policyNum = row['Policy Number'] || '';
+  if (policyNum.trim()) return true;
+  return false;
 }
 
 export interface NormalizedRecord {
