@@ -267,6 +267,9 @@ export default function DashboardPage() {
                   <span className="text-muted-foreground">Raw Records: <strong className="text-foreground">{debugStats.totalRawRecords}</strong></span>
                   <span className="text-muted-foreground">Unique Member Keys: <strong className="text-foreground">{debugStats.uniqueMemberKeys}</strong></span>
                   <span className="text-muted-foreground">Avg Records/Key: <strong className="text-foreground">{debugStats.avgRecordsPerKey}</strong></span>
+                  <span className="text-muted-foreground">has_any_ede: <strong className="text-foreground">{metrics.hasAnyEde}</strong></span>
+                  <span className="text-muted-foreground">is_in_expected_ede_universe: <strong className="text-foreground">{metrics.hasExpectedEde}</strong></span>
+                  <span className="text-muted-foreground">expected + in_back_office: <strong className="text-foreground">{metrics.expectedWithBO}</strong></span>
                 </div>
               )}
               {metrics.unpaidVariance > 5 && (
