@@ -102,7 +102,13 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
   for (const r of records) {
     if (r.source_type === 'EDE') {
       debug.totalEDE++;
+      debug.edeRawTotal++;
+      const st = (r.status || '').toLowerCase();
+      debug.edeStatusBreakdown[st] = (debug.edeStatusBreakdown[st] || 0) + 1;
       if (r.issuer_subscriber_id) debug.edeWithIssuerSubId++;
+      if (isQualifiedEDEStatus(st) && r.effective_date === '2026-01-01') {
+        debug.edeAfterFilter++;
+      }
     } else if (r.source_type === 'BACK_OFFICE') {
       debug.totalBO++;
       if (r.issuer_subscriber_id?.startsWith('u')) debug.boStartingWithU++;
