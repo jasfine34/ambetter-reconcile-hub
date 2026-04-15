@@ -174,6 +174,15 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     else debug.matchByFallback++;
   }
 
+  // Count EDE qualified unique keys
+  const edeQualifiedKeys = new Set<string>();
+  for (const [key, recs] of groups) {
+    const hasQualifiedEDE = recs.some(r => r.source_type === 'EDE' && isQualifiedEDEStatus(r.status || '') && r.effective_date === '2026-01-01');
+    if (hasQualifiedEDE) edeQualifiedKeys.add(key);
+  }
+  debug.edeUniqueKeysAfterFilter = edeQualifiedKeys.size;
+  debug.edeQualifiedCount = edeQualifiedKeys.size;
+
   // Step 6: Calculate avg commission by agent for estimates
   const commByAgent = new Map<string, number[]>();
   const allComm: number[] = [];
