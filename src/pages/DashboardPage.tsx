@@ -62,35 +62,36 @@ export default function DashboardPage() {
   }, [currentBatchId, refreshAll, toast]);
 
   const metrics = useMemo(() => {
-    const expected = reconciled.filter(r => r.in_ede).length;
-    const foundBO = reconciled.filter(r => r.in_ede && r.in_back_office).length;
-    const eligible = reconciled.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes').length;
+    const expected = reconciled.filter(r => r.ede_qualified).length;
+    const foundBO = reconciled.filter(r => r.ede_qualified && r.in_back_office).length;
+    const eligible = reconciled.filter(r => r.ede_qualified && r.in_back_office && r.eligible_for_commission === 'Yes').length;
     const shouldPay = eligible;
     const paidCommRecords = reconciled.filter(r => r.in_commission).length;
-    const paidEligible = reconciled.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && r.in_commission).length;
+    const paidEligible = reconciled.filter(r => r.ede_qualified && r.in_back_office && r.eligible_for_commission === 'Yes' && r.in_commission).length;
     const unpaid = shouldPay - paidEligible;
     const totalComm = reconciled.filter(r => r.in_commission).reduce((s, r) => s + (r.actual_commission || 0), 0);
     const estMissing = reconciled.reduce((s, r) => s + (r.estimated_missing_commission || 0), 0);
     const difference = shouldPay - paidEligible;
     const unpaidVariance = unpaid - difference;
-    return { expected, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, estMissing, difference, unpaidVariance };
+    const totalEdeRaw = reconciled.filter(r => r.in_ede).length;
+    return { expected, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, estMissing, difference, unpaidVariance, totalEdeRaw };
   }, [reconciled]);
 
   const unpaidSample = useMemo(() => {
     return reconciled
-      .filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission)
+      .filter(r => r.ede_qualified && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission)
       .slice(0, 50);
   }, [reconciled]);
 
   const drilldownData = useMemo(() => {
     if (!drilldown) return null;
     switch (drilldown) {
-      case 'expected': return reconciled.filter(r => r.in_ede);
-      case 'foundBO': return reconciled.filter(r => r.in_ede && r.in_back_office);
-      case 'eligible': return reconciled.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes');
+      case 'expected': return reconciled.filter(r => r.ede_qualified);
+      case 'foundBO': return reconciled.filter(r => r.ede_qualified && r.in_back_office);
+      case 'eligible': return reconciled.filter(r => r.ede_qualified && r.in_back_office && r.eligible_for_commission === 'Yes');
       case 'paidComm': return reconciled.filter(r => r.in_commission);
-      case 'paidEligible': return reconciled.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && r.in_commission);
-      case 'unpaid': return reconciled.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission);
+      case 'paidEligible': return reconciled.filter(r => r.ede_qualified && r.in_back_office && r.eligible_for_commission === 'Yes' && r.in_commission);
+      case 'unpaid': return reconciled.filter(r => r.ede_qualified && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission);
       default: return reconciled;
     }
   }, [drilldown, reconciled]);
@@ -161,6 +162,34 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* EDE Enrollment Debug */}
+      {debugStats && (
+        <Card className="border-dashed">
+          <CardHeader className="py-3 px-4">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Users className="h-4 w-4" /> EDE Expected Enrollment Debug
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-3 pt-0 space-y-2">
+            <div className="flex flex-wrap gap-6 text-sm">
+              <span className="text-muted-foreground">Total Raw EDE rows: <strong className="text-foreground">{debugStats.edeRawTotal}</strong></span>
+              <span className="text-muted-foreground">After filter (eff. date + status): <strong className="text-foreground">{debugStats.edeAfterFilter}</strong></span>
+              <span className="text-muted-foreground">Unique member_keys after filter: <strong className="text-foreground">{debugStats.edeUniqueKeysAfterFilter}</strong></span>
+              <span className="text-muted-foreground">Expected Enrollments (reconciled): <strong className="text-foreground">{metrics.expected}</strong></span>
+              <span className="text-muted-foreground">All EDE unfiltered: <strong className="text-foreground">{metrics.totalEdeRaw}</strong></span>
+            </div>
+            <div className="flex flex-wrap gap-4 text-sm border-t pt-2">
+              <span className="text-muted-foreground font-medium">Status breakdown:</span>
+              {Object.entries(debugStats.edeStatusBreakdown).sort((a, b) => b[1] - a[1]).map(([status, count]) => (
+                <span key={status} className="text-muted-foreground">
+                  {status || '(empty)'}: <strong className="text-foreground">{count as number}</strong>
+                </span>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {loading ? (
         <div className="text-center py-20 text-muted-foreground">Loading...</div>

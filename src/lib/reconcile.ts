@@ -1,5 +1,5 @@
 import { NPN_MAP, DEFAULT_COMMISSION_ESTIMATE } from './constants';
-import { cleanId } from './normalize';
+import { cleanId, isQualifiedEDEStatus } from './normalize';
 import type { NormalizedRecord } from './normalize';
 
 export interface ReconciledMember {
@@ -30,6 +30,7 @@ export interface ReconciledMember {
   source_count: number;
   commission_record_count: number;
   has_mixed_sources: boolean;
+  ede_qualified: boolean;
 }
 
 export interface MatchDebugStats {
@@ -46,6 +47,11 @@ export interface MatchDebugStats {
   matchByExchangeSubId: number;
   matchByPolicyNumber: number;
   matchByFallback: number;
+  edeStatusBreakdown: Record<string, number>;
+  edeQualifiedCount: number;
+  edeRawTotal: number;
+  edeAfterFilter: number;
+  edeUniqueKeysAfterFilter: number;
 }
 
 /**
@@ -86,12 +92,23 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     uniqueMemberKeys: 0, avgRecordsPerKey: 0,
     edeWithIssuerSubId: 0, boStartingWithU: 0, commStartingWithU: 0,
     matchByIssuerSubId: 0, matchByExchangeSubId: 0, matchByPolicyNumber: 0, matchByFallback: 0,
+    edeStatusBreakdown: {},
+    edeQualifiedCount: 0,
+    edeRawTotal: 0,
+    edeAfterFilter: 0,
+    edeUniqueKeysAfterFilter: 0,
   };
 
   for (const r of records) {
     if (r.source_type === 'EDE') {
       debug.totalEDE++;
+      debug.edeRawTotal++;
+      const st = (r.status || '').toLowerCase();
+      debug.edeStatusBreakdown[st] = (debug.edeStatusBreakdown[st] || 0) + 1;
       if (r.issuer_subscriber_id) debug.edeWithIssuerSubId++;
+      if (isQualifiedEDEStatus(st) && r.effective_date === '2026-01-01') {
+        debug.edeAfterFilter++;
+      }
     } else if (r.source_type === 'BACK_OFFICE') {
       debug.totalBO++;
       if (r.issuer_subscriber_id?.startsWith('u')) debug.boStartingWithU++;
@@ -156,6 +173,15 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     else if (key.startsWith('policy:') || key.startsWith('xpol:')) debug.matchByPolicyNumber++;
     else debug.matchByFallback++;
   }
+
+  // Count EDE qualified unique keys
+  const edeQualifiedKeys = new Set<string>();
+  for (const [key, recs] of groups) {
+    const hasQualifiedEDE = recs.some(r => r.source_type === 'EDE' && isQualifiedEDEStatus(r.status || '') && r.effective_date === '2026-01-01');
+    if (hasQualifiedEDE) edeQualifiedKeys.add(key);
+  }
+  debug.edeUniqueKeysAfterFilter = edeQualifiedKeys.size;
+  debug.edeQualifiedCount = edeQualifiedKeys.size;
 
   // Step 6: Calculate avg commission by agent for estimates
   const commByAgent = new Map<string, number[]>();
@@ -274,6 +300,7 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
       source_count: recs.length,
       commission_record_count: comm.length,
       has_mixed_sources: new Set(recs.map(r => r.source_type)).size > 1,
+      ede_qualified: ede.some(e => isQualifiedEDEStatus(e.status || '') && e.effective_date === '2026-01-01'),
     });
   }
 

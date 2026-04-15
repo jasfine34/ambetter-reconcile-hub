@@ -14,6 +14,20 @@ function normalizeDate(val: string | undefined | null): string | null {
   return d.toISOString().split('T')[0];
 }
 
+const VALID_EDE_STATUSES = new Set(['effectuated', 'pending effectuated', 'pending termination']);
+const EXCLUDED_EDE_STATUSES = new Set(['cancelled', 'terminated', 'expired']);
+
+export function normalizePolicyStatus(val: string | undefined | null): string {
+  if (!val) return '';
+  let v = val.trim().toLowerCase();
+  if (v === 'pendingeffectuation' || v === 'pending effectuation') v = 'pending effectuated';
+  return v;
+}
+
+export function isQualifiedEDEStatus(status: string): boolean {
+  return VALID_EDE_STATUSES.has(status) && !EXCLUDED_EDE_STATUSES.has(status);
+}
+
 function normalizeEligible(val: string | undefined | null): string {
   if (!val) return '';
   const v = val.trim().toLowerCase();
@@ -134,7 +148,7 @@ export function normalizeEDERow(row: Record<string, string>, fileLabel: string):
     agent_npn: stripApostrophe(row['agentNPN']),
     aor_bucket: '',
     pay_entity: '',
-    status: (row['policyStatus'] || '').trim(),
+    status: normalizePolicyStatus(row['policyStatus']),
     effective_date: normalizeDate(row['effectiveDate']),
     premium: parseNum(row['premium']),
     net_premium: parseNum(row['netPremium']),
