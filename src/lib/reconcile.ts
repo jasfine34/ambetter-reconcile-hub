@@ -1,0 +1,169 @@
+import { NPN_MAP, DEFAULT_COMMISSION_ESTIMATE } from './constants';
+import type { NormalizedRecord } from './normalize';
+
+export interface ReconciledMember {
+  member_key: string;
+  carrier: string;
+  applicant_name: string;
+  dob: string | null;
+  policy_number: string;
+  exchange_subscriber_id: string;
+  exchange_policy_id: string;
+  issuer_policy_id: string;
+  agent_name: string;
+  agent_npn: string;
+  aor_bucket: string;
+  expected_pay_entity: string;
+  actual_pay_entity: string;
+  in_ede: boolean;
+  in_back_office: boolean;
+  in_commission: boolean;
+  eligible_for_commission: string;
+  premium: number | null;
+  net_premium: number | null;
+  actual_commission: number | null;
+  estimated_missing_commission: number | null;
+  issue_type: string;
+  issue_notes: string;
+}
+
+export function reconcile(records: NormalizedRecord[]): ReconciledMember[] {
+  // Second-pass: unify exchange_subscriber_id groups
+  const esidMap = new Map<string, string>();
+  for (const r of records) {
+    if (r.exchange_subscriber_id) {
+      const existing = esidMap.get(r.exchange_subscriber_id);
+      if (existing && existing !== r.member_key) {
+        // Prefer the non-NAME key
+        const better = r.member_key.startsWith('NAME') ? existing : r.member_key;
+        esidMap.set(r.exchange_subscriber_id, better);
+      } else {
+        esidMap.set(r.exchange_subscriber_id, r.member_key);
+      }
+    }
+  }
+  // Remap member_keys
+  for (const r of records) {
+    if (r.exchange_subscriber_id && esidMap.has(r.exchange_subscriber_id)) {
+      r.member_key = esidMap.get(r.exchange_subscriber_id)!;
+    }
+  }
+
+  // Group by member_key
+  const groups = new Map<string, NormalizedRecord[]>();
+  for (const r of records) {
+    const arr = groups.get(r.member_key) || [];
+    arr.push(r);
+    groups.set(r.member_key, arr);
+  }
+
+  // Calculate avg commission by agent
+  const commByAgent = new Map<string, number[]>();
+  const allComm: number[] = [];
+  for (const r of records) {
+    if (r.source_type === 'COMMISSION' && r.commission_amount != null && r.commission_amount > 0) {
+      allComm.push(r.commission_amount);
+      const arr = commByAgent.get(r.agent_npn) || [];
+      arr.push(r.commission_amount);
+      commByAgent.set(r.agent_npn, arr);
+    }
+  }
+  const avgAll = allComm.length > 0 ? allComm.reduce((a, b) => a + b, 0) / allComm.length : DEFAULT_COMMISSION_ESTIMATE;
+
+  const results: ReconciledMember[] = [];
+
+  for (const [memberKey, recs] of groups) {
+    const ede = recs.filter(r => r.source_type === 'EDE');
+    const bo = recs.filter(r => r.source_type === 'BACK_OFFICE');
+    const comm = recs.filter(r => r.source_type === 'COMMISSION');
+
+    const inEde = ede.length > 0;
+    const inBo = bo.length > 0;
+    const inComm = comm.length > 0;
+
+    // Merge best values
+    const best = recs[0];
+    const applicantName = ede[0]?.applicant_name || bo[0]?.applicant_name || comm[0]?.applicant_name || '';
+    const dob = ede[0]?.dob || bo[0]?.dob || null;
+    const policyNumber = bo[0]?.policy_number || comm[0]?.policy_number || ede[0]?.policy_number || '';
+    const exchangeSubId = ede[0]?.exchange_subscriber_id || bo[0]?.exchange_subscriber_id || '';
+    const exchangePolId = ede[0]?.exchange_policy_id || '';
+    const issuerPolId = ede[0]?.issuer_policy_id || '';
+    const agentName = ede[0]?.agent_name || bo[0]?.agent_name || comm[0]?.agent_name || '';
+    const agentNpn = ede[0]?.agent_npn || bo[0]?.agent_npn || comm[0]?.agent_npn || '';
+    const aorBucket = bo[0]?.aor_bucket || ede[0]?.aor_bucket || comm[0]?.aor_bucket || '';
+    const eligible = bo[0]?.eligible_for_commission || '';
+    const premium = bo[0]?.premium || ede[0]?.premium || null;
+    const netPremium = ede[0]?.net_premium || null;
+    const actualComm = comm.reduce((sum, c) => sum + (c.commission_amount || 0), 0) || null;
+    const actualPayEntity = comm[0]?.pay_entity || '';
+    
+    const npnInfo = NPN_MAP[agentNpn as keyof typeof NPN_MAP];
+    const expectedPayEntity = npnInfo?.expectedPayEntity || '';
+
+    const shouldBePaid = inEde && inBo && eligible === 'Yes';
+
+    // Classify issue
+    let issueType = 'Fully Matched';
+    let issueNotes = '';
+
+    if (!inEde && inComm) {
+      issueType = 'Paid but Missing from EDE';
+    } else if (!inEde && inBo) {
+      issueType = 'Back Office but Missing from EDE';
+    } else if (inEde && !inBo) {
+      issueType = 'Missing from Back Office';
+    } else if (inEde && inBo && eligible !== 'Yes') {
+      issueType = 'Not Eligible for Commission';
+    } else if (shouldBePaid && !inComm) {
+      issueType = 'Missing from Commission';
+    } else if (inComm && (agentNpn === '21055210' || agentNpn === '16531877') && actualPayEntity === 'Vix') {
+      issueType = 'Wrong Pay Entity';
+      issueNotes = `${npnInfo?.name} paid under Vix instead of Coverall`;
+    } else if (agentNpn === '21277051' && actualPayEntity === 'Coverall') {
+      issueType = 'Erica Paid Under Coverall';
+    } else if (agentNpn === '21277051' && actualPayEntity === 'Vix') {
+      issueType = 'Erica Paid Under Vix';
+    }
+
+    // Estimate missing commission
+    let estMissing: number | null = null;
+    if (shouldBePaid && !inComm) {
+      const agentComms = commByAgent.get(agentNpn);
+      if (agentComms && agentComms.length > 0) {
+        estMissing = agentComms.reduce((a, b) => a + b, 0) / agentComms.length;
+      } else {
+        estMissing = avgAll;
+      }
+      estMissing = Math.round(estMissing * 100) / 100;
+    }
+
+    results.push({
+      member_key: memberKey,
+      carrier: 'Ambetter',
+      applicant_name: applicantName,
+      dob,
+      policy_number: policyNumber,
+      exchange_subscriber_id: exchangeSubId,
+      exchange_policy_id: exchangePolId,
+      issuer_policy_id: issuerPolId,
+      agent_name: agentName,
+      agent_npn: agentNpn,
+      aor_bucket: aorBucket,
+      expected_pay_entity: expectedPayEntity,
+      actual_pay_entity: actualPayEntity,
+      in_ede: inEde,
+      in_back_office: inBo,
+      in_commission: inComm,
+      eligible_for_commission: eligible,
+      premium,
+      net_premium: netPremium,
+      actual_commission: actualComm,
+      estimated_missing_commission: estMissing,
+      issue_type: issueType,
+      issue_notes: issueNotes,
+    });
+  }
+
+  return results;
+}
