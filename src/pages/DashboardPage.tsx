@@ -99,8 +99,13 @@ export default function DashboardPage() {
           <h2 className="text-2xl font-bold text-foreground">Reconciliation Dashboard</h2>
           <p className="text-sm text-muted-foreground">Ambetter Commission Reconciliation</p>
         </div>
-        <BatchSelector />
-      </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handleRerun} disabled={rerunning || !currentBatchId}>
+            <RefreshCw className={`h-4 w-4 mr-1 ${rerunning ? 'animate-spin' : ''}`} />
+            {rerunning ? 'Running...' : 'Re-run Reconciliation'}
+          </Button>
+          <BatchSelector />
+        </div>
 
       {/* Matching explanation */}
       <Card className="border-dashed border-primary/30 bg-primary/5">
