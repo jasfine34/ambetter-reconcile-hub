@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useBatch } from '@/contexts/BatchContext';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
@@ -12,6 +12,14 @@ export function BatchSelector() {
   const [creating, setCreating] = useState(false);
   const [month, setMonth] = useState('');
   const { toast } = useToast();
+
+  const selectedBatchLabel = useMemo(() => {
+    const batch = batches.find((b) => b.id === currentBatchId);
+    if (!batch) return '';
+    return batch.statement_month
+      ? `${new Date(`${batch.statement_month}T00:00:00`).toLocaleDateString('en-US', { year: 'numeric', month: 'long' })} — ${batch.carrier}`
+      : `No date — ${batch.carrier}`;
+  }, [batches, currentBatchId]);
 
   const handleCreate = async () => {
     if (!month) return;
@@ -30,16 +38,22 @@ export function BatchSelector() {
 
   return (
     <div className="flex items-center gap-3">
-      <Select value={currentBatchId || ''} onValueChange={setCurrentBatchId}>
+      <Select value={currentBatchId ?? undefined} onValueChange={setCurrentBatchId}>
         <SelectTrigger className="w-[220px]">
-          <SelectValue placeholder="Select batch..." />
+          <SelectValue placeholder="Select batch...">{selectedBatchLabel}</SelectValue>
         </SelectTrigger>
         <SelectContent>
-          {batches.map(b => (
-            <SelectItem key={b.id} value={b.id}>
-              {b.statement_month ? new Date(b.statement_month + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long' }) : 'No date'} — {b.carrier}
-            </SelectItem>
-          ))}
+          {batches.map((b) => {
+            const label = b.statement_month
+              ? `${new Date(`${b.statement_month}T00:00:00`).toLocaleDateString('en-US', { year: 'numeric', month: 'long' })} — ${b.carrier}`
+              : `No date — ${b.carrier}`;
+
+            return (
+              <SelectItem key={b.id} value={b.id}>
+                {label}
+              </SelectItem>
+            );
+          })}
         </SelectContent>
       </Select>
       {creating ? (
