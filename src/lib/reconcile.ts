@@ -128,10 +128,16 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     if (r.source_type === 'EDE') {
       debug.totalEDE++;
       debug.edeRawTotal++;
-      const st = (r.status || '').toLowerCase();
-      debug.edeStatusBreakdown[st] = (debug.edeStatusBreakdown[st] || 0) + 1;
+      const st = r.status || '';
+      debug.edeStatusBreakdown[st || '(empty)'] = (debug.edeStatusBreakdown[st || '(empty)'] || 0) + 1;
       if (r.issuer_subscriber_id) debug.edeWithIssuerSubId++;
-      if (isQualifiedEDEStatus(st) && r.effective_date === '2026-01-01') {
+      // Collect effective_date samples
+      if (debug.edeEffDateSamples.length < 5 && r.effective_date) {
+        debug.edeEffDateSamples.push(r.effective_date);
+      }
+      if (!r.effective_date) {
+        debug.edeInvalidDateCount++;
+      } else if (isQualifiedEDEStatus(st) && r.effective_date === '2026-01-01') {
         debug.edeAfterFilter++;
       }
     } else if (r.source_type === 'BACK_OFFICE') {
