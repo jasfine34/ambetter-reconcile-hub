@@ -120,6 +120,8 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     edeRawTotal: 0,
     edeAfterFilter: 0,
     edeUniqueKeysAfterFilter: 0,
+    edeInvalidDateCount: 0,
+    edeEffDateSamples: [],
   };
 
   for (const r of records) {
