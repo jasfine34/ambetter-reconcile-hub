@@ -84,9 +84,16 @@ export default function DashboardPage() {
           </div>
           {debugStats && (
             <div className="flex flex-wrap gap-6 text-sm border-t pt-2 mt-2">
+              <span className="text-muted-foreground">Raw Records: <strong className="text-foreground">{debugStats.totalRawRecords}</strong></span>
               <span className="text-muted-foreground">EDE rows: <strong className="text-foreground">{debugStats.totalEDE}</strong></span>
               <span className="text-muted-foreground">Back Office rows: <strong className="text-foreground">{debugStats.totalBO}</strong></span>
               <span className="text-muted-foreground">Commission rows: <strong className="text-foreground">{debugStats.totalComm}</strong></span>
+              <span className="text-muted-foreground">Unique Member Keys: <strong className="text-foreground">{debugStats.uniqueMemberKeys}</strong></span>
+              <span className="text-muted-foreground">Avg Records/Key: <strong className="text-foreground">{debugStats.avgRecordsPerKey}</strong></span>
+            </div>
+          )}
+          {debugStats && (
+            <div className="flex flex-wrap gap-6 text-sm border-t pt-2 mt-2">
               <span className="text-muted-foreground">EDE w/ issuerSubId: <strong className="text-foreground">{debugStats.edeWithIssuerSubId}</strong></span>
               <span className="text-muted-foreground">BO starting "U": <strong className="text-foreground">{debugStats.boStartingWithU}</strong></span>
               <span className="text-muted-foreground">Comm starting "U": <strong className="text-foreground">{debugStats.commStartingWithU}</strong></span>
@@ -94,8 +101,8 @@ export default function DashboardPage() {
           )}
           {debugStats && (
             <div className="flex flex-wrap gap-6 text-sm border-t pt-2 mt-2">
-              <span className="text-muted-foreground">Match by issuer_subscriber_id: <strong className="text-foreground">{debugStats.matchByIssuerSubId}</strong></span>
-              <span className="text-muted-foreground">Match by exchange_subscriber_id: <strong className="text-foreground">{debugStats.matchByExchangeSubId}</strong></span>
+              <span className="text-muted-foreground">Match by issuer_sub_id: <strong className="text-foreground">{debugStats.matchByIssuerSubId}</strong></span>
+              <span className="text-muted-foreground">Match by exchange_sub_id: <strong className="text-foreground">{debugStats.matchByExchangeSubId}</strong></span>
               <span className="text-muted-foreground">Match by policy_number: <strong className="text-foreground">{debugStats.matchByPolicyNumber}</strong></span>
               <span className="text-muted-foreground">Match by fallback: <strong className="text-foreground">{debugStats.matchByFallback}</strong></span>
             </div>
