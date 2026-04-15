@@ -82,19 +82,19 @@ export default function DashboardPage() {
 
   const unpaidSample = useMemo(() => {
     return reconciled
-      .filter(r => r.ede_qualified && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission)
+      .filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission)
       .slice(0, 50);
   }, [reconciled]);
 
   const drilldownData = useMemo(() => {
     if (!drilldown) return null;
     switch (drilldown) {
-      case 'expected': return reconciled.filter(r => r.ede_qualified);
-      case 'foundBO': return reconciled.filter(r => r.ede_qualified && r.in_back_office);
-      case 'eligible': return reconciled.filter(r => r.ede_qualified && r.in_back_office && r.eligible_for_commission === 'Yes');
+      case 'expected': return reconciled.filter(r => r.is_in_expected_ede_universe);
+      case 'foundBO': return reconciled.filter(r => r.is_in_expected_ede_universe && r.in_back_office);
+      case 'eligible': return reconciled.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes');
       case 'paidComm': return reconciled.filter(r => r.in_commission);
-      case 'paidEligible': return reconciled.filter(r => r.ede_qualified && r.in_back_office && r.eligible_for_commission === 'Yes' && r.in_commission);
-      case 'unpaid': return reconciled.filter(r => r.ede_qualified && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission);
+      case 'paidEligible': return reconciled.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes' && r.in_commission);
+      case 'unpaid': return reconciled.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission);
       default: return reconciled;
     }
   }, [drilldown, reconciled]);
