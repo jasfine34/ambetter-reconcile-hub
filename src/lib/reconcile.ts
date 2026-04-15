@@ -92,6 +92,11 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     uniqueMemberKeys: 0, avgRecordsPerKey: 0,
     edeWithIssuerSubId: 0, boStartingWithU: 0, commStartingWithU: 0,
     matchByIssuerSubId: 0, matchByExchangeSubId: 0, matchByPolicyNumber: 0, matchByFallback: 0,
+    edeStatusBreakdown: {},
+    edeQualifiedCount: 0,
+    edeRawTotal: 0,
+    edeAfterFilter: 0,
+    edeUniqueKeysAfterFilter: 0,
   };
 
   for (const r of records) {
@@ -280,6 +285,7 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
       source_count: recs.length,
       commission_record_count: comm.length,
       has_mixed_sources: new Set(recs.map(r => r.source_type)).size > 1,
+      ede_qualified: ede.some(e => isQualifiedEDEStatus(e.status || '') && e.effective_date === '2026-01-01'),
     });
   }
 
