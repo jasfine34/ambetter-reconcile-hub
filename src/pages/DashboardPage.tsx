@@ -203,8 +203,8 @@ export default function DashboardPage() {
                   <strong className="text-foreground text-lg">{metrics.shouldPay}</strong>
                 </div>
                 <div>
-                  <span className="text-muted-foreground block">Actually Paid</span>
-                  <strong className="text-foreground text-lg">{metrics.actuallyPaid}</strong>
+                  <span className="text-muted-foreground block">Paid Within Eligible</span>
+                  <strong className="text-foreground text-lg">{metrics.paidEligible}</strong>
                 </div>
                 <div>
                   <span className="text-muted-foreground block">Unpaid Policies</span>
