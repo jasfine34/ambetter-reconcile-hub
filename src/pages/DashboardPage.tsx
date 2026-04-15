@@ -4,11 +4,12 @@ import { MetricCard } from '@/components/MetricCard';
 import { DataTable } from '@/components/DataTable';
 import { BatchSelector } from '@/components/BatchSelector';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Users, Building2, DollarSign, AlertTriangle, CheckCircle2, XCircle, FileText, TrendingDown, Database } from 'lucide-react';
+import { Users, Building2, DollarSign, AlertTriangle, CheckCircle2, XCircle, FileText, TrendingDown, Database, Info } from 'lucide-react';
 
 const RECON_COLUMNS = [
   { key: 'applicant_name', label: 'Name' },
   { key: 'policy_number', label: 'Policy #' },
+  { key: 'issuer_subscriber_id', label: 'Issuer Sub ID' },
   { key: 'agent_name', label: 'Agent' },
   { key: 'aor_bucket', label: 'AOR' },
   { key: 'in_ede', label: 'EDE' },
@@ -21,7 +22,7 @@ const RECON_COLUMNS = [
 ];
 
 export default function DashboardPage() {
-  const { reconciled, loading, counts } = useBatch();
+  const { reconciled, loading, counts, debugStats } = useBatch();
   const [drilldown, setDrilldown] = useState<string | null>(null);
 
   const metrics = useMemo(() => {
@@ -58,18 +59,47 @@ export default function DashboardPage() {
         <BatchSelector />
       </div>
 
+      {/* Matching explanation */}
+      <Card className="border-dashed border-primary/30 bg-primary/5">
+        <CardContent className="px-4 py-3">
+          <p className="text-xs text-muted-foreground flex items-start gap-2">
+            <Info className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
+            For Ambetter, the EDE field <strong>issuerSubscriberId</strong> often contains the actual member/policy identifier used in carrier systems and commission statements. This is used as the primary match key.
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Debug Counts */}
       <Card className="border-dashed">
         <CardHeader className="py-3 px-4">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <Database className="h-4 w-4" /> Debug Counts (Selected Batch)
           </CardTitle>
         </CardHeader>
-        <CardContent className="px-4 pb-3 pt-0">
-          <div className="flex gap-6 text-sm">
+        <CardContent className="px-4 pb-3 pt-0 space-y-2">
+          <div className="flex flex-wrap gap-6 text-sm">
             <span className="text-muted-foreground">Uploaded Files: <strong className="text-foreground">{counts.uploadedFiles}</strong></span>
             <span className="text-muted-foreground">Normalized Records: <strong className="text-foreground">{counts.normalizedRecords}</strong></span>
             <span className="text-muted-foreground">Reconciled Members: <strong className="text-foreground">{counts.reconciledMembers}</strong></span>
           </div>
+          {debugStats && (
+            <div className="flex flex-wrap gap-6 text-sm border-t pt-2 mt-2">
+              <span className="text-muted-foreground">EDE rows: <strong className="text-foreground">{debugStats.totalEDE}</strong></span>
+              <span className="text-muted-foreground">Back Office rows: <strong className="text-foreground">{debugStats.totalBO}</strong></span>
+              <span className="text-muted-foreground">Commission rows: <strong className="text-foreground">{debugStats.totalComm}</strong></span>
+              <span className="text-muted-foreground">EDE w/ issuerSubId: <strong className="text-foreground">{debugStats.edeWithIssuerSubId}</strong></span>
+              <span className="text-muted-foreground">BO starting "U": <strong className="text-foreground">{debugStats.boStartingWithU}</strong></span>
+              <span className="text-muted-foreground">Comm starting "U": <strong className="text-foreground">{debugStats.commStartingWithU}</strong></span>
+            </div>
+          )}
+          {debugStats && (
+            <div className="flex flex-wrap gap-6 text-sm border-t pt-2 mt-2">
+              <span className="text-muted-foreground">Match by issuer_subscriber_id: <strong className="text-foreground">{debugStats.matchByIssuerSubId}</strong></span>
+              <span className="text-muted-foreground">Match by exchange_subscriber_id: <strong className="text-foreground">{debugStats.matchByExchangeSubId}</strong></span>
+              <span className="text-muted-foreground">Match by policy_number: <strong className="text-foreground">{debugStats.matchByPolicyNumber}</strong></span>
+              <span className="text-muted-foreground">Match by fallback: <strong className="text-foreground">{debugStats.matchByFallback}</strong></span>
+            </div>
+          )}
         </CardContent>
       </Card>
 

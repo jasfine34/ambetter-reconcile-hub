@@ -31,48 +31,21 @@ export async function getUploadedFiles(batchId: string) {
 }
 
 export async function uploadFileRecord(
-  batchId: string,
-  fileLabel: string,
-  fileName: string,
-  sourceType: string,
-  payEntity: string | null,
-  aorBucket: string | null,
-  storagePath: string
+  batchId: string, fileLabel: string, fileName: string,
+  sourceType: string, payEntity: string | null, aorBucket: string | null, storagePath: string
 ) {
-  // Delete existing file with same label in batch
-  await supabase
-    .from('normalized_records')
-    .delete()
-    .eq('batch_id', batchId)
-    .eq('source_file_label', fileLabel);
-  await supabase
-    .from('uploaded_files')
-    .delete()
-    .eq('batch_id', batchId)
-    .eq('file_label', fileLabel);
+  await supabase.from('normalized_records').delete().eq('batch_id', batchId).eq('source_file_label', fileLabel);
+  await supabase.from('uploaded_files').delete().eq('batch_id', batchId).eq('file_label', fileLabel);
 
   const { data, error } = await supabase
     .from('uploaded_files')
-    .insert({
-      batch_id: batchId,
-      file_label: fileLabel,
-      file_name: fileName,
-      source_type: sourceType,
-      pay_entity: payEntity,
-      aor_bucket: aorBucket,
-      storage_path: storagePath,
-    })
-    .select()
-    .single();
+    .insert({ batch_id: batchId, file_label: fileLabel, file_name: fileName, source_type: sourceType, pay_entity: payEntity, aor_bucket: aorBucket, storage_path: storagePath })
+    .select().single();
   if (error) throw error;
   return data;
 }
 
-export async function insertNormalizedRecords(
-  batchId: string,
-  uploadedFileId: string,
-  records: NormalizedRecord[]
-) {
+export async function insertNormalizedRecords(batchId: string, uploadedFileId: string, records: NormalizedRecord[]) {
   if (records.length === 0) return;
   const rows = records.map(r => ({
     batch_id: batchId,
@@ -89,6 +62,7 @@ export async function insertNormalizedRecords(
     exchange_subscriber_id: r.exchange_subscriber_id,
     exchange_policy_id: r.exchange_policy_id,
     issuer_policy_id: r.issuer_policy_id,
+    issuer_subscriber_id: r.issuer_subscriber_id,
     agent_name: r.agent_name,
     agent_npn: r.agent_npn,
     aor_bucket: r.aor_bucket,
@@ -103,7 +77,6 @@ export async function insertNormalizedRecords(
     raw_json: r.raw_json as unknown as Record<string, never>,
   }));
 
-  // Insert in chunks of 500
   for (let i = 0; i < rows.length; i += 500) {
     const chunk = rows.slice(i, i + 500);
     const { error } = await supabase.from('normalized_records').insert(chunk);
@@ -131,7 +104,6 @@ export async function getNormalizedRecords(batchId: string) {
 }
 
 export async function saveReconciledMembers(batchId: string, members: ReconciledMember[]) {
-  // Clear existing
   await supabase.from('reconciled_members').delete().eq('batch_id', batchId);
   await supabase.from('commission_estimates').delete().eq('batch_id', batchId);
 
@@ -147,6 +119,7 @@ export async function saveReconciledMembers(batchId: string, members: Reconciled
     exchange_subscriber_id: m.exchange_subscriber_id,
     exchange_policy_id: m.exchange_policy_id,
     issuer_policy_id: m.issuer_policy_id,
+    issuer_subscriber_id: m.issuer_subscriber_id,
     agent_name: m.agent_name,
     agent_npn: m.agent_npn,
     aor_bucket: m.aor_bucket,
@@ -170,7 +143,6 @@ export async function saveReconciledMembers(batchId: string, members: Reconciled
     if (error) throw error;
   }
 
-  // Save commission estimates
   const estimates = members
     .filter(m => m.estimated_missing_commission != null)
     .map(m => ({
@@ -220,11 +192,7 @@ export async function getBatchCounts(batchId: string) {
   };
 }
 
-export async function saveManualOverride(
-  leftId: string,
-  rightId: string,
-  reason: string
-) {
+export async function saveManualOverride(leftId: string, rightId: string, reason: string) {
   const { error } = await supabase.from('manual_match_overrides').insert({
     left_source_record_id: leftId,
     right_source_record_id: rightId,

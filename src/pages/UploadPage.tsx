@@ -10,7 +10,7 @@ import { uploadFileToStorage, uploadFileRecord, insertNormalizedRecords, saveRec
 import { useToast } from '@/hooks/use-toast';
 
 export default function UploadPage() {
-  const { currentBatchId, uploadedFiles, refreshFiles, refreshAll } = useBatch();
+  const { currentBatchId, uploadedFiles, refreshAll } = useBatch();
   const [uploading, setUploading] = useState<string | null>(null);
   const { toast } = useToast();
 
@@ -21,13 +21,9 @@ export default function UploadPage() {
     }
     setUploading(fileLabel);
     try {
-      // Upload to storage
       const storagePath = await uploadFileToStorage(currentBatchId, fileLabel, file);
-
-      // Parse CSV
       const rawRows = await parseCSV(file);
 
-      // Normalize
       let normalized;
       if (sourceType === 'EDE') {
         normalized = rawRows.map(r => normalizeEDERow(r, fileLabel)).filter(Boolean) as any[];
@@ -37,18 +33,14 @@ export default function UploadPage() {
         normalized = rawRows.map(r => normalizeCommissionRow(r, fileLabel, payEntity!)).filter(Boolean) as any[];
       }
 
-      // Save file record
       const fileRecord = await uploadFileRecord(currentBatchId, fileLabel, file.name, sourceType, payEntity, aorBucket, storagePath);
-
-      // Save normalized records
       await insertNormalizedRecords(currentBatchId, fileRecord.id, normalized);
 
-      // Re-run reconciliation with ALL records (paginated fetch)
+      // Re-run reconciliation with ALL records
       const allRecords = await getNormalizedRecords(currentBatchId);
-      const reconciledData = reconcile(allRecords as any[]);
+      const { members: reconciledData } = reconcile(allRecords as any[]);
       await saveReconciledMembers(currentBatchId, reconciledData);
 
-      // Refresh everything: files, reconciled, counts
       await refreshAll();
 
       toast({ title: 'Upload Complete', description: `${normalized.length} records from ${fileLabel}` });
@@ -57,7 +49,7 @@ export default function UploadPage() {
     } finally {
       setUploading(null);
     }
-  }, [currentBatchId, refreshFiles, refreshAll, toast]);
+  }, [currentBatchId, refreshAll, toast]);
 
   const getUploadedFileName = (label: string) => {
     const f = uploadedFiles.find((uf: any) => uf.file_label === label);
@@ -82,43 +74,26 @@ export default function UploadPage() {
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">EDE Files</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {FILE_LABELS.filter(f => f.sourceType === 'EDE').map(f => (
-                <UploadCard
-                  key={f.label}
-                  label={f.label}
-                  uploadedFileName={getUploadedFileName(f.label)}
-                  isUploading={uploading === f.label}
-                  onUpload={(file) => handleUpload(f.label, f.sourceType, f.payEntity, f.aorBucket, file)}
-                />
+                <UploadCard key={f.label} label={f.label} uploadedFileName={getUploadedFileName(f.label)}
+                  isUploading={uploading === f.label} onUpload={(file) => handleUpload(f.label, f.sourceType, f.payEntity, f.aorBucket, file)} />
               ))}
             </div>
           </div>
-
           <div>
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Back Office Files</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {FILE_LABELS.filter(f => f.sourceType === 'BACK_OFFICE').map(f => (
-                <UploadCard
-                  key={f.label}
-                  label={f.label}
-                  uploadedFileName={getUploadedFileName(f.label)}
-                  isUploading={uploading === f.label}
-                  onUpload={(file) => handleUpload(f.label, f.sourceType, f.payEntity, f.aorBucket, file)}
-                />
+                <UploadCard key={f.label} label={f.label} uploadedFileName={getUploadedFileName(f.label)}
+                  isUploading={uploading === f.label} onUpload={(file) => handleUpload(f.label, f.sourceType, f.payEntity, f.aorBucket, file)} />
               ))}
             </div>
           </div>
-
           <div>
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Commission Statements</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {FILE_LABELS.filter(f => f.sourceType === 'COMMISSION').map(f => (
-                <UploadCard
-                  key={f.label}
-                  label={f.label}
-                  uploadedFileName={getUploadedFileName(f.label)}
-                  isUploading={uploading === f.label}
-                  onUpload={(file) => handleUpload(f.label, f.sourceType, f.payEntity, f.aorBucket, file)}
-                />
+                <UploadCard key={f.label} label={f.label} uploadedFileName={getUploadedFileName(f.label)}
+                  isUploading={uploading === f.label} onUpload={(file) => handleUpload(f.label, f.sourceType, f.payEntity, f.aorBucket, file)} />
               ))}
             </div>
           </div>
