@@ -62,19 +62,22 @@ export default function DashboardPage() {
   }, [currentBatchId, refreshAll, toast]);
 
   const metrics = useMemo(() => {
-    const expected = reconciled.filter(r => r.ede_qualified).length;
-    const foundBO = reconciled.filter(r => r.ede_qualified && r.in_back_office).length;
-    const eligible = reconciled.filter(r => r.ede_qualified && r.in_back_office && r.eligible_for_commission === 'Yes').length;
+    const expected = reconciled.filter(r => r.is_in_expected_ede_universe).length;
+    const foundBO = reconciled.filter(r => r.is_in_expected_ede_universe && r.in_back_office).length;
+    const eligible = reconciled.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes').length;
     const shouldPay = eligible;
     const paidCommRecords = reconciled.filter(r => r.in_commission).length;
-    const paidEligible = reconciled.filter(r => r.ede_qualified && r.in_back_office && r.eligible_for_commission === 'Yes' && r.in_commission).length;
+    const paidEligible = reconciled.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes' && r.in_commission).length;
     const unpaid = shouldPay - paidEligible;
     const totalComm = reconciled.filter(r => r.in_commission).reduce((s, r) => s + (r.actual_commission || 0), 0);
     const estMissing = reconciled.reduce((s, r) => s + (r.estimated_missing_commission || 0), 0);
     const difference = shouldPay - paidEligible;
     const unpaidVariance = unpaid - difference;
     const totalEdeRaw = reconciled.filter(r => r.in_ede).length;
-    return { expected, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, estMissing, difference, unpaidVariance, totalEdeRaw };
+    const hasAnyEde = reconciled.filter(r => r.in_ede).length;
+    const hasExpectedEde = reconciled.filter(r => r.is_in_expected_ede_universe).length;
+    const expectedWithBO = reconciled.filter(r => r.is_in_expected_ede_universe && r.in_back_office).length;
+    return { expected, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO };
   }, [reconciled]);
 
   const unpaidSample = useMemo(() => {

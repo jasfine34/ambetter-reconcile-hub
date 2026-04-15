@@ -31,6 +31,7 @@ export interface ReconciledMember {
   commission_record_count: number;
   has_mixed_sources: boolean;
   ede_qualified: boolean;
+  is_in_expected_ede_universe: boolean;
 }
 
 export interface MatchDebugStats {
@@ -332,6 +333,7 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
       commission_record_count: comm.length,
       has_mixed_sources: new Set(recs.map(r => r.source_type)).size > 1,
       ede_qualified: ede.some(e => isQualifiedEDEStatus(e.status || '') && e.effective_date === '2026-01-01'),
+      is_in_expected_ede_universe: ede.some(e => isQualifiedEDEStatus(e.status || '') && e.effective_date === '2026-01-01'),
     });
   }
 
