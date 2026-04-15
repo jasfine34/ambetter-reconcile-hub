@@ -1,5 +1,11 @@
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
-import { getBatches, getReconciledMembers, getUploadedFiles } from '@/lib/persistence';
+import { getBatches, getReconciledMembers, getUploadedFiles, getBatchCounts } from '@/lib/persistence';
+
+interface BatchCounts {
+  uploadedFiles: number;
+  normalizedRecords: number;
+  reconciledMembers: number;
+}
 
 interface BatchContextType {
   batches: any[];
@@ -7,16 +13,21 @@ interface BatchContextType {
   setCurrentBatchId: (id: string | null) => void;
   reconciled: any[];
   uploadedFiles: any[];
+  counts: BatchCounts;
   refreshBatches: () => Promise<void>;
   refreshReconciled: () => Promise<void>;
   refreshFiles: () => Promise<void>;
+  refreshAll: () => Promise<void>;
   loading: boolean;
 }
 
 const BatchContext = createContext<BatchContextType>({
   batches: [], currentBatchId: null, setCurrentBatchId: () => {},
-  reconciled: [], uploadedFiles: [], refreshBatches: async () => {},
-  refreshReconciled: async () => {}, refreshFiles: async () => {}, loading: false,
+  reconciled: [], uploadedFiles: [],
+  counts: { uploadedFiles: 0, normalizedRecords: 0, reconciledMembers: 0 },
+  refreshBatches: async () => {},
+  refreshReconciled: async () => {}, refreshFiles: async () => {},
+  refreshAll: async () => {}, loading: false,
 });
 
 export const useBatch = () => useContext(BatchContext);
@@ -26,6 +37,7 @@ export function BatchProvider({ children }: { children: ReactNode }) {
   const [currentBatchId, setCurrentBatchId] = useState<string | null>(null);
   const [reconciled, setReconciled] = useState<any[]>([]);
   const [uploadedFiles, setUploadedFiles] = useState<any[]>([]);
+  const [counts, setCounts] = useState<BatchCounts>({ uploadedFiles: 0, normalizedRecords: 0, reconciledMembers: 0 });
   const [loading, setLoading] = useState(false);
 
   const refreshBatches = useCallback(async () => {
@@ -39,9 +51,12 @@ export function BatchProvider({ children }: { children: ReactNode }) {
   const refreshReconciled = useCallback(async () => {
     if (!currentBatchId) { setReconciled([]); return; }
     setLoading(true);
-    const data = await getReconciledMembers(currentBatchId);
-    setReconciled(data || []);
-    setLoading(false);
+    try {
+      const data = await getReconciledMembers(currentBatchId);
+      setReconciled(data || []);
+    } finally {
+      setLoading(false);
+    }
   }, [currentBatchId]);
 
   const refreshFiles = useCallback(async () => {
@@ -50,11 +65,29 @@ export function BatchProvider({ children }: { children: ReactNode }) {
     setUploadedFiles(data || []);
   }, [currentBatchId]);
 
+  const refreshCounts = useCallback(async () => {
+    if (!currentBatchId) {
+      setCounts({ uploadedFiles: 0, normalizedRecords: 0, reconciledMembers: 0 });
+      return;
+    }
+    const c = await getBatchCounts(currentBatchId);
+    setCounts(c);
+  }, [currentBatchId]);
+
+  const refreshAll = useCallback(async () => {
+    await Promise.all([refreshFiles(), refreshReconciled(), refreshCounts()]);
+  }, [refreshFiles, refreshReconciled, refreshCounts]);
+
   useEffect(() => { refreshBatches(); }, []);
-  useEffect(() => { refreshReconciled(); refreshFiles(); }, [currentBatchId]);
+  useEffect(() => { refreshAll(); }, [currentBatchId]);
 
   return (
-    <BatchContext.Provider value={{ batches, currentBatchId, setCurrentBatchId, reconciled, uploadedFiles, refreshBatches, refreshReconciled, refreshFiles, loading }}>
+    <BatchContext.Provider value={{
+      batches, currentBatchId, setCurrentBatchId,
+      reconciled, uploadedFiles, counts,
+      refreshBatches, refreshReconciled, refreshFiles, refreshAll,
+      loading,
+    }}>
       {children}
     </BatchContext.Provider>
   );
