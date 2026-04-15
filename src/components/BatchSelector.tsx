@@ -4,20 +4,28 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { createBatch } from '@/lib/persistence';
+import { useToast } from '@/hooks/use-toast';
 import { Plus } from 'lucide-react';
 
 export function BatchSelector() {
   const { batches, currentBatchId, setCurrentBatchId, refreshBatches } = useBatch();
   const [creating, setCreating] = useState(false);
   const [month, setMonth] = useState('');
+  const { toast } = useToast();
 
   const handleCreate = async () => {
     if (!month) return;
-    const batch = await createBatch(month + '-01');
-    await refreshBatches();
-    setCurrentBatchId(batch.id);
-    setCreating(false);
-    setMonth('');
+    try {
+      const batch = await createBatch(month + '-01');
+      await refreshBatches();
+      setCurrentBatchId(batch.id);
+      setCreating(false);
+      setMonth('');
+      toast({ title: 'Batch created', description: `Batch for ${month}` });
+    } catch (err: any) {
+      console.error('Failed to create batch:', err);
+      toast({ title: 'Error creating batch', description: err.message, variant: 'destructive' });
+    }
   };
 
   return (
