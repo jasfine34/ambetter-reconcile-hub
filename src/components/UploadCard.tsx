@@ -14,7 +14,10 @@ export function UploadCard({ label, uploadedFileName, onUpload, isUploading }: U
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = async (file: File) => {
-    if (file && file.name.endsWith('.csv')) {
+    const normalizedName = file.name.toLowerCase();
+    const isCsv = normalizedName.endsWith('.csv') || file.type === 'text/csv' || file.type === 'application/vnd.ms-excel';
+
+    if (file && isCsv) {
       await onUpload(file);
     }
   };
