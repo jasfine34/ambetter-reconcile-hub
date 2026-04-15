@@ -10,7 +10,7 @@ import { uploadFileToStorage, uploadFileRecord, insertNormalizedRecords, saveRec
 import { useToast } from '@/hooks/use-toast';
 
 export default function UploadPage() {
-  const { currentBatchId, uploadedFiles, refreshFiles, refreshReconciled } = useBatch();
+  const { currentBatchId, uploadedFiles, refreshFiles, refreshAll } = useBatch();
   const [uploading, setUploading] = useState<string | null>(null);
   const { toast } = useToast();
 
@@ -43,13 +43,8 @@ export default function UploadPage() {
       // Save normalized records
       await insertNormalizedRecords(currentBatchId, fileRecord.id, normalized);
 
-      await refreshFiles();
-
-      // Re-run reconciliation
-      const allRecords = await getNormalizedRecords(currentBatchId);
-      const reconciledData = reconcile(allRecords as any[]);
-      await saveReconciledMembers(currentBatchId, reconciledData);
-      await refreshReconciled();
+      // Refresh everything: files, reconciled, counts
+      await refreshAll();
 
       toast({ title: 'Upload Complete', description: `${normalized.length} records from ${fileLabel}` });
     } catch (err: any) {
