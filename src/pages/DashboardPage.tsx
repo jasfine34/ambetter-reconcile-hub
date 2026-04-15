@@ -4,7 +4,7 @@ import { MetricCard } from '@/components/MetricCard';
 import { DataTable } from '@/components/DataTable';
 import { BatchSelector } from '@/components/BatchSelector';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Users, Building2, DollarSign, AlertTriangle, CheckCircle2, XCircle, FileText, TrendingDown, Database, Info } from 'lucide-react';
+import { Users, Building2, DollarSign, AlertTriangle, CheckCircle2, XCircle, FileText, TrendingDown, Database, Info, ShieldAlert } from 'lucide-react';
 
 const RECON_COLUMNS = [
   { key: 'applicant_name', label: 'Name' },
@@ -21,6 +21,18 @@ const RECON_COLUMNS = [
   { key: 'issue_type', label: 'Issue' },
 ];
 
+const UNPAID_SAMPLE_COLUMNS = [
+  { key: 'member_key', label: 'Member Key' },
+  { key: 'applicant_name', label: 'Name' },
+  { key: 'agent_npn', label: 'Agent NPN' },
+  { key: 'in_ede', label: 'EDE' },
+  { key: 'in_back_office', label: 'Back Office' },
+  { key: 'eligible_for_commission', label: 'Eligible' },
+  { key: 'in_commission', label: 'Commission' },
+  { key: 'actual_commission', label: 'Commission $' },
+  { key: 'source_count', label: 'Source Count' },
+];
+
 export default function DashboardPage() {
   const { reconciled, loading, counts, debugStats } = useBatch();
   const [drilldown, setDrilldown] = useState<string | null>(null);
@@ -34,7 +46,15 @@ export default function DashboardPage() {
     const unpaid = reconciled.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission).length;
     const totalComm = reconciled.reduce((s, r) => s + (r.actual_commission || 0), 0);
     const estMissing = reconciled.reduce((s, r) => s + (r.estimated_missing_commission || 0), 0);
-    return { expected, foundBO, eligible, shouldPay, actuallyPaid, unpaid, totalComm, estMissing };
+    const difference = shouldPay - actuallyPaid;
+    const unpaidVariance = unpaid - difference;
+    return { expected, foundBO, eligible, shouldPay, actuallyPaid, unpaid, totalComm, estMissing, difference, unpaidVariance };
+  }, [reconciled]);
+
+  const unpaidSample = useMemo(() => {
+    return reconciled
+      .filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission)
+      .slice(0, 50);
   }, [reconciled]);
 
   const drilldownData = useMemo(() => {
@@ -129,6 +149,64 @@ export default function DashboardPage() {
             <MetricCard title="Total Paid Commission" value={`$${metrics.totalComm.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} icon={<DollarSign className="h-4 w-4" />} variant="success" />
             <MetricCard title="Est. Missing Commission" value={`$${metrics.estMissing.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} icon={<TrendingDown className="h-4 w-4" />} variant="warning" />
           </div>
+
+          {/* Validation Panel */}
+          <Card className={metrics.unpaidVariance > 5 ? 'border-destructive/50 bg-destructive/5' : 'border-success/50 bg-success/5'}>
+            <CardHeader className="py-3 px-4">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <ShieldAlert className="h-4 w-4" /> Reconciliation Validation
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-3 pt-0 space-y-3">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+                <div>
+                  <span className="text-muted-foreground block">Should Be Paid</span>
+                  <strong className="text-foreground text-lg">{metrics.shouldPay}</strong>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block">Actually Paid</span>
+                  <strong className="text-foreground text-lg">{metrics.actuallyPaid}</strong>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block">Unpaid Policies</span>
+                  <strong className="text-foreground text-lg">{metrics.unpaid}</strong>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block">Difference (Should − Paid)</span>
+                  <strong className="text-foreground text-lg">{metrics.difference}</strong>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block">Unpaid Variance</span>
+                  <strong className={`text-lg ${metrics.unpaidVariance > 5 ? 'text-destructive' : 'text-success'}`}>
+                    {metrics.unpaidVariance}
+                  </strong>
+                </div>
+              </div>
+              {debugStats && (
+                <div className="flex flex-wrap gap-6 text-sm border-t pt-2">
+                  <span className="text-muted-foreground">Raw Records: <strong className="text-foreground">{debugStats.totalRawRecords}</strong></span>
+                  <span className="text-muted-foreground">Unique Member Keys: <strong className="text-foreground">{debugStats.uniqueMemberKeys}</strong></span>
+                  <span className="text-muted-foreground">Avg Records/Key: <strong className="text-foreground">{debugStats.avgRecordsPerKey}</strong></span>
+                </div>
+              )}
+              {metrics.unpaidVariance > 5 && (
+                <div className="flex items-start gap-2 text-sm bg-destructive/10 rounded-md p-3 border border-destructive/20">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-destructive" />
+                  <span className="text-destructive font-medium">
+                    Possible duplicate consolidation or classification issue remains. Unpaid Variance ({metrics.unpaidVariance}) is materially above zero.
+                  </span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Unpaid Validation Sample */}
+          {unpaidSample.length > 0 && !drilldownData && (
+            <div className="space-y-3">
+              <h3 className="text-lg font-semibold">Unpaid Validation Sample (top 50)</h3>
+              <DataTable data={unpaidSample} columns={UNPAID_SAMPLE_COLUMNS} exportFileName="unpaid_validation_sample.csv" />
+            </div>
+          )}
 
           {drilldownData && (
             <div className="space-y-3">
