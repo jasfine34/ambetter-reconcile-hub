@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
-import { getBatches, getReconciledMembers, getUploadedFiles, getBatchCounts } from '@/lib/persistence';
+import { getBatches, getReconciledMembers, getUploadedFiles, getBatchCounts, getNormalizedRecords } from '@/lib/persistence';
+import { reconcile, type MatchDebugStats } from '@/lib/reconcile';
 
 interface BatchCounts {
   uploadedFiles: number;
@@ -14,6 +15,7 @@ interface BatchContextType {
   reconciled: any[];
   uploadedFiles: any[];
   counts: BatchCounts;
+  debugStats: MatchDebugStats | null;
   refreshBatches: () => Promise<void>;
   refreshReconciled: () => Promise<void>;
   refreshFiles: () => Promise<void>;
@@ -25,6 +27,7 @@ const BatchContext = createContext<BatchContextType>({
   batches: [], currentBatchId: null, setCurrentBatchId: () => {},
   reconciled: [], uploadedFiles: [],
   counts: { uploadedFiles: 0, normalizedRecords: 0, reconciledMembers: 0 },
+  debugStats: null,
   refreshBatches: async () => {},
   refreshReconciled: async () => {}, refreshFiles: async () => {},
   refreshAll: async () => {}, loading: false,
@@ -38,6 +41,7 @@ export function BatchProvider({ children }: { children: ReactNode }) {
   const [reconciled, setReconciled] = useState<any[]>([]);
   const [uploadedFiles, setUploadedFiles] = useState<any[]>([]);
   const [counts, setCounts] = useState<BatchCounts>({ uploadedFiles: 0, normalizedRecords: 0, reconciledMembers: 0 });
+  const [debugStats, setDebugStats] = useState<MatchDebugStats | null>(null);
   const [loading, setLoading] = useState(false);
 
   const refreshBatches = useCallback(async () => {
@@ -49,11 +53,19 @@ export function BatchProvider({ children }: { children: ReactNode }) {
   }, [currentBatchId]);
 
   const refreshReconciled = useCallback(async () => {
-    if (!currentBatchId) { setReconciled([]); return; }
+    if (!currentBatchId) { setReconciled([]); setDebugStats(null); return; }
     setLoading(true);
     try {
       const data = await getReconciledMembers(currentBatchId);
       setReconciled(data || []);
+      // Compute debug stats from normalized records
+      try {
+        const normalized = await getNormalizedRecords(currentBatchId);
+        const { debug } = reconcile(normalized as any[]);
+        setDebugStats(debug);
+      } catch {
+        setDebugStats(null);
+      }
     } finally {
       setLoading(false);
     }
@@ -84,7 +96,7 @@ export function BatchProvider({ children }: { children: ReactNode }) {
   return (
     <BatchContext.Provider value={{
       batches, currentBatchId, setCurrentBatchId,
-      reconciled, uploadedFiles, counts,
+      reconciled, uploadedFiles, counts, debugStats,
       refreshBatches, refreshReconciled, refreshFiles, refreshAll,
       loading,
     }}>

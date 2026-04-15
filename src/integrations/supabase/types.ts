@@ -109,6 +109,7 @@ export type Database = {
           first_name: string | null
           id: string
           issuer_policy_id: string | null
+          issuer_subscriber_id: string | null
           last_name: string | null
           member_id: string | null
           member_key: string | null
@@ -139,6 +140,7 @@ export type Database = {
           first_name?: string | null
           id?: string
           issuer_policy_id?: string | null
+          issuer_subscriber_id?: string | null
           last_name?: string | null
           member_id?: string | null
           member_key?: string | null
@@ -169,6 +171,7 @@ export type Database = {
           first_name?: string | null
           id?: string
           issuer_policy_id?: string | null
+          issuer_subscriber_id?: string | null
           last_name?: string | null
           member_id?: string | null
           member_key?: string | null
@@ -223,6 +226,7 @@ export type Database = {
           issue_notes: string | null
           issue_type: string | null
           issuer_policy_id: string | null
+          issuer_subscriber_id: string | null
           member_key: string
           net_premium: number | null
           policy_number: string | null
@@ -251,6 +255,7 @@ export type Database = {
           issue_notes?: string | null
           issue_type?: string | null
           issuer_policy_id?: string | null
+          issuer_subscriber_id?: string | null
           member_key: string
           net_premium?: number | null
           policy_number?: string | null
@@ -279,6 +284,7 @@ export type Database = {
           issue_notes?: string | null
           issue_type?: string | null
           issuer_policy_id?: string | null
+          issuer_subscriber_id?: string | null
           member_key?: string
           net_premium?: number | null
           policy_number?: string | null

@@ -5,12 +5,6 @@ function stripApostrophe(val: string | undefined | null): string {
   return val.replace(/^'+/, '').trim();
 }
 
-function stripTrailingSuffix(val: string, suffix: string): string {
-  if (!val) return '';
-  const re = new RegExp(suffix + '$', 'i');
-  return val.replace(re, '').trim();
-}
-
 function normalizeDate(val: string | undefined | null): string | null {
   if (!val) return null;
   const v = val.trim();
@@ -35,20 +29,41 @@ function parseNum(val: string | undefined | null): number | null {
   return isNaN(n) ? null : n;
 }
 
+/**
+ * Strong normalization for all ID fields used in matching.
+ * Strips apostrophes, suffixes, whitespace, non-alphanumeric chars.
+ * Preserves leading letters like "U".
+ */
+export function cleanId(val: string | undefined | null): string {
+  if (!val) return '';
+  let v = val;
+  // strip leading apostrophes
+  v = v.replace(/^'+/, '');
+  // strip trailing -AR (case insensitive)
+  v = v.replace(/-AR$/i, '');
+  // strip trailing -X (case insensitive)
+  v = v.replace(/-X$/i, '');
+  // trim whitespace
+  v = v.trim();
+  // lowercase
+  v = v.toLowerCase();
+  // remove all spaces
+  v = v.replace(/\s+/g, '');
+  // remove non-alphanumeric characters
+  v = v.replace(/[^a-z0-9]/g, '');
+  return v;
+}
+
 function isAmbetterEDE(row: Record<string, string>): boolean {
   const issuer = (row['issuer'] || row['Issuer'] || '').toLowerCase();
   return issuer.includes('ambetter');
 }
 
 function isAmbetterCommission(row: Record<string, string>): boolean {
-  // Check Database column first, then fall back to any column containing "ambetter"
   const db = (row['Database'] || row['database'] || '').toLowerCase();
   if (db.includes('ambetter')) return true;
-  // Some commission CSVs may not have a Database column — check Company ID or any value
   const companyId = (row['Company ID'] || '').toLowerCase();
   if (companyId.includes('ambetter')) return true;
-  // If no Database or Company ID match, check if Policy Number exists (accept all rows from commission files)
-  // since the user is uploading Ambetter-specific commission statements
   const policyNum = row['Policy Number'] || '';
   if (policyNum.trim()) return true;
   return false;
@@ -67,6 +82,7 @@ export interface NormalizedRecord {
   exchange_subscriber_id: string;
   exchange_policy_id: string;
   issuer_policy_id: string;
+  issuer_subscriber_id: string;
   agent_name: string;
   agent_npn: string;
   aor_bucket: string;
@@ -82,13 +98,18 @@ export interface NormalizedRecord {
 }
 
 function buildMemberKey(r: Partial<NormalizedRecord>): string {
-  if (r.issuer_policy_id) return `IPD:${r.issuer_policy_id}`;
-  if (r.policy_number) return `POL:${r.policy_number}`;
-  if (r.exchange_subscriber_id) return `ESI:${r.exchange_subscriber_id}`;
-  if (r.exchange_policy_id) return `EPI:${r.exchange_policy_id}`;
-  if (r.applicant_name && r.dob) return `NAME_DOB:${r.applicant_name.toUpperCase()}|${r.dob}`;
-  if (r.applicant_name) return `NAME:${r.applicant_name.toUpperCase()}`;
-  return `UNK:${Math.random().toString(36).slice(2, 10)}`;
+  // Priority: issuer_subscriber_id > exchange_subscriber_id > policy_number > exchange_policy_id > name+dob
+  const isid = r.issuer_subscriber_id || '';
+  if (isid) return `issub:${isid}`;
+  const esid = cleanId(r.exchange_subscriber_id);
+  if (esid) return `sub:${esid}`;
+  const pn = cleanId(r.policy_number);
+  if (pn) return `policy:${pn}`;
+  const epid = cleanId(r.exchange_policy_id);
+  if (epid) return `xpol:${epid}`;
+  if (r.applicant_name && r.dob) return `name:${r.applicant_name.toUpperCase()}|${r.dob}`;
+  if (r.applicant_name) return `name:${r.applicant_name.toUpperCase()}`;
+  return `unk:${Math.random().toString(36).slice(2, 10)}`;
 }
 
 export function normalizeEDERow(row: Record<string, string>, fileLabel: string): NormalizedRecord | null {
@@ -105,9 +126,10 @@ export function normalizeEDERow(row: Record<string, string>, fileLabel: string):
     dob: normalizeDate(row['dob']),
     member_id: stripApostrophe(row['issuerSubscriberId']),
     policy_number: '',
-    exchange_subscriber_id: stripApostrophe(row['exchangeSubscriberId']),
-    exchange_policy_id: stripApostrophe(row['exchangePolicyId']),
-    issuer_policy_id: stripApostrophe(row['issuerPolicyId']),
+    exchange_subscriber_id: cleanId(row['exchangeSubscriberId']),
+    exchange_policy_id: cleanId(row['exchangePolicyId']),
+    issuer_policy_id: cleanId(row['issuerPolicyId']),
+    issuer_subscriber_id: cleanId(row['issuerSubscriberId']),
     agent_name: (row['agentName'] || '').trim(),
     agent_npn: stripApostrophe(row['agentNPN']),
     aor_bucket: '',
@@ -121,7 +143,6 @@ export function normalizeEDERow(row: Record<string, string>, fileLabel: string):
     member_key: '',
     raw_json: row,
   };
-  // Determine aor_bucket from agent_npn
   const npnInfo = NPN_MAP[r.agent_npn as keyof typeof NPN_MAP];
   if (npnInfo) r.aor_bucket = npnInfo.name;
   r.member_key = buildMemberKey(r);
@@ -132,6 +153,7 @@ export function normalizeBackOfficeRow(row: Record<string, string>, fileLabel: s
   const first = (row['Insured First Name'] || '').trim();
   const last = (row['Insured Last Name'] || '').trim();
   const npn = stripApostrophe(row['Broker NPN']);
+  const policyNumber = stripApostrophe(row['Policy Number']);
   const r: NormalizedRecord = {
     source_type: 'BACK_OFFICE',
     source_file_label: fileLabel,
@@ -141,10 +163,11 @@ export function normalizeBackOfficeRow(row: Record<string, string>, fileLabel: s
     last_name: last,
     dob: normalizeDate(row['Member Date Of Birth']),
     member_id: '',
-    policy_number: stripApostrophe(row['Policy Number']),
-    exchange_subscriber_id: stripApostrophe(row['Exchange Subscriber ID']),
+    policy_number: cleanId(policyNumber),
+    exchange_subscriber_id: cleanId(row['Exchange Subscriber ID']),
     exchange_policy_id: '',
     issuer_policy_id: '',
+    issuer_subscriber_id: cleanId(policyNumber),
     agent_name: (row['Broker Name'] || '').trim(),
     agent_npn: npn,
     aor_bucket: aorBucket,
@@ -164,11 +187,9 @@ export function normalizeBackOfficeRow(row: Record<string, string>, fileLabel: s
 
 export function normalizeCommissionRow(row: Record<string, string>, fileLabel: string, payEntity: string): NormalizedRecord | null {
   if (!isAmbetterCommission(row)) return null;
-  let npn = stripApostrophe(row['Writing Agent ID'] || '');
-  npn = stripTrailingSuffix(npn, '-X');
   let policyNum = stripApostrophe(row['Policy Number'] || '');
-  policyNum = stripTrailingSuffix(policyNum, '-AR');
   const agentName = (row['Agent Name_1'] || row['Agent Name.1'] || row['Agent Name'] || '').trim();
+  let npn = stripApostrophe(row['Writing Agent ID'] || '');
   const r: NormalizedRecord = {
     source_type: 'COMMISSION',
     source_file_label: fileLabel,
@@ -178,12 +199,13 @@ export function normalizeCommissionRow(row: Record<string, string>, fileLabel: s
     last_name: '',
     dob: null,
     member_id: '',
-    policy_number: policyNum,
+    policy_number: cleanId(policyNum),
     exchange_subscriber_id: '',
     exchange_policy_id: '',
     issuer_policy_id: '',
+    issuer_subscriber_id: cleanId(policyNum),
     agent_name: agentName,
-    agent_npn: npn,
+    agent_npn: cleanId(npn) || npn,
     aor_bucket: '',
     pay_entity: payEntity,
     status: (row['Policy Status'] || '').trim(),
