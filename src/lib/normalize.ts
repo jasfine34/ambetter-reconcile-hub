@@ -168,7 +168,7 @@ export function normalizeCommissionRow(row: Record<string, string>, fileLabel: s
   npn = stripTrailingSuffix(npn, '-X');
   let policyNum = stripApostrophe(row['Policy Number'] || '');
   policyNum = stripTrailingSuffix(policyNum, '-AR');
-  const agentName = (row['Agent Name.1'] || row['Agent Name'] || '').trim();
+  const agentName = (row['Agent Name_1'] || row['Agent Name.1'] || row['Agent Name'] || '').trim();
   const r: NormalizedRecord = {
     source_type: 'COMMISSION',
     source_file_label: fileLabel,
