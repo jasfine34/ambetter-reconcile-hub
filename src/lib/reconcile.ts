@@ -10,6 +10,7 @@ export interface ReconciledMember {
   exchange_subscriber_id: string;
   exchange_policy_id: string;
   issuer_policy_id: string;
+  issuer_subscriber_id: string;
   agent_name: string;
   agent_npn: string;
   aor_bucket: string;
@@ -27,22 +28,75 @@ export interface ReconciledMember {
   issue_notes: string;
 }
 
-export function reconcile(records: NormalizedRecord[]): ReconciledMember[] {
-  // Second-pass: unify exchange_subscriber_id groups
+export interface MatchDebugStats {
+  totalEDE: number;
+  totalBO: number;
+  totalComm: number;
+  edeWithIssuerSubId: number;
+  boStartingWithU: number;
+  commStartingWithU: number;
+  matchByIssuerSubId: number;
+  matchByExchangeSubId: number;
+  matchByPolicyNumber: number;
+  matchByFallback: number;
+}
+
+export function reconcile(records: NormalizedRecord[]): { members: ReconciledMember[]; debug: MatchDebugStats } {
+  const debug: MatchDebugStats = {
+    totalEDE: 0, totalBO: 0, totalComm: 0,
+    edeWithIssuerSubId: 0, boStartingWithU: 0, commStartingWithU: 0,
+    matchByIssuerSubId: 0, matchByExchangeSubId: 0, matchByPolicyNumber: 0, matchByFallback: 0,
+  };
+
+  // Count stats
+  for (const r of records) {
+    if (r.source_type === 'EDE') {
+      debug.totalEDE++;
+      if (r.issuer_subscriber_id) debug.edeWithIssuerSubId++;
+    } else if (r.source_type === 'BACK_OFFICE') {
+      debug.totalBO++;
+      if (r.issuer_subscriber_id?.startsWith('u')) debug.boStartingWithU++;
+    } else if (r.source_type === 'COMMISSION') {
+      debug.totalComm++;
+      if (r.issuer_subscriber_id?.startsWith('u')) debug.commStartingWithU++;
+    }
+  }
+
+  // Second-pass: unify by issuer_subscriber_id
+  const isidMap = new Map<string, string>();
+  for (const r of records) {
+    if (r.issuer_subscriber_id) {
+      const existing = isidMap.get(r.issuer_subscriber_id);
+      if (!existing) {
+        isidMap.set(r.issuer_subscriber_id, r.member_key);
+      } else if (existing !== r.member_key) {
+        // Pick the issub: key if available
+        const better = r.member_key.startsWith('issub:') ? r.member_key : existing;
+        isidMap.set(r.issuer_subscriber_id, better);
+      }
+    }
+  }
+  // Remap by issuer_subscriber_id
+  for (const r of records) {
+    if (r.issuer_subscriber_id && isidMap.has(r.issuer_subscriber_id)) {
+      r.member_key = isidMap.get(r.issuer_subscriber_id)!;
+    }
+  }
+
+  // Second-pass: unify by exchange_subscriber_id
   const esidMap = new Map<string, string>();
   for (const r of records) {
     if (r.exchange_subscriber_id) {
       const existing = esidMap.get(r.exchange_subscriber_id);
-      if (existing && existing !== r.member_key) {
-        // Prefer the non-NAME key
-        const better = r.member_key.startsWith('NAME') ? existing : r.member_key;
-        esidMap.set(r.exchange_subscriber_id, better);
-      } else {
+      if (!existing) {
         esidMap.set(r.exchange_subscriber_id, r.member_key);
+      } else if (existing !== r.member_key) {
+        const better = r.member_key.startsWith('issub:') ? r.member_key :
+                       r.member_key.startsWith('sub:') ? r.member_key : existing;
+        esidMap.set(r.exchange_subscriber_id, better);
       }
     }
   }
-  // Remap member_keys
   for (const r of records) {
     if (r.exchange_subscriber_id && esidMap.has(r.exchange_subscriber_id)) {
       r.member_key = esidMap.get(r.exchange_subscriber_id)!;
@@ -55,6 +109,14 @@ export function reconcile(records: NormalizedRecord[]): ReconciledMember[] {
     const arr = groups.get(r.member_key) || [];
     arr.push(r);
     groups.set(r.member_key, arr);
+  }
+
+  // Count match methods
+  for (const [key] of groups) {
+    if (key.startsWith('issub:')) debug.matchByIssuerSubId++;
+    else if (key.startsWith('sub:')) debug.matchByExchangeSubId++;
+    else if (key.startsWith('policy:') || key.startsWith('xpol:')) debug.matchByPolicyNumber++;
+    else debug.matchByFallback++;
   }
 
   // Calculate avg commission by agent
@@ -81,14 +143,13 @@ export function reconcile(records: NormalizedRecord[]): ReconciledMember[] {
     const inBo = bo.length > 0;
     const inComm = comm.length > 0;
 
-    // Merge best values
-    const best = recs[0];
     const applicantName = ede[0]?.applicant_name || bo[0]?.applicant_name || comm[0]?.applicant_name || '';
     const dob = ede[0]?.dob || bo[0]?.dob || null;
     const policyNumber = bo[0]?.policy_number || comm[0]?.policy_number || ede[0]?.policy_number || '';
     const exchangeSubId = ede[0]?.exchange_subscriber_id || bo[0]?.exchange_subscriber_id || '';
     const exchangePolId = ede[0]?.exchange_policy_id || '';
     const issuerPolId = ede[0]?.issuer_policy_id || '';
+    const issuerSubId = ede[0]?.issuer_subscriber_id || bo[0]?.issuer_subscriber_id || comm[0]?.issuer_subscriber_id || '';
     const agentName = ede[0]?.agent_name || bo[0]?.agent_name || comm[0]?.agent_name || '';
     const agentNpn = ede[0]?.agent_npn || bo[0]?.agent_npn || comm[0]?.agent_npn || '';
     const aorBucket = bo[0]?.aor_bucket || ede[0]?.aor_bucket || comm[0]?.aor_bucket || '';
@@ -97,7 +158,7 @@ export function reconcile(records: NormalizedRecord[]): ReconciledMember[] {
     const netPremium = ede[0]?.net_premium || null;
     const actualComm = comm.reduce((sum, c) => sum + (c.commission_amount || 0), 0) || null;
     const actualPayEntity = comm[0]?.pay_entity || '';
-    
+
     const npnInfo = NPN_MAP[agentNpn as keyof typeof NPN_MAP];
     const expectedPayEntity = npnInfo?.expectedPayEntity || '';
 
@@ -147,6 +208,7 @@ export function reconcile(records: NormalizedRecord[]): ReconciledMember[] {
       exchange_subscriber_id: exchangeSubId,
       exchange_policy_id: exchangePolId,
       issuer_policy_id: issuerPolId,
+      issuer_subscriber_id: issuerSubId,
       agent_name: agentName,
       agent_npn: agentNpn,
       aor_bucket: aorBucket,
@@ -165,5 +227,5 @@ export function reconcile(records: NormalizedRecord[]): ReconciledMember[] {
     });
   }
 
-  return results;
+  return { members: results, debug };
 }
