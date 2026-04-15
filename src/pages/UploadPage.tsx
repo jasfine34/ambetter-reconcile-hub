@@ -43,6 +43,11 @@ export default function UploadPage() {
       // Save normalized records
       await insertNormalizedRecords(currentBatchId, fileRecord.id, normalized);
 
+      // Re-run reconciliation with ALL records (paginated fetch)
+      const allRecords = await getNormalizedRecords(currentBatchId);
+      const reconciledData = reconcile(allRecords as any[]);
+      await saveReconciledMembers(currentBatchId, reconciledData);
+
       // Refresh everything: files, reconciled, counts
       await refreshAll();
 
