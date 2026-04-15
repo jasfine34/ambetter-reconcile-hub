@@ -223,6 +223,7 @@ export type Database = {
           in_back_office: boolean
           in_commission: boolean
           in_ede: boolean
+          is_in_expected_ede_universe: boolean
           issue_notes: string | null
           issue_type: string | null
           issuer_policy_id: string | null
@@ -252,6 +253,7 @@ export type Database = {
           in_back_office?: boolean
           in_commission?: boolean
           in_ede?: boolean
+          is_in_expected_ede_universe?: boolean
           issue_notes?: string | null
           issue_type?: string | null
           issuer_policy_id?: string | null
@@ -281,6 +283,7 @@ export type Database = {
           in_back_office?: boolean
           in_commission?: boolean
           in_ede?: boolean
+          is_in_expected_ede_universe?: boolean
           issue_notes?: string | null
           issue_type?: string | null
           issuer_policy_id?: string | null

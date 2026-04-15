@@ -1,0 +1,1 @@
+ALTER TABLE public.reconciled_members ADD COLUMN IF NOT EXISTS is_in_expected_ede_universe boolean NOT NULL DEFAULT false;
