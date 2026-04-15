@@ -106,6 +106,7 @@ export default function DashboardPage() {
           </Button>
           <BatchSelector />
         </div>
+      </div>
 
       {/* Matching explanation */}
       <Card className="border-dashed border-primary/30 bg-primary/5">
