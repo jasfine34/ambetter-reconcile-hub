@@ -1,5 +1,6 @@
 import { NPN_MAP, DEFAULT_COMMISSION_ESTIMATE } from './constants';
-import { cleanId } from './normalize';
+import { cleanId, isQualifiedEDEStatus } from './normalize';
+import type { NormalizedRecord } from './normalize';
 import type { NormalizedRecord } from './normalize';
 
 export interface ReconciledMember {
@@ -30,6 +31,7 @@ export interface ReconciledMember {
   source_count: number;
   commission_record_count: number;
   has_mixed_sources: boolean;
+  ede_qualified: boolean;
 }
 
 export interface MatchDebugStats {
@@ -46,6 +48,11 @@ export interface MatchDebugStats {
   matchByExchangeSubId: number;
   matchByPolicyNumber: number;
   matchByFallback: number;
+  edeStatusBreakdown: Record<string, number>;
+  edeQualifiedCount: number;
+  edeRawTotal: number;
+  edeAfterFilter: number;
+  edeUniqueKeysAfterFilter: number;
 }
 
 /**
