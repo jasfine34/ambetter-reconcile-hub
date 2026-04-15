@@ -34,6 +34,8 @@ const UNPAID_SAMPLE_COLUMNS = [
   { key: 'eligible_for_commission', label: 'Eligible' },
   { key: 'in_commission', label: 'Commission' },
   { key: 'actual_commission', label: 'Commission $' },
+  { key: 'commission_record_count', label: 'Comm Records' },
+  { key: 'has_mixed_sources', label: 'Mixed Sources' },
   { key: 'source_count', label: 'Source Count' },
 ];
 
