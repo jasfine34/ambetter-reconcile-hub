@@ -112,12 +112,22 @@ export async function insertNormalizedRecords(
 }
 
 export async function getNormalizedRecords(batchId: string) {
-  const { data, error } = await supabase
-    .from('normalized_records')
-    .select('*')
-    .eq('batch_id', batchId);
-  if (error) throw error;
-  return data;
+  const allData: any[] = [];
+  let from = 0;
+  const pageSize = 1000;
+  while (true) {
+    const { data, error } = await supabase
+      .from('normalized_records')
+      .select('*')
+      .eq('batch_id', batchId)
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    allData.push(...data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return allData;
 }
 
 export async function saveReconciledMembers(batchId: string, members: ReconciledMember[]) {
@@ -179,12 +189,35 @@ export async function saveReconciledMembers(batchId: string, members: Reconciled
 }
 
 export async function getReconciledMembers(batchId: string) {
-  const { data, error } = await supabase
-    .from('reconciled_members')
-    .select('*')
-    .eq('batch_id', batchId);
-  if (error) throw error;
-  return data;
+  const allData: any[] = [];
+  let from = 0;
+  const pageSize = 1000;
+  while (true) {
+    const { data, error } = await supabase
+      .from('reconciled_members')
+      .select('*')
+      .eq('batch_id', batchId)
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    allData.push(...data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return allData;
+}
+
+export async function getBatchCounts(batchId: string) {
+  const [files, normalized, reconciled] = await Promise.all([
+    supabase.from('uploaded_files').select('id', { count: 'exact', head: true }).eq('batch_id', batchId),
+    supabase.from('normalized_records').select('id', { count: 'exact', head: true }).eq('batch_id', batchId),
+    supabase.from('reconciled_members').select('id', { count: 'exact', head: true }).eq('batch_id', batchId),
+  ]);
+  return {
+    uploadedFiles: files.count ?? 0,
+    normalizedRecords: normalized.count ?? 0,
+    reconciledMembers: reconciled.count ?? 0,
+  };
 }
 
 export async function saveManualOverride(
