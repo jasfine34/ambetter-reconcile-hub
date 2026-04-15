@@ -52,7 +52,7 @@ export default function UploadPage() {
     } finally {
       setUploading(null);
     }
-  }, [currentBatchId, refreshFiles, refreshReconciled, toast]);
+  }, [currentBatchId, refreshFiles, refreshAll, toast]);
 
   const getUploadedFileName = (label: string) => {
     const f = uploadedFiles.find((uf: any) => uf.file_label === label);
