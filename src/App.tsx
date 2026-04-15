@@ -3,8 +3,16 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import Index from "./pages/Index.tsx";
-import NotFound from "./pages/NotFound.tsx";
+import { BatchProvider } from "@/contexts/BatchContext";
+import { AppLayout } from "@/components/AppLayout";
+import DashboardPage from "./pages/DashboardPage";
+import UploadPage from "./pages/UploadPage";
+import ExceptionsPage from "./pages/ExceptionsPage";
+import AgentSummaryPage from "./pages/AgentSummaryPage";
+import EntitySummaryPage from "./pages/EntitySummaryPage";
+import ManualMatchPage from "./pages/ManualMatchPage";
+import AllRecordsPage from "./pages/AllRecordsPage";
+import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
@@ -14,11 +22,20 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <BatchProvider>
+          <AppLayout>
+            <Routes>
+              <Route path="/" element={<DashboardPage />} />
+              <Route path="/upload" element={<UploadPage />} />
+              <Route path="/exceptions" element={<ExceptionsPage />} />
+              <Route path="/agents" element={<AgentSummaryPage />} />
+              <Route path="/entities" element={<EntitySummaryPage />} />
+              <Route path="/manual-match" element={<ManualMatchPage />} />
+              <Route path="/records" element={<AllRecordsPage />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </AppLayout>
+        </BatchProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
