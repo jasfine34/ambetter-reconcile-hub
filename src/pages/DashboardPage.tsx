@@ -3,7 +3,8 @@ import { useBatch } from '@/contexts/BatchContext';
 import { MetricCard } from '@/components/MetricCard';
 import { DataTable } from '@/components/DataTable';
 import { BatchSelector } from '@/components/BatchSelector';
-import { Users, Building2, DollarSign, AlertTriangle, CheckCircle2, XCircle, FileText, TrendingDown } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Users, Building2, DollarSign, AlertTriangle, CheckCircle2, XCircle, FileText, TrendingDown, Database } from 'lucide-react';
 
 const RECON_COLUMNS = [
   { key: 'applicant_name', label: 'Name' },
@@ -20,7 +21,7 @@ const RECON_COLUMNS = [
 ];
 
 export default function DashboardPage() {
-  const { reconciled, loading } = useBatch();
+  const { reconciled, loading, counts } = useBatch();
   const [drilldown, setDrilldown] = useState<string | null>(null);
 
   const metrics = useMemo(() => {
@@ -56,6 +57,21 @@ export default function DashboardPage() {
         </div>
         <BatchSelector />
       </div>
+
+      <Card className="border-dashed">
+        <CardHeader className="py-3 px-4">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <Database className="h-4 w-4" /> Debug Counts (Selected Batch)
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-4 pb-3 pt-0">
+          <div className="flex gap-6 text-sm">
+            <span className="text-muted-foreground">Uploaded Files: <strong className="text-foreground">{counts.uploadedFiles}</strong></span>
+            <span className="text-muted-foreground">Normalized Records: <strong className="text-foreground">{counts.normalizedRecords}</strong></span>
+            <span className="text-muted-foreground">Reconciled Members: <strong className="text-foreground">{counts.reconciledMembers}</strong></span>
+          </div>
+        </CardContent>
+      </Card>
 
       {loading ? (
         <div className="text-center py-20 text-muted-foreground">Loading...</div>
