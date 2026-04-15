@@ -1,7 +1,6 @@
 import { NPN_MAP, DEFAULT_COMMISSION_ESTIMATE } from './constants';
 import { cleanId, isQualifiedEDEStatus } from './normalize';
 import type { NormalizedRecord } from './normalize';
-import type { NormalizedRecord } from './normalize';
 
 export interface ReconciledMember {
   member_key: string;
