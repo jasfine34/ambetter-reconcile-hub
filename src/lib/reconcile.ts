@@ -272,6 +272,8 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
       issue_type: issueType,
       issue_notes: issueNotes,
       source_count: recs.length,
+      commission_record_count: comm.length,
+      has_mixed_sources: new Set(recs.map(r => r.source_type)).size > 1,
     });
   }
 
