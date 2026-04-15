@@ -1,10 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { useBatch } from '@/contexts/BatchContext';
 import { MetricCard } from '@/components/MetricCard';
 import { DataTable } from '@/components/DataTable';
 import { BatchSelector } from '@/components/BatchSelector';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Users, Building2, DollarSign, AlertTriangle, CheckCircle2, XCircle, FileText, TrendingDown, Database, Info, ShieldAlert } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Users, Building2, DollarSign, AlertTriangle, CheckCircle2, XCircle, FileText, TrendingDown, Database, Info, ShieldAlert, RefreshCw } from 'lucide-react';
+import { getNormalizedRecords, saveReconciledMembers } from '@/lib/persistence';
+import { reconcile } from '@/lib/reconcile';
+import { useToast } from '@/hooks/use-toast';
 
 const RECON_COLUMNS = [
   { key: 'applicant_name', label: 'Name' },
