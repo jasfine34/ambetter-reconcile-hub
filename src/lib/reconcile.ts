@@ -28,6 +28,8 @@ export interface ReconciledMember {
   issue_type: string;
   issue_notes: string;
   source_count: number;
+  commission_record_count: number;
+  has_mixed_sources: boolean;
 }
 
 export interface MatchDebugStats {
@@ -270,6 +272,8 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
       issue_type: issueType,
       issue_notes: issueNotes,
       source_count: recs.length,
+      commission_record_count: comm.length,
+      has_mixed_sources: new Set(recs.map(r => r.source_type)).size > 1,
     });
   }
 

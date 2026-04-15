@@ -1,10 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { useBatch } from '@/contexts/BatchContext';
 import { MetricCard } from '@/components/MetricCard';
 import { DataTable } from '@/components/DataTable';
 import { BatchSelector } from '@/components/BatchSelector';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Users, Building2, DollarSign, AlertTriangle, CheckCircle2, XCircle, FileText, TrendingDown, Database, Info, ShieldAlert } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Users, Building2, DollarSign, AlertTriangle, CheckCircle2, XCircle, FileText, TrendingDown, Database, Info, ShieldAlert, RefreshCw } from 'lucide-react';
+import { getNormalizedRecords, saveReconciledMembers } from '@/lib/persistence';
+import { reconcile } from '@/lib/reconcile';
+import { useToast } from '@/hooks/use-toast';
 
 const RECON_COLUMNS = [
   { key: 'applicant_name', label: 'Name' },
@@ -30,19 +34,40 @@ const UNPAID_SAMPLE_COLUMNS = [
   { key: 'eligible_for_commission', label: 'Eligible' },
   { key: 'in_commission', label: 'Commission' },
   { key: 'actual_commission', label: 'Commission $' },
+  { key: 'commission_record_count', label: 'Comm Records' },
+  { key: 'has_mixed_sources', label: 'Mixed Sources' },
   { key: 'source_count', label: 'Source Count' },
 ];
 
 export default function DashboardPage() {
-  const { reconciled, loading, counts, debugStats } = useBatch();
+  const { reconciled, loading, counts, debugStats, currentBatchId, refreshAll } = useBatch();
   const [drilldown, setDrilldown] = useState<string | null>(null);
+  const [rerunning, setRerunning] = useState(false);
+  const { toast } = useToast();
+
+  const handleRerun = useCallback(async () => {
+    if (!currentBatchId) return;
+    setRerunning(true);
+    try {
+      const allRecords = await getNormalizedRecords(currentBatchId);
+      const { members } = reconcile(allRecords as any[]);
+      await saveReconciledMembers(currentBatchId, members);
+      await refreshAll();
+      toast({ title: 'Reconciliation Complete', description: `${members.length} members reconciled` });
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } finally {
+      setRerunning(false);
+    }
+  }, [currentBatchId, refreshAll, toast]);
 
   const metrics = useMemo(() => {
     const expected = reconciled.filter(r => r.in_ede).length;
     const foundBO = reconciled.filter(r => r.in_ede && r.in_back_office).length;
     const eligible = reconciled.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes').length;
     const shouldPay = eligible;
-    const actuallyPaid = reconciled.filter(r => r.in_commission).length;
+    // Actually Paid = eligible members who ARE in commission
+    const actuallyPaid = reconciled.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && r.in_commission).length;
     const unpaid = reconciled.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission).length;
     const totalComm = reconciled.reduce((s, r) => s + (r.actual_commission || 0), 0);
     const estMissing = reconciled.reduce((s, r) => s + (r.estimated_missing_commission || 0), 0);
@@ -76,7 +101,13 @@ export default function DashboardPage() {
           <h2 className="text-2xl font-bold text-foreground">Reconciliation Dashboard</h2>
           <p className="text-sm text-muted-foreground">Ambetter Commission Reconciliation</p>
         </div>
-        <BatchSelector />
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handleRerun} disabled={rerunning || !currentBatchId}>
+            <RefreshCw className={`h-4 w-4 mr-1 ${rerunning ? 'animate-spin' : ''}`} />
+            {rerunning ? 'Running...' : 'Re-run Reconciliation'}
+          </Button>
+          <BatchSelector />
+        </div>
       </div>
 
       {/* Matching explanation */}
