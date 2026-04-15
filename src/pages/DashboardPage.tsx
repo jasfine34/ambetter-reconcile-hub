@@ -88,7 +88,8 @@ export default function DashboardPage() {
       case 'expected': return reconciled.filter(r => r.in_ede);
       case 'foundBO': return reconciled.filter(r => r.in_ede && r.in_back_office);
       case 'eligible': return reconciled.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes');
-      case 'paid': return reconciled.filter(r => r.in_commission);
+      case 'paidComm': return reconciled.filter(r => r.in_commission);
+      case 'paidEligible': return reconciled.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && r.in_commission);
       case 'unpaid': return reconciled.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission);
       default: return reconciled;
     }
@@ -170,15 +171,22 @@ export default function DashboardPage() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <MetricCard title="Expected Enrollments" value={metrics.expected} icon={<Users className="h-4 w-4" />} onClick={() => setDrilldown('expected')} />
             <MetricCard title="Found in Back Office" value={metrics.foundBO} icon={<Building2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('foundBO')} />
             <MetricCard title="Eligible for Commission" value={metrics.eligible} icon={<CheckCircle2 className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('eligible')} />
             <MetricCard title="Should Be Paid" value={metrics.shouldPay} icon={<DollarSign className="h-4 w-4" />} />
-            <MetricCard title="Actually Paid" value={metrics.actuallyPaid} icon={<CheckCircle2 className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('paid')} />
+            <MetricCard title="Paid Commission Records" value={metrics.paidCommRecords} icon={<CheckCircle2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('paidComm')} />
+            <MetricCard title="Paid Within Eligible Cohort" value={metrics.paidEligible} icon={<CheckCircle2 className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('paidEligible')} />
             <MetricCard title="Unpaid Policies" value={metrics.unpaid} icon={<XCircle className="h-4 w-4" />} variant="destructive" onClick={() => setDrilldown('unpaid')} />
             <MetricCard title="Total Paid Commission" value={`$${metrics.totalComm.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} icon={<DollarSign className="h-4 w-4" />} variant="success" />
             <MetricCard title="Est. Missing Commission" value={`$${metrics.estMissing.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} icon={<TrendingDown className="h-4 w-4" />} variant="warning" />
+          </div>
+
+          {/* Metric Help Text */}
+          <div className="flex flex-wrap gap-6 text-xs text-muted-foreground px-1">
+            <span><strong>Paid Commission Records</strong> = all commission-paid members found in statements</span>
+            <span><strong>Paid Within Eligible Cohort</strong> = members who were expected, eligible, and paid</span>
           </div>
 
           {/* Validation Panel */}
