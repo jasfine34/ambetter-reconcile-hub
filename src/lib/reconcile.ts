@@ -1,4 +1,5 @@
 import { NPN_MAP, DEFAULT_COMMISSION_ESTIMATE } from './constants';
+import { cleanId } from './normalize';
 import type { NormalizedRecord } from './normalize';
 
 export interface ReconciledMember {
@@ -26,12 +27,16 @@ export interface ReconciledMember {
   estimated_missing_commission: number | null;
   issue_type: string;
   issue_notes: string;
+  source_count: number;
 }
 
 export interface MatchDebugStats {
   totalEDE: number;
   totalBO: number;
   totalComm: number;
+  totalRawRecords: number;
+  uniqueMemberKeys: number;
+  avgRecordsPerKey: number;
   edeWithIssuerSubId: number;
   boStartingWithU: number;
   commStartingWithU: number;
@@ -41,14 +46,46 @@ export interface MatchDebugStats {
   matchByFallback: number;
 }
 
+/**
+ * Re-clean IDs on DB records (which may have been stored with older normalization).
+ */
+function reclean(r: NormalizedRecord): void {
+  r.issuer_subscriber_id = cleanId(r.issuer_subscriber_id);
+  r.exchange_subscriber_id = cleanId(r.exchange_subscriber_id);
+  r.exchange_policy_id = cleanId(r.exchange_policy_id);
+  r.issuer_policy_id = cleanId(r.issuer_policy_id);
+  r.policy_number = cleanId(r.policy_number);
+}
+
+/**
+ * Build a canonical member_key from cleaned fields.
+ */
+function buildMemberKey(r: NormalizedRecord): string {
+  if (r.issuer_subscriber_id) return `issub:${r.issuer_subscriber_id}`;
+  if (r.exchange_subscriber_id) return `sub:${r.exchange_subscriber_id}`;
+  if (r.policy_number) return `policy:${r.policy_number}`;
+  if (r.exchange_policy_id) return `xpol:${r.exchange_policy_id}`;
+  if (r.applicant_name && r.dob) return `name:${r.applicant_name.toUpperCase()}|${r.dob}`;
+  if (r.applicant_name) return `name:${r.applicant_name.toUpperCase()}`;
+  return `unk:${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export function reconcile(records: NormalizedRecord[]): { members: ReconciledMember[]; debug: MatchDebugStats } {
+  // Step 1: Re-clean all IDs and rebuild member_keys
+  for (const r of records) {
+    reclean(r);
+    r.member_key = buildMemberKey(r);
+  }
+
+  // Step 2: Count raw stats
   const debug: MatchDebugStats = {
     totalEDE: 0, totalBO: 0, totalComm: 0,
+    totalRawRecords: records.length,
+    uniqueMemberKeys: 0, avgRecordsPerKey: 0,
     edeWithIssuerSubId: 0, boStartingWithU: 0, commStartingWithU: 0,
     matchByIssuerSubId: 0, matchByExchangeSubId: 0, matchByPolicyNumber: 0, matchByFallback: 0,
   };
 
-  // Count stats
   for (const r of records) {
     if (r.source_type === 'EDE') {
       debug.totalEDE++;
@@ -62,39 +99,35 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     }
   }
 
-  // Second-pass: unify by issuer_subscriber_id
+  // Step 3: Unify member_keys by issuer_subscriber_id
   const isidMap = new Map<string, string>();
   for (const r of records) {
-    if (r.issuer_subscriber_id) {
-      const existing = isidMap.get(r.issuer_subscriber_id);
-      if (!existing) {
-        isidMap.set(r.issuer_subscriber_id, r.member_key);
-      } else if (existing !== r.member_key) {
-        // Pick the issub: key if available
-        const better = r.member_key.startsWith('issub:') ? r.member_key : existing;
-        isidMap.set(r.issuer_subscriber_id, better);
-      }
+    if (!r.issuer_subscriber_id) continue;
+    const existing = isidMap.get(r.issuer_subscriber_id);
+    if (!existing) {
+      isidMap.set(r.issuer_subscriber_id, r.member_key);
+    } else if (existing !== r.member_key) {
+      const better = r.member_key.startsWith('issub:') ? r.member_key : existing;
+      isidMap.set(r.issuer_subscriber_id, better);
     }
   }
-  // Remap by issuer_subscriber_id
   for (const r of records) {
     if (r.issuer_subscriber_id && isidMap.has(r.issuer_subscriber_id)) {
       r.member_key = isidMap.get(r.issuer_subscriber_id)!;
     }
   }
 
-  // Second-pass: unify by exchange_subscriber_id
+  // Step 4: Unify member_keys by exchange_subscriber_id
   const esidMap = new Map<string, string>();
   for (const r of records) {
-    if (r.exchange_subscriber_id) {
-      const existing = esidMap.get(r.exchange_subscriber_id);
-      if (!existing) {
-        esidMap.set(r.exchange_subscriber_id, r.member_key);
-      } else if (existing !== r.member_key) {
-        const better = r.member_key.startsWith('issub:') ? r.member_key :
-                       r.member_key.startsWith('sub:') ? r.member_key : existing;
-        esidMap.set(r.exchange_subscriber_id, better);
-      }
+    if (!r.exchange_subscriber_id) continue;
+    const existing = esidMap.get(r.exchange_subscriber_id);
+    if (!existing) {
+      esidMap.set(r.exchange_subscriber_id, r.member_key);
+    } else if (existing !== r.member_key) {
+      const better = r.member_key.startsWith('issub:') ? r.member_key :
+                     r.member_key.startsWith('sub:') ? r.member_key : existing;
+      esidMap.set(r.exchange_subscriber_id, better);
     }
   }
   for (const r of records) {
@@ -103,13 +136,16 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     }
   }
 
-  // Group by member_key
+  // Step 5: Group by member_key
   const groups = new Map<string, NormalizedRecord[]>();
   for (const r of records) {
     const arr = groups.get(r.member_key) || [];
     arr.push(r);
     groups.set(r.member_key, arr);
   }
+
+  debug.uniqueMemberKeys = groups.size;
+  debug.avgRecordsPerKey = records.length > 0 ? Math.round((records.length / groups.size) * 100) / 100 : 0;
 
   // Count match methods
   for (const [key] of groups) {
@@ -119,7 +155,7 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     else debug.matchByFallback++;
   }
 
-  // Calculate avg commission by agent
+  // Step 6: Calculate avg commission by agent for estimates
   const commByAgent = new Map<string, number[]>();
   const allComm: number[] = [];
   for (const r of records) {
@@ -132,6 +168,7 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
   }
   const avgAll = allComm.length > 0 ? allComm.reduce((a, b) => a + b, 0) / allComm.length : DEFAULT_COMMISSION_ESTIMATE;
 
+  // Step 7: Consolidate each group into exactly ONE reconciled member
   const results: ReconciledMember[] = [];
 
   for (const [memberKey, recs] of groups) {
@@ -143,6 +180,7 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     const inBo = bo.length > 0;
     const inComm = comm.length > 0;
 
+    // Merge attributes: prefer EDE > BO > COMM for identity fields
     const applicantName = ede[0]?.applicant_name || bo[0]?.applicant_name || comm[0]?.applicant_name || '';
     const dob = ede[0]?.dob || bo[0]?.dob || null;
     const policyNumber = bo[0]?.policy_number || comm[0]?.policy_number || ede[0]?.policy_number || '';
@@ -153,10 +191,17 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     const agentName = ede[0]?.agent_name || bo[0]?.agent_name || comm[0]?.agent_name || '';
     const agentNpn = ede[0]?.agent_npn || bo[0]?.agent_npn || comm[0]?.agent_npn || '';
     const aorBucket = bo[0]?.aor_bucket || ede[0]?.aor_bucket || comm[0]?.aor_bucket || '';
+    
+    // eligible_for_commission: take from BACK_OFFICE record
     const eligible = bo[0]?.eligible_for_commission || '';
+    
     const premium = bo[0]?.premium || ede[0]?.premium || null;
     const netPremium = ede[0]?.net_premium || null;
+    
+    // actual_commission: SUM of all commission records for this member
     const actualComm = comm.reduce((sum, c) => sum + (c.commission_amount || 0), 0) || null;
+    
+    // actual_pay_entity: from commission records
     const actualPayEntity = comm[0]?.pay_entity || '';
 
     const npnInfo = NPN_MAP[agentNpn as keyof typeof NPN_MAP];
@@ -224,6 +269,7 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
       estimated_missing_commission: estMissing,
       issue_type: issueType,
       issue_notes: issueNotes,
+      source_count: recs.length,
     });
   }
 
