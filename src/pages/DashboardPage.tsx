@@ -38,15 +38,34 @@ const UNPAID_SAMPLE_COLUMNS = [
 ];
 
 export default function DashboardPage() {
-  const { reconciled, loading, counts, debugStats } = useBatch();
+  const { reconciled, loading, counts, debugStats, currentBatchId, refreshAll } = useBatch();
   const [drilldown, setDrilldown] = useState<string | null>(null);
+  const [rerunning, setRerunning] = useState(false);
+  const { toast } = useToast();
+
+  const handleRerun = useCallback(async () => {
+    if (!currentBatchId) return;
+    setRerunning(true);
+    try {
+      const allRecords = await getNormalizedRecords(currentBatchId);
+      const { members } = reconcile(allRecords as any[]);
+      await saveReconciledMembers(currentBatchId, members);
+      await refreshAll();
+      toast({ title: 'Reconciliation Complete', description: `${members.length} members reconciled` });
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } finally {
+      setRerunning(false);
+    }
+  }, [currentBatchId, refreshAll, toast]);
 
   const metrics = useMemo(() => {
     const expected = reconciled.filter(r => r.in_ede).length;
     const foundBO = reconciled.filter(r => r.in_ede && r.in_back_office).length;
     const eligible = reconciled.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes').length;
     const shouldPay = eligible;
-    const actuallyPaid = reconciled.filter(r => r.in_commission).length;
+    // Actually Paid = eligible members who ARE in commission
+    const actuallyPaid = reconciled.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && r.in_commission).length;
     const unpaid = reconciled.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission).length;
     const totalComm = reconciled.reduce((s, r) => s + (r.actual_commission || 0), 0);
     const estMissing = reconciled.reduce((s, r) => s + (r.estimated_missing_commission || 0), 0);
