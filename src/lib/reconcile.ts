@@ -52,6 +52,8 @@ export interface MatchDebugStats {
   edeRawTotal: number;
   edeAfterFilter: number;
   edeUniqueKeysAfterFilter: number;
+  edeInvalidDateCount: number;
+  edeEffDateSamples: string[];
 }
 
 /**
