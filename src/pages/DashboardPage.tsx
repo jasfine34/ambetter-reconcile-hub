@@ -66,14 +66,14 @@ export default function DashboardPage() {
     const foundBO = reconciled.filter(r => r.in_ede && r.in_back_office).length;
     const eligible = reconciled.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes').length;
     const shouldPay = eligible;
-    // Actually Paid = eligible members who ARE in commission
-    const actuallyPaid = reconciled.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && r.in_commission).length;
-    const unpaid = reconciled.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission).length;
-    const totalComm = reconciled.reduce((s, r) => s + (r.actual_commission || 0), 0);
+    const paidCommRecords = reconciled.filter(r => r.in_commission).length;
+    const paidEligible = reconciled.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && r.in_commission).length;
+    const unpaid = shouldPay - paidEligible;
+    const totalComm = reconciled.filter(r => r.in_commission).reduce((s, r) => s + (r.actual_commission || 0), 0);
     const estMissing = reconciled.reduce((s, r) => s + (r.estimated_missing_commission || 0), 0);
-    const difference = shouldPay - actuallyPaid;
+    const difference = shouldPay - paidEligible;
     const unpaidVariance = unpaid - difference;
-    return { expected, foundBO, eligible, shouldPay, actuallyPaid, unpaid, totalComm, estMissing, difference, unpaidVariance };
+    return { expected, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, estMissing, difference, unpaidVariance };
   }, [reconciled]);
 
   const unpaidSample = useMemo(() => {
