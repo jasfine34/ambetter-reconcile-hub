@@ -100,7 +100,7 @@ export async function insertNormalizedRecords(
     commission_amount: r.commission_amount,
     eligible_for_commission: r.eligible_for_commission,
     member_key: r.member_key,
-    raw_json: r.raw_json as Record<string, unknown>,
+    raw_json: r.raw_json as unknown as Record<string, never>,
   }));
 
   // Insert in chunks of 500
