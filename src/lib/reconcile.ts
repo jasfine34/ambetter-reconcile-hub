@@ -34,6 +34,7 @@ export interface ReconciledMember {
   has_mixed_sources: boolean;
   ede_qualified: boolean;
   is_in_expected_ede_universe: boolean;
+  expected_ede_effective_month: string; // '2026-01' | '2026-02' | ''
 }
 
 export interface MatchDebugStats {
