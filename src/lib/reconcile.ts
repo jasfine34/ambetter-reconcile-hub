@@ -1,6 +1,40 @@
 import { NPN_MAP, DEFAULT_COMMISSION_ESTIMATE } from './constants';
-import { cleanId, isQualifiedEDEStatus, normalizePolicyStatus } from './normalize';
+import { cleanId, normalizePolicyStatus } from './normalize';
 import type { NormalizedRecord } from './normalize';
+
+// Qualified EDE rows must match user's exact filter, applied to the RAW source
+// fields (raw_json) so we replicate the export they validated against.
+const QUALIFIED_RAW_STATUSES = new Set([
+  'effectuated',
+  'pendingeffectuation',
+  'pendingtermination',
+]);
+const EXPECTED_AOR_PREFIXES = ['jason fine', 'erica fine', 'becky shuta'];
+const EXPECTED_EFFECTIVE_DATES = new Set(['2026-01-01', '2026-02-01']);
+
+function rawStatusKey(r: NormalizedRecord): string {
+  const raw = (r.raw_json?.['policyStatus'] ?? r.status ?? '') as string;
+  return String(raw).toLowerCase().replace(/\s+/g, '');
+}
+
+function rawAorKey(r: NormalizedRecord): string {
+  const raw = (r.raw_json?.['currentPolicyAOR'] ?? '') as string;
+  return String(raw).toLowerCase().trim();
+}
+
+function rawIssuerKey(r: NormalizedRecord): string {
+  const raw = (r.raw_json?.['issuer'] ?? r.carrier ?? '') as string;
+  return String(raw).toLowerCase();
+}
+
+function isExpectedEDERow(r: NormalizedRecord): boolean {
+  if (r.source_type !== 'EDE') return false;
+  if (!r.effective_date || !EXPECTED_EFFECTIVE_DATES.has(r.effective_date)) return false;
+  if (!QUALIFIED_RAW_STATUSES.has(rawStatusKey(r))) return false;
+  if (!rawIssuerKey(r).includes('ambetter')) return false;
+  const aor = rawAorKey(r);
+  return EXPECTED_AOR_PREFIXES.some(p => aor.startsWith(p));
+}
 
 export interface ReconciledMember {
   member_key: string;
