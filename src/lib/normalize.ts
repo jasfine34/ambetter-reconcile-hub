@@ -19,8 +19,10 @@ const EXCLUDED_EDE_STATUSES = new Set(['cancelled', 'terminated', 'expired']);
 
 export function normalizePolicyStatus(val: string | undefined | null): string {
   if (!val) return '';
-  let v = val.trim().toLowerCase();
+  let v = val.trim().toLowerCase().replace(/\s+/g, ' ');
   if (v === 'pendingeffectuation' || v === 'pending effectuation') v = 'pending effectuated';
+  if (v === 'pendingtermination') v = 'pending termination';
+  if (v === 'pendingeffectuated') v = 'pending effectuated';
   return v;
 }
 
