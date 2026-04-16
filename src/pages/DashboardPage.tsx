@@ -326,6 +326,21 @@ export default function DashboardPage() {
 
           {!drilldownData && (
             <div>
+              <h3 className="text-lg font-semibold mb-3">Source Coverage Analysis</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                <MetricCard title="Fully Matched & Paid" value={metrics.fullyMatched} icon={<CheckCircle2 className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('fullyMatched')} tooltip={{ text: "These members exist in all systems and were paid correctly.", why: "This represents clean, correctly tracked and paid business." }} />
+                <MetricCard title="Paid but Missing from EDE" value={metrics.paidOutsideEde} icon={<AlertTriangle className="h-4 w-4" />} variant="warning" onClick={() => setDrilldown('paidOutsideEde')} tooltip={{ text: "These members exist in Ambetter's system and were paid, but are not in your EDE data.", why: "This may represent state-based exchange enrollments or other production not captured in your system, meaning your true book may be larger than expected." }} />
+                <MetricCard title="Commission Statement Only" value={metrics.commissionOnly} icon={<FileText className="h-4 w-4" />} variant="warning" onClick={() => setDrilldown('commissionOnly')} tooltip={{ text: "These members appear only on commission statements and are not found in EDE or back office data.", why: "This may indicate mismatches, legacy payments, or data issues that need investigation." }} />
+                <MetricCard title="Back Office Only (Not Paid)" value={metrics.backOfficeOnly} icon={<Building2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('backOfficeOnly')} tooltip={{ text: "These members exist in the carrier system but are not in EDE and have not generated commission.", why: "This may represent missed enrollments, incomplete data feeds, or potential future revenue not yet realized." }} />
+                <MetricCard title="Unpaid Expected Policies" value={metrics.unpaidExpected} icon={<XCircle className="h-4 w-4" />} variant="destructive" onClick={() => setDrilldown('unpaidExpected')} tooltip={{ text: "These are members in EDE and back office, eligible for commission, but not paid.", why: "This is your primary recovery target — expected revenue that was not received." }} />
+                <MetricCard title="Total Paid (All Sources)" value={metrics.totalPaidAll} icon={<DollarSign className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('totalPaidAll')} tooltip={{ text: "Count of all unique members where commission was paid, regardless of source.", why: "This shows the full scope of what the carrier actually paid across all systems." }} />
+                <MetricCard title="Paid Outside Expected Universe" value={metrics.paidOutsideExpected} icon={<ShieldAlert className="h-4 w-4" />} variant="warning" onClick={() => setDrilldown('paidOutsideExpected')} tooltip={{ text: "These are paid policies that are not part of your expected EDE-based book.", why: "This highlights production that exists outside your current tracking system and may indicate missing data sources such as state-based exchanges." }} />
+              </div>
+            </div>
+          )}
+
+          {!drilldownData && (
+            <div>
               <h3 className="text-lg font-semibold mb-3">Exception Summary</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {([
