@@ -287,8 +287,19 @@ export default function DashboardPage() {
             )}
           </CardContent>
         </Card>
-      )}
-
+          )}
+          {debugStats && (
+            <div className="flex flex-wrap gap-6 text-sm border-t pt-2 mt-2">
+              <span className="text-muted-foreground font-medium">Commission Aggregation:</span>
+              <span className="text-muted-foreground">Raw Rows: <strong className="text-foreground">{debugStats.commRawRows}</strong></span>
+              <span className="text-muted-foreground">Positive: <strong className="text-foreground">{debugStats.commPositiveRows}</strong></span>
+              <span className="text-muted-foreground">Negative: <strong className="text-foreground">{debugStats.commNegativeRows}</strong></span>
+              <span className="text-muted-foreground">Distinct Policy (raw): <strong className="text-foreground">{debugStats.commDistinctPolicyRaw}</strong></span>
+              <span className="text-muted-foreground">Distinct Policy (normalized): <strong className="text-foreground">{debugStats.commDistinctPolicyNormalized}</strong></span>
+              <span className="text-muted-foreground">Total Positive: <strong className="text-foreground">${debugStats.commTotalPositive.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></span>
+              <span className="text-muted-foreground">Total Negative: <strong className="text-foreground">${debugStats.commTotalNegative.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></span>
+            </div>
+          )}
       {loading ? (
         <div className="text-center py-20 text-muted-foreground">Loading...</div>
       ) : reconciled.length === 0 ? (
