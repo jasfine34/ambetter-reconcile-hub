@@ -429,7 +429,11 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     const eligible = bo[0]?.eligible_for_commission || '';
     const premium = bo[0]?.premium || ede[0]?.premium || null;
     const netPremium = ede[0]?.net_premium || null;
+    const positiveComm = comm.reduce((sum, c) => sum + Math.max(c.commission_amount || 0, 0), 0) || null;
+    const clawbackAmt = comm.reduce((sum, c) => { const a = c.commission_amount || 0; return a < 0 ? sum + a : sum; }, 0) || null;
     const actualComm = comm.reduce((sum, c) => sum + (c.commission_amount || 0), 0) || null;
+    const hasPositivePayment = comm.some(c => (c.commission_amount || 0) > 0);
+    const inComm = hasPositivePayment;
     const actualPayEntity = comm[0]?.pay_entity || '';
 
     const npnInfo = NPN_MAP[agentNpn as keyof typeof NPN_MAP];
