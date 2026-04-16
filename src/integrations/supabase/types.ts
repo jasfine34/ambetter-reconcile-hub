@@ -219,6 +219,7 @@ export type Database = {
           estimated_missing_commission: number | null
           exchange_policy_id: string | null
           exchange_subscriber_id: string | null
+          expected_ede_effective_month: string | null
           expected_pay_entity: string | null
           id: string
           in_back_office: boolean
@@ -251,6 +252,7 @@ export type Database = {
           estimated_missing_commission?: number | null
           exchange_policy_id?: string | null
           exchange_subscriber_id?: string | null
+          expected_ede_effective_month?: string | null
           expected_pay_entity?: string | null
           id?: string
           in_back_office?: boolean
@@ -283,6 +285,7 @@ export type Database = {
           estimated_missing_commission?: number | null
           exchange_policy_id?: string | null
           exchange_subscriber_id?: string | null
+          expected_ede_effective_month?: string | null
           expected_pay_entity?: string | null
           id?: string
           in_back_office?: boolean

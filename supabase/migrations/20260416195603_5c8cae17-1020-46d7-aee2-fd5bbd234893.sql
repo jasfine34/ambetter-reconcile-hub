@@ -1,0 +1,1 @@
+ALTER TABLE public.reconciled_members ADD COLUMN IF NOT EXISTS expected_ede_effective_month TEXT;

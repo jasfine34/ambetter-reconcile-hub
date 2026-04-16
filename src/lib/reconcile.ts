@@ -1,6 +1,40 @@
 import { NPN_MAP, DEFAULT_COMMISSION_ESTIMATE } from './constants';
-import { cleanId, isQualifiedEDEStatus, normalizePolicyStatus } from './normalize';
+import { cleanId, normalizePolicyStatus } from './normalize';
 import type { NormalizedRecord } from './normalize';
+
+// Qualified EDE rows must match user's exact filter, applied to the RAW source
+// fields (raw_json) so we replicate the export they validated against.
+const QUALIFIED_RAW_STATUSES = new Set([
+  'effectuated',
+  'pendingeffectuation',
+  'pendingtermination',
+]);
+const EXPECTED_AOR_PREFIXES = ['jason fine', 'erica fine', 'becky shuta'];
+const EXPECTED_EFFECTIVE_DATES = new Set(['2026-01-01', '2026-02-01']);
+
+function rawStatusKey(r: NormalizedRecord): string {
+  const raw = (r.raw_json?.['policyStatus'] ?? r.status ?? '') as string;
+  return String(raw).toLowerCase().replace(/\s+/g, '');
+}
+
+function rawAorKey(r: NormalizedRecord): string {
+  const raw = (r.raw_json?.['currentPolicyAOR'] ?? '') as string;
+  return String(raw).toLowerCase().trim();
+}
+
+function rawIssuerKey(r: NormalizedRecord): string {
+  const raw = (r.raw_json?.['issuer'] ?? r.carrier ?? '') as string;
+  return String(raw).toLowerCase();
+}
+
+function isExpectedEDERow(r: NormalizedRecord): boolean {
+  if (r.source_type !== 'EDE') return false;
+  if (!r.effective_date || !EXPECTED_EFFECTIVE_DATES.has(r.effective_date)) return false;
+  if (!QUALIFIED_RAW_STATUSES.has(rawStatusKey(r))) return false;
+  if (!rawIssuerKey(r).includes('ambetter')) return false;
+  const aor = rawAorKey(r);
+  return EXPECTED_AOR_PREFIXES.some(p => aor.startsWith(p));
+}
 
 export interface ReconciledMember {
   member_key: string;
@@ -34,6 +68,7 @@ export interface ReconciledMember {
   has_mixed_sources: boolean;
   ede_qualified: boolean;
   is_in_expected_ede_universe: boolean;
+  expected_ede_effective_month: string; // '2026-01' | '2026-02' | ''
 }
 
 export interface MatchDebugStats {
@@ -189,7 +224,7 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
       }
       if (!r.effective_date) {
         debug.edeInvalidDateCount++;
-      } else if (isQualifiedEDEStatus(st) && (r.effective_date === '2026-01-01' || r.effective_date === '2026-02-01')) {
+      } else if (isExpectedEDERow(r)) {
         debug.edeAfterFilter++;
       }
     } else if (r.source_type === 'BACK_OFFICE') {
@@ -394,7 +429,7 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
   // Count EDE qualified unique keys
   const edeQualifiedKeys = new Set<string>();
   for (const [key, recs] of groups) {
-    const hasQualifiedEDE = recs.some(r => r.source_type === 'EDE' && isQualifiedEDEStatus(r.status || '') && (r.effective_date === '2026-01-01' || r.effective_date === '2026-02-01'));
+    const hasQualifiedEDE = recs.some(r => isExpectedEDERow(r));
     if (hasQualifiedEDE) edeQualifiedKeys.add(key);
   }
   debug.edeUniqueKeysAfterFilter = edeQualifiedKeys.size;
@@ -512,8 +547,13 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
       source_count: recs.length,
       commission_record_count: comm.length,
       has_mixed_sources: new Set(recs.map(r => r.source_type)).size > 1,
-      ede_qualified: ede.some(e => isQualifiedEDEStatus(e.status || '') && (e.effective_date === '2026-01-01' || e.effective_date === '2026-02-01')),
-      is_in_expected_ede_universe: ede.some(e => isQualifiedEDEStatus(e.status || '') && (e.effective_date === '2026-01-01' || e.effective_date === '2026-02-01')),
+      ede_qualified: ede.some(e => isExpectedEDERow(e)),
+      is_in_expected_ede_universe: ede.some(e => isExpectedEDERow(e)),
+      expected_ede_effective_month: (() => {
+        const qualified = ede.find(e => isExpectedEDERow(e));
+        if (!qualified || !qualified.effective_date) return '';
+        return qualified.effective_date.substring(0, 7); // 'YYYY-MM'
+      })(),
     });
   }
 

@@ -125,6 +125,8 @@ export default function DashboardPage() {
 
   const metrics = useMemo(() => {
     const expected = filtered.filter(r => r.is_in_expected_ede_universe).length;
+    const expectedJan = filtered.filter(r => r.is_in_expected_ede_universe && r.expected_ede_effective_month === '2026-01').length;
+    const expectedFeb = filtered.filter(r => r.is_in_expected_ede_universe && r.expected_ede_effective_month === '2026-02').length;
     const foundBO = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office).length;
     const eligible = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes').length;
     const shouldPay = eligible;
@@ -149,7 +151,7 @@ export default function DashboardPage() {
     const unpaidExpected = filtered.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission).length;
     const totalPaidAll = filtered.filter(r => r.in_commission).length;
     const paidOutsideExpected = filtered.filter(r => !r.in_ede && r.in_commission).length;
-    return { expected, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidOutsideEde, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, paidOutsideExpected };
+    return { expected, expectedJan, expectedFeb, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidOutsideEde, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, paidOutsideExpected };
   }, [filtered]);
 
   const unpaidSample = useMemo(() => {
@@ -275,6 +277,12 @@ export default function DashboardPage() {
               <span className="text-muted-foreground">Expected Enrollments (reconciled): <strong className="text-foreground">{metrics.expected}</strong></span>
               <span className="text-muted-foreground">All EDE unfiltered: <strong className="text-foreground">{metrics.totalEdeRaw}</strong></span>
               <span className="text-muted-foreground">Invalid date rows: <strong className="text-foreground">{debugStats.edeInvalidDateCount}</strong></span>
+            </div>
+            <div className="flex flex-wrap gap-6 text-sm border-t pt-2">
+              <span className="text-muted-foreground font-medium">Expected by month:</span>
+              <span className="text-muted-foreground">1/1/2026: <strong className="text-foreground">{metrics.expectedJan}</strong></span>
+              <span className="text-muted-foreground">2/1/2026: <strong className="text-foreground">{metrics.expectedFeb}</strong></span>
+              <span className="text-xs text-muted-foreground italic">(filter: issuer ~ Ambetter, status in Effectuated/PendingEffectuation/PendingTermination, currentPolicyAOR in Jason/Erica/Becky)</span>
             </div>
             <div className="flex flex-wrap gap-4 text-sm border-t pt-2">
               <span className="text-muted-foreground font-medium">Status breakdown:</span>
