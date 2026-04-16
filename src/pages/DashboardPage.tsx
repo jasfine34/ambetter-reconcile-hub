@@ -39,6 +39,19 @@ const UNPAID_SAMPLE_COLUMNS = [
   { key: 'source_count', label: 'Source Count' },
 ];
 
+const COVERAGE_DRILLDOWN_COLUMNS = [
+  { key: 'applicant_name', label: 'Name' },
+  { key: 'agent_npn', label: 'Agent NPN' },
+  { key: 'aor_bucket', label: 'AOR' },
+  { key: 'policy_number', label: 'Policy #' },
+  { key: 'issuer_subscriber_id', label: 'Issuer Sub ID' },
+  { key: 'in_ede', label: 'EDE' },
+  { key: 'in_back_office', label: 'Back Office' },
+  { key: 'in_commission', label: 'Commission' },
+  { key: 'eligible_for_commission', label: 'Eligible' },
+  { key: 'actual_commission', label: 'Commission $' },
+];
+
 export default function DashboardPage() {
   const { reconciled, loading, counts, debugStats, currentBatchId, refreshAll } = useBatch();
   const [drilldown, setDrilldown] = useState<string | null>(null);
@@ -77,7 +90,14 @@ export default function DashboardPage() {
     const hasAnyEde = reconciled.filter(r => r.in_ede).length;
     const hasExpectedEde = reconciled.filter(r => r.is_in_expected_ede_universe).length;
     const expectedWithBO = reconciled.filter(r => r.is_in_expected_ede_universe && r.in_back_office).length;
-    return { expected, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO };
+    const fullyMatched = reconciled.filter(r => r.in_ede && r.in_back_office && r.in_commission).length;
+    const paidOutsideEde = reconciled.filter(r => !r.in_ede && r.in_back_office && r.in_commission).length;
+    const commissionOnly = reconciled.filter(r => !r.in_ede && !r.in_back_office && r.in_commission).length;
+    const backOfficeOnly = reconciled.filter(r => !r.in_ede && r.in_back_office && !r.in_commission).length;
+    const unpaidExpected = reconciled.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission).length;
+    const totalPaidAll = reconciled.filter(r => r.in_commission).length;
+    const paidOutsideExpected = reconciled.filter(r => !r.in_ede && r.in_commission).length;
+    return { expected, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidOutsideEde, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, paidOutsideExpected };
   }, [reconciled]);
 
   const unpaidSample = useMemo(() => {
@@ -95,9 +115,18 @@ export default function DashboardPage() {
       case 'paidComm': return reconciled.filter(r => r.in_commission);
       case 'paidEligible': return reconciled.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes' && r.in_commission);
       case 'unpaid': return reconciled.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission);
+      case 'fullyMatched': return reconciled.filter(r => r.in_ede && r.in_back_office && r.in_commission);
+      case 'paidOutsideEde': return reconciled.filter(r => !r.in_ede && r.in_back_office && r.in_commission);
+      case 'commissionOnly': return reconciled.filter(r => !r.in_ede && !r.in_back_office && r.in_commission);
+      case 'backOfficeOnly': return reconciled.filter(r => !r.in_ede && r.in_back_office && !r.in_commission);
+      case 'unpaidExpected': return reconciled.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission);
+      case 'totalPaidAll': return reconciled.filter(r => r.in_commission);
+      case 'paidOutsideExpected': return reconciled.filter(r => !r.in_ede && r.in_commission);
       default: return reconciled;
     }
   }, [drilldown, reconciled]);
+
+  const isCoverageDrilldown = ['fullyMatched', 'paidOutsideEde', 'commissionOnly', 'backOfficeOnly', 'unpaidExpected', 'totalPaidAll', 'paidOutsideExpected'].includes(drilldown || '');
 
   return (
     <div className="space-y-6">
@@ -291,7 +320,22 @@ export default function DashboardPage() {
                 <h3 className="text-lg font-semibold capitalize">{drilldown} Details</h3>
                 <button onClick={() => setDrilldown(null)} className="text-sm text-primary hover:underline">Close</button>
               </div>
-              <DataTable data={drilldownData} columns={RECON_COLUMNS} exportFileName={`${drilldown}_details.csv`} />
+              <DataTable data={drilldownData} columns={isCoverageDrilldown ? COVERAGE_DRILLDOWN_COLUMNS : RECON_COLUMNS} exportFileName={`${drilldown}_details.csv`} />
+            </div>
+          )}
+
+          {!drilldownData && (
+            <div>
+              <h3 className="text-lg font-semibold mb-3">Source Coverage Analysis</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                <MetricCard title="Fully Matched & Paid" value={metrics.fullyMatched} icon={<CheckCircle2 className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('fullyMatched')} tooltip={{ text: "These members exist in all systems and were paid correctly.", why: "This represents clean, correctly tracked and paid business." }} />
+                <MetricCard title="Paid but Missing from EDE" value={metrics.paidOutsideEde} icon={<AlertTriangle className="h-4 w-4" />} variant="warning" onClick={() => setDrilldown('paidOutsideEde')} tooltip={{ text: "These members exist in Ambetter's system and were paid, but are not in your EDE data.", why: "This may represent state-based exchange enrollments or other production not captured in your system, meaning your true book may be larger than expected." }} />
+                <MetricCard title="Commission Statement Only" value={metrics.commissionOnly} icon={<FileText className="h-4 w-4" />} variant="warning" onClick={() => setDrilldown('commissionOnly')} tooltip={{ text: "These members appear only on commission statements and are not found in EDE or back office data.", why: "This may indicate mismatches, legacy payments, or data issues that need investigation." }} />
+                <MetricCard title="Back Office Only (Not Paid)" value={metrics.backOfficeOnly} icon={<Building2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('backOfficeOnly')} tooltip={{ text: "These members exist in the carrier system but are not in EDE and have not generated commission.", why: "This may represent missed enrollments, incomplete data feeds, or potential future revenue not yet realized." }} />
+                <MetricCard title="Unpaid Expected Policies" value={metrics.unpaidExpected} icon={<XCircle className="h-4 w-4" />} variant="destructive" onClick={() => setDrilldown('unpaidExpected')} tooltip={{ text: "These are members in EDE and back office, eligible for commission, but not paid.", why: "This is your primary recovery target — expected revenue that was not received." }} />
+                <MetricCard title="Total Paid (All Sources)" value={metrics.totalPaidAll} icon={<DollarSign className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('totalPaidAll')} tooltip={{ text: "Count of all unique members where commission was paid, regardless of source.", why: "This shows the full scope of what the carrier actually paid across all systems." }} />
+                <MetricCard title="Paid Outside Expected Universe" value={metrics.paidOutsideExpected} icon={<ShieldAlert className="h-4 w-4" />} variant="warning" onClick={() => setDrilldown('paidOutsideExpected')} tooltip={{ text: "These are paid policies that are not part of your expected EDE-based book.", why: "This highlights production that exists outside your current tracking system and may indicate missing data sources such as state-based exchanges." }} />
+              </div>
             </div>
           )}
 
