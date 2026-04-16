@@ -39,6 +39,19 @@ const UNPAID_SAMPLE_COLUMNS = [
   { key: 'source_count', label: 'Source Count' },
 ];
 
+const COVERAGE_DRILLDOWN_COLUMNS = [
+  { key: 'applicant_name', label: 'Name' },
+  { key: 'agent_npn', label: 'Agent NPN' },
+  { key: 'aor_bucket', label: 'AOR' },
+  { key: 'policy_number', label: 'Policy #' },
+  { key: 'issuer_subscriber_id', label: 'Issuer Sub ID' },
+  { key: 'in_ede', label: 'EDE' },
+  { key: 'in_back_office', label: 'Back Office' },
+  { key: 'in_commission', label: 'Commission' },
+  { key: 'eligible_for_commission', label: 'Eligible' },
+  { key: 'actual_commission', label: 'Commission $' },
+];
+
 export default function DashboardPage() {
   const { reconciled, loading, counts, debugStats, currentBatchId, refreshAll } = useBatch();
   const [drilldown, setDrilldown] = useState<string | null>(null);
