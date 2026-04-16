@@ -495,6 +495,8 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
       premium,
       net_premium: netPremium,
       actual_commission: actualComm,
+      positive_commission: positiveComm,
+      clawback_amount: clawbackAmt,
       estimated_missing_commission: estMissing,
       issue_type: issueType,
       issue_notes: issueNotes,
