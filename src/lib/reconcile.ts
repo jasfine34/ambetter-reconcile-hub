@@ -56,6 +56,14 @@ export interface MatchDebugStats {
   edeUniqueKeysAfterFilter: number;
   edeInvalidDateCount: number;
   edeEffDateSamples: string[];
+  // Commission aggregation debug
+  commRawRows: number;
+  commPositiveRows: number;
+  commNegativeRows: number;
+  commDistinctPolicyRaw: number;
+  commDistinctPolicyNormalized: number;
+  commTotalPositive: number;
+  commTotalNegative: number;
 }
 
 /**
