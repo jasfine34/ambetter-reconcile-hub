@@ -224,7 +224,7 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
       }
       if (!r.effective_date) {
         debug.edeInvalidDateCount++;
-      } else if (isQualifiedEDEStatus(st) && (r.effective_date === '2026-01-01' || r.effective_date === '2026-02-01')) {
+      } else if (isExpectedEDERow(r)) {
         debug.edeAfterFilter++;
       }
     } else if (r.source_type === 'BACK_OFFICE') {
@@ -429,7 +429,7 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
   // Count EDE qualified unique keys
   const edeQualifiedKeys = new Set<string>();
   for (const [key, recs] of groups) {
-    const hasQualifiedEDE = recs.some(r => r.source_type === 'EDE' && isQualifiedEDEStatus(r.status || '') && (r.effective_date === '2026-01-01' || r.effective_date === '2026-02-01'));
+    const hasQualifiedEDE = recs.some(r => isExpectedEDERow(r));
     if (hasQualifiedEDE) edeQualifiedKeys.add(key);
   }
   debug.edeUniqueKeysAfterFilter = edeQualifiedKeys.size;
@@ -547,8 +547,13 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
       source_count: recs.length,
       commission_record_count: comm.length,
       has_mixed_sources: new Set(recs.map(r => r.source_type)).size > 1,
-      ede_qualified: ede.some(e => isQualifiedEDEStatus(e.status || '') && (e.effective_date === '2026-01-01' || e.effective_date === '2026-02-01')),
-      is_in_expected_ede_universe: ede.some(e => isQualifiedEDEStatus(e.status || '') && (e.effective_date === '2026-01-01' || e.effective_date === '2026-02-01')),
+      ede_qualified: ede.some(e => isExpectedEDERow(e)),
+      is_in_expected_ede_universe: ede.some(e => isExpectedEDERow(e)),
+      expected_ede_effective_month: (() => {
+        const qualified = ede.find(e => isExpectedEDERow(e));
+        if (!qualified || !qualified.effective_date) return '';
+        return qualified.effective_date.substring(0, 7); // 'YYYY-MM'
+      })(),
     });
   }
 
