@@ -24,6 +24,8 @@ export interface ReconciledMember {
   premium: number | null;
   net_premium: number | null;
   actual_commission: number | null;
+  positive_commission: number | null;
+  clawback_amount: number | null;
   estimated_missing_commission: number | null;
   issue_type: string;
   issue_notes: string;
