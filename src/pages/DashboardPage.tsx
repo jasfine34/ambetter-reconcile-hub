@@ -95,16 +95,23 @@ export default function DashboardPage() {
     }
   }, [currentBatchId, refreshAll, toast]);
 
-  // Filter reconciled data by pay entity
+  // Filter reconciled data by pay entity.
+  // Include members whose EXPECTED entity is the selected one (so we can see unpaid expectations)
+  // AND members whose ACTUAL paid entity is the selected one (so totals match the carrier statement).
   const filtered = useMemo(() => {
     if (payEntityFilter === 'All') return reconciled;
     if (payEntityFilter === 'Coverall') {
-      return reconciled.filter(r => r.expected_pay_entity === 'Coverall');
+      return reconciled.filter(r =>
+        r.expected_pay_entity === 'Coverall' ||
+        r.expected_pay_entity === 'Coverall_or_Vix' ||
+        r.actual_pay_entity === 'Coverall'
+      );
     }
-    // Vix: expected_pay_entity = 'Vix' OR (Erica's NPN and actual = Vix)
+    // Vix
     return reconciled.filter(r =>
       r.expected_pay_entity === 'Vix' ||
-      (r.agent_npn === ERICA_NPN && r.actual_pay_entity === 'Vix')
+      r.expected_pay_entity === 'Coverall_or_Vix' ||
+      r.actual_pay_entity === 'Vix'
     );
   }, [reconciled, payEntityFilter]);
 
