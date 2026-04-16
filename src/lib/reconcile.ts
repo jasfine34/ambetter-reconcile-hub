@@ -191,9 +191,20 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
       if (r.issuer_subscriber_id?.startsWith('u')) debug.boStartingWithU++;
     } else if (r.source_type === 'COMMISSION') {
       debug.totalComm++;
+      debug.commRawRows++;
       if (r.issuer_subscriber_id?.startsWith('u')) debug.commStartingWithU++;
+      const amt = r.commission_amount || 0;
+      if (amt > 0) { debug.commPositiveRows++; debug.commTotalPositive += amt; }
+      else if (amt < 0) { debug.commNegativeRows++; debug.commTotalNegative += amt; }
     }
   }
+
+  // Commission policy stats
+  const commRecords = records.filter(r => r.source_type === 'COMMISSION');
+  const rawPolicies = new Set(commRecords.map(r => r.raw_json?.['Policy Number'] || r.policy_number || '').filter(Boolean));
+  const normPolicies = new Set(commRecords.map(r => r.policy_number).filter(Boolean));
+  debug.commDistinctPolicyRaw = rawPolicies.size;
+  debug.commDistinctPolicyNormalized = normPolicies.size;
 
   // Step 3: Multi-strategy matching using Union-Find
   const uf = new UnionFind(records.length);
