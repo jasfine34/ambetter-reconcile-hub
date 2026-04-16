@@ -1,4 +1,6 @@
 import { ReactNode } from 'react';
+import { Info } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface MetricCardProps {
   title: string;
@@ -7,6 +9,7 @@ interface MetricCardProps {
   variant?: 'default' | 'success' | 'warning' | 'destructive' | 'info';
   onClick?: () => void;
   subtitle?: string;
+  tooltip?: string;
 }
 
 const variantStyles = {
