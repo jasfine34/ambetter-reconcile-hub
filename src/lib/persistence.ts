@@ -132,6 +132,8 @@ export async function saveReconciledMembers(batchId: string, members: Reconciled
     premium: m.premium,
     net_premium: m.net_premium,
     actual_commission: m.actual_commission,
+    positive_commission: m.positive_commission,
+    clawback_amount: m.clawback_amount,
     estimated_missing_commission: m.estimated_missing_commission,
     issue_type: m.issue_type,
     issue_notes: m.issue_notes,
