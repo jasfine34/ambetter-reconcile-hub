@@ -1,10 +1,11 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import { useBatch } from '@/contexts/BatchContext';
 import { MetricCard } from '@/components/MetricCard';
 import { DataTable } from '@/components/DataTable';
 import { BatchSelector } from '@/components/BatchSelector';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Users, Building2, DollarSign, AlertTriangle, CheckCircle2, XCircle, FileText, TrendingDown, Database, Info, ShieldAlert, RefreshCw } from 'lucide-react';
 import { getNormalizedRecords, saveReconciledMembers } from '@/lib/persistence';
 import { reconcile } from '@/lib/reconcile';
@@ -20,7 +21,8 @@ const RECON_COLUMNS = [
   { key: 'in_back_office', label: 'Back Office' },
   { key: 'in_commission', label: 'Commission' },
   { key: 'eligible_for_commission', label: 'Eligible' },
-  { key: 'actual_pay_entity', label: 'Pay Entity' },
+  { key: 'expected_pay_entity', label: 'Expected Entity' },
+  { key: 'actual_pay_entity', label: 'Actual Entity' },
   { key: 'actual_commission', label: 'Commission $' },
   { key: 'issue_type', label: 'Issue' },
 ];
@@ -52,11 +54,30 @@ const COVERAGE_DRILLDOWN_COLUMNS = [
   { key: 'actual_commission', label: 'Commission $' },
 ];
 
+const PAY_ENTITY_STORAGE_KEY = 'dashboard_pay_entity_filter';
+
+const ERICA_NPN = '21277051';
+
+type PayEntityFilter = 'Coverall' | 'Vix' | 'All';
+
+function getStoredPayEntity(): PayEntityFilter {
+  try {
+    const stored = localStorage.getItem(PAY_ENTITY_STORAGE_KEY);
+    if (stored === 'Coverall' || stored === 'Vix' || stored === 'All') return stored;
+  } catch {}
+  return 'Coverall';
+}
+
 export default function DashboardPage() {
   const { reconciled, loading, counts, debugStats, currentBatchId, refreshAll } = useBatch();
   const [drilldown, setDrilldown] = useState<string | null>(null);
   const [rerunning, setRerunning] = useState(false);
+  const [payEntityFilter, setPayEntityFilter] = useState<PayEntityFilter>(getStoredPayEntity);
   const { toast } = useToast();
+
+  useEffect(() => {
+    localStorage.setItem(PAY_ENTITY_STORAGE_KEY, payEntityFilter);
+  }, [payEntityFilter]);
 
   const handleRerun = useCallback(async () => {
     if (!currentBatchId) return;
@@ -74,57 +95,78 @@ export default function DashboardPage() {
     }
   }, [currentBatchId, refreshAll, toast]);
 
+  // Filter reconciled data by pay entity
+  const filtered = useMemo(() => {
+    if (payEntityFilter === 'All') return reconciled;
+    if (payEntityFilter === 'Coverall') {
+      return reconciled.filter(r => r.expected_pay_entity === 'Coverall');
+    }
+    // Vix: expected_pay_entity = 'Vix' OR (Erica's NPN and actual = Vix)
+    return reconciled.filter(r =>
+      r.expected_pay_entity === 'Vix' ||
+      (r.agent_npn === ERICA_NPN && r.actual_pay_entity === 'Vix')
+    );
+  }, [reconciled, payEntityFilter]);
+
+  const dashboardTitle = useMemo(() => {
+    switch (payEntityFilter) {
+      case 'Coverall': return 'Coverall Commission Reconciliation';
+      case 'Vix': return 'Vix Health Commission Reconciliation';
+      case 'All': return 'Combined Commission Reconciliation';
+    }
+  }, [payEntityFilter]);
+
   const metrics = useMemo(() => {
-    const expected = reconciled.filter(r => r.is_in_expected_ede_universe).length;
-    const foundBO = reconciled.filter(r => r.is_in_expected_ede_universe && r.in_back_office).length;
-    const eligible = reconciled.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes').length;
+    const expected = filtered.filter(r => r.is_in_expected_ede_universe).length;
+    const foundBO = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office).length;
+    const eligible = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes').length;
     const shouldPay = eligible;
-    const paidCommRecords = reconciled.filter(r => r.in_commission).length;
-    const paidEligible = reconciled.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes' && r.in_commission).length;
+    const paidCommRecords = filtered.filter(r => r.in_commission).length;
+    const paidEligible = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes' && r.in_commission).length;
     const unpaid = shouldPay - paidEligible;
-    const totalComm = reconciled.filter(r => r.in_commission).reduce((s, r) => s + (r.actual_commission || 0), 0);
-    const estMissing = reconciled.reduce((s, r) => s + (r.estimated_missing_commission || 0), 0);
+    const totalComm = filtered.filter(r => r.in_commission).reduce((s, r) => s + (r.actual_commission || 0), 0);
+    const estMissing = filtered.reduce((s, r) => s + (r.estimated_missing_commission || 0), 0);
     const difference = shouldPay - paidEligible;
     const unpaidVariance = unpaid - difference;
-    const totalEdeRaw = reconciled.filter(r => r.in_ede).length;
-    const hasAnyEde = reconciled.filter(r => r.in_ede).length;
-    const hasExpectedEde = reconciled.filter(r => r.is_in_expected_ede_universe).length;
-    const expectedWithBO = reconciled.filter(r => r.is_in_expected_ede_universe && r.in_back_office).length;
-    const fullyMatched = reconciled.filter(r => r.in_ede && r.in_back_office && r.in_commission).length;
-    const paidOutsideEde = reconciled.filter(r => !r.in_ede && r.in_back_office && r.in_commission).length;
-    const commissionOnly = reconciled.filter(r => !r.in_ede && !r.in_back_office && r.in_commission).length;
-    const backOfficeOnly = reconciled.filter(r => !r.in_ede && r.in_back_office && !r.in_commission).length;
-    const unpaidExpected = reconciled.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission).length;
-    const totalPaidAll = reconciled.filter(r => r.in_commission).length;
-    const paidOutsideExpected = reconciled.filter(r => !r.in_ede && r.in_commission).length;
+    const totalEdeRaw = filtered.filter(r => r.in_ede).length;
+    const hasAnyEde = filtered.filter(r => r.in_ede).length;
+    const hasExpectedEde = filtered.filter(r => r.is_in_expected_ede_universe).length;
+    const expectedWithBO = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office).length;
+    const fullyMatched = filtered.filter(r => r.in_ede && r.in_back_office && r.in_commission).length;
+    const paidOutsideEde = filtered.filter(r => !r.in_ede && r.in_back_office && r.in_commission).length;
+    const commissionOnly = filtered.filter(r => !r.in_ede && !r.in_back_office && r.in_commission).length;
+    const backOfficeOnly = filtered.filter(r => !r.in_ede && r.in_back_office && !r.in_commission).length;
+    const unpaidExpected = filtered.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission).length;
+    const totalPaidAll = filtered.filter(r => r.in_commission).length;
+    const paidOutsideExpected = filtered.filter(r => !r.in_ede && r.in_commission).length;
     return { expected, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidOutsideEde, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, paidOutsideExpected };
-  }, [reconciled]);
+  }, [filtered]);
 
   const unpaidSample = useMemo(() => {
-    return reconciled
+    return filtered
       .filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission)
       .slice(0, 50);
-  }, [reconciled]);
+  }, [filtered]);
 
   const drilldownData = useMemo(() => {
     if (!drilldown) return null;
     switch (drilldown) {
-      case 'expected': return reconciled.filter(r => r.is_in_expected_ede_universe);
-      case 'foundBO': return reconciled.filter(r => r.is_in_expected_ede_universe && r.in_back_office);
-      case 'eligible': return reconciled.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes');
-      case 'paidComm': return reconciled.filter(r => r.in_commission);
-      case 'paidEligible': return reconciled.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes' && r.in_commission);
-      case 'unpaid': return reconciled.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission);
-      case 'fullyMatched': return reconciled.filter(r => r.in_ede && r.in_back_office && r.in_commission);
-      case 'paidOutsideEde': return reconciled.filter(r => !r.in_ede && r.in_back_office && r.in_commission);
-      case 'commissionOnly': return reconciled.filter(r => !r.in_ede && !r.in_back_office && r.in_commission);
-      case 'backOfficeOnly': return reconciled.filter(r => !r.in_ede && r.in_back_office && !r.in_commission);
-      case 'unpaidExpected': return reconciled.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission);
-      case 'totalPaidAll': return reconciled.filter(r => r.in_commission);
-      case 'paidOutsideExpected': return reconciled.filter(r => !r.in_ede && r.in_commission);
-      default: return reconciled;
+      case 'expected': return filtered.filter(r => r.is_in_expected_ede_universe);
+      case 'foundBO': return filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office);
+      case 'eligible': return filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes');
+      case 'paidComm': return filtered.filter(r => r.in_commission);
+      case 'paidEligible': return filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes' && r.in_commission);
+      case 'unpaid': return filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission);
+      case 'fullyMatched': return filtered.filter(r => r.in_ede && r.in_back_office && r.in_commission);
+      case 'paidOutsideEde': return filtered.filter(r => !r.in_ede && r.in_back_office && r.in_commission);
+      case 'commissionOnly': return filtered.filter(r => !r.in_ede && !r.in_back_office && r.in_commission);
+      case 'backOfficeOnly': return filtered.filter(r => !r.in_ede && r.in_back_office && !r.in_commission);
+      case 'unpaidExpected': return filtered.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission);
+      case 'totalPaidAll': return filtered.filter(r => r.in_commission);
+      case 'paidOutsideExpected': return filtered.filter(r => !r.in_ede && r.in_commission);
+      default: return filtered;
     }
-  }, [drilldown, reconciled]);
+  }, [drilldown, filtered]);
 
   const isCoverageDrilldown = ['fullyMatched', 'paidOutsideEde', 'commissionOnly', 'backOfficeOnly', 'unpaidExpected', 'totalPaidAll', 'paidOutsideExpected'].includes(drilldown || '');
 
@@ -133,9 +175,19 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-foreground">Reconciliation Dashboard</h2>
-          <p className="text-sm text-muted-foreground">Ambetter Commission Reconciliation</p>
+          <p className="text-sm text-muted-foreground">{dashboardTitle}</p>
         </div>
         <div className="flex items-center gap-2">
+          <Select value={payEntityFilter} onValueChange={(v) => setPayEntityFilter(v as PayEntityFilter)}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue placeholder="View" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Coverall">Coverall</SelectItem>
+              <SelectItem value="Vix">Vix Health</SelectItem>
+              <SelectItem value="All">All (Combined)</SelectItem>
+            </SelectContent>
+          </Select>
           <Button variant="outline" size="sm" onClick={handleRerun} disabled={rerunning || !currentBatchId}>
             <RefreshCw className={`h-4 w-4 mr-1 ${rerunning ? 'animate-spin' : ''}`} />
             {rerunning ? 'Running...' : 'Re-run Reconciliation'}
@@ -166,6 +218,7 @@ export default function DashboardPage() {
             <span className="text-muted-foreground">Uploaded Files: <strong className="text-foreground">{counts.uploadedFiles}</strong></span>
             <span className="text-muted-foreground">Normalized Records: <strong className="text-foreground">{counts.normalizedRecords}</strong></span>
             <span className="text-muted-foreground">Reconciled Members: <strong className="text-foreground">{counts.reconciledMembers}</strong></span>
+            <span className="text-muted-foreground">Filtered Members: <strong className="text-foreground">{filtered.length}</strong></span>
           </div>
           {debugStats && (
             <div className="flex flex-wrap gap-6 text-sm border-t pt-2 mt-2">
@@ -351,7 +404,7 @@ export default function DashboardPage() {
                   { issue: 'Not Eligible for Commission', tip: { text: "These members exist but are not marked as eligible for commission by the carrier.", why: "These policies will not generate revenue unless eligibility is corrected." } },
                   { issue: 'Paid but Missing from EDE', tip: { text: "These members were paid on commission statements but do not appear in our enrollment system.", why: "This may indicate external enrollments, data mismatches, or policies written outside your tracked workflow." } },
                 ] as const).map(({ issue, tip }) => {
-                  const count = reconciled.filter(r => r.issue_type === issue).length;
+                  const count = filtered.filter(r => r.issue_type === issue).length;
                   return count > 0 ? (
                     <MetricCard key={issue} title={issue} value={count} variant={issue.includes('Wrong') ? 'destructive' : 'warning'} tooltip={tip} />
                   ) : null;
