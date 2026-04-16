@@ -125,6 +125,8 @@ export default function DashboardPage() {
 
   const metrics = useMemo(() => {
     const expected = filtered.filter(r => r.is_in_expected_ede_universe).length;
+    const expectedJan = filtered.filter(r => r.is_in_expected_ede_universe && r.expected_ede_effective_month === '2026-01').length;
+    const expectedFeb = filtered.filter(r => r.is_in_expected_ede_universe && r.expected_ede_effective_month === '2026-02').length;
     const foundBO = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office).length;
     const eligible = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes').length;
     const shouldPay = eligible;
@@ -149,7 +151,7 @@ export default function DashboardPage() {
     const unpaidExpected = filtered.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission).length;
     const totalPaidAll = filtered.filter(r => r.in_commission).length;
     const paidOutsideExpected = filtered.filter(r => !r.in_ede && r.in_commission).length;
-    return { expected, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidOutsideEde, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, paidOutsideExpected };
+    return { expected, expectedJan, expectedFeb, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidOutsideEde, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, paidOutsideExpected };
   }, [filtered]);
 
   const unpaidSample = useMemo(() => {
