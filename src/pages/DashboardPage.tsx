@@ -320,7 +320,7 @@ export default function DashboardPage() {
                 <h3 className="text-lg font-semibold capitalize">{drilldown} Details</h3>
                 <button onClick={() => setDrilldown(null)} className="text-sm text-primary hover:underline">Close</button>
               </div>
-              <DataTable data={drilldownData} columns={RECON_COLUMNS} exportFileName={`${drilldown}_details.csv`} />
+              <DataTable data={drilldownData} columns={isCoverageDrilldown ? COVERAGE_DRILLDOWN_COLUMNS : RECON_COLUMNS} exportFileName={`${drilldown}_details.csv`} />
             </div>
           )}
 
