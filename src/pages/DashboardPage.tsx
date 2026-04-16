@@ -121,10 +121,13 @@ export default function DashboardPage() {
     const foundBO = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office).length;
     const eligible = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes').length;
     const shouldPay = eligible;
+    // Count distinct policies with positive payments
     const paidCommRecords = filtered.filter(r => r.in_commission).length;
     const paidEligible = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes' && r.in_commission).length;
     const unpaid = shouldPay - paidEligible;
-    const totalComm = filtered.filter(r => r.in_commission).reduce((s, r) => s + (r.actual_commission || 0), 0);
+    // Use positive_commission only for total
+    const totalComm = filtered.filter(r => r.in_commission).reduce((s, r) => s + (r.positive_commission || 0), 0);
+    const totalClawbacks = filtered.reduce((s, r) => s + (r.clawback_amount || 0), 0);
     const estMissing = filtered.reduce((s, r) => s + (r.estimated_missing_commission || 0), 0);
     const difference = shouldPay - paidEligible;
     const unpaidVariance = unpaid - difference;
@@ -139,7 +142,7 @@ export default function DashboardPage() {
     const unpaidExpected = filtered.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission).length;
     const totalPaidAll = filtered.filter(r => r.in_commission).length;
     const paidOutsideExpected = filtered.filter(r => !r.in_ede && r.in_commission).length;
-    return { expected, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidOutsideEde, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, paidOutsideExpected };
+    return { expected, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidOutsideEde, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, paidOutsideExpected };
   }, [filtered]);
 
   const unpaidSample = useMemo(() => {
