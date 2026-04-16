@@ -138,6 +138,7 @@ export async function saveReconciledMembers(batchId: string, members: Reconciled
     issue_type: m.issue_type,
     issue_notes: m.issue_notes,
     is_in_expected_ede_universe: m.is_in_expected_ede_universe ?? false,
+    expected_ede_effective_month: m.expected_ede_effective_month || null,
   }));
 
   for (let i = 0; i < rows.length; i += 500) {
