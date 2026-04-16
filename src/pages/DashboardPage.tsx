@@ -287,19 +287,44 @@ export default function DashboardPage() {
             )}
           </CardContent>
         </Card>
-          )}
-          {debugStats && (
-            <div className="flex flex-wrap gap-6 text-sm border-t pt-2 mt-2">
-              <span className="text-muted-foreground font-medium">Commission Aggregation:</span>
+      )}
+
+      {/* Commission Aggregation Debug */}
+      {debugStats && (
+        <Card className="border-dashed">
+          <CardHeader className="py-3 px-4">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <DollarSign className="h-4 w-4" /> Commission Aggregation Debug
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-3 pt-0 space-y-2">
+            <div className="flex flex-wrap gap-6 text-sm">
               <span className="text-muted-foreground">Raw Rows: <strong className="text-foreground">{debugStats.commRawRows}</strong></span>
-              <span className="text-muted-foreground">Positive: <strong className="text-foreground">{debugStats.commPositiveRows}</strong></span>
-              <span className="text-muted-foreground">Negative: <strong className="text-foreground">{debugStats.commNegativeRows}</strong></span>
+              <span className="text-muted-foreground">Positive Rows: <strong className="text-foreground">{debugStats.commPositiveRows}</strong></span>
+              <span className="text-muted-foreground">Negative Rows: <strong className="text-foreground">{debugStats.commNegativeRows}</strong></span>
               <span className="text-muted-foreground">Distinct Policy (raw): <strong className="text-foreground">{debugStats.commDistinctPolicyRaw}</strong></span>
               <span className="text-muted-foreground">Distinct Policy (normalized): <strong className="text-foreground">{debugStats.commDistinctPolicyNormalized}</strong></span>
+            </div>
+            <div className="flex flex-wrap gap-6 text-sm border-t pt-2">
               <span className="text-muted-foreground">Total Positive: <strong className="text-foreground">${debugStats.commTotalPositive.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></span>
               <span className="text-muted-foreground">Total Negative: <strong className="text-foreground">${debugStats.commTotalNegative.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></span>
             </div>
-          )}
+            {debugStats.commSampleRaw && debugStats.commSampleRaw.length > 0 && (
+              <div className="border-t pt-2">
+                <div className="text-sm text-muted-foreground font-medium mb-1">Sample (first 10 rows): raw → parsed</div>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs font-mono">
+                  {debugStats.commSampleRaw.map((raw, i) => (
+                    <div key={i} className="border rounded px-2 py-1 bg-muted/30">
+                      <div className="text-muted-foreground truncate" title={raw}>{raw}</div>
+                      <div className="text-foreground">→ {debugStats.commSampleParsed[i]?.toFixed(2)}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
       {loading ? (
         <div className="text-center py-20 text-muted-foreground">Loading...</div>
       ) : reconciled.length === 0 ? (

@@ -66,6 +66,8 @@ export interface MatchDebugStats {
   commDistinctPolicyNormalized: number;
   commTotalPositive: number;
   commTotalNegative: number;
+  commSampleRaw: string[];
+  commSampleParsed: number[];
 }
 
 /**
@@ -171,6 +173,8 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     commDistinctPolicyNormalized: 0,
     commTotalPositive: 0,
     commTotalNegative: 0,
+    commSampleRaw: [],
+    commSampleParsed: [],
   };
 
   for (const r of records) {
@@ -198,6 +202,11 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
       const amt = r.commission_amount || 0;
       if (amt > 0) { debug.commPositiveRows++; debug.commTotalPositive += amt; }
       else if (amt < 0) { debug.commNegativeRows++; debug.commTotalNegative += amt; }
+      if (debug.commSampleRaw.length < 10) {
+        const rawVal = r.raw_json?.['Gross Commission'];
+        debug.commSampleRaw.push(rawVal === undefined || rawVal === null ? '(empty)' : String(rawVal));
+        debug.commSampleParsed.push(amt);
+      }
     }
   }
 
