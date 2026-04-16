@@ -212,6 +212,7 @@ export type Database = {
           applicant_name: string | null
           batch_id: string
           carrier: string | null
+          clawback_amount: number | null
           created_at: string
           dob: string | null
           eligible_for_commission: string | null
@@ -231,6 +232,7 @@ export type Database = {
           member_key: string
           net_premium: number | null
           policy_number: string | null
+          positive_commission: number | null
           premium: number | null
         }
         Insert: {
@@ -242,6 +244,7 @@ export type Database = {
           applicant_name?: string | null
           batch_id: string
           carrier?: string | null
+          clawback_amount?: number | null
           created_at?: string
           dob?: string | null
           eligible_for_commission?: string | null
@@ -261,6 +264,7 @@ export type Database = {
           member_key: string
           net_premium?: number | null
           policy_number?: string | null
+          positive_commission?: number | null
           premium?: number | null
         }
         Update: {
@@ -272,6 +276,7 @@ export type Database = {
           applicant_name?: string | null
           batch_id?: string
           carrier?: string | null
+          clawback_amount?: number | null
           created_at?: string
           dob?: string | null
           eligible_for_commission?: string | null
@@ -291,6 +296,7 @@ export type Database = {
           member_key?: string
           net_premium?: number | null
           policy_number?: string | null
+          positive_commission?: number | null
           premium?: number | null
         }
         Relationships: [
