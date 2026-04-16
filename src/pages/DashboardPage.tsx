@@ -90,7 +90,14 @@ export default function DashboardPage() {
     const hasAnyEde = reconciled.filter(r => r.in_ede).length;
     const hasExpectedEde = reconciled.filter(r => r.is_in_expected_ede_universe).length;
     const expectedWithBO = reconciled.filter(r => r.is_in_expected_ede_universe && r.in_back_office).length;
-    return { expected, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO };
+    const fullyMatched = reconciled.filter(r => r.in_ede && r.in_back_office && r.in_commission).length;
+    const paidOutsideEde = reconciled.filter(r => !r.in_ede && r.in_back_office && r.in_commission).length;
+    const commissionOnly = reconciled.filter(r => !r.in_ede && !r.in_back_office && r.in_commission).length;
+    const backOfficeOnly = reconciled.filter(r => !r.in_ede && r.in_back_office && !r.in_commission).length;
+    const unpaidExpected = reconciled.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission).length;
+    const totalPaidAll = reconciled.filter(r => r.in_commission).length;
+    const paidOutsideExpected = reconciled.filter(r => !r.in_ede && r.in_commission).length;
+    return { expected, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidOutsideEde, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, paidOutsideExpected };
   }, [reconciled]);
 
   const unpaidSample = useMemo(() => {
@@ -108,9 +115,18 @@ export default function DashboardPage() {
       case 'paidComm': return reconciled.filter(r => r.in_commission);
       case 'paidEligible': return reconciled.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes' && r.in_commission);
       case 'unpaid': return reconciled.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission);
+      case 'fullyMatched': return reconciled.filter(r => r.in_ede && r.in_back_office && r.in_commission);
+      case 'paidOutsideEde': return reconciled.filter(r => !r.in_ede && r.in_back_office && r.in_commission);
+      case 'commissionOnly': return reconciled.filter(r => !r.in_ede && !r.in_back_office && r.in_commission);
+      case 'backOfficeOnly': return reconciled.filter(r => !r.in_ede && r.in_back_office && !r.in_commission);
+      case 'unpaidExpected': return reconciled.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission);
+      case 'totalPaidAll': return reconciled.filter(r => r.in_commission);
+      case 'paidOutsideExpected': return reconciled.filter(r => !r.in_ede && r.in_commission);
       default: return reconciled;
     }
   }, [drilldown, reconciled]);
+
+  const isCoverageDrilldown = ['fullyMatched', 'paidOutsideEde', 'commissionOnly', 'backOfficeOnly', 'unpaidExpected', 'totalPaidAll', 'paidOutsideExpected'].includes(drilldown || '');
 
   return (
     <div className="space-y-6">
