@@ -162,6 +162,13 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     edeUniqueKeysAfterFilter: 0,
     edeInvalidDateCount: 0,
     edeEffDateSamples: [],
+    commRawRows: 0,
+    commPositiveRows: 0,
+    commNegativeRows: 0,
+    commDistinctPolicyRaw: 0,
+    commDistinctPolicyNormalized: 0,
+    commTotalPositive: 0,
+    commTotalNegative: 0,
   };
 
   for (const r of records) {
