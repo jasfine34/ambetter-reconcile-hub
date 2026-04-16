@@ -213,21 +213,15 @@ export default function DashboardPage() {
       ) : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <MetricCard title="Expected Enrollments" value={metrics.expected} icon={<Users className="h-4 w-4" />} onClick={() => setDrilldown('expected')} />
-            <MetricCard title="Found in Back Office" value={metrics.foundBO} icon={<Building2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('foundBO')} />
-            <MetricCard title="Eligible for Commission" value={metrics.eligible} icon={<CheckCircle2 className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('eligible')} />
-            <MetricCard title="Should Be Paid" value={metrics.shouldPay} icon={<DollarSign className="h-4 w-4" />} />
-            <MetricCard title="Paid Commission Records" value={metrics.paidCommRecords} icon={<CheckCircle2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('paidComm')} />
-            <MetricCard title="Paid Within Eligible Cohort" value={metrics.paidEligible} icon={<CheckCircle2 className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('paidEligible')} />
-            <MetricCard title="Unpaid Policies" value={metrics.unpaid} icon={<XCircle className="h-4 w-4" />} variant="destructive" onClick={() => setDrilldown('unpaid')} />
-            <MetricCard title="Total Paid Commission" value={`$${metrics.totalComm.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} icon={<DollarSign className="h-4 w-4" />} variant="success" />
-            <MetricCard title="Est. Missing Commission" value={`$${metrics.estMissing.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} icon={<TrendingDown className="h-4 w-4" />} variant="warning" />
-          </div>
-
-          {/* Metric Help Text */}
-          <div className="flex flex-wrap gap-6 text-xs text-muted-foreground px-1">
-            <span><strong>Paid Commission Records</strong> = all commission-paid members found in statements</span>
-            <span><strong>Paid Within Eligible Cohort</strong> = members who were expected, eligible, and paid</span>
+            <MetricCard title="Expected Enrollments" value={metrics.expected} icon={<Users className="h-4 w-4" />} onClick={() => setDrilldown('expected')} tooltip="These are the Ambetter members we believe should exist based on our enrollment system (EDE), after filtering for active policies starting 1/1/2026." />
+            <MetricCard title="Found in Back Office" value={metrics.foundBO} icon={<Building2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('foundBO')} tooltip="Out of the expected members, these are the ones Ambetter recognizes in their system. If a member is missing here, it may indicate a data or enrollment issue." />
+            <MetricCard title="Eligible for Commission" value={metrics.eligible} icon={<CheckCircle2 className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('eligible')} tooltip="These are members that exist in Ambetter's system and are marked as eligible for commission. This is the group we should be getting paid on." />
+            <MetricCard title="Should Be Paid" value={metrics.shouldPay} icon={<DollarSign className="h-4 w-4" />} tooltip="This is the total number of members we expect to receive commission for. It includes only members who are active, recognized by Ambetter, and eligible for payment." />
+            <MetricCard title="Paid Commission Records" value={metrics.paidCommRecords} icon={<CheckCircle2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('paidComm')} tooltip="These are all members that appear on the commission statements as having been paid, regardless of whether they match our expected book of business." />
+            <MetricCard title="Paid Within Eligible Cohort" value={metrics.paidEligible} icon={<CheckCircle2 className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('paidEligible')} tooltip="These are members we expected to be paid on AND actually received commission for. This is the most important 'correct payment' number." />
+            <MetricCard title="Unpaid Policies" value={metrics.unpaid} icon={<XCircle className="h-4 w-4" />} variant="destructive" onClick={() => setDrilldown('unpaid')} tooltip="These are members we expected to be paid on but did not receive commission for. This represents potential missing revenue." />
+            <MetricCard title="Total Paid Commission" value={`$${metrics.totalComm.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} icon={<DollarSign className="h-4 w-4" />} variant="success" tooltip="The total dollar amount of commission actually received based on the commission statements." />
+            <MetricCard title="Est. Missing Commission" value={`$${metrics.estMissing.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} icon={<TrendingDown className="h-4 w-4" />} variant="warning" tooltip="This is an estimate of how much commission we may be missing based on unpaid policies. This is a projected number, not confirmed revenue." />
           </div>
 
           {/* Validation Panel */}
@@ -305,10 +299,16 @@ export default function DashboardPage() {
             <div>
               <h3 className="text-lg font-semibold mb-3">Exception Summary</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {['Missing from Back Office', 'Missing from Commission', 'Wrong Pay Entity', 'Not Eligible for Commission', 'Paid but Missing from EDE'].map(issue => {
+                {([
+                  { issue: 'Missing from Back Office', tip: "These members appear in our system but are not found in Ambetter's system. This may indicate enrollment or data sync issues." },
+                  { issue: 'Missing from Commission', tip: "These members should have generated commission but do not appear on the commission statements." },
+                  { issue: 'Wrong Pay Entity', tip: "These members were paid, but under the wrong entity (e.g., Vix instead of Coverall)." },
+                  { issue: 'Not Eligible for Commission', tip: "These members exist but are not marked as eligible for commission by Ambetter." },
+                  { issue: 'Paid but Missing from EDE', tip: "These members were paid on commission statements but do not appear in our enrollment system. This may indicate external enrollments or mismatches." },
+                ] as const).map(({ issue, tip }) => {
                   const count = reconciled.filter(r => r.issue_type === issue).length;
                   return count > 0 ? (
-                    <MetricCard key={issue} title={issue} value={count} variant={issue.includes('Wrong') ? 'destructive' : 'warning'} />
+                    <MetricCard key={issue} title={issue} value={count} variant={issue.includes('Wrong') ? 'destructive' : 'warning'} tooltip={tip} />
                   ) : null;
                 })}
               </div>
