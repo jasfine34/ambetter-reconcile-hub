@@ -173,6 +173,8 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     commDistinctPolicyNormalized: 0,
     commTotalPositive: 0,
     commTotalNegative: 0,
+    commSampleRaw: [],
+    commSampleParsed: [],
   };
 
   for (const r of records) {
