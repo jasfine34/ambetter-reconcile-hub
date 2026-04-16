@@ -66,6 +66,8 @@ export interface MatchDebugStats {
   commDistinctPolicyNormalized: number;
   commTotalPositive: number;
   commTotalNegative: number;
+  commSampleRaw: string[];
+  commSampleParsed: number[];
 }
 
 /**
