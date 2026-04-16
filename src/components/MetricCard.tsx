@@ -1,4 +1,6 @@
 import { ReactNode } from 'react';
+import { Info } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface MetricCardProps {
   title: string;
@@ -7,6 +9,7 @@ interface MetricCardProps {
   variant?: 'default' | 'success' | 'warning' | 'destructive' | 'info';
   onClick?: () => void;
   subtitle?: string;
+  tooltip?: string;
 }
 
 const variantStyles = {
@@ -25,16 +28,32 @@ const valueStyles = {
   info: 'text-info',
 };
 
-export function MetricCard({ title, value, icon, variant = 'default', onClick, subtitle }: MetricCardProps) {
+export function MetricCard({ title, value, icon, variant = 'default', onClick, subtitle, tooltip }: MetricCardProps) {
   return (
     <button
       onClick={onClick}
       disabled={!onClick}
-      className={`rounded-xl border p-5 text-left transition-all hover:shadow-md ${variantStyles[variant]} ${onClick ? 'cursor-pointer hover:scale-[1.02]' : 'cursor-default'}`}
+      className={`relative rounded-xl border p-5 text-left transition-all hover:shadow-md ${variantStyles[variant]} ${onClick ? 'cursor-pointer hover:scale-[1.02]' : 'cursor-default'}`}
     >
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{title}</span>
-        {icon && <span className="text-muted-foreground">{icon}</span>}
+        <div className="flex items-center gap-1.5">
+          {tooltip && (
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild onClick={(e) => e.stopPropagation()}>
+                  <span className="text-muted-foreground/60 hover:text-muted-foreground transition-colors">
+                    <Info className="h-3.5 w-3.5" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-[260px] text-xs leading-relaxed">
+                  {tooltip}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+          {icon && <span className="text-muted-foreground">{icon}</span>}
+        </div>
       </div>
       <div className={`text-3xl font-bold ${valueStyles[variant]}`}>
         {typeof value === 'number' ? value.toLocaleString() : value}
