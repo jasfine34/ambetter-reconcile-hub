@@ -189,7 +189,7 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
       }
       if (!r.effective_date) {
         debug.edeInvalidDateCount++;
-      } else if (isQualifiedEDEStatus(st) && r.effective_date === '2026-01-01') {
+      } else if (isQualifiedEDEStatus(st) && (r.effective_date === '2026-01-01' || r.effective_date === '2026-02-01')) {
         debug.edeAfterFilter++;
       }
     } else if (r.source_type === 'BACK_OFFICE') {
