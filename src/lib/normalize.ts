@@ -37,10 +37,29 @@ function normalizeEligible(val: string | undefined | null): string {
 }
 
 function parseNum(val: string | undefined | null): number | null {
-  if (!val) return null;
-  const v = val.replace(/[,$]/g, '').trim();
+  if (val === null || val === undefined) return null;
+  let v = String(val).trim();
+  if (!v) return null;
+  // handle parentheses for negatives e.g. "(1,234.56)"
+  if (v.startsWith('(') && v.endsWith(')')) {
+    v = '-' + v.slice(1, -1);
+  }
+  // remove dollar signs, commas, and whitespace
+  v = v.replace(/[$,\s]/g, '');
   const n = parseFloat(v);
   return isNaN(n) ? null : n;
+}
+
+export function parseMoney(value: unknown): number {
+  if (value === null || value === undefined) return 0;
+  let v = String(value).trim();
+  if (!v) return 0;
+  if (v.startsWith('(') && v.endsWith(')')) {
+    v = '-' + v.slice(1, -1);
+  }
+  v = v.replace(/[$,\s]/g, '');
+  const n = parseFloat(v);
+  return isNaN(n) ? 0 : n;
 }
 
 /**
