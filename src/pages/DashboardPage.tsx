@@ -121,10 +121,13 @@ export default function DashboardPage() {
     const foundBO = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office).length;
     const eligible = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes').length;
     const shouldPay = eligible;
+    // Count distinct policies with positive payments
     const paidCommRecords = filtered.filter(r => r.in_commission).length;
     const paidEligible = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes' && r.in_commission).length;
     const unpaid = shouldPay - paidEligible;
-    const totalComm = filtered.filter(r => r.in_commission).reduce((s, r) => s + (r.actual_commission || 0), 0);
+    // Use positive_commission only for total
+    const totalComm = filtered.filter(r => r.in_commission).reduce((s, r) => s + (r.positive_commission || 0), 0);
+    const totalClawbacks = filtered.reduce((s, r) => s + (r.clawback_amount || 0), 0);
     const estMissing = filtered.reduce((s, r) => s + (r.estimated_missing_commission || 0), 0);
     const difference = shouldPay - paidEligible;
     const unpaidVariance = unpaid - difference;
@@ -139,7 +142,7 @@ export default function DashboardPage() {
     const unpaidExpected = filtered.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission).length;
     const totalPaidAll = filtered.filter(r => r.in_commission).length;
     const paidOutsideExpected = filtered.filter(r => !r.in_ede && r.in_commission).length;
-    return { expected, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidOutsideEde, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, paidOutsideExpected };
+    return { expected, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidOutsideEde, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, paidOutsideExpected };
   }, [filtered]);
 
   const unpaidSample = useMemo(() => {
@@ -284,8 +287,19 @@ export default function DashboardPage() {
             )}
           </CardContent>
         </Card>
-      )}
-
+          )}
+          {debugStats && (
+            <div className="flex flex-wrap gap-6 text-sm border-t pt-2 mt-2">
+              <span className="text-muted-foreground font-medium">Commission Aggregation:</span>
+              <span className="text-muted-foreground">Raw Rows: <strong className="text-foreground">{debugStats.commRawRows}</strong></span>
+              <span className="text-muted-foreground">Positive: <strong className="text-foreground">{debugStats.commPositiveRows}</strong></span>
+              <span className="text-muted-foreground">Negative: <strong className="text-foreground">{debugStats.commNegativeRows}</strong></span>
+              <span className="text-muted-foreground">Distinct Policy (raw): <strong className="text-foreground">{debugStats.commDistinctPolicyRaw}</strong></span>
+              <span className="text-muted-foreground">Distinct Policy (normalized): <strong className="text-foreground">{debugStats.commDistinctPolicyNormalized}</strong></span>
+              <span className="text-muted-foreground">Total Positive: <strong className="text-foreground">${debugStats.commTotalPositive.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></span>
+              <span className="text-muted-foreground">Total Negative: <strong className="text-foreground">${debugStats.commTotalNegative.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></span>
+            </div>
+          )}
       {loading ? (
         <div className="text-center py-20 text-muted-foreground">Loading...</div>
       ) : reconciled.length === 0 ? (
@@ -303,7 +317,8 @@ export default function DashboardPage() {
             <MetricCard title="Paid Commission Records" value={metrics.paidCommRecords} icon={<CheckCircle2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('paidComm')} tooltip={{ text: "These are all members that appear on the commission statements as having been paid, regardless of whether they match our expected book.", why: "This shows what the carrier actually paid, including payments that may not belong to your tracked enrollments." }} />
             <MetricCard title="Paid Within Eligible Cohort" value={metrics.paidEligible} icon={<CheckCircle2 className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('paidEligible')} tooltip={{ text: "These are members we expected to be paid on AND actually received commission for.", why: "This is your true success rate — how much of your expected revenue you actually collected." }} />
             <MetricCard title="Unpaid Policies" value={metrics.unpaid} icon={<XCircle className="h-4 w-4" />} variant="destructive" onClick={() => setDrilldown('unpaid')} tooltip={{ text: "These are members we expected to be paid on but did not receive commission for.", why: "This is your potential revenue loss and the most important number for recovery and escalation." }} />
-            <MetricCard title="Total Paid Commission" value={`$${metrics.totalComm.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} icon={<DollarSign className="h-4 w-4" />} variant="success" tooltip={{ text: "The total dollar amount of commission actually received based on the statements.", why: "This shows your confirmed revenue and is what has already been realized." }} />
+            <MetricCard title="Total Paid Commission" value={`$${metrics.totalComm.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} icon={<DollarSign className="h-4 w-4" />} variant="success" tooltip={{ text: "The total dollar amount of positive commission received (excludes clawbacks/adjustments).", why: "This shows your confirmed gross revenue before any clawbacks are applied." }} />
+            <MetricCard title="Clawbacks / Adjustments" value={`$${metrics.totalClawbacks.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} icon={<TrendingDown className="h-4 w-4" />} variant="destructive" tooltip={{ text: "The total dollar amount of negative commission rows (clawbacks, reversals, adjustments).", why: "These reduce your net revenue. A high clawback amount may indicate policy cancellations or billing corrections." }} />
             <MetricCard title="Est. Missing Commission" value={`$${metrics.estMissing.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} icon={<TrendingDown className="h-4 w-4" />} variant="warning" tooltip={{ text: "This is an estimate of how much commission may be missing based on unpaid policies.", why: "This represents potential recoverable revenue and helps prioritize follow-up with carriers." }} />
           </div>
 

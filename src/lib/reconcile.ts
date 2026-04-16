@@ -24,6 +24,8 @@ export interface ReconciledMember {
   premium: number | null;
   net_premium: number | null;
   actual_commission: number | null;
+  positive_commission: number | null;
+  clawback_amount: number | null;
   estimated_missing_commission: number | null;
   issue_type: string;
   issue_notes: string;
@@ -56,6 +58,14 @@ export interface MatchDebugStats {
   edeUniqueKeysAfterFilter: number;
   edeInvalidDateCount: number;
   edeEffDateSamples: string[];
+  // Commission aggregation debug
+  commRawRows: number;
+  commPositiveRows: number;
+  commNegativeRows: number;
+  commDistinctPolicyRaw: number;
+  commDistinctPolicyNormalized: number;
+  commTotalPositive: number;
+  commTotalNegative: number;
 }
 
 /**
@@ -154,6 +164,13 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     edeUniqueKeysAfterFilter: 0,
     edeInvalidDateCount: 0,
     edeEffDateSamples: [],
+    commRawRows: 0,
+    commPositiveRows: 0,
+    commNegativeRows: 0,
+    commDistinctPolicyRaw: 0,
+    commDistinctPolicyNormalized: 0,
+    commTotalPositive: 0,
+    commTotalNegative: 0,
   };
 
   for (const r of records) {
@@ -176,9 +193,20 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
       if (r.issuer_subscriber_id?.startsWith('u')) debug.boStartingWithU++;
     } else if (r.source_type === 'COMMISSION') {
       debug.totalComm++;
+      debug.commRawRows++;
       if (r.issuer_subscriber_id?.startsWith('u')) debug.commStartingWithU++;
+      const amt = r.commission_amount || 0;
+      if (amt > 0) { debug.commPositiveRows++; debug.commTotalPositive += amt; }
+      else if (amt < 0) { debug.commNegativeRows++; debug.commTotalNegative += amt; }
     }
   }
+
+  // Commission policy stats
+  const commRecords = records.filter(r => r.source_type === 'COMMISSION');
+  const rawPolicies = new Set(commRecords.map(r => r.raw_json?.['Policy Number'] || r.policy_number || '').filter(Boolean));
+  const normPolicies = new Set(commRecords.map(r => r.policy_number).filter(Boolean));
+  debug.commDistinctPolicyRaw = rawPolicies.size;
+  debug.commDistinctPolicyNormalized = normPolicies.size;
 
   // Step 3: Multi-strategy matching using Union-Find
   const uf = new UnionFind(records.length);
@@ -386,7 +414,6 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
 
     const inEde = ede.length > 0;
     const inBo = bo.length > 0;
-    const inComm = comm.length > 0;
 
     const applicantName = ede[0]?.applicant_name || bo[0]?.applicant_name || comm[0]?.applicant_name || '';
     const dob = ede[0]?.dob || bo[0]?.dob || null;
@@ -401,7 +428,11 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     const eligible = bo[0]?.eligible_for_commission || '';
     const premium = bo[0]?.premium || ede[0]?.premium || null;
     const netPremium = ede[0]?.net_premium || null;
+    const positiveComm = comm.reduce((sum, c) => sum + Math.max(c.commission_amount || 0, 0), 0) || null;
+    const clawbackAmt = comm.reduce((sum, c) => { const a = c.commission_amount || 0; return a < 0 ? sum + a : sum; }, 0) || null;
     const actualComm = comm.reduce((sum, c) => sum + (c.commission_amount || 0), 0) || null;
+    const hasPositivePayment = comm.some(c => (c.commission_amount || 0) > 0);
+    const inComm = hasPositivePayment;
     const actualPayEntity = comm[0]?.pay_entity || '';
 
     const npnInfo = NPN_MAP[agentNpn as keyof typeof NPN_MAP];
@@ -464,6 +495,8 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
       premium,
       net_premium: netPremium,
       actual_commission: actualComm,
+      positive_commission: positiveComm,
+      clawback_amount: clawbackAmt,
       estimated_missing_commission: estMissing,
       issue_type: issueType,
       issue_notes: issueNotes,
