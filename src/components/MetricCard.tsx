@@ -9,7 +9,7 @@ interface MetricCardProps {
   variant?: 'default' | 'success' | 'warning' | 'destructive' | 'info';
   onClick?: () => void;
   subtitle?: string;
-  tooltip?: string;
+  tooltip?: string | { text: string; why: string };
 }
 
 const variantStyles = {
@@ -29,6 +29,15 @@ const valueStyles = {
 };
 
 export function MetricCard({ title, value, icon, variant = 'default', onClick, subtitle, tooltip }: MetricCardProps) {
+  const tooltipContent = tooltip ? (
+    typeof tooltip === 'string' ? tooltip : (
+      <div className="space-y-1.5">
+        <p>{tooltip.text}</p>
+        <p className="text-primary/80 font-medium">Why this matters: {tooltip.why}</p>
+      </div>
+    )
+  ) : null;
+
   return (
     <button
       onClick={onClick}
@@ -46,8 +55,8 @@ export function MetricCard({ title, value, icon, variant = 'default', onClick, s
                     <Info className="h-3.5 w-3.5" />
                   </span>
                 </TooltipTrigger>
-                <TooltipContent side="top" className="max-w-[260px] text-xs leading-relaxed">
-                  {tooltip}
+                <TooltipContent side="top" className="max-w-[300px] text-xs leading-relaxed">
+                  {tooltipContent}
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
