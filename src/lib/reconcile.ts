@@ -47,6 +47,7 @@ export interface MatchDebugStats {
   matchByIssuerSubId: number;
   matchByExchangeSubId: number;
   matchByPolicyNumber: number;
+  matchByName: number;
   matchByFallback: number;
   edeStatusBreakdown: Record<string, number>;
   edeQualifiedCount: number;
@@ -58,21 +59,47 @@ export interface MatchDebugStats {
 }
 
 /**
+ * Strip everything after first "-" in a policy/ID, then clean.
+ * E.g. "U12345-01" → "u12345", "U12345-AR" → "u12345"
+ */
+function cleanPolicyBase(val: string | undefined | null): string {
+  if (!val) return '';
+  let v = val.replace(/^'+/, '').trim();
+  // Take only the part before first dash
+  const dashIdx = v.indexOf('-');
+  if (dashIdx > 0) v = v.substring(0, dashIdx);
+  v = v.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
+  return v;
+}
+
+/**
+ * Normalize a full name for matching: lowercase, remove all non-alpha chars.
+ */
+function normalizeName(first: string | undefined | null, last: string | undefined | null): string {
+  const f = (first || '').trim().toLowerCase().replace(/[^a-z]/g, '');
+  const l = (last || '').trim().toLowerCase().replace(/[^a-z]/g, '');
+  if (!f && !l) return '';
+  return `${f}${l}`;
+}
+
+function normalizeFullName(applicantName: string | undefined | null): string {
+  if (!applicantName) return '';
+  return applicantName.trim().toLowerCase().replace(/[^a-z]/g, '');
+}
+
+/**
  * Re-clean IDs on DB records (which may have been stored with older normalization).
  */
 function reclean(r: NormalizedRecord): void {
-  r.issuer_subscriber_id = cleanId(r.issuer_subscriber_id);
+  r.issuer_subscriber_id = cleanPolicyBase(r.issuer_subscriber_id);
   r.exchange_subscriber_id = cleanId(r.exchange_subscriber_id);
   r.exchange_policy_id = cleanId(r.exchange_policy_id);
   r.issuer_policy_id = cleanId(r.issuer_policy_id);
-  r.policy_number = cleanId(r.policy_number);
-  // Normalize status and effective_date for EDE filtering
+  r.policy_number = cleanPolicyBase(r.policy_number);
   if (r.source_type === 'EDE') {
     r.status = normalizePolicyStatus(r.status);
-    // Normalize effective_date to YYYY-MM-DD
     if (r.effective_date) {
       const raw = String(r.effective_date).trim();
-      // Try parsing various formats
       const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/);
       if (isoMatch) {
         r.effective_date = `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
@@ -90,23 +117,27 @@ function reclean(r: NormalizedRecord): void {
 }
 
 /**
- * Build a canonical member_key from cleaned fields.
+ * Union-Find for merging records into groups via multiple matching strategies.
  */
-function buildMemberKey(r: NormalizedRecord): string {
-  if (r.issuer_subscriber_id) return `issub:${r.issuer_subscriber_id}`;
-  if (r.exchange_subscriber_id) return `sub:${r.exchange_subscriber_id}`;
-  if (r.policy_number) return `policy:${r.policy_number}`;
-  if (r.exchange_policy_id) return `xpol:${r.exchange_policy_id}`;
-  if (r.applicant_name && r.dob) return `name:${r.applicant_name.toUpperCase()}|${r.dob}`;
-  if (r.applicant_name) return `name:${r.applicant_name.toUpperCase()}`;
-  return `unk:${Math.random().toString(36).slice(2, 10)}`;
+class UnionFind {
+  private parent: number[];
+  constructor(n: number) {
+    this.parent = Array.from({ length: n }, (_, i) => i);
+  }
+  find(x: number): number {
+    if (this.parent[x] !== x) this.parent[x] = this.find(this.parent[x]);
+    return this.parent[x];
+  }
+  union(a: number, b: number): void {
+    const ra = this.find(a), rb = this.find(b);
+    if (ra !== rb) this.parent[ra] = rb;
+  }
 }
 
 export function reconcile(records: NormalizedRecord[]): { members: ReconciledMember[]; debug: MatchDebugStats } {
-  // Step 1: Re-clean all IDs and rebuild member_keys
+  // Step 1: Re-clean all IDs
   for (const r of records) {
     reclean(r);
-    r.member_key = buildMemberKey(r);
   }
 
   // Step 2: Count raw stats
@@ -115,7 +146,7 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     totalRawRecords: records.length,
     uniqueMemberKeys: 0, avgRecordsPerKey: 0,
     edeWithIssuerSubId: 0, boStartingWithU: 0, commStartingWithU: 0,
-    matchByIssuerSubId: 0, matchByExchangeSubId: 0, matchByPolicyNumber: 0, matchByFallback: 0,
+    matchByIssuerSubId: 0, matchByExchangeSubId: 0, matchByPolicyNumber: 0, matchByName: 0, matchByFallback: 0,
     edeStatusBreakdown: {},
     edeQualifiedCount: 0,
     edeRawTotal: 0,
@@ -132,7 +163,6 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
       const st = r.status || '';
       debug.edeStatusBreakdown[st || '(empty)'] = (debug.edeStatusBreakdown[st || '(empty)'] || 0) + 1;
       if (r.issuer_subscriber_id) debug.edeWithIssuerSubId++;
-      // Collect effective_date samples
       if (debug.edeEffDateSamples.length < 5 && r.effective_date) {
         debug.edeEffDateSamples.push(r.effective_date);
       }
@@ -150,60 +180,178 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     }
   }
 
-  // Step 3: Unify member_keys by issuer_subscriber_id
-  const isidMap = new Map<string, string>();
-  for (const r of records) {
-    if (!r.issuer_subscriber_id) continue;
-    const existing = isidMap.get(r.issuer_subscriber_id);
-    if (!existing) {
-      isidMap.set(r.issuer_subscriber_id, r.member_key);
-    } else if (existing !== r.member_key) {
-      const better = r.member_key.startsWith('issub:') ? r.member_key : existing;
-      isidMap.set(r.issuer_subscriber_id, better);
-    }
-  }
-  for (const r of records) {
-    if (r.issuer_subscriber_id && isidMap.has(r.issuer_subscriber_id)) {
-      r.member_key = isidMap.get(r.issuer_subscriber_id)!;
+  // Step 3: Multi-strategy matching using Union-Find
+  const uf = new UnionFind(records.length);
+
+  // Strategy A: issuer_subscriber_id match
+  const isidIndex = new Map<string, number>();
+  for (let i = 0; i < records.length; i++) {
+    const id = records[i].issuer_subscriber_id;
+    if (!id) continue;
+    const existing = isidIndex.get(id);
+    if (existing !== undefined) {
+      uf.union(i, existing);
+    } else {
+      isidIndex.set(id, i);
     }
   }
 
-  // Step 4: Unify member_keys by exchange_subscriber_id
-  const esidMap = new Map<string, string>();
-  for (const r of records) {
-    if (!r.exchange_subscriber_id) continue;
-    const existing = esidMap.get(r.exchange_subscriber_id);
-    if (!existing) {
-      esidMap.set(r.exchange_subscriber_id, r.member_key);
-    } else if (existing !== r.member_key) {
-      const better = r.member_key.startsWith('issub:') ? r.member_key :
-                     r.member_key.startsWith('sub:') ? r.member_key : existing;
-      esidMap.set(r.exchange_subscriber_id, better);
-    }
-  }
-  for (const r of records) {
-    if (r.exchange_subscriber_id && esidMap.has(r.exchange_subscriber_id)) {
-      r.member_key = esidMap.get(r.exchange_subscriber_id)!;
+  // Strategy B: exchange_subscriber_id match
+  const esidIndex = new Map<string, number>();
+  for (let i = 0; i < records.length; i++) {
+    const id = records[i].exchange_subscriber_id;
+    if (!id) continue;
+    const existing = esidIndex.get(id);
+    if (existing !== undefined) {
+      uf.union(i, existing);
+    } else {
+      esidIndex.set(id, i);
     }
   }
 
-  // Step 5: Group by member_key
+  // Strategy C: policy_number match (base before dash)
+  const pnIndex = new Map<string, number>();
+  for (let i = 0; i < records.length; i++) {
+    const pn = records[i].policy_number;
+    if (!pn) continue;
+    const existing = pnIndex.get(pn);
+    if (existing !== undefined) {
+      uf.union(i, existing);
+    } else {
+      pnIndex.set(pn, i);
+    }
+  }
+
+  // Strategy D: Name match (fallback) — only match across different source types
+  const nameIndex = new Map<string, number[]>();
+  for (let i = 0; i < records.length; i++) {
+    const r = records[i];
+    let nm = '';
+    if (r.first_name || r.last_name) {
+      nm = normalizeName(r.first_name, r.last_name);
+    }
+    if (!nm) {
+      nm = normalizeFullName(r.applicant_name);
+    }
+    if (!nm || nm.length < 4) continue; // skip very short names
+    const arr = nameIndex.get(nm) || [];
+    arr.push(i);
+    nameIndex.set(nm, arr);
+  }
+  for (const [, indices] of nameIndex) {
+    if (indices.length < 2) continue;
+    // Only union if there are different source types in the group
+    const types = new Set(indices.map(i => records[i].source_type));
+    if (types.size > 1) {
+      for (let j = 1; j < indices.length; j++) {
+        uf.union(indices[0], indices[j]);
+      }
+    }
+  }
+
+  // Step 4: Build groups from union-find
+  const groupMap = new Map<number, number[]>();
+  for (let i = 0; i < records.length; i++) {
+    const root = uf.find(i);
+    const arr = groupMap.get(root) || [];
+    arr.push(i);
+    groupMap.set(root, arr);
+  }
+
+  // Build groups as record arrays and assign member_keys
   const groups = new Map<string, NormalizedRecord[]>();
-  for (const r of records) {
-    const arr = groups.get(r.member_key) || [];
-    arr.push(r);
-    groups.set(r.member_key, arr);
+  let groupIdx = 0;
+  for (const [, indices] of groupMap) {
+    const recs = indices.map(i => records[i]);
+    // Determine best member_key for the group
+    let key = '';
+    // Prefer issuer_subscriber_id
+    for (const r of recs) {
+      if (r.issuer_subscriber_id) { key = `issub:${r.issuer_subscriber_id}`; break; }
+    }
+    if (!key) {
+      for (const r of recs) {
+        if (r.exchange_subscriber_id) { key = `sub:${r.exchange_subscriber_id}`; break; }
+      }
+    }
+    if (!key) {
+      for (const r of recs) {
+        if (r.policy_number) { key = `policy:${r.policy_number}`; break; }
+      }
+    }
+    if (!key) {
+      for (const r of recs) {
+        if (r.applicant_name) { key = `name:${normalizeFullName(r.applicant_name)}`; break; }
+      }
+    }
+    if (!key) key = `grp:${groupIdx}`;
+    groupIdx++;
+
+    // Assign member_key to all records in group
+    for (const r of recs) r.member_key = key;
+
+    // Merge with existing group if key collision (shouldn't happen but safety)
+    const existing = groups.get(key);
+    if (existing) {
+      existing.push(...recs);
+    } else {
+      groups.set(key, recs);
+    }
   }
 
   debug.uniqueMemberKeys = groups.size;
   debug.avgRecordsPerKey = records.length > 0 ? Math.round((records.length / groups.size) * 100) / 100 : 0;
 
-  // Count match methods
-  for (const [key] of groups) {
-    if (key.startsWith('issub:')) debug.matchByIssuerSubId++;
-    else if (key.startsWith('sub:')) debug.matchByExchangeSubId++;
-    else if (key.startsWith('policy:') || key.startsWith('xpol:')) debug.matchByPolicyNumber++;
-    else debug.matchByFallback++;
+  // Count match methods based on what IDs contributed to the group
+  for (const [, recs] of groups) {
+    const types = new Set(recs.map(r => r.source_type));
+    if (types.size <= 1) { debug.matchByFallback++; continue; }
+    // Determine which strategy linked them
+    const isids = new Set(recs.map(r => r.issuer_subscriber_id).filter(Boolean));
+    const esids = new Set(recs.map(r => r.exchange_subscriber_id).filter(Boolean));
+    const pns = new Set(recs.map(r => r.policy_number).filter(Boolean));
+    // Check if cross-type records share an issuer_subscriber_id
+    const typesByIsid = new Map<string, Set<string>>();
+    for (const r of recs) {
+      if (r.issuer_subscriber_id) {
+        const s = typesByIsid.get(r.issuer_subscriber_id) || new Set();
+        s.add(r.source_type);
+        typesByIsid.set(r.issuer_subscriber_id, s);
+      }
+    }
+    let matched = false;
+    for (const [, st] of typesByIsid) {
+      if (st.size > 1) { debug.matchByIssuerSubId++; matched = true; break; }
+    }
+    if (matched) continue;
+    // Check exchange_subscriber_id
+    const typesByEsid = new Map<string, Set<string>>();
+    for (const r of recs) {
+      if (r.exchange_subscriber_id) {
+        const s = typesByEsid.get(r.exchange_subscriber_id) || new Set();
+        s.add(r.source_type);
+        typesByEsid.set(r.exchange_subscriber_id, s);
+      }
+    }
+    for (const [, st] of typesByEsid) {
+      if (st.size > 1) { debug.matchByExchangeSubId++; matched = true; break; }
+    }
+    if (matched) continue;
+    // Check policy_number
+    const typesByPn = new Map<string, Set<string>>();
+    for (const r of recs) {
+      if (r.policy_number) {
+        const s = typesByPn.get(r.policy_number) || new Set();
+        s.add(r.source_type);
+        typesByPn.set(r.policy_number, s);
+      }
+    }
+    for (const [, st] of typesByPn) {
+      if (st.size > 1) { debug.matchByPolicyNumber++; matched = true; break; }
+    }
+    if (matched) continue;
+    // Must be name match
+    debug.matchByName++;
   }
 
   // Count EDE qualified unique keys
@@ -215,7 +363,7 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
   debug.edeUniqueKeysAfterFilter = edeQualifiedKeys.size;
   debug.edeQualifiedCount = edeQualifiedKeys.size;
 
-  // Step 6: Calculate avg commission by agent for estimates
+  // Step 5: Calculate avg commission by agent for estimates
   const commByAgent = new Map<string, number[]>();
   const allComm: number[] = [];
   for (const r of records) {
@@ -228,7 +376,7 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
   }
   const avgAll = allComm.length > 0 ? allComm.reduce((a, b) => a + b, 0) / allComm.length : DEFAULT_COMMISSION_ESTIMATE;
 
-  // Step 7: Consolidate each group into exactly ONE reconciled member
+  // Step 6: Consolidate each group into ONE reconciled member
   const results: ReconciledMember[] = [];
 
   for (const [memberKey, recs] of groups) {
@@ -240,7 +388,6 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     const inBo = bo.length > 0;
     const inComm = comm.length > 0;
 
-    // Merge attributes: prefer EDE > BO > COMM for identity fields
     const applicantName = ede[0]?.applicant_name || bo[0]?.applicant_name || comm[0]?.applicant_name || '';
     const dob = ede[0]?.dob || bo[0]?.dob || null;
     const policyNumber = bo[0]?.policy_number || comm[0]?.policy_number || ede[0]?.policy_number || '';
@@ -251,17 +398,10 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     const agentName = ede[0]?.agent_name || bo[0]?.agent_name || comm[0]?.agent_name || '';
     const agentNpn = ede[0]?.agent_npn || bo[0]?.agent_npn || comm[0]?.agent_npn || '';
     const aorBucket = bo[0]?.aor_bucket || ede[0]?.aor_bucket || comm[0]?.aor_bucket || '';
-    
-    // eligible_for_commission: take from BACK_OFFICE record
     const eligible = bo[0]?.eligible_for_commission || '';
-    
     const premium = bo[0]?.premium || ede[0]?.premium || null;
     const netPremium = ede[0]?.net_premium || null;
-    
-    // actual_commission: SUM of all commission records for this member
     const actualComm = comm.reduce((sum, c) => sum + (c.commission_amount || 0), 0) || null;
-    
-    // actual_pay_entity: from commission records
     const actualPayEntity = comm[0]?.pay_entity || '';
 
     const npnInfo = NPN_MAP[agentNpn as keyof typeof NPN_MAP];
@@ -269,7 +409,6 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
 
     const shouldBePaid = inEde && inBo && eligible === 'Yes';
 
-    // Classify issue
     let issueType = 'Fully Matched';
     let issueNotes = '';
 
@@ -292,7 +431,6 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
       issueType = 'Erica Paid Under Vix';
     }
 
-    // Estimate missing commission
     let estMissing: number | null = null;
     if (shouldBePaid && !inComm) {
       const agentComms = commByAgent.get(agentNpn);

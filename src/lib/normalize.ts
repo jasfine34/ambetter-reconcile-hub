@@ -53,12 +53,11 @@ export function cleanId(val: string | undefined | null): string {
   let v = val;
   // strip leading apostrophes
   v = v.replace(/^'+/, '');
-  // strip trailing -AR (case insensitive)
-  v = v.replace(/-AR$/i, '');
-  // strip trailing -X (case insensitive)
-  v = v.replace(/-X$/i, '');
   // trim whitespace
   v = v.trim();
+  // take only the part before the first dash (e.g. U12345-01 → U12345)
+  const dashIdx = v.indexOf('-');
+  if (dashIdx > 0) v = v.substring(0, dashIdx);
   // lowercase
   v = v.toLowerCase();
   // remove all spaces
