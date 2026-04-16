@@ -414,7 +414,6 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
 
     const inEde = ede.length > 0;
     const inBo = bo.length > 0;
-    const inComm = comm.length > 0;
 
     const applicantName = ede[0]?.applicant_name || bo[0]?.applicant_name || comm[0]?.applicant_name || '';
     const dob = ede[0]?.dob || bo[0]?.dob || null;
