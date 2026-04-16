@@ -244,7 +244,7 @@ export function normalizeCommissionRow(row: Record<string, string>, fileLabel: s
     effective_date: normalizeDate(row['Issue Date']),
     premium: parseNum(row['Commissionable']),
     net_premium: null,
-    commission_amount: parseNum(row['Gross Commission']),
+    commission_amount: parseMoney(row['Gross Commission']),
     eligible_for_commission: '',
     member_key: '',
     raw_json: row,
