@@ -278,6 +278,12 @@ export default function DashboardPage() {
               <span className="text-muted-foreground">All EDE unfiltered: <strong className="text-foreground">{metrics.totalEdeRaw}</strong></span>
               <span className="text-muted-foreground">Invalid date rows: <strong className="text-foreground">{debugStats.edeInvalidDateCount}</strong></span>
             </div>
+            <div className="flex flex-wrap gap-6 text-sm border-t pt-2">
+              <span className="text-muted-foreground font-medium">Expected by month:</span>
+              <span className="text-muted-foreground">1/1/2026: <strong className="text-foreground">{metrics.expectedJan}</strong></span>
+              <span className="text-muted-foreground">2/1/2026: <strong className="text-foreground">{metrics.expectedFeb}</strong></span>
+              <span className="text-xs text-muted-foreground italic">(filter: issuer ~ Ambetter, status in Effectuated/PendingEffectuation/PendingTermination, currentPolicyAOR in Jason/Erica/Becky)</span>
+            </div>
             <div className="flex flex-wrap gap-4 text-sm border-t pt-2">
               <span className="text-muted-foreground font-medium">Status breakdown:</span>
               {Object.entries(debugStats.edeStatusBreakdown).sort((a, b) => b[1] - a[1]).map(([status, count]) => (
