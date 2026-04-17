@@ -94,6 +94,62 @@ export default function DashboardPage() {
     localStorage.setItem(PAY_ENTITY_STORAGE_KEY, payEntityFilter);
   }, [payEntityFilter]);
 
+  const loadEdeRawDrilldown = useCallback(async (month: '2026-01' | '2026-02') => {
+    if (!currentBatchId) return;
+    setEdeRawDrilldown(month);
+    setEdeRawLoading(true);
+    try {
+      const all = await getNormalizedRecords(currentBatchId);
+      const targetDate = month === '2026-01' ? '2026-01-01' : '2026-02-01';
+      const QUALIFIED = new Set(['effectuated', 'pendingeffectuation', 'pendingtermination']);
+      const AOR_PREFIXES = ['jason fine', 'erica fine', 'becky shuta'];
+      const rows = (all as any[])
+        .filter(r => r.source_type === 'EDE')
+        .filter(r => {
+          const raw = r.raw_json || {};
+          const eff = String(raw.effectiveDate ?? r.effective_date ?? '').trim();
+          // Normalize effective date
+          let iso = '';
+          const isoMatch = eff.match(/^(\d{4})-(\d{2})-(\d{2})/);
+          if (isoMatch) iso = `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+          else {
+            const slash = eff.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+            if (slash) {
+              let [, m, d, y] = slash;
+              let yr = parseInt(y); if (yr < 100) yr += 2000;
+              iso = `${yr}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+            }
+          }
+          if (iso !== targetDate) return false;
+          const status = String(raw.policyStatus ?? r.status ?? '').toLowerCase().replace(/\s+/g, '');
+          if (!QUALIFIED.has(status)) return false;
+          const issuer = String(raw.issuer ?? r.carrier ?? '').toLowerCase();
+          if (!issuer.includes('ambetter')) return false;
+          const aor = String(raw.currentPolicyAOR ?? '').toLowerCase().trim();
+          return AOR_PREFIXES.some(p => aor.startsWith(p));
+        })
+        .map(r => {
+          const raw = r.raw_json || {};
+          return {
+            currentPolicyAOR: raw.currentPolicyAOR ?? '',
+            policyStatus: raw.policyStatus ?? r.status ?? '',
+            issuer: raw.issuer ?? r.carrier ?? '',
+            effectiveDate: raw.effectiveDate ?? r.effective_date ?? '',
+            exchangePolicyId: raw.exchangePolicyId ?? r.exchange_policy_id ?? '',
+            exchangeSubscriberId: raw.exchangeSubscriberId ?? r.exchange_subscriber_id ?? '',
+            issuerSubscriberId: raw.issuerSubscriberId ?? r.issuer_subscriber_id ?? '',
+            applicant_name: r.applicant_name ?? '',
+            source_file_label: r.source_file_label ?? '',
+          };
+        });
+      setEdeRawRows(rows);
+    } catch (err: any) {
+      toast({ title: 'Error loading EDE rows', description: err.message, variant: 'destructive' });
+    } finally {
+      setEdeRawLoading(false);
+    }
+  }, [currentBatchId, toast]);
+
   const handleRerun = useCallback(async () => {
     if (!currentBatchId) return;
     setRerunning(true);
