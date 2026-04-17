@@ -85,6 +85,9 @@ export default function DashboardPage() {
   const [drilldown, setDrilldown] = useState<string | null>(null);
   const [rerunning, setRerunning] = useState(false);
   const [payEntityFilter, setPayEntityFilter] = useState<PayEntityFilter>(getStoredPayEntity);
+  const [edeRawDrilldown, setEdeRawDrilldown] = useState<'2026-01' | '2026-02' | null>(null);
+  const [edeRawRows, setEdeRawRows] = useState<Record<string, unknown>[]>([]);
+  const [edeRawLoading, setEdeRawLoading] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
