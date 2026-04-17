@@ -381,6 +381,27 @@ export default function DashboardPage() {
                 ))}
               </div>
             )}
+            {edeRawDrilldown && (
+              <div className="border-t pt-3 mt-2 space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold">
+                    Raw EDE rows for {edeRawDrilldown === '2026-01' ? '1/1/2026' : '2/1/2026'}
+                    {!edeRawLoading && ` (${edeRawRows.length} rows)`}
+                  </h4>
+                  <button onClick={() => { setEdeRawDrilldown(null); setEdeRawRows([]); }} className="text-sm text-primary hover:underline">Close</button>
+                </div>
+                {edeRawLoading ? (
+                  <div className="text-sm text-muted-foreground py-4">Loading raw EDE rows...</div>
+                ) : (
+                  <DataTable
+                    data={edeRawRows}
+                    columns={EDE_RAW_DRILLDOWN_COLUMNS}
+                    exportFileName={`ede_raw_${edeRawDrilldown}.csv`}
+                    pageSize={25}
+                  />
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
