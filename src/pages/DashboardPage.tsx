@@ -565,10 +565,12 @@ export default function DashboardPage() {
 
           {/* Unpaid Validation Sample */}
           {unpaidSample.length > 0 && !drilldownData && (
-            <div className="space-y-3">
-              <h3 className="text-lg font-semibold">Unpaid Validation Sample (top 50)</h3>
+            <CollapsibleDebugCard
+              title="Unpaid Validation Sample (top 50)"
+              summary={`${unpaidSample.length} rows`}
+            >
               <DataTable data={unpaidSample} columns={UNPAID_SAMPLE_COLUMNS} exportFileName="unpaid_validation_sample.csv" />
-            </div>
+            </CollapsibleDebugCard>
           )}
 
           {drilldownData && (
