@@ -15,7 +15,7 @@ import {
  * compares this to `upload_batches.last_rebuild_logic_version` and shows a
  * warning banner when the stored value is older than the current code.
  */
-export const RECONCILE_LOGIC_VERSION = '2026.04.17-issuerSubId-fallback';
+export const RECONCILE_LOGIC_VERSION = '2026.04.17-poison-id-isolation';
 
 export interface RebuildProgress {
   phase: 'init' | 'fetching-files' | 'normalizing' | 'reconciling' | 'saving' | 'done';
