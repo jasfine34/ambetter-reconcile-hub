@@ -349,11 +349,21 @@ export default function DashboardPage() {
               <span className="text-muted-foreground">All EDE unfiltered: <strong className="text-foreground">{metrics.totalEdeRaw}</strong></span>
               <span className="text-muted-foreground">Invalid date rows: <strong className="text-foreground">{debugStats.edeInvalidDateCount}</strong></span>
             </div>
-            <div className="flex flex-wrap gap-6 text-sm border-t pt-2">
+            <div className="flex flex-wrap gap-6 text-sm border-t pt-2 items-center">
               <span className="text-muted-foreground font-medium">Expected by month:</span>
-              <span className="text-muted-foreground">1/1/2026: <strong className="text-foreground">{metrics.expectedJan}</strong></span>
-              <span className="text-muted-foreground">2/1/2026: <strong className="text-foreground">{metrics.expectedFeb}</strong></span>
-              <span className="text-xs text-muted-foreground italic">(filter: issuer ~ Ambetter, status in Effectuated/PendingEffectuation/PendingTermination, currentPolicyAOR in Jason/Erica/Becky)</span>
+              <button
+                onClick={() => loadEdeRawDrilldown('2026-01')}
+                className="text-muted-foreground hover:text-primary underline-offset-4 hover:underline"
+              >
+                1/1/2026: <strong className="text-foreground">{metrics.expectedJan}</strong>
+              </button>
+              <button
+                onClick={() => loadEdeRawDrilldown('2026-02')}
+                className="text-muted-foreground hover:text-primary underline-offset-4 hover:underline"
+              >
+                2/1/2026: <strong className="text-foreground">{metrics.expectedFeb}</strong>
+              </button>
+              <span className="text-xs text-muted-foreground italic">(click a count to drilldown into raw EDE rows)</span>
             </div>
             <div className="flex flex-wrap gap-4 text-sm border-t pt-2">
               <span className="text-muted-foreground font-medium">Status breakdown:</span>
