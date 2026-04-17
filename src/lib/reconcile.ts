@@ -241,11 +241,43 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
   // when a sibling COMMISSION/BACK_OFFICE record (matched by exchange_subscriber_id,
   // exchange_policy_id, or policy_number) carries a valid "U" sub id.
   // This recovers cases where EDE export omitted the issuerSubscriberId column.
+  //
+  // IMPORTANT: skip non-EDE rows whose own (esid, isid) pair would cross-link
+  // two different EDE members — those rows would propagate the wrong U-id onto
+  // an EDE Summary record that's actually a different person. We detect this
+  // using the ORIGINAL (pre-promotion) EDE id maps.
+  const origEdeIdxByEsid = new Map<string, Set<number>>();
+  const origEdeIdxByIsid = new Map<string, Set<number>>();
+  for (let i = 0; i < records.length; i++) {
+    const r = records[i];
+    if (r.source_type !== 'EDE') continue;
+    if (r.exchange_subscriber_id) {
+      let s = origEdeIdxByEsid.get(r.exchange_subscriber_id);
+      if (!s) { s = new Set(); origEdeIdxByEsid.set(r.exchange_subscriber_id, s); }
+      s.add(i);
+    }
+    if (r.issuer_subscriber_id) {
+      let s = origEdeIdxByIsid.get(r.issuer_subscriber_id);
+      if (!s) { s = new Set(); origEdeIdxByIsid.set(r.issuer_subscriber_id, s); }
+      s.add(i);
+    }
+  }
+  const isCrossLinkedNonEde = (r: NormalizedRecord): boolean => {
+    if (r.source_type === 'EDE') return false;
+    const e = r.exchange_subscriber_id, ii = r.issuer_subscriber_id;
+    if (!e || !ii) return false;
+    const a = origEdeIdxByEsid.get(e), b = origEdeIdxByIsid.get(ii);
+    if (!a || !b || a.size === 0 || b.size === 0) return false;
+    for (const idx of a) if (b.has(idx)) return false;
+    return true;
+  };
+
   const uSubIdByExchangeSubId = new Map<string, string>();
   const uSubIdByExchangePolId = new Map<string, string>();
   const uSubIdByPolicyNumber = new Map<string, string>();
   for (const r of records) {
     if (r.source_type === 'EDE') continue;
+    if (isCrossLinkedNonEde(r)) continue; // poisonous source: don't propagate its IDs
     const sid = r.issuer_subscriber_id;
     if (!sid || !sid.startsWith('u')) continue;
     if (r.exchange_subscriber_id && !uSubIdByExchangeSubId.has(r.exchange_subscriber_id)) {
