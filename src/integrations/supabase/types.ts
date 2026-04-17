@@ -317,6 +317,8 @@ export type Database = {
           carrier: string
           created_at: string
           id: string
+          last_full_rebuild_at: string | null
+          last_rebuild_logic_version: string | null
           notes: string | null
           statement_month: string | null
         }
@@ -324,6 +326,8 @@ export type Database = {
           carrier?: string
           created_at?: string
           id?: string
+          last_full_rebuild_at?: string | null
+          last_rebuild_logic_version?: string | null
           notes?: string | null
           statement_month?: string | null
         }
@@ -331,6 +335,8 @@ export type Database = {
           carrier?: string
           created_at?: string
           id?: string
+          last_full_rebuild_at?: string | null
+          last_rebuild_logic_version?: string | null
           notes?: string | null
           statement_month?: string | null
         }
