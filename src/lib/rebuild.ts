@@ -15,7 +15,7 @@ import {
  * compares this to `upload_batches.last_rebuild_logic_version` and shows a
  * warning banner when the stored value is older than the current code.
  */
-export const RECONCILE_LOGIC_VERSION = '2026.04.17-poison-id-isolation-v2';
+export const RECONCILE_LOGIC_VERSION = '2026.04.17-bo-active-period-filter-v1';
 
 export interface RebuildProgress {
   phase: 'init' | 'fetching-files' | 'normalizing' | 'reconciling' | 'saving' | 'done';
@@ -109,7 +109,18 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
   });
 
   const allRecords = await getNormalizedRecords(batchId);
-  const { members } = reconcile(allRecords as any[]);
+
+  const { data: batchData } = await supabase
+    .from('upload_batches')
+    .select('statement_month')
+    .eq('id', batchId)
+    .single();
+
+  const reconcileMonth = batchData?.statement_month
+    ? String(batchData.statement_month).substring(0, 7)
+    : '2026-01';
+
+  const { members } = reconcile(allRecords as any[], reconcileMonth);
 
   emit({
     phase: 'saving',

@@ -163,7 +163,10 @@ export default function DashboardPage() {
     setRerunning(true);
     try {
       const allRecords = await getNormalizedRecords(currentBatchId);
-      const { members } = reconcile(allRecords as any[]);
+      const reconcileMonth = currentBatch?.statement_month
+        ? String(currentBatch.statement_month).substring(0, 7)
+        : '2026-01';
+      const { members } = reconcile(allRecords as any[], reconcileMonth);
       await saveReconciledMembers(currentBatchId, members);
       await refreshAll();
       toast({ title: 'Reconciliation Complete', description: `${members.length} members reconciled` });
@@ -172,7 +175,7 @@ export default function DashboardPage() {
     } finally {
       setRerunning(false);
     }
-  }, [currentBatchId, refreshAll, toast]);
+  }, [currentBatchId, currentBatch, refreshAll, toast]);
 
   // Filter reconciled data by pay entity.
   // Include members whose EXPECTED entity is the selected one (so we can see unpaid expectations)
@@ -357,6 +360,9 @@ export default function DashboardPage() {
               <span className="text-muted-foreground">Promoted from sibling: <strong className="text-foreground">{debugStats.edePromotedIssuerSubIdFromExchange}</strong></span>
               <span className="text-muted-foreground">BO starting "U": <strong className="text-foreground">{debugStats.boStartingWithU}</strong></span>
               <span className="text-muted-foreground">Comm starting "U": <strong className="text-foreground">{debugStats.commStartingWithU}</strong></span>
+              <span className="text-muted-foreground">BO Active (in period): <strong className="text-foreground">{debugStats.boActiveCount}</strong></span>
+              <span className="text-muted-foreground">BO Excluded (expired term): <strong className="text-foreground">{debugStats.boExcludedCount}</strong></span>
+              <span className="text-muted-foreground">BO No Term Date (assumed active): <strong className="text-foreground">{debugStats.boMissingTermDate}</strong></span>
             </div>
           )}
           {debugStats && debugStats.edeMissingIssuerSubIdSamples.length > 0 && (

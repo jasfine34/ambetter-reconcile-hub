@@ -127,6 +127,8 @@ export interface NormalizedRecord {
   net_premium: number | null;
   commission_amount: number | null;
   eligible_for_commission: string;
+  policy_term_date: string | null;
+  paid_through_date: string | null;
   member_key: string;
   raw_json: Record<string, string>;
 }
@@ -199,6 +201,8 @@ export function normalizeEDERow(row: Record<string, string>, fileLabel: string):
     net_premium: parseNum(row['netPremium']),
     commission_amount: null,
     eligible_for_commission: '',
+    policy_term_date: null,
+    paid_through_date: null,
     member_key: '',
     raw_json: row,
   };
@@ -231,7 +235,9 @@ export function normalizeBackOfficeRow(row: Record<string, string>, fileLabel: s
     agent_npn: npn,
     aor_bucket: aorBucket,
     pay_entity: '',
-    status: (row['Policy Term Date'] || row['Paid Through Date'] || '').trim(),
+    status: (row['Policy Status'] || '').trim(),
+    policy_term_date: normalizeDate(row['Policy Term Date']),
+    paid_through_date: normalizeDate(row['Paid Through Date']),
     effective_date: normalizeDate(row['Policy Effective Date']),
     premium: parseNum(row['Monthly Premium Amount']),
     net_premium: null,
@@ -273,6 +279,8 @@ export function normalizeCommissionRow(row: Record<string, string>, fileLabel: s
     net_premium: null,
     commission_amount: parseMoney(row['Gross Commission']),
     eligible_for_commission: '',
+    policy_term_date: null,
+    paid_through_date: null,
     member_key: '',
     raw_json: row,
   };
