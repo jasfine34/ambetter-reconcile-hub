@@ -11,6 +11,18 @@ import { getNormalizedRecords, saveReconciledMembers } from '@/lib/persistence';
 import { reconcile } from '@/lib/reconcile';
 import { useToast } from '@/hooks/use-toast';
 
+const EDE_RAW_DRILLDOWN_COLUMNS = [
+  { key: 'currentPolicyAOR', label: 'Current Policy AOR' },
+  { key: 'policyStatus', label: 'Policy Status' },
+  { key: 'issuer', label: 'Issuer' },
+  { key: 'effectiveDate', label: 'Effective Date' },
+  { key: 'exchangePolicyId', label: 'Exchange Policy ID' },
+  { key: 'exchangeSubscriberId', label: 'Exchange Sub ID' },
+  { key: 'issuerSubscriberId', label: 'Issuer Sub ID' },
+  { key: 'applicant_name', label: 'Applicant' },
+  { key: 'source_file_label', label: 'Source File' },
+];
+
 const RECON_COLUMNS = [
   { key: 'applicant_name', label: 'Name' },
   { key: 'policy_number', label: 'Policy #' },
