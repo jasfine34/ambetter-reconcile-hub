@@ -360,7 +360,7 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
   debug.commDistinctPolicyNormalized = normPolicies.size;
 
   // Step 3: Multi-strategy matching using Union-Find
-  const uf = new UnionFind(records.length);
+  const uf = new UnionFind(records.length, records);
 
   // Strategy A: issuer_subscriber_id match
   const isidIndex = new Map<string, number>();
