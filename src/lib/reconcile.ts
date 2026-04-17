@@ -262,13 +262,30 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     commSampleParsed: [],
   };
 
+  debug.edePromotedIssuerSubIdFromExchange = promotedCount;
+
   for (const r of records) {
     if (r.source_type === 'EDE') {
       debug.totalEDE++;
       debug.edeRawTotal++;
       const st = r.status || '';
       debug.edeStatusBreakdown[st || '(empty)'] = (debug.edeStatusBreakdown[st || '(empty)'] || 0) + 1;
-      if (r.issuer_subscriber_id) debug.edeWithIssuerSubId++;
+      if (r.issuer_subscriber_id) {
+        debug.edeWithIssuerSubId++;
+      } else {
+        debug.edeMissingIssuerSubId++;
+        if (r.exchange_subscriber_id) {
+          debug.edeMissingIssuerSubIdWithExchange++;
+          if (debug.edeMissingIssuerSubIdSamples.length < 10) {
+            debug.edeMissingIssuerSubIdSamples.push({
+              applicant_name: r.applicant_name || '',
+              exchange_subscriber_id: r.exchange_subscriber_id,
+              exchange_policy_id: r.exchange_policy_id || '',
+              source_file_label: r.source_file_label || '',
+            });
+          }
+        }
+      }
       if (debug.edeEffDateSamples.length < 5 && r.effective_date) {
         debug.edeEffDateSamples.push(r.effective_date);
       }
