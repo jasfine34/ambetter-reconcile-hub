@@ -114,8 +114,10 @@ export type Database = {
           member_id: string | null
           member_key: string | null
           net_premium: number | null
+          paid_through_date: string | null
           pay_entity: string | null
           policy_number: string | null
+          policy_term_date: string | null
           premium: number | null
           raw_json: Json | null
           source_file_label: string
@@ -145,8 +147,10 @@ export type Database = {
           member_id?: string | null
           member_key?: string | null
           net_premium?: number | null
+          paid_through_date?: string | null
           pay_entity?: string | null
           policy_number?: string | null
+          policy_term_date?: string | null
           premium?: number | null
           raw_json?: Json | null
           source_file_label: string
@@ -176,8 +180,10 @@ export type Database = {
           member_id?: string | null
           member_key?: string | null
           net_premium?: number | null
+          paid_through_date?: string | null
           pay_entity?: string | null
           policy_number?: string | null
+          policy_term_date?: string | null
           premium?: number | null
           raw_json?: Json | null
           source_file_label?: string
