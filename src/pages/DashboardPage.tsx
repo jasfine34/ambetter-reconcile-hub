@@ -12,6 +12,7 @@ import { reconcile } from '@/lib/reconcile';
 import { useToast } from '@/hooks/use-toast';
 import { RebuildBatchButton } from '@/components/RebuildBatchButton';
 import { RECONCILE_LOGIC_VERSION } from '@/lib/rebuild';
+import { CollapsibleDebugCard } from '@/components/CollapsibleDebugCard';
 
 const EDE_RAW_DRILLDOWN_COLUMNS = [
   { key: 'currentPolicyAOR', label: 'Current Policy AOR' },
