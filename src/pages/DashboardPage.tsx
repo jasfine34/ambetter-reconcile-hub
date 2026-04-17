@@ -289,10 +289,10 @@ export default function DashboardPage() {
 
       {/* Rebuild status / stale logic warning */}
       {currentBatchId && (logicChanged || neverRebuilt) && (
-        <Card className="border-amber-500/50 bg-amber-500/10">
+        <Card className="border-destructive/40 bg-destructive/5">
           <CardContent className="px-4 py-3">
             <div className="flex items-start gap-2 text-sm">
-              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-destructive" />
               <div className="flex-1">
                 <div className="font-medium text-foreground">
                   {neverRebuilt
