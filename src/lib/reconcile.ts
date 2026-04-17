@@ -679,6 +679,18 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
       estMissing = Math.round(estMissing * 100) / 100;
     }
 
+    // Surface poison-isolation as a data-quality note on this member.
+    const poisonRecsInGroup = recs
+      .map((r, idx) => ({ r, idx: records.indexOf(r) }))
+      .filter(x => poisonIndices.has(x.idx));
+    if (poisonRecsInGroup.length > 0) {
+      const reasons = poisonRecsInGroup
+        .map(x => `${x.r.source_file_label}: ${poisonReasons.get(x.idx) || ''}`)
+        .filter(Boolean);
+      const note = `DATA QUALITY: Cross-linked IDs in source row(s) — refused merge with EDE. ${reasons.join(' | ')}`;
+      issueNotes = issueNotes ? `${issueNotes}. ${note}` : note;
+    }
+
     results.push({
       member_key: memberKey,
       carrier: 'Ambetter',
