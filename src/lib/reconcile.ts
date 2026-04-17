@@ -113,6 +113,10 @@ export interface MatchDebugStats {
   commTotalNegative: number;
   commSampleRaw: string[];
   commSampleParsed: number[];
+  // Covered lives = sum of coveredMemberCount across qualified EDE rows
+  totalCoveredLives: number;
+  totalCoveredLivesJan: number;
+  totalCoveredLivesFeb: number;
 }
 
 /**
