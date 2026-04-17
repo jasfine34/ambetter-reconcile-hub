@@ -316,8 +316,25 @@ export default function DashboardPage() {
           {debugStats && (
             <div className="flex flex-wrap gap-6 text-sm border-t pt-2 mt-2">
               <span className="text-muted-foreground">EDE w/ issuerSubId: <strong className="text-foreground">{debugStats.edeWithIssuerSubId}</strong></span>
+              <span className="text-muted-foreground">EDE missing issuerSubId: <strong className="text-foreground">{debugStats.edeMissingIssuerSubId}</strong></span>
+              <span className="text-muted-foreground">…of which have exchangeSubId: <strong className="text-foreground">{debugStats.edeMissingIssuerSubIdWithExchange}</strong></span>
+              <span className="text-muted-foreground">Promoted from sibling: <strong className="text-foreground">{debugStats.edePromotedIssuerSubIdFromExchange}</strong></span>
               <span className="text-muted-foreground">BO starting "U": <strong className="text-foreground">{debugStats.boStartingWithU}</strong></span>
               <span className="text-muted-foreground">Comm starting "U": <strong className="text-foreground">{debugStats.commStartingWithU}</strong></span>
+            </div>
+          )}
+          {debugStats && debugStats.edeMissingIssuerSubIdSamples.length > 0 && (
+            <div className="border-t pt-2 mt-2 text-xs">
+              <div className="text-muted-foreground font-medium mb-1">
+                Sample EDE rows missing issuerSubId (with exchangeSubId):
+              </div>
+              <div className="space-y-1 font-mono">
+                {debugStats.edeMissingIssuerSubIdSamples.map((s, i) => (
+                  <div key={i} className="text-foreground">
+                    {s.applicant_name} — exchSub: {s.exchange_subscriber_id} — exchPol: {s.exchange_policy_id || '—'} — file: {s.source_file_label}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
           {debugStats && (
