@@ -327,13 +327,11 @@ export default function DashboardPage() {
       </Card>
 
       {/* Debug Counts */}
-      <Card className="border-dashed">
-        <CardHeader className="py-3 px-4">
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <Database className="h-4 w-4" /> Debug Counts (Selected Batch)
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-4 pb-3 pt-0 space-y-2">
+      <CollapsibleDebugCard
+        title="Debug Counts (Selected Batch)"
+        icon={<Database className="h-4 w-4" />}
+        summary={`${counts.uploadedFiles} files · ${counts.normalizedRecords} normalized · ${counts.reconciledMembers} members`}
+      >
           <div className="flex flex-wrap gap-6 text-sm">
             <span className="text-muted-foreground">Uploaded Files: <strong className="text-foreground">{counts.uploadedFiles}</strong></span>
             <span className="text-muted-foreground">Normalized Records: <strong className="text-foreground">{counts.normalizedRecords}</strong></span>
@@ -383,18 +381,15 @@ export default function DashboardPage() {
               <span className="text-muted-foreground">Match by fallback: <strong className="text-foreground">{debugStats.matchByFallback}</strong></span>
             </div>
           )}
-        </CardContent>
-      </Card>
+      </CollapsibleDebugCard>
 
       {/* EDE Enrollment Debug */}
       {debugStats && (
-        <Card className="border-dashed">
-          <CardHeader className="py-3 px-4">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Users className="h-4 w-4" /> EDE Expected Enrollment Debug
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-3 pt-0 space-y-2">
+        <CollapsibleDebugCard
+          title="EDE Expected Enrollment Debug"
+          icon={<Users className="h-4 w-4" />}
+          summary={`${debugStats.edeAfterFilter} qualified · 1/1: ${metrics.expectedJan} · 2/1: ${metrics.expectedFeb}`}
+        >
             <div className="flex flex-wrap gap-6 text-sm">
               <span className="text-muted-foreground">Total Raw EDE rows: <strong className="text-foreground">{debugStats.edeRawTotal}</strong></span>
               <span className="text-muted-foreground">After filter (eff. date + status): <strong className="text-foreground">{debugStats.edeAfterFilter}</strong></span>
@@ -456,8 +451,7 @@ export default function DashboardPage() {
                 )}
               </div>
             )}
-          </CardContent>
-        </Card>
+        </CollapsibleDebugCard>
       )}
 
       {/* Commission Aggregation Debug */}
