@@ -31,7 +31,7 @@ const SCHEMA_LABEL: Record<DetectedSchema, string> = {
 };
 
 export default function UploadPage() {
-  const { currentBatchId, uploadedFiles, refreshAll } = useBatch();
+  const { currentBatchId, uploadedFiles, refreshAll, batches } = useBatch();
   const [uploading, setUploading] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingUpload | null>(null);
   const { toast } = useToast();
@@ -55,7 +55,11 @@ export default function UploadPage() {
       await insertNormalizedRecords(currentBatchId!, fileRecord.id, normalized);
 
       const allRecords = await getNormalizedRecords(currentBatchId!);
-      const { members: reconciledData } = reconcile(allRecords as any[]);
+      const currentBatch = batches.find((b: any) => b.id === currentBatchId);
+      const reconcileMonth = currentBatch?.statement_month
+        ? String(currentBatch.statement_month).substring(0, 7)
+        : '2026-01';
+      const { members: reconciledData } = reconcile(allRecords as any[], reconcileMonth);
       await saveReconciledMembers(currentBatchId!, reconciledData);
 
       await refreshAll();
@@ -65,7 +69,7 @@ export default function UploadPage() {
     } finally {
       setUploading(null);
     }
-  }, [currentBatchId, refreshAll, toast]);
+  }, [currentBatchId, refreshAll, toast, batches]);
 
   const handleUpload = useCallback(async (fileLabel: string, sourceType: string, payEntity: string | null, aorBucket: string | null, file: File) => {
     if (!currentBatchId) {

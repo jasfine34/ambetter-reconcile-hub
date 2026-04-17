@@ -73,6 +73,8 @@ export async function insertNormalizedRecords(batchId: string, uploadedFileId: s
     net_premium: r.net_premium,
     commission_amount: r.commission_amount,
     eligible_for_commission: r.eligible_for_commission,
+    policy_term_date: r.policy_term_date ?? null,
+    paid_through_date: r.paid_through_date ?? null,
     member_key: r.member_key,
     raw_json: r.raw_json as unknown as Record<string, never>,
   }));

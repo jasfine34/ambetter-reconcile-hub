@@ -117,6 +117,28 @@ export interface MatchDebugStats {
   totalCoveredLives: number;
   totalCoveredLivesJan: number;
   totalCoveredLivesFeb: number;
+  boActiveCount: number;
+  boExcludedCount: number;
+  boMissingTermDate: number;
+}
+
+/**
+ * Determines if a Back Office record represents an active policy
+ * during the reconciliation month.
+ * Rules:
+ * - If policy_term_date is null/blank → assume active → INCLUDE
+ * - If policy_term_date > first day of reconcile month → INCLUDE
+ * - If policy_term_date <= first day of reconcile month → EXCLUDE
+ * - Falls back to paid_through_date if policy_term_date is absent
+ * - Effective date is intentionally ignored — a policy effective 3/1/2023
+ *   terminating 12/31/2026 is treated identically to one effective 1/1/2026
+ */
+function isActiveBackOfficeRecord(r: NormalizedRecord, reconcileMonth: string): boolean {
+  if (r.source_type !== 'BACK_OFFICE') return true;
+  const firstOfMonth = `${reconcileMonth}-01`;
+  const termDate = r.policy_term_date || r.paid_through_date;
+  if (!termDate) return true;
+  return termDate > firstOfMonth;
 }
 
 /**
@@ -235,7 +257,10 @@ function setsOverlap(a: Set<string>, b: Set<string>): boolean {
   return false;
 }
 
-export function reconcile(records: NormalizedRecord[]): { members: ReconciledMember[]; debug: MatchDebugStats } {
+export function reconcile(
+  records: NormalizedRecord[],
+  reconcileMonth: string = '2026-01'
+): { members: ReconciledMember[]; debug: MatchDebugStats } {
   // Step 1: Re-clean all IDs
   for (const r of records) {
     reclean(r);
@@ -339,6 +364,9 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     totalCoveredLives: 0,
     totalCoveredLivesJan: 0,
     totalCoveredLivesFeb: 0,
+    boActiveCount: 0,
+    boExcludedCount: 0,
+    boMissingTermDate: 0,
   };
 
   debug.edePromotedIssuerSubIdFromExchange = promotedCount;
@@ -376,6 +404,15 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     } else if (r.source_type === 'BACK_OFFICE') {
       debug.totalBO++;
       if (r.issuer_subscriber_id?.startsWith('u')) debug.boStartingWithU++;
+      const termDate = r.policy_term_date || r.paid_through_date;
+      if (!termDate) {
+        debug.boMissingTermDate++;
+        debug.boActiveCount++;
+      } else if (isActiveBackOfficeRecord(r, reconcileMonth)) {
+        debug.boActiveCount++;
+      } else {
+        debug.boExcludedCount++;
+      }
     } else if (r.source_type === 'COMMISSION') {
       debug.totalComm++;
       debug.commRawRows++;
@@ -684,7 +721,10 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
 
   for (const [memberKey, recs] of groups) {
     const ede = recs.filter(r => r.source_type === 'EDE');
-    const bo = recs.filter(r => r.source_type === 'BACK_OFFICE');
+    const bo = recs.filter(r =>
+      r.source_type === 'BACK_OFFICE' &&
+      isActiveBackOfficeRecord(r, reconcileMonth)
+    );
     const comm = recs.filter(r => r.source_type === 'COMMISSION');
 
     const inEde = ede.length > 0;

@@ -127,6 +127,8 @@ export interface NormalizedRecord {
   net_premium: number | null;
   commission_amount: number | null;
   eligible_for_commission: string;
+  policy_term_date: string | null;
+  paid_through_date: string | null;
   member_key: string;
   raw_json: Record<string, string>;
 }
@@ -273,6 +275,8 @@ export function normalizeCommissionRow(row: Record<string, string>, fileLabel: s
     net_premium: null,
     commission_amount: parseMoney(row['Gross Commission']),
     eligible_for_commission: '',
+    policy_term_date: null,
+    paid_through_date: null,
     member_key: '',
     raw_json: row,
   };

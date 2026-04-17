@@ -61,7 +61,11 @@ export function BatchProvider({ children }: { children: ReactNode }) {
       // Compute debug stats from normalized records
       try {
         const normalized = await getNormalizedRecords(currentBatchId);
-        const { debug } = reconcile(normalized as any[]);
+        const currentBatch = batches.find((b: any) => b.id === currentBatchId);
+        const reconcileMonth = currentBatch?.statement_month
+          ? String(currentBatch.statement_month).substring(0, 7)
+          : '2026-01';
+        const { debug } = reconcile(normalized as any[], reconcileMonth);
         setDebugStats(debug);
       } catch {
         setDebugStats(null);
@@ -69,7 +73,7 @@ export function BatchProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [currentBatchId]);
+  }, [currentBatchId, batches]);
 
   const refreshFiles = useCallback(async () => {
     if (!currentBatchId) { setUploadedFiles([]); return; }
