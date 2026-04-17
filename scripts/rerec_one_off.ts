@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { reconcile } from '/dev-server/src/lib/reconcile';
+import { reconcile } from '../src/lib/reconcile';
 
 const url = process.env.SUPABASE_URL!;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
