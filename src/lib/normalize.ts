@@ -146,10 +146,35 @@ function buildMemberKey(r: Partial<NormalizedRecord>): string {
   return `unk:${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/**
+ * Resolve issuerSubscriberId from a row, tolerating column-name variants
+ * (different casing / snake_case) seen across EDE export formats.
+ */
+export function resolveIssuerSubscriberId(row: Record<string, string>): string {
+  const raw =
+    row['issuerSubscriberId'] ??
+    row['IssuerSubscriberId'] ??
+    row['issuerSubscriberID'] ??
+    row['IssuerSubscriberID'] ??
+    row['issuer_subscriber_id'] ??
+    row['Issuer Subscriber ID'] ??
+    row['Issuer Subscriber Id'] ??
+    '';
+  return stripApostrophe(raw);
+}
+
+/** True if the value looks like a valid issuer sub id (contains "U" + digits). */
+export function isValidIssuerSubId(val: string | undefined | null): boolean {
+  if (!val) return false;
+  const v = String(val).trim();
+  return /u/i.test(v) && /\d/.test(v);
+}
+
 export function normalizeEDERow(row: Record<string, string>, fileLabel: string): NormalizedRecord | null {
   if (!isAmbetterEDE(row)) return null;
   const first = (row['applicantFirstName'] || '').trim();
   const last = (row['applicantLastName'] || '').trim();
+  const issuerSubIdRaw = resolveIssuerSubscriberId(row);
   const r: NormalizedRecord = {
     source_type: 'EDE',
     source_file_label: fileLabel,
@@ -158,12 +183,12 @@ export function normalizeEDERow(row: Record<string, string>, fileLabel: string):
     first_name: first,
     last_name: last,
     dob: normalizeDate(row['dob']),
-    member_id: stripApostrophe(row['issuerSubscriberId']),
+    member_id: issuerSubIdRaw,
     policy_number: '',
     exchange_subscriber_id: cleanId(row['exchangeSubscriberId']),
     exchange_policy_id: cleanId(row['exchangePolicyId']),
     issuer_policy_id: cleanId(row['issuerPolicyId']),
-    issuer_subscriber_id: cleanId(row['issuerSubscriberId']),
+    issuer_subscriber_id: cleanId(issuerSubIdRaw),
     agent_name: (row['agentName'] || '').trim(),
     agent_npn: stripApostrophe(row['agentNPN']),
     aor_bucket: '',

@@ -93,6 +93,16 @@ export interface MatchDebugStats {
   edeUniqueKeysAfterFilter: number;
   edeInvalidDateCount: number;
   edeEffDateSamples: string[];
+  // Issuer Sub ID extraction debug
+  edeMissingIssuerSubId: number;
+  edeMissingIssuerSubIdWithExchange: number;
+  edePromotedIssuerSubIdFromExchange: number;
+  edeMissingIssuerSubIdSamples: Array<{
+    applicant_name: string;
+    exchange_subscriber_id: string;
+    exchange_policy_id: string;
+    source_file_label: string;
+  }>;
   // Commission aggregation debug
   commRawRows: number;
   commPositiveRows: number;
@@ -187,6 +197,42 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     reclean(r);
   }
 
+  // Step 1b: Promote issuer_subscriber_id for EDE rows that are missing it
+  // when a sibling COMMISSION/BACK_OFFICE record (matched by exchange_subscriber_id,
+  // exchange_policy_id, or policy_number) carries a valid "U" sub id.
+  // This recovers cases where EDE export omitted the issuerSubscriberId column.
+  const uSubIdByExchangeSubId = new Map<string, string>();
+  const uSubIdByExchangePolId = new Map<string, string>();
+  const uSubIdByPolicyNumber = new Map<string, string>();
+  for (const r of records) {
+    if (r.source_type === 'EDE') continue;
+    const sid = r.issuer_subscriber_id;
+    if (!sid || !sid.startsWith('u')) continue;
+    if (r.exchange_subscriber_id && !uSubIdByExchangeSubId.has(r.exchange_subscriber_id)) {
+      uSubIdByExchangeSubId.set(r.exchange_subscriber_id, sid);
+    }
+    if (r.exchange_policy_id && !uSubIdByExchangePolId.has(r.exchange_policy_id)) {
+      uSubIdByExchangePolId.set(r.exchange_policy_id, sid);
+    }
+    if (r.policy_number && !uSubIdByPolicyNumber.has(r.policy_number)) {
+      uSubIdByPolicyNumber.set(r.policy_number, sid);
+    }
+  }
+  let promotedCount = 0;
+  for (const r of records) {
+    if (r.source_type !== 'EDE') continue;
+    if (r.issuer_subscriber_id) continue;
+    let promoted: string | undefined;
+    if (r.exchange_subscriber_id) promoted = uSubIdByExchangeSubId.get(r.exchange_subscriber_id);
+    if (!promoted && r.exchange_policy_id) promoted = uSubIdByExchangePolId.get(r.exchange_policy_id);
+    if (!promoted && r.policy_number) promoted = uSubIdByPolicyNumber.get(r.policy_number);
+    if (promoted) {
+      r.issuer_subscriber_id = promoted;
+      if (!r.member_id) r.member_id = promoted;
+      promotedCount++;
+    }
+  }
+
   // Step 2: Count raw stats
   const debug: MatchDebugStats = {
     totalEDE: 0, totalBO: 0, totalComm: 0,
@@ -201,6 +247,10 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     edeUniqueKeysAfterFilter: 0,
     edeInvalidDateCount: 0,
     edeEffDateSamples: [],
+    edeMissingIssuerSubId: 0,
+    edeMissingIssuerSubIdWithExchange: 0,
+    edePromotedIssuerSubIdFromExchange: 0,
+    edeMissingIssuerSubIdSamples: [],
     commRawRows: 0,
     commPositiveRows: 0,
     commNegativeRows: 0,
@@ -212,13 +262,30 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     commSampleParsed: [],
   };
 
+  debug.edePromotedIssuerSubIdFromExchange = promotedCount;
+
   for (const r of records) {
     if (r.source_type === 'EDE') {
       debug.totalEDE++;
       debug.edeRawTotal++;
       const st = r.status || '';
       debug.edeStatusBreakdown[st || '(empty)'] = (debug.edeStatusBreakdown[st || '(empty)'] || 0) + 1;
-      if (r.issuer_subscriber_id) debug.edeWithIssuerSubId++;
+      if (r.issuer_subscriber_id) {
+        debug.edeWithIssuerSubId++;
+      } else {
+        debug.edeMissingIssuerSubId++;
+        if (r.exchange_subscriber_id) {
+          debug.edeMissingIssuerSubIdWithExchange++;
+          if (debug.edeMissingIssuerSubIdSamples.length < 10) {
+            debug.edeMissingIssuerSubIdSamples.push({
+              applicant_name: r.applicant_name || '',
+              exchange_subscriber_id: r.exchange_subscriber_id,
+              exchange_policy_id: r.exchange_policy_id || '',
+              source_file_label: r.source_file_label || '',
+            });
+          }
+        }
+      }
       if (debug.edeEffDateSamples.length < 5 && r.effective_date) {
         debug.edeEffDateSamples.push(r.effective_date);
       }
