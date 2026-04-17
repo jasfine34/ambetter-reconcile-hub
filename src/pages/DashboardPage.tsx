@@ -6,10 +6,12 @@ import { BatchSelector } from '@/components/BatchSelector';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Users, Building2, DollarSign, AlertTriangle, CheckCircle2, XCircle, FileText, TrendingDown, Database, Info, ShieldAlert, RefreshCw } from 'lucide-react';
+import { Users, Building2, DollarSign, AlertTriangle, CheckCircle2, XCircle, FileText, TrendingDown, Database, Info, ShieldAlert, RefreshCw, Hammer } from 'lucide-react';
 import { getNormalizedRecords, saveReconciledMembers } from '@/lib/persistence';
 import { reconcile } from '@/lib/reconcile';
 import { useToast } from '@/hooks/use-toast';
+import { RebuildBatchButton } from '@/components/RebuildBatchButton';
+import { RECONCILE_LOGIC_VERSION } from '@/lib/rebuild';
 
 const EDE_RAW_DRILLDOWN_COLUMNS = [
   { key: 'currentPolicyAOR', label: 'Current Policy AOR' },
@@ -81,7 +83,12 @@ function getStoredPayEntity(): PayEntityFilter {
 }
 
 export default function DashboardPage() {
-  const { reconciled, loading, counts, debugStats, currentBatchId, refreshAll } = useBatch();
+  const { reconciled, loading, counts, debugStats, currentBatchId, refreshAll, batches } = useBatch();
+  const currentBatch = useMemo(() => batches.find((b: any) => b.id === currentBatchId), [batches, currentBatchId]);
+  const lastRebuildAt = currentBatch?.last_full_rebuild_at as string | null | undefined;
+  const lastRebuildVersion = currentBatch?.last_rebuild_logic_version as string | null | undefined;
+  const logicChanged = !!lastRebuildVersion && lastRebuildVersion !== RECONCILE_LOGIC_VERSION;
+  const neverRebuilt = !lastRebuildAt;
   const [drilldown, setDrilldown] = useState<string | null>(null);
   const [rerunning, setRerunning] = useState(false);
   const [payEntityFilter, setPayEntityFilter] = useState<PayEntityFilter>(getStoredPayEntity);
@@ -275,9 +282,39 @@ export default function DashboardPage() {
             <RefreshCw className={`h-4 w-4 mr-1 ${rerunning ? 'animate-spin' : ''}`} />
             {rerunning ? 'Running...' : 'Re-run Reconciliation'}
           </Button>
+          <RebuildBatchButton />
           <BatchSelector />
         </div>
       </div>
+
+      {/* Rebuild status / stale logic warning */}
+      {currentBatchId && (logicChanged || neverRebuilt) && (
+        <Card className="border-amber-500/50 bg-amber-500/10">
+          <CardContent className="px-4 py-3">
+            <div className="flex items-start gap-2 text-sm">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+              <div className="flex-1">
+                <div className="font-medium text-foreground">
+                  {neverRebuilt
+                    ? 'This batch has never been fully rebuilt from source files.'
+                    : 'Reconciliation logic has changed since the last rebuild.'}
+                </div>
+                <div className="text-muted-foreground text-xs mt-1">
+                  {neverRebuilt
+                    ? 'Normalized data reflects whatever logic was active at upload time. Click "Rebuild Entire Batch" to re-process all source files with current logic.'
+                    : <>Last rebuild used <code className="font-mono">{lastRebuildVersion}</code>; current code is <code className="font-mono">{RECONCILE_LOGIC_VERSION}</code>. Rebuild to refresh stale records.</>}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      {currentBatchId && lastRebuildAt && !logicChanged && (
+        <div className="text-xs text-muted-foreground flex items-center gap-2">
+          <Hammer className="h-3 w-3" />
+          Last full rebuild: {new Date(lastRebuildAt).toLocaleString()} · logic <code className="font-mono">{lastRebuildVersion}</code>
+        </div>
+      )}
 
       {/* Matching explanation */}
       <Card className="border-dashed border-primary/30 bg-primary/5">
