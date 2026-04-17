@@ -456,13 +456,11 @@ export default function DashboardPage() {
 
       {/* Commission Aggregation Debug */}
       {debugStats && (
-        <Card className="border-dashed">
-          <CardHeader className="py-3 px-4">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <DollarSign className="h-4 w-4" /> Commission Aggregation Debug
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-3 pt-0 space-y-2">
+        <CollapsibleDebugCard
+          title="Commission Aggregation Debug"
+          icon={<DollarSign className="h-4 w-4" />}
+          summary={`${debugStats.commRawRows} rows · +$${debugStats.commTotalPositive.toLocaleString(undefined, { minimumFractionDigits: 2 })} / −$${Math.abs(debugStats.commTotalNegative).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+        >
             <div className="flex flex-wrap gap-6 text-sm">
               <span className="text-muted-foreground">Raw Rows: <strong className="text-foreground">{debugStats.commRawRows}</strong></span>
               <span className="text-muted-foreground">Positive Rows: <strong className="text-foreground">{debugStats.commPositiveRows}</strong></span>
@@ -487,8 +485,7 @@ export default function DashboardPage() {
                 </div>
               </div>
             )}
-          </CardContent>
-        </Card>
+        </CollapsibleDebugCard>
       )}
       {loading ? (
         <div className="text-center py-20 text-muted-foreground">Loading...</div>
