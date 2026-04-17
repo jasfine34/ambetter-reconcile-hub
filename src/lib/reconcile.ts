@@ -197,6 +197,42 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     reclean(r);
   }
 
+  // Step 1b: Promote issuer_subscriber_id for EDE rows that are missing it
+  // when a sibling COMMISSION/BACK_OFFICE record (matched by exchange_subscriber_id,
+  // exchange_policy_id, or policy_number) carries a valid "U" sub id.
+  // This recovers cases where EDE export omitted the issuerSubscriberId column.
+  const uSubIdByExchangeSubId = new Map<string, string>();
+  const uSubIdByExchangePolId = new Map<string, string>();
+  const uSubIdByPolicyNumber = new Map<string, string>();
+  for (const r of records) {
+    if (r.source_type === 'EDE') continue;
+    const sid = r.issuer_subscriber_id;
+    if (!sid || !sid.startsWith('u')) continue;
+    if (r.exchange_subscriber_id && !uSubIdByExchangeSubId.has(r.exchange_subscriber_id)) {
+      uSubIdByExchangeSubId.set(r.exchange_subscriber_id, sid);
+    }
+    if (r.exchange_policy_id && !uSubIdByExchangePolId.has(r.exchange_policy_id)) {
+      uSubIdByExchangePolId.set(r.exchange_policy_id, sid);
+    }
+    if (r.policy_number && !uSubIdByPolicyNumber.has(r.policy_number)) {
+      uSubIdByPolicyNumber.set(r.policy_number, sid);
+    }
+  }
+  let promotedCount = 0;
+  for (const r of records) {
+    if (r.source_type !== 'EDE') continue;
+    if (r.issuer_subscriber_id) continue;
+    let promoted: string | undefined;
+    if (r.exchange_subscriber_id) promoted = uSubIdByExchangeSubId.get(r.exchange_subscriber_id);
+    if (!promoted && r.exchange_policy_id) promoted = uSubIdByExchangePolId.get(r.exchange_policy_id);
+    if (!promoted && r.policy_number) promoted = uSubIdByPolicyNumber.get(r.policy_number);
+    if (promoted) {
+      r.issuer_subscriber_id = promoted;
+      if (!r.member_id) r.member_id = promoted;
+      promotedCount++;
+    }
+  }
+
   // Step 2: Count raw stats
   const debug: MatchDebugStats = {
     totalEDE: 0, totalBO: 0, totalComm: 0,
