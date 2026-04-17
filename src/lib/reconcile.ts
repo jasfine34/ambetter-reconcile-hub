@@ -113,6 +113,10 @@ export interface MatchDebugStats {
   commTotalNegative: number;
   commSampleRaw: string[];
   commSampleParsed: number[];
+  // Covered lives = sum of coveredMemberCount across qualified EDE rows
+  totalCoveredLives: number;
+  totalCoveredLivesJan: number;
+  totalCoveredLivesFeb: number;
 }
 
 /**
@@ -332,6 +336,9 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     commTotalNegative: 0,
     commSampleRaw: [],
     commSampleParsed: [],
+    totalCoveredLives: 0,
+    totalCoveredLivesJan: 0,
+    totalCoveredLivesFeb: 0,
   };
 
   debug.edePromotedIssuerSubIdFromExchange = promotedCount;
@@ -631,11 +638,30 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     debug.matchByName++;
   }
 
-  // Count EDE qualified unique keys
+  // Count EDE qualified unique keys + sum covered lives
   const edeQualifiedKeys = new Set<string>();
   for (const [key, recs] of groups) {
-    const hasQualifiedEDE = recs.some(r => isExpectedEDERow(r));
-    if (hasQualifiedEDE) edeQualifiedKeys.add(key);
+    let groupCovered = 0;
+    let groupMonth = '';
+    for (const r of recs) {
+      if (!isExpectedEDERow(r)) continue;
+      edeQualifiedKeys.add(key);
+      // Use the first qualified row's covered count + month for the group
+      // (one EDE row per member per month is the norm)
+      const raw = r.raw_json || {};
+      const cmcRaw = raw['coveredMemberCount'] ?? raw['CoveredMemberCount'] ?? raw['covered_member_count'];
+      const cmc = cmcRaw != null && String(cmcRaw).trim() !== '' ? parseInt(String(cmcRaw), 10) : NaN;
+      const lives = Number.isFinite(cmc) && cmc > 0 ? cmc : 1;
+      if (groupCovered === 0) {
+        groupCovered = lives;
+        groupMonth = r.effective_date ? r.effective_date.substring(0, 7) : '';
+      }
+    }
+    if (groupCovered > 0) {
+      debug.totalCoveredLives += groupCovered;
+      if (groupMonth === '2026-01') debug.totalCoveredLivesJan += groupCovered;
+      else if (groupMonth === '2026-02') debug.totalCoveredLivesFeb += groupCovered;
+    }
   }
   debug.edeUniqueKeysAfterFilter = edeQualifiedKeys.size;
   debug.edeQualifiedCount = edeQualifiedKeys.size;
