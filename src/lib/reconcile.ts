@@ -175,20 +175,60 @@ function reclean(r: NormalizedRecord): void {
 
 /**
  * Union-Find for merging records into groups via multiple matching strategies.
+ *
+ * Conflict-aware: each root tracks the set of distinct values it has seen for
+ * key strong-ID fields (issuer_subscriber_id, exchange_subscriber_id). A union
+ * is REFUSED if it would mix two different non-empty values for any tracked
+ * field. This prevents a single bad Back Office row (with cross-linked IDs
+ * from two different real members) from collapsing two distinct people into
+ * one reconciled group.
  */
+interface UnionFindIds {
+  isid: Set<string>;
+  esid: Set<string>;
+}
 class UnionFind {
   private parent: number[];
-  constructor(n: number) {
+  private ids: UnionFindIds[];
+  public refusedMerges: Array<{ a: number; b: number; reason: string }> = [];
+  constructor(n: number, records: NormalizedRecord[]) {
     this.parent = Array.from({ length: n }, (_, i) => i);
+    this.ids = records.map(r => ({
+      isid: r.issuer_subscriber_id ? new Set([r.issuer_subscriber_id]) : new Set<string>(),
+      esid: r.exchange_subscriber_id ? new Set([r.exchange_subscriber_id]) : new Set<string>(),
+    }));
   }
   find(x: number): number {
     if (this.parent[x] !== x) this.parent[x] = this.find(this.parent[x]);
     return this.parent[x];
   }
-  union(a: number, b: number): void {
+  /** Returns true if merge succeeded, false if refused due to ID conflict. */
+  union(a: number, b: number): boolean {
     const ra = this.find(a), rb = this.find(b);
-    if (ra !== rb) this.parent[ra] = rb;
+    if (ra === rb) return true;
+    const ia = this.ids[ra], ib = this.ids[rb];
+    // Check for conflicts on strong-ID fields
+    const isidConflict = ia.isid.size > 0 && ib.isid.size > 0 && !setsOverlap(ia.isid, ib.isid);
+    const esidConflict = ia.esid.size > 0 && ib.esid.size > 0 && !setsOverlap(ia.esid, ib.esid);
+    if (isidConflict || esidConflict) {
+      const reason = [
+        isidConflict ? `issuer_subscriber_id mismatch (${[...ia.isid].join(',')} vs ${[...ib.isid].join(',')})` : '',
+        esidConflict ? `exchange_subscriber_id mismatch (${[...ia.esid].join(',')} vs ${[...ib.esid].join(',')})` : '',
+      ].filter(Boolean).join('; ');
+      this.refusedMerges.push({ a, b, reason });
+      return false;
+    }
+    // Merge: rb becomes new root, fold ra's id sets into rb
+    this.parent[ra] = rb;
+    for (const v of ia.isid) ib.isid.add(v);
+    for (const v of ia.esid) ib.esid.add(v);
+    return true;
   }
+}
+
+function setsOverlap(a: Set<string>, b: Set<string>): boolean {
+  for (const v of a) if (b.has(v)) return true;
+  return false;
 }
 
 export function reconcile(records: NormalizedRecord[]): { members: ReconciledMember[]; debug: MatchDebugStats } {
