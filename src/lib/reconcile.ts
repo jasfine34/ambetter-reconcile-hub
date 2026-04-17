@@ -336,6 +336,9 @@ export function reconcile(records: NormalizedRecord[]): { members: ReconciledMem
     commTotalNegative: 0,
     commSampleRaw: [],
     commSampleParsed: [],
+    totalCoveredLives: 0,
+    totalCoveredLivesJan: 0,
+    totalCoveredLivesFeb: 0,
   };
 
   debug.edePromotedIssuerSubIdFromExchange = promotedCount;
