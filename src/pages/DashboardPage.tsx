@@ -11,6 +11,18 @@ import { getNormalizedRecords, saveReconciledMembers } from '@/lib/persistence';
 import { reconcile } from '@/lib/reconcile';
 import { useToast } from '@/hooks/use-toast';
 
+const EDE_RAW_DRILLDOWN_COLUMNS = [
+  { key: 'currentPolicyAOR', label: 'Current Policy AOR' },
+  { key: 'policyStatus', label: 'Policy Status' },
+  { key: 'issuer', label: 'Issuer' },
+  { key: 'effectiveDate', label: 'Effective Date' },
+  { key: 'exchangePolicyId', label: 'Exchange Policy ID' },
+  { key: 'exchangeSubscriberId', label: 'Exchange Sub ID' },
+  { key: 'issuerSubscriberId', label: 'Issuer Sub ID' },
+  { key: 'applicant_name', label: 'Applicant' },
+  { key: 'source_file_label', label: 'Source File' },
+];
+
 const RECON_COLUMNS = [
   { key: 'applicant_name', label: 'Name' },
   { key: 'policy_number', label: 'Policy #' },
@@ -73,11 +85,70 @@ export default function DashboardPage() {
   const [drilldown, setDrilldown] = useState<string | null>(null);
   const [rerunning, setRerunning] = useState(false);
   const [payEntityFilter, setPayEntityFilter] = useState<PayEntityFilter>(getStoredPayEntity);
+  const [edeRawDrilldown, setEdeRawDrilldown] = useState<'2026-01' | '2026-02' | null>(null);
+  const [edeRawRows, setEdeRawRows] = useState<Record<string, unknown>[]>([]);
+  const [edeRawLoading, setEdeRawLoading] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
     localStorage.setItem(PAY_ENTITY_STORAGE_KEY, payEntityFilter);
   }, [payEntityFilter]);
+
+  const loadEdeRawDrilldown = useCallback(async (month: '2026-01' | '2026-02') => {
+    if (!currentBatchId) return;
+    setEdeRawDrilldown(month);
+    setEdeRawLoading(true);
+    try {
+      const all = await getNormalizedRecords(currentBatchId);
+      const targetDate = month === '2026-01' ? '2026-01-01' : '2026-02-01';
+      const QUALIFIED = new Set(['effectuated', 'pendingeffectuation', 'pendingtermination']);
+      const AOR_PREFIXES = ['jason fine', 'erica fine', 'becky shuta'];
+      const rows = (all as any[])
+        .filter(r => r.source_type === 'EDE')
+        .filter(r => {
+          const raw = r.raw_json || {};
+          const eff = String(raw.effectiveDate ?? r.effective_date ?? '').trim();
+          // Normalize effective date
+          let iso = '';
+          const isoMatch = eff.match(/^(\d{4})-(\d{2})-(\d{2})/);
+          if (isoMatch) iso = `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+          else {
+            const slash = eff.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+            if (slash) {
+              let [, m, d, y] = slash;
+              let yr = parseInt(y); if (yr < 100) yr += 2000;
+              iso = `${yr}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+            }
+          }
+          if (iso !== targetDate) return false;
+          const status = String(raw.policyStatus ?? r.status ?? '').toLowerCase().replace(/\s+/g, '');
+          if (!QUALIFIED.has(status)) return false;
+          const issuer = String(raw.issuer ?? r.carrier ?? '').toLowerCase();
+          if (!issuer.includes('ambetter')) return false;
+          const aor = String(raw.currentPolicyAOR ?? '').toLowerCase().trim();
+          return AOR_PREFIXES.some(p => aor.startsWith(p));
+        })
+        .map(r => {
+          const raw = r.raw_json || {};
+          return {
+            currentPolicyAOR: raw.currentPolicyAOR ?? '',
+            policyStatus: raw.policyStatus ?? r.status ?? '',
+            issuer: raw.issuer ?? r.carrier ?? '',
+            effectiveDate: raw.effectiveDate ?? r.effective_date ?? '',
+            exchangePolicyId: raw.exchangePolicyId ?? r.exchange_policy_id ?? '',
+            exchangeSubscriberId: raw.exchangeSubscriberId ?? r.exchange_subscriber_id ?? '',
+            issuerSubscriberId: raw.issuerSubscriberId ?? r.issuer_subscriber_id ?? '',
+            applicant_name: r.applicant_name ?? '',
+            source_file_label: r.source_file_label ?? '',
+          };
+        });
+      setEdeRawRows(rows);
+    } catch (err: any) {
+      toast({ title: 'Error loading EDE rows', description: err.message, variant: 'destructive' });
+    } finally {
+      setEdeRawLoading(false);
+    }
+  }, [currentBatchId, toast]);
 
   const handleRerun = useCallback(async () => {
     if (!currentBatchId) return;
@@ -278,11 +349,21 @@ export default function DashboardPage() {
               <span className="text-muted-foreground">All EDE unfiltered: <strong className="text-foreground">{metrics.totalEdeRaw}</strong></span>
               <span className="text-muted-foreground">Invalid date rows: <strong className="text-foreground">{debugStats.edeInvalidDateCount}</strong></span>
             </div>
-            <div className="flex flex-wrap gap-6 text-sm border-t pt-2">
+            <div className="flex flex-wrap gap-6 text-sm border-t pt-2 items-center">
               <span className="text-muted-foreground font-medium">Expected by month:</span>
-              <span className="text-muted-foreground">1/1/2026: <strong className="text-foreground">{metrics.expectedJan}</strong></span>
-              <span className="text-muted-foreground">2/1/2026: <strong className="text-foreground">{metrics.expectedFeb}</strong></span>
-              <span className="text-xs text-muted-foreground italic">(filter: issuer ~ Ambetter, status in Effectuated/PendingEffectuation/PendingTermination, currentPolicyAOR in Jason/Erica/Becky)</span>
+              <button
+                onClick={() => loadEdeRawDrilldown('2026-01')}
+                className="text-muted-foreground hover:text-primary underline-offset-4 hover:underline"
+              >
+                1/1/2026: <strong className="text-foreground">{metrics.expectedJan}</strong>
+              </button>
+              <button
+                onClick={() => loadEdeRawDrilldown('2026-02')}
+                className="text-muted-foreground hover:text-primary underline-offset-4 hover:underline"
+              >
+                2/1/2026: <strong className="text-foreground">{metrics.expectedFeb}</strong>
+              </button>
+              <span className="text-xs text-muted-foreground italic">(click a count to drilldown into raw EDE rows)</span>
             </div>
             <div className="flex flex-wrap gap-4 text-sm border-t pt-2">
               <span className="text-muted-foreground font-medium">Status breakdown:</span>
@@ -298,6 +379,27 @@ export default function DashboardPage() {
                 {debugStats.edeEffDateSamples.map((d, i) => (
                   <span key={i} className="text-muted-foreground font-mono">{d}</span>
                 ))}
+              </div>
+            )}
+            {edeRawDrilldown && (
+              <div className="border-t pt-3 mt-2 space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold">
+                    Raw EDE rows for {edeRawDrilldown === '2026-01' ? '1/1/2026' : '2/1/2026'}
+                    {!edeRawLoading && ` (${edeRawRows.length} rows)`}
+                  </h4>
+                  <button onClick={() => { setEdeRawDrilldown(null); setEdeRawRows([]); }} className="text-sm text-primary hover:underline">Close</button>
+                </div>
+                {edeRawLoading ? (
+                  <div className="text-sm text-muted-foreground py-4">Loading raw EDE rows...</div>
+                ) : (
+                  <DataTable
+                    data={edeRawRows}
+                    columns={EDE_RAW_DRILLDOWN_COLUMNS}
+                    exportFileName={`ede_raw_${edeRawDrilldown}.csv`}
+                    pageSize={25}
+                  />
+                )}
               </div>
             )}
           </CardContent>
