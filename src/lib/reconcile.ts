@@ -93,6 +93,16 @@ export interface MatchDebugStats {
   edeUniqueKeysAfterFilter: number;
   edeInvalidDateCount: number;
   edeEffDateSamples: string[];
+  // Issuer Sub ID extraction debug
+  edeMissingIssuerSubId: number;
+  edeMissingIssuerSubIdWithExchange: number;
+  edePromotedIssuerSubIdFromExchange: number;
+  edeMissingIssuerSubIdSamples: Array<{
+    applicant_name: string;
+    exchange_subscriber_id: string;
+    exchange_policy_id: string;
+    source_file_label: string;
+  }>;
   // Commission aggregation debug
   commRawRows: number;
   commPositiveRows: number;
