@@ -211,7 +211,7 @@ export default function MemberTimelinePage() {
             <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">Carrier</label>
-                <Select value={draftCarrier} onValueChange={setDraftCarrier}>
+                <Select value={carrier} onValueChange={setCarrier}>
                   <SelectTrigger>
                     <SelectValue placeholder="All carriers" />
                   </SelectTrigger>
