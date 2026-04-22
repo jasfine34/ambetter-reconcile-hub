@@ -194,41 +194,73 @@ export default function MemberTimelinePage() {
         </div>
 
         <Card>
-          <CardContent className="pt-6 grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Carrier</label>
-              <Select value={carrier} onValueChange={setCarrier}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All carriers" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All carriers</SelectItem>
-                  {carrierOptions.map(c => (
-                    <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Start month</label>
-              <Input type="month" value={startMonth} onChange={e => setStartMonth(e.target.value)} />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">End month</label>
-              <Input type="month" value={endMonth} onChange={e => setEndMonth(e.target.value)} />
-            </div>
-            <div className="md:col-span-2 flex gap-2 items-end">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <CardContent className="pt-6 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Carrier</label>
+                <Select value={draftCarrier} onValueChange={setDraftCarrier}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All carriers" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All carriers</SelectItem>
+                    {carrierOptions.map(c => (
+                      <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Start month</label>
                 <Input
-                  placeholder="Search name, policy, sub ID, agent..."
-                  className="pl-9"
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
+                  type="month"
+                  value={draftStartMonth}
+                  onChange={e => setDraftStartMonth(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') applyFilters(); }}
                 />
               </div>
-              <Button variant="outline" size="sm" onClick={handleExport} disabled={filteredRows.length === 0}>
-                <Download className="h-4 w-4 mr-1" /> Export
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">End month</label>
+                <Input
+                  type="month"
+                  value={draftEndMonth}
+                  onChange={e => setDraftEndMonth(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') applyFilters(); }}
+                />
+              </div>
+              <div className="md:col-span-2 flex gap-2 items-end">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search name, policy, sub ID, agent..."
+                    className="pl-9"
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                  />
+                </div>
+                <Button variant="outline" size="sm" onClick={handleExport} disabled={filteredRows.length === 0}>
+                  <Download className="h-4 w-4 mr-1" /> Export
+                </Button>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2">
+              {hasPendingChanges && (
+                <span className="text-xs text-muted-foreground">Unapplied changes</span>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setDraftStartMonth(startMonth);
+                  setDraftEndMonth(endMonth);
+                  setDraftCarrier(carrier);
+                }}
+                disabled={!hasPendingChanges}
+              >
+                Reset
+              </Button>
+              <Button size="sm" onClick={applyFilters} disabled={!hasPendingChanges}>
+                Apply Filter
               </Button>
             </div>
           </CardContent>
