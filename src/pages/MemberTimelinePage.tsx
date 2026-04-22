@@ -121,10 +121,21 @@ export default function MemberTimelinePage() {
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [records]);
 
+  const aorOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of records) {
+      const a = (r.aor_bucket || '').trim();
+      if (a) set.add(a);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [records]);
+
   const filteredRecords = useMemo(() => {
-    if (carrier === 'all') return records;
-    return records.filter(r => carrierFamily(r.carrier || '') === carrier);
-  }, [records, carrier]);
+    let out = records;
+    if (carrier !== 'all') out = out.filter(r => carrierFamily(r.carrier || '') === carrier);
+    if (aorBuckets.length > 0) out = out.filter(r => aorBuckets.includes((r.aor_bucket || '').trim()));
+    return out;
+  }, [records, carrier, aorBuckets]);
 
   const allRows = useMemo(() => buildMemberTimeline(filteredRecords as any, monthList), [filteredRecords, monthList]);
 
