@@ -12,6 +12,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Search, Download, ChevronDown, Info } from 'lucide-react';
 import { getNormalizedRecords } from '@/lib/persistence';
 import { buildMemberTimeline, buildMonthList, formatMonthLabel, type MemberTimelineRow } from '@/lib/memberTimeline';
+import { assignMergedMemberKeys } from '@/lib/memberMerge';
 import { exportToCSV } from '@/lib/csvParser';
 import { NPN_MAP } from '@/lib/constants';
 
@@ -89,7 +90,14 @@ export default function MemberTimelinePage() {
     if (!currentBatchId) { setRecords([]); return; }
     setLoading(true);
     getNormalizedRecords(currentBatchId)
-      .then(setRecords)
+      .then(recs => {
+        // Re-key records using the same multi-strategy union-find that
+        // reconcile uses, so the same person across EDE / Back Office /
+        // Commission collapses into ONE timeline row (e.g. Aaron Barrett by
+        // U-sub-id + by Ambetter policy number).
+        assignMergedMemberKeys(recs as any);
+        setRecords(recs);
+      })
       .finally(() => setLoading(false));
   }, [currentBatchId]);
 
