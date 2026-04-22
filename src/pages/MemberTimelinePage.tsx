@@ -33,25 +33,32 @@ export default function MemberTimelinePage() {
   const [startMonth, setStartMonth] = useState(initial.start);
   const [endMonth, setEndMonth] = useState(initial.end);
   const [carrier, setCarrier] = useState<string>('all');
+  const [aorBuckets, setAorBuckets] = useState<string[]>([]); // empty = all
   // Draft filters live in the form until "Apply" is clicked
   const [draftStartMonth, setDraftStartMonth] = useState(initial.start);
   const [draftEndMonth, setDraftEndMonth] = useState(initial.end);
   const [draftCarrier, setDraftCarrier] = useState<string>('all');
+  const [draftAorBuckets, setDraftAorBuckets] = useState<string[]>([]);
   const [records, setRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'unpaid' | 'paid' | 'partial'>('all');
   const [page, setPage] = useState(0);
 
+  const sameSet = (a: string[], b: string[]) =>
+    a.length === b.length && a.every(x => b.includes(x));
+
   const hasPendingChanges =
     draftStartMonth !== startMonth ||
     draftEndMonth !== endMonth ||
-    draftCarrier !== carrier;
+    draftCarrier !== carrier ||
+    !sameSet(draftAorBuckets, aorBuckets);
 
   const applyFilters = () => {
     setStartMonth(draftStartMonth);
     setEndMonth(draftEndMonth);
     setCarrier(draftCarrier);
+    setAorBuckets(draftAorBuckets);
   };
 
   useEffect(() => {
