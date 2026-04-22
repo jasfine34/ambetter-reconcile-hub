@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Search, Download } from 'lucide-react';
 import { getNormalizedRecords } from '@/lib/persistence';
@@ -33,6 +34,7 @@ export default function MemberTimelinePage() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'unpaid' | 'paid' | 'partial'>('all');
+  const [carrier, setCarrier] = useState<string>('all');
   const [page, setPage] = useState(0);
 
   useEffect(() => {
@@ -55,7 +57,22 @@ export default function MemberTimelinePage() {
     return buildMonthList(startMonth, endMonth);
   }, [startMonth, endMonth]);
 
-  const allRows = useMemo(() => buildMemberTimeline(records as any, monthList), [records, monthList]);
+  const carrierOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of records) {
+      const c = (r.carrier || '').trim();
+      if (c) set.add(c);
+    }
+    return Array.from(set).sort();
+  }, [records]);
+
+  const filteredRecords = useMemo(() => {
+    if (carrier === 'all') return records;
+    const target = carrier.toLowerCase();
+    return records.filter(r => (r.carrier || '').toLowerCase() === target);
+  }, [records, carrier]);
+
+  const allRows = useMemo(() => buildMemberTimeline(filteredRecords as any, monthList), [filteredRecords, monthList]);
 
   const filteredRows = useMemo(() => {
     let rows = allRows;
@@ -78,7 +95,7 @@ export default function MemberTimelinePage() {
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
   const pageRows = filteredRows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
-  useEffect(() => { setPage(0); }, [filter, search, startMonth, endMonth]);
+  useEffect(() => { setPage(0); }, [filter, search, startMonth, endMonth, carrier]);
 
   const summary = useMemo(() => {
     let totalPaid = 0, totalUnpaidMonths = 0, membersWithUnpaid = 0;
@@ -131,7 +148,21 @@ export default function MemberTimelinePage() {
         </div>
 
         <Card>
-          <CardContent className="pt-6 grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+          <CardContent className="pt-6 grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Carrier</label>
+              <Select value={carrier} onValueChange={setCarrier}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All carriers" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All carriers</SelectItem>
+                  {carrierOptions.map(c => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">Start month</label>
               <Input type="month" value={startMonth} onChange={e => setStartMonth(e.target.value)} />
