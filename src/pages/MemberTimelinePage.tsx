@@ -140,9 +140,11 @@ export default function MemberTimelinePage() {
   const allRows = useMemo(() => buildMemberTimeline(filteredRecords as any, monthList), [filteredRecords, monthList]);
 
   const filteredRows = useMemo(() => {
-    let rows = allRows;
+    // Base set: only members with at least one due month in the selected range.
+    // Members with no due months have nothing to reconcile and are excluded from all buckets.
+    let rows = allRows.filter(r => r.months_due > 0);
     if (filter === 'unpaid') rows = rows.filter(r => r.months_unpaid > 0);
-    else if (filter === 'paid') rows = rows.filter(r => r.months_due > 0 && r.months_unpaid === 0);
+    else if (filter === 'paid') rows = rows.filter(r => r.months_unpaid === 0);
     else if (filter === 'partial') rows = rows.filter(r => r.months_paid > 0 && r.months_unpaid > 0);
     if (search) {
       const s = search.toLowerCase();
@@ -342,51 +344,60 @@ export default function MemberTimelinePage() {
         </Card>
 
         <div className="flex items-center gap-2 flex-wrap text-xs">
-          {(['all', 'unpaid', 'partial', 'paid'] as const).map(f => {
-            const tip =
-              f === 'all'
-                ? 'Every member in the selected range, regardless of payment status.'
-                : f === 'unpaid'
-                ? 'Members with at least one due month that has not been paid (gap in commission).'
-                : f === 'partial'
-                ? 'Members who have been paid for some due months but still have one or more unpaid due months.'
-                : 'Members where every due month in the range has been paid in full.';
-            const label =
-              f === 'all'
-                ? `All (${allRows.length})`
-                : f === 'unpaid'
-                ? `Has unpaid (${allRows.filter(r => r.months_unpaid > 0).length})`
-                : f === 'partial'
-                ? `Partially paid (${allRows.filter(r => r.months_paid > 0 && r.months_unpaid > 0).length})`
-                : `Fully paid (${allRows.filter(r => r.months_due > 0 && r.months_unpaid === 0).length})`;
-            return (
-              <div key={f} className="inline-flex items-center">
-                <button
-                  onClick={() => setFilter(f)}
-                  className={`pl-3 pr-2 py-1 rounded-full font-medium border transition-colors inline-flex items-center gap-1.5 ${
-                    filter === f
-                      ? 'bg-primary text-primary-foreground border-primary'
-                      : 'bg-secondary text-secondary-foreground border-border hover:bg-accent'
-                  }`}
-                >
-                  <span>{label}</span>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span
-                        onClick={e => e.stopPropagation()}
-                        className="opacity-70 hover:opacity-100 transition-opacity cursor-help inline-flex"
-                      >
-                        <Info className="h-3 w-3" />
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-[260px] text-xs leading-relaxed">
-                      {tip}
-                    </TooltipContent>
-                  </Tooltip>
-                </button>
-              </div>
-            );
-          })}
+          {(() => {
+            const dueRows = allRows.filter(r => r.months_due > 0);
+            const counts = {
+              all: dueRows.length,
+              unpaid: dueRows.filter(r => r.months_unpaid > 0).length,
+              partial: dueRows.filter(r => r.months_paid > 0 && r.months_unpaid > 0).length,
+              paid: dueRows.filter(r => r.months_unpaid === 0).length,
+            };
+            return (['all', 'unpaid', 'partial', 'paid'] as const).map(f => {
+              const tip =
+                f === 'all'
+                  ? 'All members with at least one due month in the selected range.'
+                  : f === 'unpaid'
+                  ? 'Members with at least one due month that has not been paid (gap in commission).'
+                  : f === 'partial'
+                  ? 'Members who have been paid for some due months but still have one or more unpaid due months.'
+                  : 'Members where every due month in the range has been paid in full.';
+              const label =
+                f === 'all'
+                  ? `All (${counts.all})`
+                  : f === 'unpaid'
+                  ? `Has unpaid (${counts.unpaid})`
+                  : f === 'partial'
+                  ? `Partially paid (${counts.partial})`
+                  : `Fully paid (${counts.paid})`;
+              return (
+                <div key={f} className="inline-flex items-center">
+                  <button
+                    onClick={() => setFilter(f)}
+                    className={`pl-3 pr-2 py-1 rounded-full font-medium border transition-colors inline-flex items-center gap-1.5 ${
+                      filter === f
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-secondary text-secondary-foreground border-border hover:bg-accent'
+                    }`}
+                  >
+                    <span>{label}</span>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span
+                          onClick={e => e.stopPropagation()}
+                          className="opacity-70 hover:opacity-100 transition-opacity cursor-help inline-flex"
+                        >
+                          <Info className="h-3 w-3" />
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[260px] text-xs leading-relaxed">
+                        {tip}
+                      </TooltipContent>
+                    </Tooltip>
+                  </button>
+                </div>
+              );
+            });
+          })()}
           <div className="ml-auto flex gap-4 text-muted-foreground">
             <span>Total paid: <strong className="text-foreground">${summary.totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
             <span>Members w/ gaps: <strong className="text-foreground">{summary.membersWithUnpaid}</strong></span>
