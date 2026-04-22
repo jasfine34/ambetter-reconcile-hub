@@ -103,12 +103,16 @@ function isAmbetterEDE(row: Record<string, string>): boolean {
 }
 
 function isAmbetterCommission(row: Record<string, string>): boolean {
+  // Check Database column
   const db = (row['Database'] || row['database'] || '').toLowerCase();
   if (db.includes('ambetter')) return true;
+  // Check Company ID column
   const companyId = (row['Company ID'] || '').toLowerCase();
   if (companyId.includes('ambetter')) return true;
-  const policyNum = row['Policy Number'] || '';
-  if (policyNum.trim()) return true;
+  // Check if policy number starts with "U" — Ambetter's policy number format
+  // Do NOT include all non-empty policy numbers — that pulls in non-Ambetter rows
+  const policyNum = (row['Policy Number'] || '').trim();
+  if (policyNum.toUpperCase().startsWith('U')) return true;
   return false;
 }
 
