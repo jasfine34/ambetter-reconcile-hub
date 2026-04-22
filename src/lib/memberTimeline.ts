@@ -179,6 +179,14 @@ export function buildMemberTimeline(
       issuer_subscriber_id: recs.find(r => r.issuer_subscriber_id)?.issuer_subscriber_id || '',
       agent_name: recs.find(r => r.agent_name)?.agent_name || '',
       aor_bucket: recs.find(r => r.aor_bucket)?.aor_bucket || '',
+      current_policy_aor: (() => {
+        for (const r of recs) {
+          if (r.source_type !== 'EDE') continue;
+          const raw = r.raw_json?.['currentPolicyAOR'];
+          if (typeof raw === 'string' && raw.trim()) return raw.trim();
+        }
+        return '';
+      })(),
       cells,
       total_paid: 0,
       months_due: 0,
