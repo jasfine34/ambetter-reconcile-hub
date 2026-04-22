@@ -140,9 +140,11 @@ export default function MemberTimelinePage() {
   const allRows = useMemo(() => buildMemberTimeline(filteredRecords as any, monthList), [filteredRecords, monthList]);
 
   const filteredRows = useMemo(() => {
-    let rows = allRows;
+    // Base set: only members with at least one due month in the selected range.
+    // Members with no due months have nothing to reconcile and are excluded from all buckets.
+    let rows = allRows.filter(r => r.months_due > 0);
     if (filter === 'unpaid') rows = rows.filter(r => r.months_unpaid > 0);
-    else if (filter === 'paid') rows = rows.filter(r => r.months_due > 0 && r.months_unpaid === 0);
+    else if (filter === 'paid') rows = rows.filter(r => r.months_unpaid === 0);
     else if (filter === 'partial') rows = rows.filter(r => r.months_paid > 0 && r.months_unpaid > 0);
     if (search) {
       const s = search.toLowerCase();
