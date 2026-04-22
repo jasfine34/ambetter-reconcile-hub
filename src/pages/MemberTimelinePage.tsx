@@ -240,8 +240,8 @@ export default function MemberTimelinePage() {
                         const c = row.cells[m];
                         const hasAny = c.in_ede || c.in_back_office || c.in_commission;
                         let cellCls = 'bg-transparent';
-                        if (c.due && c.paid_amount > 0.0001) cellCls = 'bg-emerald-500/15 border border-emerald-500/30';
-                        else if (c.due) cellCls = 'bg-rose-500/15 border border-rose-500/30';
+                        if (c.due && c.paid_amount > 0.0001) cellCls = 'bg-success/15 border border-success/30';
+                        else if (c.due) cellCls = 'bg-destructive/15 border border-destructive/30';
                         else if (hasAny) cellCls = 'bg-muted/40 border border-border';
 
                         return (
@@ -258,7 +258,7 @@ export default function MemberTimelinePage() {
                                   <div className="text-[10px] font-medium text-foreground leading-tight">
                                     {c.paid_amount > 0.0001
                                       ? `$${c.paid_amount.toFixed(2)}`
-                                      : c.due ? <span className="text-rose-600 dark:text-rose-400">unpaid</span> : ''}
+                                      : c.due ? <span className="text-destructive">unpaid</span> : ''}
                                   </div>
                                 </div>
                               </TooltipTrigger>
