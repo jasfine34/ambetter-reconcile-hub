@@ -9,9 +9,18 @@ function normalizeDate(val: string | undefined | null): string | null {
   if (!val) return null;
   const v = val.trim();
   if (!v) return null;
-  const d = new Date(v);
-  if (isNaN(d.getTime())) return null;
-  return d.toISOString().split('T')[0];
+  // Try ISO format first (YYYY-MM-DD) — no timezone conversion needed
+  const isoMatch = v.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+  // Try M/D/YYYY or MM/DD/YYYY or M-D-YYYY
+  const slashMatch = v.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (slashMatch) {
+    const [, m, d, y] = slashMatch;
+    let yr = parseInt(y, 10);
+    if (yr < 100) yr += 2000;
+    return `${yr}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+  return null;
 }
 
 const VALID_EDE_STATUSES = new Set(['effectuated', 'pending effectuated', 'pending termination']);
