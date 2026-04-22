@@ -318,8 +318,6 @@ export default function MemberTimelinePage() {
                 onClick={() => {
                   setDraftStartMonth(startMonth);
                   setDraftEndMonth(endMonth);
-                  setDraftCarrier(carrier);
-                  setDraftAorBuckets(aorBuckets);
                 }}
                 disabled={!hasPendingChanges}
               >
