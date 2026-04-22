@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Upload, AlertTriangle, Users, Building2, Link2, FileText } from 'lucide-react';
+import { LayoutDashboard, Upload, AlertTriangle, Users, Building2, Link2, FileText, CalendarRange } from 'lucide-react';
 
 const links = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -8,6 +8,7 @@ const links = [
   { to: '/agents', icon: Users, label: 'Agent Summary' },
   { to: '/entities', icon: Building2, label: 'Entity Summary' },
   { to: '/manual-match', icon: Link2, label: 'Manual Match' },
+  { to: '/member-timeline', icon: CalendarRange, label: 'Member Timeline' },
   { to: '/records', icon: FileText, label: 'All Records' },
 ];
 

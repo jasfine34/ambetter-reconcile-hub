@@ -12,6 +12,7 @@ import AgentSummaryPage from "./pages/AgentSummaryPage";
 import EntitySummaryPage from "./pages/EntitySummaryPage";
 import ManualMatchPage from "./pages/ManualMatchPage";
 import AllRecordsPage from "./pages/AllRecordsPage";
+import MemberTimelinePage from "./pages/MemberTimelinePage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -32,6 +33,7 @@ const App = () => (
               <Route path="/entities" element={<EntitySummaryPage />} />
               <Route path="/manual-match" element={<ManualMatchPage />} />
               <Route path="/records" element={<AllRecordsPage />} />
+              <Route path="/member-timeline" element={<MemberTimelinePage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </AppLayout>
