@@ -184,7 +184,7 @@ export default function MemberTimelinePage() {
                 <SelectContent>
                   <SelectItem value="all">All carriers</SelectItem>
                   {carrierOptions.map(c => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                    <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
