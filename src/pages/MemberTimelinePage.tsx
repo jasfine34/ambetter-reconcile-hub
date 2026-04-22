@@ -60,11 +60,15 @@ export default function MemberTimelinePage() {
       .finally(() => setLoading(false));
   }, [currentBatchId]);
 
-  // Reset to default range when batch changes
+  // Reset to default range when batch changes (apply immediately)
   useEffect(() => {
     const r = defaultRange(currentBatch?.statement_month);
     setStartMonth(r.start);
     setEndMonth(r.end);
+    setDraftStartMonth(r.start);
+    setDraftEndMonth(r.end);
+    setCarrier('all');
+    setDraftCarrier('all');
   }, [currentBatchId]);
 
   const monthList = useMemo(() => {
