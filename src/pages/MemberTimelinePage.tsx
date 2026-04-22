@@ -58,6 +58,8 @@ export default function MemberTimelinePage() {
   const [endMonth, setEndMonth] = useState(initial.end);
   const [carrier, setCarrier] = useState<string>('all');
   const [aorBuckets, setAorBuckets] = useState<string[]>([]); // empty = all
+  const [aorScope, setAorScope] = useState<AorScope>(getStoredAorScope);
+  const [payEntity, setPayEntity] = useState<PayEntityScope>(getStoredPayEntity);
   // Only date range is gated behind Apply (carrier/AOR apply immediately)
   const [draftStartMonth, setDraftStartMonth] = useState(initial.start);
   const [draftEndMonth, setDraftEndMonth] = useState(initial.end);
@@ -66,6 +68,13 @@ export default function MemberTimelinePage() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'unpaid' | 'paid' | 'partial'>('all');
   const [page, setPage] = useState(0);
+
+  useEffect(() => {
+    try { localStorage.setItem(PAY_ENTITY_STORAGE_KEY, payEntity); } catch {}
+  }, [payEntity]);
+  useEffect(() => {
+    try { localStorage.setItem(AOR_SCOPE_STORAGE_KEY, aorScope); } catch {}
+  }, [aorScope]);
 
   const hasPendingChanges =
     draftStartMonth !== startMonth ||
