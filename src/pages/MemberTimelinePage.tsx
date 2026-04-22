@@ -229,11 +229,11 @@ export default function MemberTimelinePage() {
                   <PopoverTrigger asChild>
                     <Button variant="outline" className="w-full justify-between font-normal">
                       <span className="truncate">
-                        {draftAorBuckets.length === 0
+                        {aorBuckets.length === 0
                           ? 'All AORs'
-                          : draftAorBuckets.length === 1
-                            ? draftAorBuckets[0]
-                            : `${draftAorBuckets.length} selected`}
+                          : aorBuckets.length === 1
+                            ? aorBuckets[0]
+                            : `${aorBuckets.length} selected`}
                       </span>
                       <ChevronDown className="h-4 w-4 opacity-50 shrink-0 ml-2" />
                     </Button>
@@ -242,25 +242,25 @@ export default function MemberTimelinePage() {
                     <div className="space-y-1 max-h-64 overflow-auto">
                       <button
                         type="button"
-                        onClick={() => setDraftAorBuckets([])}
+                        onClick={() => setAorBuckets([])}
                         className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-accent ${
-                          draftAorBuckets.length === 0 ? 'bg-accent' : ''
+                          aorBuckets.length === 0 ? 'bg-accent' : ''
                         }`}
                       >
-                        <Checkbox checked={draftAorBuckets.length === 0} className="pointer-events-none" />
+                        <Checkbox checked={aorBuckets.length === 0} className="pointer-events-none" />
                         <span className="font-medium">All AORs</span>
                       </button>
                       <div className="h-px bg-border my-1" />
                       {aorOptions.length === 0 ? (
                         <div className="px-2 py-1.5 text-xs text-muted-foreground">No AORs available</div>
                       ) : aorOptions.map(a => {
-                        const checked = draftAorBuckets.includes(a);
+                        const checked = aorBuckets.includes(a);
                         return (
                           <button
                             key={a}
                             type="button"
                             onClick={() => {
-                              setDraftAorBuckets(prev =>
+                              setAorBuckets(prev =>
                                 prev.includes(a) ? prev.filter(x => x !== a) : [...prev, a]
                               );
                             }}
