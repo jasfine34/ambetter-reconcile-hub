@@ -57,7 +57,22 @@ export default function MemberTimelinePage() {
     return buildMonthList(startMonth, endMonth);
   }, [startMonth, endMonth]);
 
-  const allRows = useMemo(() => buildMemberTimeline(records as any, monthList), [records, monthList]);
+  const carrierOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of records) {
+      const c = (r.carrier || '').trim();
+      if (c) set.add(c);
+    }
+    return Array.from(set).sort();
+  }, [records]);
+
+  const filteredRecords = useMemo(() => {
+    if (carrier === 'all') return records;
+    const target = carrier.toLowerCase();
+    return records.filter(r => (r.carrier || '').toLowerCase() === target);
+  }, [records, carrier]);
+
+  const allRows = useMemo(() => buildMemberTimeline(filteredRecords as any, monthList), [filteredRecords, monthList]);
 
   const filteredRows = useMemo(() => {
     let rows = allRows;
