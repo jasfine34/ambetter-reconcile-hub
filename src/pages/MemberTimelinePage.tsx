@@ -17,10 +17,8 @@ type PageSizeOption = typeof PAGE_SIZE_OPTIONS[number];
 
 function defaultRange(statementMonth: string | null | undefined): { start: string; end: string } {
   const end = statementMonth ? String(statementMonth).substring(0, 7) : '2026-02';
-  const [y, m] = end.split('-').map(Number);
-  let sm = m - 5, sy = y;
-  while (sm < 1) { sm += 12; sy -= 1; }
-  const start = `${sy}-${String(sm).padStart(2, '0')}`;
+  // Always anchor start at January 2026 unless the batch ends earlier
+  const start = end < '2026-01' ? end : '2026-01';
   return { start, end };
 }
 
