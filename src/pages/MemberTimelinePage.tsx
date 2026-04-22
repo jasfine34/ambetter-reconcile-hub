@@ -152,12 +152,58 @@ export default function MemberTimelinePage() {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [records]);
 
+  // Compute, per member_key, whether they pass AOR scope + pay-entity filters.
+  // A member passes AOR scope = "official" if ANY of their records has an aor_bucket OR
+  // EDE currentPolicyAOR that starts with one of the official AOR prefixes.
+  // A member passes pay-entity = "Coverall" / "Vix" if ANY of their records has an
+  // agent_npn whose NPN_MAP expectedPayEntity matches (Coverall_or_Vix matches both).
+  const allowedMemberKeys = useMemo(() => {
+    if (aorScope === 'all' && payEntity === 'All') return null; // no scope filter
+    const byMember = new Map<string, any[]>();
+    for (const r of records) {
+      const k = r.member_key || r.applicant_name || 'unknown';
+      let arr = byMember.get(k);
+      if (!arr) { arr = []; byMember.set(k, arr); }
+      arr.push(r);
+    }
+    const allowed = new Set<string>();
+    for (const [key, recs] of byMember) {
+      // AOR scope check
+      if (aorScope === 'official') {
+        const matchesAor = recs.some(r => {
+          const bucket = String(r.aor_bucket || '').toLowerCase().trim();
+          if (OFFICIAL_AOR_PREFIXES.some(p => bucket.startsWith(p))) return true;
+          const rawAor = String(r.raw_json?.['currentPolicyAOR'] || '').toLowerCase().trim();
+          return OFFICIAL_AOR_PREFIXES.some(p => rawAor.startsWith(p));
+        });
+        if (!matchesAor) continue;
+      }
+      // Pay entity check
+      if (payEntity !== 'All') {
+        const matchesEntity = recs.some(r => {
+          const npn = String(r.agent_npn || '').trim();
+          const info = NPN_MAP[npn as keyof typeof NPN_MAP];
+          if (!info) return false;
+          if (info.expectedPayEntity === payEntity) return true;
+          if (info.expectedPayEntity === 'Coverall_or_Vix') return true;
+          return false;
+        });
+        if (!matchesEntity) continue;
+      }
+      allowed.add(key);
+    }
+    return allowed;
+  }, [records, aorScope, payEntity]);
+
   const filteredRecords = useMemo(() => {
     let out = records;
+    if (allowedMemberKeys) {
+      out = out.filter(r => allowedMemberKeys.has(r.member_key || r.applicant_name || 'unknown'));
+    }
     if (carrier !== 'all') out = out.filter(r => carrierFamily(r.carrier || '') === carrier);
     if (aorBuckets.length > 0) out = out.filter(r => aorBuckets.includes((r.aor_bucket || '').trim()));
     return out;
-  }, [records, carrier, aorBuckets]);
+  }, [records, allowedMemberKeys, carrier, aorBuckets]);
 
   const allRows = useMemo(() => buildMemberTimeline(filteredRecords as any, monthList), [filteredRecords, monthList]);
 
