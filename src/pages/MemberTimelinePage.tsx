@@ -13,6 +13,30 @@ import { Search, Download, ChevronDown, Info } from 'lucide-react';
 import { getNormalizedRecords } from '@/lib/persistence';
 import { buildMemberTimeline, buildMonthList, formatMonthLabel, type MemberTimelineRow } from '@/lib/memberTimeline';
 import { exportToCSV } from '@/lib/csvParser';
+import { NPN_MAP } from '@/lib/constants';
+
+const OFFICIAL_AOR_PREFIXES = ['jason fine', 'erica fine', 'becky shuta'];
+
+type PayEntityScope = 'Coverall' | 'Vix' | 'All';
+type AorScope = 'official' | 'all';
+
+const PAY_ENTITY_STORAGE_KEY = 'timeline_pay_entity_filter';
+const AOR_SCOPE_STORAGE_KEY = 'timeline_aor_scope_filter';
+
+function getStoredPayEntity(): PayEntityScope {
+  try {
+    const v = localStorage.getItem(PAY_ENTITY_STORAGE_KEY);
+    if (v === 'Coverall' || v === 'Vix' || v === 'All') return v;
+  } catch {}
+  return 'Coverall';
+}
+function getStoredAorScope(): AorScope {
+  try {
+    const v = localStorage.getItem(AOR_SCOPE_STORAGE_KEY);
+    if (v === 'official' || v === 'all') return v;
+  } catch {}
+  return 'official';
+}
 
 const PAGE_SIZE_OPTIONS = ['25', '50', '100', '250', 'all'] as const;
 type PageSizeOption = typeof PAGE_SIZE_OPTIONS[number];
