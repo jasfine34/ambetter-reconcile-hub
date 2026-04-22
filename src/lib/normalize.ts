@@ -9,9 +9,18 @@ function normalizeDate(val: string | undefined | null): string | null {
   if (!val) return null;
   const v = val.trim();
   if (!v) return null;
-  const d = new Date(v);
-  if (isNaN(d.getTime())) return null;
-  return d.toISOString().split('T')[0];
+  // Try ISO format first (YYYY-MM-DD) — no timezone conversion needed
+  const isoMatch = v.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+  // Try M/D/YYYY or MM/DD/YYYY or M-D-YYYY
+  const slashMatch = v.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (slashMatch) {
+    const [, m, d, y] = slashMatch;
+    let yr = parseInt(y, 10);
+    if (yr < 100) yr += 2000;
+    return `${yr}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+  return null;
 }
 
 const VALID_EDE_STATUSES = new Set(['effectuated', 'pending effectuated', 'pending termination']);
@@ -94,12 +103,16 @@ function isAmbetterEDE(row: Record<string, string>): boolean {
 }
 
 function isAmbetterCommission(row: Record<string, string>): boolean {
+  // Check Database column
   const db = (row['Database'] || row['database'] || '').toLowerCase();
   if (db.includes('ambetter')) return true;
+  // Check Company ID column
   const companyId = (row['Company ID'] || '').toLowerCase();
   if (companyId.includes('ambetter')) return true;
-  const policyNum = row['Policy Number'] || '';
-  if (policyNum.trim()) return true;
+  // Check if policy number starts with "U" — Ambetter's policy number format
+  // Do NOT include all non-empty policy numbers — that pulls in non-Ambetter rows
+  const policyNum = (row['Policy Number'] || '').trim();
+  if (policyNum.toUpperCase().startsWith('U')) return true;
   return false;
 }
 
