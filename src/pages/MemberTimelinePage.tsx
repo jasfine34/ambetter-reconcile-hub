@@ -287,7 +287,7 @@ export default function MemberTimelinePage() {
 
         <Card>
           <CardContent className="pt-6 space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-7 gap-4 items-end">
+            <div className="grid grid-cols-1 md:grid-cols-8 gap-4 items-end">
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block flex items-center gap-1">
                   Scope
