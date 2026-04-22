@@ -163,7 +163,7 @@ export default function MemberTimelinePage() {
   const totalPages = showAll ? 1 : Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const pageRows = showAll ? filteredRows : filteredRows.slice(page * pageSize, (page + 1) * pageSize);
 
-  useEffect(() => { setPage(0); }, [filter, search, startMonth, endMonth, carrier, pageSizeOpt]);
+  useEffect(() => { setPage(0); }, [filter, search, startMonth, endMonth, carrier, aorBuckets, pageSizeOpt]);
 
   const summary = useMemo(() => {
     let totalPaid = 0, totalUnpaidMonths = 0, membersWithUnpaid = 0;
