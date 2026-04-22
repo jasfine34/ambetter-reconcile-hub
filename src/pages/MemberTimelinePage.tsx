@@ -27,14 +27,30 @@ export default function MemberTimelinePage() {
   const currentBatch = batches.find((b: any) => b.id === currentBatchId);
   const initial = defaultRange(currentBatch?.statement_month);
 
+  // Applied (active) filters drive the table
   const [startMonth, setStartMonth] = useState(initial.start);
   const [endMonth, setEndMonth] = useState(initial.end);
+  const [carrier, setCarrier] = useState<string>('all');
+  // Draft filters live in the form until "Apply" is clicked
+  const [draftStartMonth, setDraftStartMonth] = useState(initial.start);
+  const [draftEndMonth, setDraftEndMonth] = useState(initial.end);
+  const [draftCarrier, setDraftCarrier] = useState<string>('all');
   const [records, setRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'unpaid' | 'paid' | 'partial'>('all');
-  const [carrier, setCarrier] = useState<string>('all');
   const [page, setPage] = useState(0);
+
+  const hasPendingChanges =
+    draftStartMonth !== startMonth ||
+    draftEndMonth !== endMonth ||
+    draftCarrier !== carrier;
+
+  const applyFilters = () => {
+    setStartMonth(draftStartMonth);
+    setEndMonth(draftEndMonth);
+    setCarrier(draftCarrier);
+  };
 
   useEffect(() => {
     if (!currentBatchId) { setRecords([]); return; }
