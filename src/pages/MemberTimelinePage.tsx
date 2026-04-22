@@ -380,7 +380,7 @@ export default function MemberTimelinePage() {
                       Member
                     </th>
                     <th className="text-left px-2 py-2 font-medium text-muted-foreground whitespace-nowrap">Policy/Subs ID</th>
-                    <th className="text-left px-2 py-2 font-medium text-muted-foreground whitespace-nowrap">Agent</th>
+                    <th className="text-left px-2 py-2 font-medium text-muted-foreground whitespace-nowrap">AOR</th>
                     <th className="text-right px-2 py-2 font-medium text-muted-foreground whitespace-nowrap">Total $</th>
                     <th className="text-center px-2 py-2 font-medium text-muted-foreground whitespace-nowrap">Due/Paid</th>
                     {monthList.map(m => (
