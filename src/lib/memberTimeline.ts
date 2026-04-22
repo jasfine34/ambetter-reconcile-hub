@@ -19,6 +19,7 @@ export interface MemberTimelineRow {
   issuer_subscriber_id: string;
   agent_name: string;
   aor_bucket: string;
+  current_policy_aor: string;
   cells: Record<string, MonthCell>;  // keyed by 'YYYY-MM'
   total_paid: number;
   months_due: number;
