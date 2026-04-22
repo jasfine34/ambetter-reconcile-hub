@@ -78,6 +78,8 @@ export default function MemberTimelinePage() {
     setDraftEndMonth(r.end);
     setCarrier('all');
     setDraftCarrier('all');
+    setAorBuckets([]);
+    setDraftAorBuckets([]);
   }, [currentBatchId]);
 
   const monthList = useMemo(() => {
