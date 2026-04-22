@@ -287,7 +287,48 @@ export default function MemberTimelinePage() {
 
         <Card>
           <CardContent className="pt-6 space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
+            <div className="grid grid-cols-1 md:grid-cols-7 gap-4 items-end">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block flex items-center gap-1">
+                  Scope
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="cursor-help inline-flex"><Info className="h-3 w-3 opacity-60" /></span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[260px] text-xs leading-relaxed">
+                      <strong>Official AORs only:</strong> matches the dashboard — restricts to members tied to Jason Fine, Erica Fine, or Becky Shuta. <strong>All AORs:</strong> includes every member regardless of AOR.
+                    </TooltipContent>
+                  </Tooltip>
+                </label>
+                <Select value={aorScope} onValueChange={(v) => setAorScope(v as AorScope)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="official">Official AORs only</SelectItem>
+                    <SelectItem value="all">All AORs</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block flex items-center gap-1">
+                  Pay entity
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="cursor-help inline-flex"><Info className="h-3 w-3 opacity-60" /></span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[260px] text-xs leading-relaxed">
+                      Filter by expected pay entity (NPN-based). Erica's members count for both Coverall and Vix. "All" includes everyone.
+                    </TooltipContent>
+                  </Tooltip>
+                </label>
+                <Select value={payEntity} onValueChange={(v) => setPayEntity(v as PayEntityScope)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Coverall">Coverall</SelectItem>
+                    <SelectItem value="Vix">Vix Health</SelectItem>
+                    <SelectItem value="All">All entities</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">Carrier</label>
                 <Select value={carrier} onValueChange={setCarrier}>
