@@ -150,9 +150,19 @@ function emptyCell(month: string): MonthCell {
   };
 }
 
+/**
+ * Optional per-record predicate. When provided, a record only contributes
+ * "due" months when this returns true — used to scope due-counting to records
+ * whose AOR/pay-entity for that month belongs to us. Records still contribute
+ * to source presence (E/B/C badges) and paid amounts regardless, so the
+ * timeline cells remain informative for context.
+ */
+export type DueRecordPredicate = (r: NormalizedRecord) => boolean;
+
 export function buildMemberTimeline(
   records: NormalizedRecord[],
-  monthList: string[]
+  monthList: string[],
+  isDueEligibleRecord?: DueRecordPredicate
 ): MemberTimelineRow[] {
   const monthSet = new Set(monthList);
   const byMember = new Map<string, NormalizedRecord[]>();
@@ -195,11 +205,12 @@ export function buildMemberTimeline(
     };
 
     for (const r of recs) {
+      const eligibleForDue = isDueEligibleRecord ? isDueEligibleRecord(r) : true;
       if (r.source_type === 'EDE') {
         const ym = ymOf(r.effective_date);
         if (ym && monthSet.has(ym)) {
           cells[ym].in_ede = true;
-          if (isEDEQualified(r)) cells[ym].due = true;
+          if (eligibleForDue && isEDEQualified(r)) cells[ym].due = true;
         }
       } else if (r.source_type === 'BACK_OFFICE') {
         const { start, end } = backOfficeActiveRange(r);
@@ -208,7 +219,7 @@ export function buildMemberTimeline(
           if (m < start) continue;
           if (end && m > end) continue;
           cells[m].in_back_office = true;
-          cells[m].due = true;
+          if (eligibleForDue) cells[m].due = true;
         }
       } else if (r.source_type === 'COMMISSION') {
         const { months, per } = commissionServiceMonths(r);
