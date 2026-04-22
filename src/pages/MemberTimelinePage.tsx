@@ -328,6 +328,7 @@ export default function MemberTimelinePage() {
                   setDraftStartMonth(startMonth);
                   setDraftEndMonth(endMonth);
                   setDraftCarrier(carrier);
+                  setDraftAorBuckets(aorBuckets);
                 }}
                 disabled={!hasPendingChanges}
               >
