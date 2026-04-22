@@ -283,11 +283,11 @@ export default function MemberTimelinePage() {
             <div className="flex items-center justify-between mt-3 text-sm text-muted-foreground">
               <div className="flex items-center gap-3">
                 <span className="flex items-center gap-1.5">
-                  <span className="inline-block w-3 h-3 rounded bg-emerald-500/30 border border-emerald-500/50" />
+                  <span className="inline-block w-3 h-3 rounded bg-success/30 border border-success/50" />
                   Paid
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="inline-block w-3 h-3 rounded bg-rose-500/30 border border-rose-500/50" />
+                  <span className="inline-block w-3 h-3 rounded bg-destructive/30 border border-destructive/50" />
                   Due, unpaid
                 </span>
                 <span className="flex items-center gap-1.5">
