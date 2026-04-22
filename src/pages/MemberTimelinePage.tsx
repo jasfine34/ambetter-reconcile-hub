@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Search, Download } from 'lucide-react';
 import { getNormalizedRecords } from '@/lib/persistence';
@@ -33,6 +34,7 @@ export default function MemberTimelinePage() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'unpaid' | 'paid' | 'partial'>('all');
+  const [carrier, setCarrier] = useState<string>('all');
   const [page, setPage] = useState(0);
 
   useEffect(() => {
