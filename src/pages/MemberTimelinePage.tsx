@@ -12,7 +12,8 @@ import { getNormalizedRecords } from '@/lib/persistence';
 import { buildMemberTimeline, buildMonthList, formatMonthLabel, type MemberTimelineRow } from '@/lib/memberTimeline';
 import { exportToCSV } from '@/lib/csvParser';
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE_OPTIONS = ['25', '50', '100', '250', 'all'] as const;
+type PageSizeOption = typeof PAGE_SIZE_OPTIONS[number];
 
 function defaultRange(statementMonth: string | null | undefined): { start: string; end: string } {
   const end = statementMonth ? String(statementMonth).substring(0, 7) : '2026-02';
@@ -92,10 +93,13 @@ export default function MemberTimelinePage() {
     return rows;
   }, [allRows, filter, search]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
-  const pageRows = filteredRows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const [pageSizeOpt, setPageSizeOpt] = useState<PageSizeOption>('50');
+  const showAll = pageSizeOpt === 'all';
+  const pageSize = showAll ? Math.max(filteredRows.length, 1) : parseInt(pageSizeOpt);
+  const totalPages = showAll ? 1 : Math.max(1, Math.ceil(filteredRows.length / pageSize));
+  const pageRows = showAll ? filteredRows : filteredRows.slice(page * pageSize, (page + 1) * pageSize);
 
-  useEffect(() => { setPage(0); }, [filter, search, startMonth, endMonth, carrier]);
+  useEffect(() => { setPage(0); }, [filter, search, startMonth, endMonth, carrier, pageSizeOpt]);
 
   const summary = useMemo(() => {
     let totalPaid = 0, totalUnpaidMonths = 0, membersWithUnpaid = 0;
@@ -326,10 +330,29 @@ export default function MemberTimelinePage() {
                   Present, not due
                 </span>
               </div>
-              <div className="flex items-center gap-2">
-                <Button variant="ghost" size="sm" disabled={page === 0} onClick={() => setPage(p => p - 1)}>Prev</Button>
-                <span>Page {page + 1} of {totalPages}</span>
-                <Button variant="ghost" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)}>Next</Button>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs">Show</span>
+                  <Select value={pageSizeOpt} onValueChange={v => setPageSizeOpt(v as PageSizeOption)}>
+                    <SelectTrigger className="h-8 w-[88px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PAGE_SIZE_OPTIONS.map(opt => (
+                        <SelectItem key={opt} value={opt}>{opt === 'all' ? 'All' : opt}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {!showAll ? (
+                  <>
+                    <Button variant="ghost" size="sm" disabled={page === 0} onClick={() => setPage(p => p - 1)}>Prev</Button>
+                    <span>Page {page + 1} of {totalPages}</span>
+                    <Button variant="ghost" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)}>Next</Button>
+                  </>
+                ) : (
+                  <span>{filteredRows.length} rows</span>
+                )}
               </div>
             </div>
           </CardContent>
