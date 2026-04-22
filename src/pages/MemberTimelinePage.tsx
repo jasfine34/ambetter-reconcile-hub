@@ -34,31 +34,22 @@ export default function MemberTimelinePage() {
   const [endMonth, setEndMonth] = useState(initial.end);
   const [carrier, setCarrier] = useState<string>('all');
   const [aorBuckets, setAorBuckets] = useState<string[]>([]); // empty = all
-  // Draft filters live in the form until "Apply" is clicked
+  // Only date range is gated behind Apply (carrier/AOR apply immediately)
   const [draftStartMonth, setDraftStartMonth] = useState(initial.start);
   const [draftEndMonth, setDraftEndMonth] = useState(initial.end);
-  const [draftCarrier, setDraftCarrier] = useState<string>('all');
-  const [draftAorBuckets, setDraftAorBuckets] = useState<string[]>([]);
   const [records, setRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'unpaid' | 'paid' | 'partial'>('all');
   const [page, setPage] = useState(0);
 
-  const sameSet = (a: string[], b: string[]) =>
-    a.length === b.length && a.every(x => b.includes(x));
-
   const hasPendingChanges =
     draftStartMonth !== startMonth ||
-    draftEndMonth !== endMonth ||
-    draftCarrier !== carrier ||
-    !sameSet(draftAorBuckets, aorBuckets);
+    draftEndMonth !== endMonth;
 
   const applyFilters = () => {
     setStartMonth(draftStartMonth);
     setEndMonth(draftEndMonth);
-    setCarrier(draftCarrier);
-    setAorBuckets(draftAorBuckets);
   };
 
   useEffect(() => {
@@ -77,9 +68,7 @@ export default function MemberTimelinePage() {
     setDraftStartMonth(r.start);
     setDraftEndMonth(r.end);
     setCarrier('all');
-    setDraftCarrier('all');
     setAorBuckets([]);
-    setDraftAorBuckets([]);
   }, [currentBatchId]);
 
   const monthList = useMemo(() => {
@@ -222,7 +211,7 @@ export default function MemberTimelinePage() {
             <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">Carrier</label>
-                <Select value={draftCarrier} onValueChange={setDraftCarrier}>
+                <Select value={carrier} onValueChange={setCarrier}>
                   <SelectTrigger>
                     <SelectValue placeholder="All carriers" />
                   </SelectTrigger>
@@ -240,11 +229,11 @@ export default function MemberTimelinePage() {
                   <PopoverTrigger asChild>
                     <Button variant="outline" className="w-full justify-between font-normal">
                       <span className="truncate">
-                        {draftAorBuckets.length === 0
+                        {aorBuckets.length === 0
                           ? 'All AORs'
-                          : draftAorBuckets.length === 1
-                            ? draftAorBuckets[0]
-                            : `${draftAorBuckets.length} selected`}
+                          : aorBuckets.length === 1
+                            ? aorBuckets[0]
+                            : `${aorBuckets.length} selected`}
                       </span>
                       <ChevronDown className="h-4 w-4 opacity-50 shrink-0 ml-2" />
                     </Button>
@@ -253,25 +242,25 @@ export default function MemberTimelinePage() {
                     <div className="space-y-1 max-h-64 overflow-auto">
                       <button
                         type="button"
-                        onClick={() => setDraftAorBuckets([])}
+                        onClick={() => setAorBuckets([])}
                         className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-accent ${
-                          draftAorBuckets.length === 0 ? 'bg-accent' : ''
+                          aorBuckets.length === 0 ? 'bg-accent' : ''
                         }`}
                       >
-                        <Checkbox checked={draftAorBuckets.length === 0} className="pointer-events-none" />
+                        <Checkbox checked={aorBuckets.length === 0} className="pointer-events-none" />
                         <span className="font-medium">All AORs</span>
                       </button>
                       <div className="h-px bg-border my-1" />
                       {aorOptions.length === 0 ? (
                         <div className="px-2 py-1.5 text-xs text-muted-foreground">No AORs available</div>
                       ) : aorOptions.map(a => {
-                        const checked = draftAorBuckets.includes(a);
+                        const checked = aorBuckets.includes(a);
                         return (
                           <button
                             key={a}
                             type="button"
                             onClick={() => {
-                              setDraftAorBuckets(prev =>
+                              setAorBuckets(prev =>
                                 prev.includes(a) ? prev.filter(x => x !== a) : [...prev, a]
                               );
                             }}
@@ -329,8 +318,6 @@ export default function MemberTimelinePage() {
                 onClick={() => {
                   setDraftStartMonth(startMonth);
                   setDraftEndMonth(endMonth);
-                  setDraftCarrier(carrier);
-                  setDraftAorBuckets(aorBuckets);
                 }}
                 disabled={!hasPendingChanges}
               >
