@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Search, Download, ChevronDown } from 'lucide-react';
+import { Search, Download, ChevronDown, Info } from 'lucide-react';
 import { getNormalizedRecords } from '@/lib/persistence';
 import { buildMemberTimeline, buildMonthList, formatMonthLabel, type MemberTimelineRow } from '@/lib/memberTimeline';
 import { exportToCSV } from '@/lib/csvParser';
