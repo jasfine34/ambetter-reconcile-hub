@@ -56,19 +56,43 @@ export default function MemberTimelinePage() {
     return buildMonthList(startMonth, endMonth);
   }, [startMonth, endMonth]);
 
+  // Extract a normalized "carrier family" (e.g. "Ambetter from Sunshine Health" -> "ambetter")
+  // so commission files (often labeled with the issuer entity) match EDE/BO carrier values.
+  const carrierFamily = (raw: string): string => {
+    const s = (raw || '').toLowerCase().trim();
+    if (!s) return '';
+    if (s.includes('ambetter')) return 'ambetter';
+    if (s.includes('molina')) return 'molina';
+    if (s.includes('oscar')) return 'oscar';
+    if (s.includes('cigna')) return 'cigna';
+    if (s.includes('aetna')) return 'aetna';
+    if (s.includes('anthem')) return 'anthem';
+    if (s.includes('blue cross') || s.includes('bcbs')) return 'bcbs';
+    if (s.includes('united')) return 'unitedhealthcare';
+    if (s.includes('humana')) return 'humana';
+    if (s.includes('kaiser')) return 'kaiser';
+    if (s.includes('centene')) return 'centene';
+    return s;
+  };
+
   const carrierOptions = useMemo(() => {
-    const set = new Set<string>();
+    const map = new Map<string, string>(); // family -> display label
     for (const r of records) {
-      const c = (r.carrier || '').trim();
-      if (c) set.add(c);
+      const fam = carrierFamily(r.carrier || '');
+      if (!fam) continue;
+      if (!map.has(fam)) {
+        // Use Title Case of family as display
+        map.set(fam, fam.charAt(0).toUpperCase() + fam.slice(1));
+      }
     }
-    return Array.from(set).sort();
+    return Array.from(map.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
   }, [records]);
 
   const filteredRecords = useMemo(() => {
     if (carrier === 'all') return records;
-    const target = carrier.toLowerCase();
-    return records.filter(r => (r.carrier || '').toLowerCase() === target);
+    return records.filter(r => carrierFamily(r.carrier || '') === carrier);
   }, [records, carrier]);
 
   const allRows = useMemo(() => buildMemberTimeline(filteredRecords as any, monthList), [filteredRecords, monthList]);
@@ -160,7 +184,7 @@ export default function MemberTimelinePage() {
                 <SelectContent>
                   <SelectItem value="all">All carriers</SelectItem>
                   {carrierOptions.map(c => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                    <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
