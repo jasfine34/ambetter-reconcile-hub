@@ -13,6 +13,30 @@ import { Search, Download, ChevronDown, Info } from 'lucide-react';
 import { getNormalizedRecords } from '@/lib/persistence';
 import { buildMemberTimeline, buildMonthList, formatMonthLabel, type MemberTimelineRow } from '@/lib/memberTimeline';
 import { exportToCSV } from '@/lib/csvParser';
+import { NPN_MAP } from '@/lib/constants';
+
+const OFFICIAL_AOR_PREFIXES = ['jason fine', 'erica fine', 'becky shuta'];
+
+type PayEntityScope = 'Coverall' | 'Vix' | 'All';
+type AorScope = 'official' | 'all';
+
+const PAY_ENTITY_STORAGE_KEY = 'timeline_pay_entity_filter';
+const AOR_SCOPE_STORAGE_KEY = 'timeline_aor_scope_filter';
+
+function getStoredPayEntity(): PayEntityScope {
+  try {
+    const v = localStorage.getItem(PAY_ENTITY_STORAGE_KEY);
+    if (v === 'Coverall' || v === 'Vix' || v === 'All') return v;
+  } catch {}
+  return 'Coverall';
+}
+function getStoredAorScope(): AorScope {
+  try {
+    const v = localStorage.getItem(AOR_SCOPE_STORAGE_KEY);
+    if (v === 'official' || v === 'all') return v;
+  } catch {}
+  return 'official';
+}
 
 const PAGE_SIZE_OPTIONS = ['25', '50', '100', '250', 'all'] as const;
 type PageSizeOption = typeof PAGE_SIZE_OPTIONS[number];
@@ -34,6 +58,8 @@ export default function MemberTimelinePage() {
   const [endMonth, setEndMonth] = useState(initial.end);
   const [carrier, setCarrier] = useState<string>('all');
   const [aorBuckets, setAorBuckets] = useState<string[]>([]); // empty = all
+  const [aorScope, setAorScope] = useState<AorScope>(getStoredAorScope);
+  const [payEntity, setPayEntity] = useState<PayEntityScope>(getStoredPayEntity);
   // Only date range is gated behind Apply (carrier/AOR apply immediately)
   const [draftStartMonth, setDraftStartMonth] = useState(initial.start);
   const [draftEndMonth, setDraftEndMonth] = useState(initial.end);
@@ -42,6 +68,13 @@ export default function MemberTimelinePage() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'unpaid' | 'paid' | 'partial'>('all');
   const [page, setPage] = useState(0);
+
+  useEffect(() => {
+    try { localStorage.setItem(PAY_ENTITY_STORAGE_KEY, payEntity); } catch {}
+  }, [payEntity]);
+  useEffect(() => {
+    try { localStorage.setItem(AOR_SCOPE_STORAGE_KEY, aorScope); } catch {}
+  }, [aorScope]);
 
   const hasPendingChanges =
     draftStartMonth !== startMonth ||
@@ -119,12 +152,58 @@ export default function MemberTimelinePage() {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [records]);
 
+  // Compute, per member_key, whether they pass AOR scope + pay-entity filters.
+  // A member passes AOR scope = "official" if ANY of their records has an aor_bucket OR
+  // EDE currentPolicyAOR that starts with one of the official AOR prefixes.
+  // A member passes pay-entity = "Coverall" / "Vix" if ANY of their records has an
+  // agent_npn whose NPN_MAP expectedPayEntity matches (Coverall_or_Vix matches both).
+  const allowedMemberKeys = useMemo(() => {
+    if (aorScope === 'all' && payEntity === 'All') return null; // no scope filter
+    const byMember = new Map<string, any[]>();
+    for (const r of records) {
+      const k = r.member_key || r.applicant_name || 'unknown';
+      let arr = byMember.get(k);
+      if (!arr) { arr = []; byMember.set(k, arr); }
+      arr.push(r);
+    }
+    const allowed = new Set<string>();
+    for (const [key, recs] of byMember) {
+      // AOR scope check
+      if (aorScope === 'official') {
+        const matchesAor = recs.some(r => {
+          const bucket = String(r.aor_bucket || '').toLowerCase().trim();
+          if (OFFICIAL_AOR_PREFIXES.some(p => bucket.startsWith(p))) return true;
+          const rawAor = String(r.raw_json?.['currentPolicyAOR'] || '').toLowerCase().trim();
+          return OFFICIAL_AOR_PREFIXES.some(p => rawAor.startsWith(p));
+        });
+        if (!matchesAor) continue;
+      }
+      // Pay entity check
+      if (payEntity !== 'All') {
+        const matchesEntity = recs.some(r => {
+          const npn = String(r.agent_npn || '').trim();
+          const info = NPN_MAP[npn as keyof typeof NPN_MAP];
+          if (!info) return false;
+          if (info.expectedPayEntity === payEntity) return true;
+          if (info.expectedPayEntity === 'Coverall_or_Vix') return true;
+          return false;
+        });
+        if (!matchesEntity) continue;
+      }
+      allowed.add(key);
+    }
+    return allowed;
+  }, [records, aorScope, payEntity]);
+
   const filteredRecords = useMemo(() => {
     let out = records;
+    if (allowedMemberKeys) {
+      out = out.filter(r => allowedMemberKeys.has(r.member_key || r.applicant_name || 'unknown'));
+    }
     if (carrier !== 'all') out = out.filter(r => carrierFamily(r.carrier || '') === carrier);
     if (aorBuckets.length > 0) out = out.filter(r => aorBuckets.includes((r.aor_bucket || '').trim()));
     return out;
-  }, [records, carrier, aorBuckets]);
+  }, [records, allowedMemberKeys, carrier, aorBuckets]);
 
   const allRows = useMemo(() => buildMemberTimeline(filteredRecords as any, monthList), [filteredRecords, monthList]);
 
@@ -154,7 +233,7 @@ export default function MemberTimelinePage() {
   const totalPages = showAll ? 1 : Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const pageRows = showAll ? filteredRows : filteredRows.slice(page * pageSize, (page + 1) * pageSize);
 
-  useEffect(() => { setPage(0); }, [filter, search, startMonth, endMonth, carrier, aorBuckets, pageSizeOpt]);
+  useEffect(() => { setPage(0); }, [filter, search, startMonth, endMonth, carrier, aorBuckets, aorScope, payEntity, pageSizeOpt]);
 
   const summary = useMemo(() => {
     let totalPaid = 0, totalUnpaidMonths = 0, membersWithUnpaid = 0;
@@ -208,7 +287,48 @@ export default function MemberTimelinePage() {
 
         <Card>
           <CardContent className="pt-6 space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
+            <div className="grid grid-cols-1 md:grid-cols-8 gap-4 items-end">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block flex items-center gap-1">
+                  Scope
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="cursor-help inline-flex"><Info className="h-3 w-3 opacity-60" /></span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[260px] text-xs leading-relaxed">
+                      <strong>Official AORs only:</strong> matches the dashboard — restricts to members tied to Jason Fine, Erica Fine, or Becky Shuta. <strong>All AORs:</strong> includes every member regardless of AOR.
+                    </TooltipContent>
+                  </Tooltip>
+                </label>
+                <Select value={aorScope} onValueChange={(v) => setAorScope(v as AorScope)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="official">Official AORs only</SelectItem>
+                    <SelectItem value="all">All AORs</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block flex items-center gap-1">
+                  Pay entity
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="cursor-help inline-flex"><Info className="h-3 w-3 opacity-60" /></span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[260px] text-xs leading-relaxed">
+                      Filter by expected pay entity (NPN-based). Erica's members count for both Coverall and Vix. "All" includes everyone.
+                    </TooltipContent>
+                  </Tooltip>
+                </label>
+                <Select value={payEntity} onValueChange={(v) => setPayEntity(v as PayEntityScope)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Coverall">Coverall</SelectItem>
+                    <SelectItem value="Vix">Vix Health</SelectItem>
+                    <SelectItem value="All">All entities</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">Carrier</label>
                 <Select value={carrier} onValueChange={setCarrier}>
