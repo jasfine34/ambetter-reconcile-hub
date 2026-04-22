@@ -148,7 +148,21 @@ export default function MemberTimelinePage() {
         </div>
 
         <Card>
-          <CardContent className="pt-6 grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+          <CardContent className="pt-6 grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Carrier</label>
+              <Select value={carrier} onValueChange={setCarrier}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All carriers" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All carriers</SelectItem>
+                  {carrierOptions.map(c => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">Start month</label>
               <Input type="month" value={startMonth} onChange={e => setStartMonth(e.target.value)} />
