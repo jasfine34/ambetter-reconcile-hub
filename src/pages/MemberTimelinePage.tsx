@@ -380,7 +380,7 @@ export default function MemberTimelinePage() {
                       Member
                     </th>
                     <th className="text-left px-2 py-2 font-medium text-muted-foreground whitespace-nowrap">Policy/Subs ID</th>
-                    <th className="text-left px-2 py-2 font-medium text-muted-foreground whitespace-nowrap">Agent</th>
+                    <th className="text-left px-2 py-2 font-medium text-muted-foreground whitespace-nowrap">AOR</th>
                     <th className="text-right px-2 py-2 font-medium text-muted-foreground whitespace-nowrap">Total $</th>
                     <th className="text-center px-2 py-2 font-medium text-muted-foreground whitespace-nowrap">Due/Paid</th>
                     {monthList.map(m => (
@@ -410,8 +410,8 @@ export default function MemberTimelinePage() {
                       <td className="px-2 py-2 font-mono text-[11px] text-muted-foreground whitespace-nowrap">
                         {row.policy_number || row.issuer_subscriber_id || row.exchange_subscriber_id || '—'}
                       </td>
-                      <td className="px-2 py-2 text-muted-foreground whitespace-nowrap truncate max-w-[140px]" title={row.agent_name}>
-                        {row.agent_name || '—'}
+                      <td className="px-2 py-2 text-muted-foreground whitespace-nowrap truncate max-w-[160px]" title={row.current_policy_aor || row.aor_bucket}>
+                        {row.current_policy_aor || row.aor_bucket || '—'}
                       </td>
                       <td className="px-2 py-2 text-right font-medium text-foreground whitespace-nowrap">
                         ${row.total_paid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
