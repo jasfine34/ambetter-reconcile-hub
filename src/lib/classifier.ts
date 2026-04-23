@@ -11,6 +11,7 @@
 import type { NormalizedRecord } from './normalize';
 import { addMonths, monthKeyToFirstOfMonth, type MonthKey } from './dateRange';
 import { isCoverallAORByName, isCoverallAORByNPN } from './agents';
+import { canonicalCarrier } from './carrierCanonical';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Types
@@ -484,10 +485,25 @@ export interface FunnelCounts {
   boOnlyPaid: number;
 }
 
-/** Compute the source funnel for a specific month. */
+/** True if a record belongs to the given canonical carrier (e.g. 'ambetter'). */
+function recordMatchesCarrier(r: NormalizedRecord, canonical: string): boolean {
+  if (!canonical) return true;
+  // EDE stores the raw issuer in raw_json; BO/Commission populate r.carrier
+  const rawIssuer = (r.raw_json?.['issuer'] ?? r.carrier ?? '') as string;
+  return canonicalCarrier(rawIssuer) === canonical;
+}
+
+/**
+ * Compute the source funnel for a specific month.
+ *
+ * `canonicalCarrierKey` restricts to a single carrier (e.g. 'ambetter'). Pass
+ * '' to include every carrier. Aligns with dashboard's Expected Enrollments
+ * semantics which is Ambetter-only today.
+ */
 export function computeFunnelForMonth(
   recordsByMember: Map<string, NormalizedRecord[]>,
   month: MonthKey,
+  canonicalCarrierKey: string = '',
 ): FunnelCounts {
   const funnel: FunnelCounts = {
     edeEligible: 0,
@@ -505,13 +521,24 @@ export function computeFunnelForMonth(
       r.source_type === 'EDE' &&
       isEdeRecordOurs(r) &&
       isQualifiedEdeStatus(r) &&
+      recordMatchesCarrier(r, canonicalCarrierKey) &&
       dateToMonthKey(r.effective_date) === month
     );
-    const boMatch = hasActiveBoForMonth(
-      records.filter(isBoRecordOurs),
-      month,
-    );
-    const commissionMatch = hasCommissionForMonth(records, month);
+    const boMatch = records
+      .filter(r => isBoRecordOurs(r) && recordMatchesCarrier(r, canonicalCarrierKey))
+      .some(r => {
+        const firstOfMonth = monthKeyToFirstOfMonth(month);
+        const eff = r.effective_date || '';
+        if (eff && eff > firstOfMonth) return false;
+        const term = r.policy_term_date || '';
+        if (term && term <= firstOfMonth) return false;
+        return true;
+      });
+    const commissionMatch = records.some(r => {
+      if (r.source_type !== 'COMMISSION') return false;
+      if (!recordMatchesCarrier(r, canonicalCarrierKey)) return false;
+      return commissionServiceMonths(r).months.includes(month);
+    });
 
     if (edeMatch) {
       funnel.edeEligible++;

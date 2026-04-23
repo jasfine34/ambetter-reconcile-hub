@@ -25,6 +25,12 @@ interface SourceFunnelCardProps {
   normalizedRecords: any[];
   /** Months to compute funnels for — usually batch's covered months (prior + statement). */
   coveredMonths: string[];
+  /**
+   * Canonical carrier key ('ambetter'), or '' to include all carriers.
+   * Defaults to 'ambetter' since the dashboard's Expected Enrollments metric
+   * is carrier-specific and we want the funnel to align.
+   */
+  carrierKey?: string;
 }
 
 function formatMonth(ym: string): string {
@@ -35,7 +41,7 @@ function formatMonth(ym: string): string {
   return d.toLocaleString('en-US', { month: 'short', year: 'numeric' });
 }
 
-export function SourceFunnelCard({ normalizedRecords, coveredMonths }: SourceFunnelCardProps) {
+export function SourceFunnelCard({ normalizedRecords, coveredMonths, carrierKey = 'ambetter' }: SourceFunnelCardProps) {
   // Group records by merged member_key so classifier sees each person once.
   const recordsByMember = useMemo(() => {
     if (normalizedRecords.length === 0) return new Map<string, any[]>();
@@ -54,9 +60,9 @@ export function SourceFunnelCard({ normalizedRecords, coveredMonths }: SourceFun
   const funnelsByMonth = useMemo(() => {
     return coveredMonths.map(m => ({
       month: m,
-      funnel: computeFunnelForMonth(recordsByMember, m),
+      funnel: computeFunnelForMonth(recordsByMember, m, carrierKey),
     }));
-  }, [recordsByMember, coveredMonths]);
+  }, [recordsByMember, coveredMonths, carrierKey]);
 
   if (coveredMonths.length === 0) return null;
 
