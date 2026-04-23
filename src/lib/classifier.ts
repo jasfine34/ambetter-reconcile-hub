@@ -333,6 +333,15 @@ function classifyCell(
     return { ...base, state: 'not_expected_not_ours', reason: 'Member never tied to one of our NPNs.' };
   }
 
+  // Rule 1: Paid
+  // Empirical payment must override first-eligible prediction. Some valid Jan
+  // commissions are attached to members whose BO broker_effective_date points
+  // at Feb, which makes them look pre-eligibility on paper even though the
+  // statement proves we were paid for the service month.
+  if (paid_amount > 0.0001) {
+    return { ...base, state: 'paid', reason: `Commission of $${paid_amount.toFixed(2)} received for this service month.` };
+  }
+
   // Rule 3 (non-eligible): before first-eligible month
   if (firstEligible && month < firstEligible) {
     return {
@@ -358,11 +367,6 @@ function classifyCell(
   const brokerTerminated = activeTermBy.length > 0 && activeTermBy.every(t => t <= firstOfMonth);
   if (brokerTerminated) {
     return { ...base, state: 'not_expected_cancelled', reason: 'Broker term date is in the past as of this month.' };
-  }
-
-  // Rule 1: Paid
-  if (paid_amount > 0.0001) {
-    return { ...base, state: 'paid', reason: `Commission of $${paid_amount.toFixed(2)} received for this service month.` };
   }
 
   // Rule 2: Pending (not ripe)
