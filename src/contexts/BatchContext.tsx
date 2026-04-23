@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { getBatches, getReconciledMembers, getUploadedFiles, getBatchCounts, getNormalizedRecords } from '@/lib/persistence';
 import { reconcile, type MatchDebugStats } from '@/lib/reconcile';
+import { fallbackReconcileMonth } from '@/lib/dateRange';
 
 interface BatchCounts {
   uploadedFiles: number;
@@ -64,7 +65,7 @@ export function BatchProvider({ children }: { children: ReactNode }) {
         const currentBatch = batches.find((b: any) => b.id === currentBatchId);
         const reconcileMonth = currentBatch?.statement_month
           ? String(currentBatch.statement_month).substring(0, 7)
-          : '2026-01';
+          : fallbackReconcileMonth();
         const { debug } = reconcile(normalized as any[], reconcileMonth);
         setDebugStats(debug);
       } catch {

@@ -9,6 +9,7 @@ import { reconcile } from '@/lib/reconcile';
 import { uploadFileToStorage, uploadFileRecord, insertNormalizedRecords, saveReconciledMembers, getNormalizedRecords } from '@/lib/persistence';
 import { useToast } from '@/hooks/use-toast';
 import { detectSchema, readCSVHeaders, type DetectedSchema } from '@/lib/schemaDetect';
+import { fallbackReconcileMonth } from '@/lib/dateRange';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -58,7 +59,7 @@ export default function UploadPage() {
       const currentBatch = batches.find((b: any) => b.id === currentBatchId);
       const reconcileMonth = currentBatch?.statement_month
         ? String(currentBatch.statement_month).substring(0, 7)
-        : '2026-01';
+        : fallbackReconcileMonth();
       const { members: reconciledData } = reconcile(allRecords as any[], reconcileMonth);
       await saveReconciledMembers(currentBatchId!, reconciledData);
 

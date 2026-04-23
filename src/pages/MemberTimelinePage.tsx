@@ -16,6 +16,7 @@ import { assignMergedMemberKeys } from '@/lib/memberMerge';
 import { exportToCSV } from '@/lib/csvParser';
 import { NPN_MAP } from '@/lib/constants';
 import { isCoverallAORByName } from '@/lib/agents';
+import { statementMonthKey, currentMonthKey, addMonths } from '@/lib/dateRange';
 
 type PayEntityScope = 'Coverall' | 'Vix' | 'All';
 type AorScope = 'official' | 'all';
@@ -42,9 +43,15 @@ const PAGE_SIZE_OPTIONS = ['25', '50', '100', '250', 'all'] as const;
 type PageSizeOption = typeof PAGE_SIZE_OPTIONS[number];
 
 function defaultRange(statementMonth: string | null | undefined): { start: string; end: string } {
-  const end = statementMonth ? String(statementMonth).substring(0, 7) : '2026-02';
-  // Always anchor start at January 2026 unless the batch ends earlier
-  const start = end < '2026-01' ? end : '2026-01';
+  // End at the batch's statement month (or the current calendar month if no
+  // batch is selected). Start at January of the same year, so the timeline
+  // shows the full year-to-date by default.
+  const end = statementMonthKey(statementMonth) || currentMonthKey();
+  const [year] = end.split('-');
+  const january = `${year}-01`;
+  // Clamp so we never pick a start after end (e.g. if the batch is literally
+  // January, start=end rather than a prior year's January).
+  const start = january <= end ? january : addMonths(end, -1);
   return { start, end };
 }
 

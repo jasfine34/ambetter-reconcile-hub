@@ -14,6 +14,15 @@ import { RebuildBatchButton } from '@/components/RebuildBatchButton';
 import { RECONCILE_LOGIC_VERSION } from '@/lib/rebuild';
 import { CollapsibleDebugCard } from '@/components/CollapsibleDebugCard';
 import { isCoverallAORByName } from '@/lib/agents';
+import { getCoveredMonths, monthKeyToFirstOfMonth, fallbackReconcileMonth } from '@/lib/dateRange';
+
+/** Format '2026-01' as '1/1/2026' for display. */
+function formatMonthStart(monthKey: string): string {
+  if (!monthKey) return '';
+  const [y, m] = monthKey.split('-');
+  if (!y || !m) return monthKey;
+  return `${parseInt(m, 10)}/1/${y}`;
+}
 
 const EDE_RAW_DRILLDOWN_COLUMNS = [
   { key: 'currentPolicyAOR', label: 'Current Policy AOR' },
@@ -94,22 +103,32 @@ export default function DashboardPage() {
   const [drilldown, setDrilldown] = useState<string | null>(null);
   const [rerunning, setRerunning] = useState(false);
   const [payEntityFilter, setPayEntityFilter] = useState<PayEntityFilter>(getStoredPayEntity);
-  const [edeRawDrilldown, setEdeRawDrilldown] = useState<'2026-01' | '2026-02' | null>(null);
+  const [edeRawDrilldown, setEdeRawDrilldown] = useState<string | null>(null);
   const [edeRawRows, setEdeRawRows] = useState<Record<string, unknown>[]>([]);
   const [edeRawLoading, setEdeRawLoading] = useState(false);
   const { toast } = useToast();
+
+  // Covered months for this batch (prior month + statement month). Drives the
+  // drilldown buttons, subtitle month breakdown, and the expected-EDE filter.
+  // Empty array if no batch is selected.
+  const coveredMonths = useMemo(
+    () => getCoveredMonths(currentBatch?.statement_month),
+    [currentBatch?.statement_month]
+  );
+  const priorMonth = coveredMonths[0] ?? '';
+  const statementMonth = coveredMonths[1] ?? '';
 
   useEffect(() => {
     localStorage.setItem(PAY_ENTITY_STORAGE_KEY, payEntityFilter);
   }, [payEntityFilter]);
 
-  const loadEdeRawDrilldown = useCallback(async (month: '2026-01' | '2026-02') => {
+  const loadEdeRawDrilldown = useCallback(async (month: string) => {
     if (!currentBatchId) return;
     setEdeRawDrilldown(month);
     setEdeRawLoading(true);
     try {
       const all = await getNormalizedRecords(currentBatchId);
-      const targetDate = month === '2026-01' ? '2026-01-01' : '2026-02-01';
+      const targetDate = monthKeyToFirstOfMonth(month);
       const QUALIFIED = new Set(['effectuated', 'pendingeffectuation', 'pendingtermination']);
       const rows = (all as any[])
         .filter(r => r.source_type === 'EDE')
@@ -164,7 +183,7 @@ export default function DashboardPage() {
       const allRecords = await getNormalizedRecords(currentBatchId);
       const reconcileMonth = currentBatch?.statement_month
         ? String(currentBatch.statement_month).substring(0, 7)
-        : '2026-01';
+        : fallbackReconcileMonth();
       const { members } = reconcile(allRecords as any[], reconcileMonth);
       await saveReconciledMembers(currentBatchId, members);
       await refreshAll();
@@ -206,8 +225,12 @@ export default function DashboardPage() {
 
   const metrics = useMemo(() => {
     const expected = filtered.filter(r => r.is_in_expected_ede_universe).length;
-    const expectedJan = filtered.filter(r => r.is_in_expected_ede_universe && r.expected_ede_effective_month === '2026-01').length;
-    const expectedFeb = filtered.filter(r => r.is_in_expected_ede_universe && r.expected_ede_effective_month === '2026-02').length;
+    const expectedPriorMonth = priorMonth
+      ? filtered.filter(r => r.is_in_expected_ede_universe && r.expected_ede_effective_month === priorMonth).length
+      : 0;
+    const expectedStatementMonth = statementMonth
+      ? filtered.filter(r => r.is_in_expected_ede_universe && r.expected_ede_effective_month === statementMonth).length
+      : 0;
     const foundBO = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office).length;
     const eligible = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes').length;
     const shouldPay = eligible;
@@ -232,7 +255,7 @@ export default function DashboardPage() {
     const unpaidExpected = filtered.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission).length;
     const totalPaidAll = filtered.filter(r => r.in_commission).length;
     const paidOutsideExpected = filtered.filter(r => !r.in_ede && r.in_commission).length;
-    return { expected, expectedJan, expectedFeb, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidOutsideEde, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, paidOutsideExpected };
+    return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidOutsideEde, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, paidOutsideExpected };
   }, [filtered]);
 
   const unpaidSample = useMemo(() => {
@@ -394,7 +417,7 @@ export default function DashboardPage() {
         <CollapsibleDebugCard
           title="EDE Expected Enrollment Debug"
           icon={<Users className="h-4 w-4" />}
-          summary={`${debugStats.edeAfterFilter} qualified · 1/1: ${metrics.expectedJan} · 2/1: ${metrics.expectedFeb}`}
+          summary={`${debugStats.edeAfterFilter} qualified · ${formatMonthStart(priorMonth)}: ${metrics.expectedPriorMonth} · ${formatMonthStart(statementMonth)}: ${metrics.expectedStatementMonth}`}
         >
             <div className="flex flex-wrap gap-6 text-sm">
               <span className="text-muted-foreground">Total Raw EDE rows: <strong className="text-foreground">{debugStats.edeRawTotal}</strong></span>
@@ -406,18 +429,22 @@ export default function DashboardPage() {
             </div>
             <div className="flex flex-wrap gap-6 text-sm border-t pt-2 items-center">
               <span className="text-muted-foreground font-medium">Expected by month:</span>
-              <button
-                onClick={() => loadEdeRawDrilldown('2026-01')}
-                className="text-muted-foreground hover:text-primary underline-offset-4 hover:underline"
-              >
-                1/1/2026: <strong className="text-foreground">{metrics.expectedJan}</strong>
-              </button>
-              <button
-                onClick={() => loadEdeRawDrilldown('2026-02')}
-                className="text-muted-foreground hover:text-primary underline-offset-4 hover:underline"
-              >
-                2/1/2026: <strong className="text-foreground">{metrics.expectedFeb}</strong>
-              </button>
+              {priorMonth && (
+                <button
+                  onClick={() => loadEdeRawDrilldown(priorMonth)}
+                  className="text-muted-foreground hover:text-primary underline-offset-4 hover:underline"
+                >
+                  {formatMonthStart(priorMonth)}: <strong className="text-foreground">{metrics.expectedPriorMonth}</strong>
+                </button>
+              )}
+              {statementMonth && (
+                <button
+                  onClick={() => loadEdeRawDrilldown(statementMonth)}
+                  className="text-muted-foreground hover:text-primary underline-offset-4 hover:underline"
+                >
+                  {formatMonthStart(statementMonth)}: <strong className="text-foreground">{metrics.expectedStatementMonth}</strong>
+                </button>
+              )}
               <span className="text-xs text-muted-foreground italic">(click a count to drilldown into raw EDE rows)</span>
             </div>
             <div className="flex flex-wrap gap-4 text-sm border-t pt-2">
@@ -440,7 +467,7 @@ export default function DashboardPage() {
               <div className="border-t pt-3 mt-2 space-y-2">
                 <div className="flex items-center justify-between">
                   <h4 className="text-sm font-semibold">
-                    Raw EDE rows for {edeRawDrilldown === '2026-01' ? '1/1/2026' : '2/1/2026'}
+                    Raw EDE rows for {formatMonthStart(edeRawDrilldown ?? '')}
                     {!edeRawLoading && ` (${edeRawRows.length} rows)`}
                   </h4>
                   <button onClick={() => { setEdeRawDrilldown(null); setEdeRawRows([]); }} className="text-sm text-primary hover:underline">Close</button>
@@ -503,8 +530,8 @@ export default function DashboardPage() {
       ) : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <MetricCard title="Expected Enrollments" value={metrics.expected} icon={<Users className="h-4 w-4" />} onClick={() => setDrilldown('expected')} subtitle={`1/1: ${metrics.expectedJan} · 2/1: ${metrics.expectedFeb}`} tooltip={{ text: "These are the Ambetter members we believe should exist based on our enrollment system (EDE), after filtering for active policies starting 1/1/2026. Counts subscribers (one per EDE record).", why: "This is your baseline. All other numbers are measured against this to determine if anything is missing or incorrect." }} />
-            <MetricCard title="Total Covered Lives" value={debugStats?.totalCoveredLives ?? 0} icon={<Users className="h-4 w-4" />} variant="info" subtitle={debugStats ? `1/1: ${debugStats.totalCoveredLivesJan} · 2/1: ${debugStats.totalCoveredLivesFeb}` : undefined} tooltip={{ text: "Sum of coveredMemberCount across all qualified EDE records — counts the subscriber plus every dependent on each policy.", why: "Reflects the actual number of insured lives, not just policy holders. Use this when reporting total members served or comparing to per-life carrier metrics." }} />
+            <MetricCard title="Expected Enrollments" value={metrics.expected} icon={<Users className="h-4 w-4" />} onClick={() => setDrilldown('expected')} subtitle={priorMonth && statementMonth ? `${formatMonthStart(priorMonth).replace(/\/\d{4}$/, '')}: ${metrics.expectedPriorMonth} · ${formatMonthStart(statementMonth).replace(/\/\d{4}$/, '')}: ${metrics.expectedStatementMonth}` : undefined} tooltip={{ text: "These are the Ambetter members we believe should exist based on our enrollment system (EDE), after filtering for active policies in the batch's covered months. Counts subscribers (one per EDE record).", why: "This is your baseline. All other numbers are measured against this to determine if anything is missing or incorrect." }} />
+            <MetricCard title="Total Covered Lives" value={debugStats?.totalCoveredLives ?? 0} icon={<Users className="h-4 w-4" />} variant="info" subtitle={debugStats && priorMonth && statementMonth ? `${formatMonthStart(priorMonth).replace(/\/\d{4}$/, '')}: ${debugStats.totalCoveredLivesByMonth[priorMonth] ?? 0} · ${formatMonthStart(statementMonth).replace(/\/\d{4}$/, '')}: ${debugStats.totalCoveredLivesByMonth[statementMonth] ?? 0}` : undefined} tooltip={{ text: "Sum of coveredMemberCount across all qualified EDE records — counts the subscriber plus every dependent on each policy.", why: "Reflects the actual number of insured lives, not just policy holders. Use this when reporting total members served or comparing to per-life carrier metrics." }} />
             <MetricCard title="Found in Back Office" value={metrics.foundBO} icon={<Building2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('foundBO')} tooltip={{ text: "Out of the expected members, these are the ones Ambetter recognizes in their system.", why: "If members are missing here, Ambetter may not have the policy correctly recorded, which can prevent payment." }} />
             <MetricCard title="Eligible for Commission" value={metrics.eligible} icon={<CheckCircle2 className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('eligible')} tooltip={{ text: "These are members that exist in Ambetter's system and are marked as eligible for commission.", why: "Only members in this group can generate commission. If eligibility is wrong, payments will not occur." }} />
             <MetricCard title="Should Be Paid" value={metrics.shouldPay} icon={<DollarSign className="h-4 w-4" />} tooltip={{ text: "This is the total number of members we expect to receive commission for based on enrollment, carrier records, and eligibility.", why: "This represents your true payable book of business and is the key number for identifying missing revenue." }} />

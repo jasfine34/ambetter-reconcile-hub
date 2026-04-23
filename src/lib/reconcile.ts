@@ -2,6 +2,7 @@ import { NPN_MAP, DEFAULT_COMMISSION_ESTIMATE } from './constants';
 import { cleanId, normalizePolicyStatus } from './normalize';
 import type { NormalizedRecord } from './normalize';
 import { isCoverallAORByName } from './agents';
+import { getCoveredMonths, getCoveredEffectiveDates, fallbackReconcileMonth } from './dateRange';
 
 // Qualified EDE rows must match user's exact filter, applied to the RAW source
 // fields (raw_json) so we replicate the export they validated against.
@@ -10,7 +11,6 @@ const QUALIFIED_RAW_STATUSES = new Set([
   'pendingeffectuation',
   'pendingtermination',
 ]);
-const EXPECTED_EFFECTIVE_DATES = new Set(['2026-01-01', '2026-02-01']);
 
 function rawStatusKey(r: NormalizedRecord): string {
   const raw = (r.raw_json?.['policyStatus'] ?? r.status ?? '') as string;
@@ -27,9 +27,9 @@ function rawIssuerKey(r: NormalizedRecord): string {
   return String(raw).toLowerCase();
 }
 
-function isExpectedEDERow(r: NormalizedRecord): boolean {
+function isExpectedEDERow(r: NormalizedRecord, expectedDates: ReadonlySet<string>): boolean {
   if (r.source_type !== 'EDE') return false;
-  if (!r.effective_date || !EXPECTED_EFFECTIVE_DATES.has(r.effective_date)) return false;
+  if (!r.effective_date || !expectedDates.has(r.effective_date)) return false;
   if (!QUALIFIED_RAW_STATUSES.has(rawStatusKey(r))) return false;
   if (!rawIssuerKey(r).includes('ambetter')) return false;
   return isCoverallAORByName(rawAorKey(r));
@@ -114,8 +114,15 @@ export interface MatchDebugStats {
   commSampleParsed: number[];
   // Covered lives = sum of coveredMemberCount across qualified EDE rows
   totalCoveredLives: number;
-  totalCoveredLivesJan: number;
-  totalCoveredLivesFeb: number;
+  /**
+   * Per-month breakdown of covered lives, keyed on YYYY-MM. Driven by the
+   * batch's statement_month via getCoveredMonths() — normally contains two
+   * entries (statement month and the prior month). Replaces the older
+   * totalCoveredLivesJan / totalCoveredLivesFeb pair that assumed 2026-01/02.
+   */
+  totalCoveredLivesByMonth: Record<string, number>;
+  /** Ordered list of the months this reconciliation covers. */
+  coveredMonths: string[];
   boActiveCount: number;
   boExcludedCount: number;
   boMissingTermDate: number;
@@ -258,8 +265,14 @@ function setsOverlap(a: Set<string>, b: Set<string>): boolean {
 
 export function reconcile(
   records: NormalizedRecord[],
-  reconcileMonth: string = '2026-01'
+  reconcileMonth: string = fallbackReconcileMonth()
 ): { members: ReconciledMember[]; debug: MatchDebugStats } {
+  // Derive the covered month window for this batch. For Feb 2026 (statement
+  // month = 2026-02) this is ['2026-01','2026-02'] — the prior month plus
+  // the statement month. See src/lib/dateRange.ts and §8 of ARCHITECTURE_PLAN.
+  const coveredMonths = getCoveredMonths(reconcileMonth);
+  const expectedEffectiveDates: ReadonlySet<string> = new Set(getCoveredEffectiveDates(reconcileMonth));
+
   // Step 1: Re-clean all IDs
   for (const r of records) {
     reclean(r);
@@ -361,8 +374,8 @@ export function reconcile(
     commSampleRaw: [],
     commSampleParsed: [],
     totalCoveredLives: 0,
-    totalCoveredLivesJan: 0,
-    totalCoveredLivesFeb: 0,
+    totalCoveredLivesByMonth: Object.fromEntries(coveredMonths.map(m => [m, 0])),
+    coveredMonths,
     boActiveCount: 0,
     boExcludedCount: 0,
     boMissingTermDate: 0,
@@ -397,7 +410,7 @@ export function reconcile(
       }
       if (!r.effective_date) {
         debug.edeInvalidDateCount++;
-      } else if (isExpectedEDERow(r)) {
+      } else if (isExpectedEDERow(r, expectedEffectiveDates)) {
         debug.edeAfterFilter++;
       }
     } else if (r.source_type === 'BACK_OFFICE') {
@@ -680,7 +693,7 @@ export function reconcile(
     let groupCovered = 0;
     let groupMonth = '';
     for (const r of recs) {
-      if (!isExpectedEDERow(r)) continue;
+      if (!isExpectedEDERow(r, expectedEffectiveDates)) continue;
       edeQualifiedKeys.add(key);
       // Use the first qualified row's covered count + month for the group
       // (one EDE row per member per month is the norm)
@@ -695,8 +708,9 @@ export function reconcile(
     }
     if (groupCovered > 0) {
       debug.totalCoveredLives += groupCovered;
-      if (groupMonth === '2026-01') debug.totalCoveredLivesJan += groupCovered;
-      else if (groupMonth === '2026-02') debug.totalCoveredLivesFeb += groupCovered;
+      if (groupMonth && debug.totalCoveredLivesByMonth[groupMonth] != null) {
+        debug.totalCoveredLivesByMonth[groupMonth] += groupCovered;
+      }
     }
   }
   debug.edeUniqueKeysAfterFilter = edeQualifiedKeys.size;
@@ -829,10 +843,10 @@ export function reconcile(
       source_count: recs.length,
       commission_record_count: comm.length,
       has_mixed_sources: new Set(recs.map(r => r.source_type)).size > 1,
-      ede_qualified: ede.some(e => isExpectedEDERow(e)),
-      is_in_expected_ede_universe: ede.some(e => isExpectedEDERow(e)),
+      ede_qualified: ede.some(e => isExpectedEDERow(e, expectedEffectiveDates)),
+      is_in_expected_ede_universe: ede.some(e => isExpectedEDERow(e, expectedEffectiveDates)),
       expected_ede_effective_month: (() => {
-        const qualified = ede.find(e => isExpectedEDERow(e));
+        const qualified = ede.find(e => isExpectedEDERow(e, expectedEffectiveDates));
         if (!qualified || !qualified.effective_date) return '';
         return qualified.effective_date.substring(0, 7); // 'YYYY-MM'
       })(),

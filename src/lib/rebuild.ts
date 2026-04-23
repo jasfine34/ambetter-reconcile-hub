@@ -9,6 +9,7 @@ import {
   getNormalizedRecords,
   getOrCreateSnapshotForFile,
 } from './persistence';
+import { fallbackReconcileMonth } from './dateRange';
 
 /**
  * Bumped whenever normalization or reconciliation logic changes in a way that
@@ -16,7 +17,7 @@ import {
  * compares this to `upload_batches.last_rebuild_logic_version` and shows a
  * warning banner when the stored value is older than the current code.
  */
-export const RECONCILE_LOGIC_VERSION = '2026.04.22-normalize-date-commission-filter-v2';
+export const RECONCILE_LOGIC_VERSION = '2026.04.23-dynamic-covered-months';
 
 export interface RebuildProgress {
   phase: 'init' | 'fetching-files' | 'normalizing' | 'reconciling' | 'saving' | 'done';
@@ -130,7 +131,7 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
 
   const reconcileMonth = batchData?.statement_month
     ? String(batchData.statement_month).substring(0, 7)
-    : '2026-01';
+    : fallbackReconcileMonth();
 
   const { members } = reconcile(allRecords as any[], reconcileMonth);
 
