@@ -124,28 +124,35 @@ function backOfficeActiveRange(r: NormalizedRecord): { start: string | null; end
 
 /**
  * Distribute a commission row's gross amount across the months it covers.
- * Uses Paid-To Date as the END of the covered period and Months Paid as the span.
- * Falls back to the Paid-To Date month alone, or Issue Date month, if Months Paid missing.
+ * Uses the normalized `paid_to_date` column as the END of the covered period
+ * and `Months Paid` (from raw_json) as the span.
+ *
+ * STRICT: if `paid_to_date` is missing or unparseable, this row contributes
+ * ZERO to any month. Older logic fell back to Issue Date / effective_date,
+ * which silently bled non-service-month commissions into whatever month
+ * happened to fit — over-attributing totals to (e.g.) January.
  */
 function commissionServiceMonths(r: NormalizedRecord): { months: string[]; per: number; total: number } {
   const total = r.commission_amount ?? 0;
   if (total === 0) return { months: [], per: 0, total: 0 };
 
-  const paidToRaw = r.raw_json?.['Paid-To Date'];
-  const paidToYM = ymOf(typeof paidToRaw === 'string' ? paidToRaw : null);
+  // Prefer the typed column (already normalized to YYYY-MM-DD by the parser),
+  // fall back to raw_json only if the column is empty for legacy rows.
+  const paidToYM =
+    ymOf(r.paid_to_date) ||
+    ymOf(typeof r.raw_json?.['Paid-To Date'] === 'string' ? (r.raw_json['Paid-To Date'] as string) : null);
+
+  if (!paidToYM) {
+    // No identifiable service month — do NOT guess from Issue Date.
+    return { months: [], per: 0, total };
+  }
+
   const monthsPaidRaw = r.raw_json?.['Months Paid'];
   const monthsPaid = monthsPaidRaw ? Math.max(1, parseInt(String(monthsPaidRaw)) || 1) : 1;
 
-  let endYM = paidToYM;
-  if (!endYM) {
-    const issueRaw = r.raw_json?.['Issue Date'];
-    endYM = ymOf(typeof issueRaw === 'string' ? issueRaw : null) || ymOf(r.effective_date);
-  }
-  if (!endYM) return { months: [], per: 0, total };
-
   const months: string[] = [];
   for (let i = monthsPaid - 1; i >= 0; i--) {
-    months.push(addMonths(endYM, -i));
+    months.push(addMonths(paidToYM, -i));
   }
   return { months, per: total / months.length, total };
 }
