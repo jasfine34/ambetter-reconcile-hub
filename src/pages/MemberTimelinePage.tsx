@@ -112,6 +112,7 @@ export default function MemberTimelinePage() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'unpaid' | 'paid' | 'partial' | 'pending' | 'review'>('all');
   const [page, setPage] = useState(0);
+  const [debugOpen, setDebugOpen] = useState(false);
 
   useEffect(() => {
     try { localStorage.setItem(PAY_ENTITY_STORAGE_KEY, payEntity); } catch {}
