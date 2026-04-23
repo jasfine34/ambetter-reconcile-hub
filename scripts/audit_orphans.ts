@@ -127,7 +127,7 @@ function commissionMonths(r: any): { months: string[]; per: number } {
     // PIPELINE: full classifier path, just like the UI
     const filtered = recs; // no carrier/aor pill filters
     const rows = buildMemberTimeline(filtered as any, monthList, isDueEligible);
-    const classifierRecs = filtered.filter(isDueEligible);
+    const classifierRecs = filtered.filter(r => isDueEligible(r));
     const ctx = buildClassifierContext(classifierRecs as any, monthList, []);
     const byMember = new Map<string, any[]>();
     for (const r of classifierRecs) {
