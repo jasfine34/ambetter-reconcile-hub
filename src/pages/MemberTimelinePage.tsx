@@ -686,6 +686,15 @@ export default function MemberTimelinePage() {
                 <span className="text-xs text-muted-foreground">Unapplied changes</span>
               )}
               <Button
+                variant={debugOpen ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setDebugOpen(v => !v)}
+                title="Show paid-dollars audit panel and clickable cell breakdowns"
+              >
+                <Bug className="h-4 w-4 mr-1" />
+                {debugOpen ? 'Debug on' : 'Debug'}
+              </Button>
+              <Button
                 variant="outline"
                 size="sm"
                 onClick={() => {
