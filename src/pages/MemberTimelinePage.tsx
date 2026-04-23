@@ -43,6 +43,28 @@ function getStoredAorScope(): AorScope {
 const PAGE_SIZE_OPTIONS = ['25', '50', '100', '250', 'all'] as const;
 type PageSizeOption = typeof PAGE_SIZE_OPTIONS[number];
 
+/**
+ * Pre-built dropdown options for Start/End month pickers. Spans Jan 2025 to
+ * end-of-next-year so any reasonable reconciliation window is selectable.
+ * Replaces native <input type="month"> which rendered inconsistently across
+ * browsers and wasn't clearly interactive.
+ */
+const MONTH_OPTIONS: { value: string; label: string }[] = (() => {
+  const out: { value: string; label: string }[] = [];
+  const startYear = 2025;
+  const endYear = new Date().getFullYear() + 1;
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                      'July', 'August', 'September', 'October', 'November', 'December'];
+  for (let y = startYear; y <= endYear; y++) {
+    for (let m = 1; m <= 12; m++) {
+      const value = `${y}-${String(m).padStart(2, '0')}`;
+      const label = `${monthNames[m - 1]} ${y}`;
+      out.push({ value, label });
+    }
+  }
+  return out;
+})();
+
 function defaultRange(statementMonth: string | null | undefined): { start: string; end: string } {
   // End at the batch's statement month (or the current calendar month if no
   // batch is selected). Start at January of the same year, so the timeline
@@ -494,21 +516,25 @@ export default function MemberTimelinePage() {
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">Start month</label>
-                <Input
-                  type="month"
-                  value={draftStartMonth}
-                  onChange={e => setDraftStartMonth(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') applyFilters(); }}
-                />
+                <Select value={draftStartMonth} onValueChange={setDraftStartMonth}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent className="max-h-[280px]">
+                    {MONTH_OPTIONS.map(opt => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">End month</label>
-                <Input
-                  type="month"
-                  value={draftEndMonth}
-                  onChange={e => setDraftEndMonth(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') applyFilters(); }}
-                />
+                <Select value={draftEndMonth} onValueChange={setDraftEndMonth}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent className="max-h-[280px]">
+                    {MONTH_OPTIONS.map(opt => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="md:col-span-2 flex gap-2 items-end">
                 <div className="relative flex-1">
