@@ -150,9 +150,10 @@ export default function MemberTimelinePage() {
       .finally(() => setLoading(false));
   }, [currentBatchId, batchScope]);
 
-  // Reset to default range when batch or batch scope changes (apply immediately).
-  // In 'all' mode, span the earliest to latest statement_month across all
-  // batches so the timeline shows every month with data available.
+  // Reset start/end to sensible defaults on initial mount and when the batch
+  // scope changes. Deliberately NOT dependent on currentBatchId — switching
+  // the top batch filter should not wipe a user-customized month range. The
+  // dependencies below cover: initial batches load, scope toggle.
   useEffect(() => {
     let r: { start: string; end: string };
     if (batchScope === 'all') {
@@ -174,7 +175,8 @@ export default function MemberTimelinePage() {
     setDraftEndMonth(r.end);
     setCarrier('all');
     setAorBuckets([]);
-  }, [currentBatchId, batchScope, batches.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [batchScope, batches.length]);
 
   const monthList = useMemo(() => {
     if (startMonth > endMonth) return [];
