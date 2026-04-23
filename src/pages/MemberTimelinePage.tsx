@@ -300,9 +300,17 @@ export default function MemberTimelinePage() {
   const classifiedRows = useMemo(() => {
     if (allRows.length === 0 || monthList.length === 0) return allRows;
 
+    // Apply the same per-record pay-entity / AOR scope filter that
+    // buildMemberTimeline uses for cell-level paid_amount, so the classifier
+    // sees the SAME commission rows the cell displays. Without this, an
+    // off-scope commission (e.g. a Vix $4.50 row when viewing Coverall) would
+    // trigger Rule 1 (Paid) in the classifier even though the cell shows $0.00,
+    // producing green "paid" cells with no dollars.
+    const classifierRecords = filteredRecords.filter(isDueEligibleRecord);
+
     // Group records by member_key (same key buildMemberTimeline used)
     const byMember = new Map<string, any[]>();
-    for (const r of filteredRecords) {
+    for (const r of classifierRecords) {
       const key = r.member_key || r.applicant_name || 'unknown';
       let arr = byMember.get(key);
       if (!arr) { arr = []; byMember.set(key, arr); }
@@ -318,7 +326,7 @@ export default function MemberTimelinePage() {
     // Practical consequence: if you've uploaded the Feb 21 statement (pays
     // January service), Jan cells evaluate fully and Feb cells show as
     // "pending" until the March 21 statement is uploaded into its batch.
-    const context = buildClassifierContext(filteredRecords as any, monthList, []);
+    const context = buildClassifierContext(classifierRecords as any, monthList, []);
 
     return allRows.map(row => {
       const recs = byMember.get(row.member_key) ?? [];
