@@ -288,11 +288,15 @@ export async function getNormalizedRecords(batchId: string) {
   let from = 0;
   const pageSize = 1000;
   while (true) {
+    // ORDER BY id is REQUIRED for stable pagination — without it Supabase/PG
+    // may return overlapping or missing rows across .range() calls, which
+    // silently inflates or deflates totals downstream.
     const { data, error } = await supabase
       .from('normalized_records')
       .select('*')
       .eq('batch_id', batchId)
       .is('superseded_at', null)
+      .order('id', { ascending: true })
       .range(from, from + pageSize - 1);
     if (error) throw error;
     if (!data || data.length === 0) break;
@@ -315,10 +319,12 @@ export async function getAllNormalizedRecords() {
   let from = 0;
   const pageSize = 1000;
   while (true) {
+    // ORDER BY id is REQUIRED for stable pagination — see getNormalizedRecords.
     const { data, error } = await supabase
       .from('normalized_records')
       .select('*')
       .is('superseded_at', null)
+      .order('id', { ascending: true })
       .range(from, from + pageSize - 1);
     if (error) throw error;
     if (!data || data.length === 0) break;
@@ -345,6 +351,7 @@ export async function getNormalizedRecordsAllSnapshots(batchId: string) {
       .from('normalized_records')
       .select('*')
       .eq('batch_id', batchId)
+      .order('id', { ascending: true })
       .range(from, from + pageSize - 1);
     if (error) throw error;
     if (!data || data.length === 0) break;
