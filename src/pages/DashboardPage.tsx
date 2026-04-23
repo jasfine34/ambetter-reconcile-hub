@@ -13,6 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { RebuildBatchButton } from '@/components/RebuildBatchButton';
 import { RECONCILE_LOGIC_VERSION } from '@/lib/rebuild';
 import { CollapsibleDebugCard } from '@/components/CollapsibleDebugCard';
+import { SourceFunnelCard } from '@/components/SourceFunnelCard';
 import { isCoverallAORByName } from '@/lib/agents';
 import { getCoveredMonths, monthKeyToFirstOfMonth, fallbackReconcileMonth } from '@/lib/dateRange';
 
@@ -106,6 +107,10 @@ export default function DashboardPage() {
   const [edeRawDrilldown, setEdeRawDrilldown] = useState<string | null>(null);
   const [edeRawRows, setEdeRawRows] = useState<Record<string, unknown>[]>([]);
   const [edeRawLoading, setEdeRawLoading] = useState(false);
+  // Cached normalized records for this batch, used by the Source Funnel and
+  // any other classifier-driven widget. Refreshes on batch change and after
+  // a re-run.
+  const [normalizedRecords, setNormalizedRecords] = useState<any[]>([]);
   const { toast } = useToast();
 
   // Covered months for this batch (prior month + statement month). Drives the
@@ -117,6 +122,23 @@ export default function DashboardPage() {
   );
   const priorMonth = coveredMonths[0] ?? '';
   const statementMonth = coveredMonths[1] ?? '';
+
+  // Fetch normalized records for the funnel + future classifier-driven widgets.
+  // Re-fetch when the batch changes OR when reconciled data updates (rebuild,
+  // re-run, upload completion — all refresh reconciled via refreshAll()).
+  useEffect(() => {
+    if (!currentBatchId) { setNormalizedRecords([]); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const recs = await getNormalizedRecords(currentBatchId);
+        if (!cancelled) setNormalizedRecords(recs as any[]);
+      } catch {
+        if (!cancelled) setNormalizedRecords([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [currentBatchId, reconciled.length]);
 
   useEffect(() => {
     localStorage.setItem(PAY_ENTITY_STORAGE_KEY, payEntityFilter);
@@ -520,6 +542,17 @@ export default function DashboardPage() {
             )}
         </CollapsibleDebugCard>
       )}
+
+      {/* Source Funnel — Phase 2b introduction of the classifier (§4.5 of
+          ARCHITECTURE_PLAN). Observational for now; Phase 3 wires dispute /
+          attribution workflows off the gap counts. */}
+      {reconciled.length > 0 && normalizedRecords.length > 0 && (
+        <SourceFunnelCard
+          normalizedRecords={normalizedRecords}
+          coveredMonths={coveredMonths}
+        />
+      )}
+
       {loading ? (
         <div className="text-center py-20 text-muted-foreground">Loading...</div>
       ) : reconciled.length === 0 ? (
