@@ -14,6 +14,41 @@ export type Database = {
   }
   public: {
     Tables: {
+      bo_snapshots: {
+        Row: {
+          agent_bucket: string | null
+          carrier: string
+          created_at: string
+          id: string
+          snapshot_date: string
+          uploaded_file_id: string | null
+        }
+        Insert: {
+          agent_bucket?: string | null
+          carrier?: string
+          created_at?: string
+          id?: string
+          snapshot_date?: string
+          uploaded_file_id?: string | null
+        }
+        Update: {
+          agent_bucket?: string | null
+          carrier?: string
+          created_at?: string
+          id?: string
+          snapshot_date?: string
+          uploaded_file_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bo_snapshots_uploaded_file_id_fkey"
+            columns: ["uploaded_file_id"]
+            isOneToOne: false
+            referencedRelation: "uploaded_files"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       commission_estimates: {
         Row: {
           basis: string | null
@@ -45,6 +80,38 @@ export type Database = {
             columns: ["batch_id"]
             isOneToOne: false
             referencedRelation: "upload_batches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ede_snapshots: {
+        Row: {
+          created_at: string
+          id: string
+          snapshot_date: string
+          source_kind: string | null
+          uploaded_file_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          snapshot_date?: string
+          source_kind?: string | null
+          uploaded_file_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          snapshot_date?: string
+          source_kind?: string | null
+          uploaded_file_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ede_snapshots_uploaded_file_id_fkey"
+            columns: ["uploaded_file_id"]
+            isOneToOne: false
+            referencedRelation: "uploaded_files"
             referencedColumns: ["id"]
           },
         ]
@@ -98,10 +165,12 @@ export type Database = {
           aor_bucket: string | null
           applicant_name: string | null
           batch_id: string
+          bo_snapshot_id: string | null
           carrier: string | null
           commission_amount: number | null
           created_at: string
           dob: string | null
+          ede_snapshot_id: string | null
           effective_date: string | null
           eligible_for_commission: string | null
           exchange_policy_id: string | null
@@ -123,6 +192,7 @@ export type Database = {
           source_file_label: string
           source_type: string
           status: string | null
+          superseded_at: string | null
           uploaded_file_id: string
         }
         Insert: {
@@ -131,10 +201,12 @@ export type Database = {
           aor_bucket?: string | null
           applicant_name?: string | null
           batch_id: string
+          bo_snapshot_id?: string | null
           carrier?: string | null
           commission_amount?: number | null
           created_at?: string
           dob?: string | null
+          ede_snapshot_id?: string | null
           effective_date?: string | null
           eligible_for_commission?: string | null
           exchange_policy_id?: string | null
@@ -156,6 +228,7 @@ export type Database = {
           source_file_label: string
           source_type: string
           status?: string | null
+          superseded_at?: string | null
           uploaded_file_id: string
         }
         Update: {
@@ -164,10 +237,12 @@ export type Database = {
           aor_bucket?: string | null
           applicant_name?: string | null
           batch_id?: string
+          bo_snapshot_id?: string | null
           carrier?: string | null
           commission_amount?: number | null
           created_at?: string
           dob?: string | null
+          ede_snapshot_id?: string | null
           effective_date?: string | null
           eligible_for_commission?: string | null
           exchange_policy_id?: string | null
@@ -189,6 +264,7 @@ export type Database = {
           source_file_label?: string
           source_type?: string
           status?: string | null
+          superseded_at?: string | null
           uploaded_file_id?: string
         }
         Relationships: [
@@ -197,6 +273,20 @@ export type Database = {
             columns: ["batch_id"]
             isOneToOne: false
             referencedRelation: "upload_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "normalized_records_bo_snapshot_id_fkey"
+            columns: ["bo_snapshot_id"]
+            isOneToOne: false
+            referencedRelation: "bo_snapshots"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "normalized_records_ede_snapshot_id_fkey"
+            columns: ["ede_snapshot_id"]
+            isOneToOne: false
+            referencedRelation: "ede_snapshots"
             referencedColumns: ["id"]
           },
           {
@@ -357,8 +447,10 @@ export type Database = {
           file_name: string
           id: string
           pay_entity: string | null
+          snapshot_date: string | null
           source_type: string
           storage_path: string | null
+          superseded_at: string | null
         }
         Insert: {
           aor_bucket?: string | null
@@ -368,8 +460,10 @@ export type Database = {
           file_name: string
           id?: string
           pay_entity?: string | null
+          snapshot_date?: string | null
           source_type: string
           storage_path?: string | null
+          superseded_at?: string | null
         }
         Update: {
           aor_bucket?: string | null
@@ -379,8 +473,10 @@ export type Database = {
           file_name?: string
           id?: string
           pay_entity?: string | null
+          snapshot_date?: string | null
           source_type?: string
           storage_path?: string | null
+          superseded_at?: string | null
         }
         Relationships: [
           {
