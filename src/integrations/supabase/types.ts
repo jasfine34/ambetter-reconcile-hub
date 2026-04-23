@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_appointments: {
+        Row: {
+          agent_name: string | null
+          agent_npn: string
+          carrier_normalized: string | null
+          carrier_raw: string | null
+          id: string
+          ingested_at: string
+          is_coverall_aor: boolean
+          last_activity_date: string | null
+          state: string | null
+          status: string | null
+          writing_number: string | null
+        }
+        Insert: {
+          agent_name?: string | null
+          agent_npn: string
+          carrier_normalized?: string | null
+          carrier_raw?: string | null
+          id?: string
+          ingested_at?: string
+          is_coverall_aor?: boolean
+          last_activity_date?: string | null
+          state?: string | null
+          status?: string | null
+          writing_number?: string | null
+        }
+        Update: {
+          agent_name?: string | null
+          agent_npn?: string
+          carrier_normalized?: string | null
+          carrier_raw?: string | null
+          id?: string
+          ingested_at?: string
+          is_coverall_aor?: boolean
+          last_activity_date?: string | null
+          state?: string | null
+          status?: string | null
+          writing_number?: string | null
+        }
+        Relationships: []
+      }
       bo_snapshots: {
         Row: {
           agent_bucket: string | null
@@ -48,6 +90,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      carriers: {
+        Row: {
+          aliases: string[]
+          canonical_key: string
+          created_at: string
+          display_name: string
+        }
+        Insert: {
+          aliases?: string[]
+          canonical_key: string
+          created_at?: string
+          display_name: string
+        }
+        Update: {
+          aliases?: string[]
+          canonical_key?: string
+          created_at?: string
+          display_name?: string
+        }
+        Relationships: []
       }
       commission_estimates: {
         Row: {
