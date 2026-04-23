@@ -234,6 +234,11 @@ export function buildMemberTimeline(
           if (eligibleForDue) cells[m].due = true;
         }
       } else if (r.source_type === 'COMMISSION') {
+        // Honor the eligibility predicate for commissions too. Without this
+        // gate, a Vix commission row would still pump $ into a member's cells
+        // even when the user has filtered to "Coverall only", inflating Total
+        // Paid above what the underlying data supports.
+        if (!eligibleForDue) continue;
         const { months, per } = commissionServiceMonths(r);
         for (const m of months) {
           if (!monthSet.has(m)) continue;
