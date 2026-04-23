@@ -1,11 +1,12 @@
 import { NPN_MAP } from './constants';
+import { getBackOfficeAdapter } from './carriers';
 
-function stripApostrophe(val: string | undefined | null): string {
+export function stripApostrophe(val: string | undefined | null): string {
   if (!val) return '';
   return val.replace(/^'+/, '').trim();
 }
 
-function normalizeDate(val: string | undefined | null): string | null {
+export function normalizeDate(val: string | undefined | null): string | null {
   if (!val) return null;
   const v = val.trim();
   if (!v) return null;
@@ -39,7 +40,7 @@ export function isQualifiedEDEStatus(status: string): boolean {
   return VALID_EDE_STATUSES.has(status) && !EXCLUDED_EDE_STATUSES.has(status);
 }
 
-function normalizeEligible(val: string | undefined | null): string {
+export function normalizeEligible(val: string | undefined | null): string {
   if (!val) return '';
   const v = val.trim().toLowerCase();
   if (v === 'yes' || v === 'y' || v === 'true') return 'Yes';
@@ -47,7 +48,7 @@ function normalizeEligible(val: string | undefined | null): string {
   return '';
 }
 
-function parseNum(val: string | undefined | null): number | null {
+export function parseNum(val: string | undefined | null): number | null {
   if (val === null || val === undefined) return null;
   let v = String(val).trim();
   if (!v) return null;
@@ -71,6 +72,23 @@ export function parseMoney(value: unknown): number {
   v = v.replace(/[$,\s]/g, '');
   const n = parseFloat(v);
   return isNaN(n) ? 0 : n;
+}
+
+function parseBool(val: string | undefined | null): boolean | null {
+  if (val === null || val === undefined) return null;
+  const v = String(val).trim().toLowerCase();
+  if (!v) return null;
+  if (v === 'true' || v === 'yes' || v === 'y' || v === '1') return true;
+  if (v === 'false' || v === 'no' || v === 'n' || v === '0') return false;
+  return null;
+}
+
+function parseInteger(val: string | undefined | null): number | null {
+  if (val === null || val === undefined) return null;
+  const v = String(val).trim();
+  if (!v) return null;
+  const n = parseInt(v, 10);
+  return isNaN(n) ? null : n;
 }
 
 /**
@@ -142,11 +160,29 @@ export interface NormalizedRecord {
   eligible_for_commission: string;
   policy_term_date: string | null;
   paid_through_date: string | null;
+  // Phase 1b typed columns — populated when the source file provides the
+  // signal; null/empty otherwise. See ARCHITECTURE_PLAN.md §2.1.
+  broker_effective_date: string | null;
+  broker_term_date: string | null;
+  member_responsibility: number | null;
+  on_off_exchange: string;
+  auto_renewal: boolean | null;
+  ede_policy_origin_type: string;
+  ede_bucket: string;
+  policy_modified_date: string | null;
+  client_address_1: string;
+  client_address_2: string;
+  client_city: string;
+  client_state_full: string;
+  client_zip: string;
+  paid_to_date: string | null;
+  months_paid: number | null;
+  writing_agent_carrier_id: string;
   member_key: string;
   raw_json: Record<string, string>;
 }
 
-function buildMemberKey(r: Partial<NormalizedRecord>): string {
+export function buildMemberKey(r: Partial<NormalizedRecord>): string {
   // Priority: issuer_subscriber_id > exchange_subscriber_id > policy_number > exchange_policy_id > name+dob
   const isid = r.issuer_subscriber_id || '';
   if (isid) return `issub:${isid}`;
@@ -159,6 +195,15 @@ function buildMemberKey(r: Partial<NormalizedRecord>): string {
   if (r.applicant_name && r.dob) return `name:${r.applicant_name.toUpperCase()}|${r.dob}`;
   if (r.applicant_name) return `name:${r.applicant_name.toUpperCase()}`;
   return `unk:${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * Map an agent NPN to the canonical AOR bucket (Jason / Erica / Becky).
+ * Mutates the record in place; no-op if NPN isn't one of ours.
+ */
+export function applyNpnBucket(r: NormalizedRecord): void {
+  const npnInfo = NPN_MAP[r.agent_npn as keyof typeof NPN_MAP];
+  if (npnInfo) r.aor_bucket = npnInfo.name;
 }
 
 /**
@@ -185,120 +230,148 @@ export function isValidIssuerSubId(val: string | undefined | null): boolean {
   return /u/i.test(v) && /\d/.test(v);
 }
 
+/** Factory for a blank record — ensures new fields are always initialised. */
+function newRecord(partial: Partial<NormalizedRecord>): NormalizedRecord {
+  return {
+    source_type: '',
+    source_file_label: '',
+    carrier: '',
+    applicant_name: '',
+    first_name: '',
+    last_name: '',
+    dob: null,
+    member_id: '',
+    policy_number: '',
+    exchange_subscriber_id: '',
+    exchange_policy_id: '',
+    issuer_policy_id: '',
+    issuer_subscriber_id: '',
+    agent_name: '',
+    agent_npn: '',
+    aor_bucket: '',
+    pay_entity: '',
+    status: '',
+    effective_date: null,
+    premium: null,
+    net_premium: null,
+    commission_amount: null,
+    eligible_for_commission: '',
+    policy_term_date: null,
+    paid_through_date: null,
+    broker_effective_date: null,
+    broker_term_date: null,
+    member_responsibility: null,
+    on_off_exchange: '',
+    auto_renewal: null,
+    ede_policy_origin_type: '',
+    ede_bucket: '',
+    policy_modified_date: null,
+    client_address_1: '',
+    client_address_2: '',
+    client_city: '',
+    client_state_full: '',
+    client_zip: '',
+    paid_to_date: null,
+    months_paid: null,
+    writing_agent_carrier_id: '',
+    member_key: '',
+    raw_json: {},
+    ...partial,
+  };
+}
+
 export function normalizeEDERow(row: Record<string, string>, fileLabel: string): NormalizedRecord | null {
   if (!isAmbetterEDE(row)) return null;
   const first = (row['applicantFirstName'] || '').trim();
   const last = (row['applicantLastName'] || '').trim();
   const issuerSubIdRaw = resolveIssuerSubscriberId(row);
-  const r: NormalizedRecord = {
+
+  const r = newRecord({
     source_type: 'EDE',
     source_file_label: fileLabel,
     carrier: 'Ambetter',
     applicant_name: (row['applicantName'] || `${first} ${last}`).trim(),
     first_name: first,
     last_name: last,
+    // EDE's `dob` column is present but universally empty in MyMFG exports —
+    // DOB is sourced from the carrier back office instead (§2.1).
     dob: normalizeDate(row['dob']),
     member_id: issuerSubIdRaw,
-    policy_number: '',
     exchange_subscriber_id: cleanId(row['exchangeSubscriberId']),
     exchange_policy_id: cleanId(row['exchangePolicyId']),
     issuer_policy_id: cleanId(row['issuerPolicyId']),
     issuer_subscriber_id: cleanId(issuerSubIdRaw),
     agent_name: (row['agentName'] || '').trim(),
     agent_npn: stripApostrophe(row['agentNPN']),
-    aor_bucket: '',
-    pay_entity: '',
     status: normalizePolicyStatus(row['policyStatus']),
     effective_date: normalizeDate(row['effectiveDate']),
     premium: parseNum(row['premium']),
     net_premium: parseNum(row['netPremium']),
-    commission_amount: null,
-    eligible_for_commission: '',
-    policy_term_date: null,
-    paid_through_date: null,
-    member_key: '',
+    // Phase 1b: EDE enrichment columns
+    auto_renewal: parseBool(row['autoRenewal']),
+    ede_policy_origin_type: (row['edePolicyOriginType'] || '').trim(),
+    ede_bucket: (row['bucket'] || '').trim(),
+    policy_modified_date: normalizeDate(row['policyModifiedDate']),
+    client_address_1: (row['clientAddress1'] || '').trim(),
+    client_address_2: (row['clientAddress2'] || '').trim(),
+    client_city: (row['clientCity'] || '').trim(),
+    client_state_full: (row['clientState'] || '').trim(),
+    client_zip: (row['clientZipCode'] || '').trim(),
     raw_json: row,
-  };
-  const npnInfo = NPN_MAP[r.agent_npn as keyof typeof NPN_MAP];
-  if (npnInfo) r.aor_bucket = npnInfo.name;
+  });
+
+  applyNpnBucket(r);
   r.member_key = buildMemberKey(r);
   return r;
 }
 
-export function normalizeBackOfficeRow(row: Record<string, string>, fileLabel: string, aorBucket: string): NormalizedRecord {
-  const first = (row['Insured First Name'] || '').trim();
-  const last = (row['Insured Last Name'] || '').trim();
-  const npn = stripApostrophe(row['Broker NPN']);
-  const policyNumber = stripApostrophe(row['Policy Number']);
-  const r: NormalizedRecord = {
-    source_type: 'BACK_OFFICE',
-    source_file_label: fileLabel,
-    carrier: 'Ambetter',
-    applicant_name: `${first} ${last}`.trim(),
-    first_name: first,
-    last_name: last,
-    dob: normalizeDate(row['Member Date Of Birth']),
-    member_id: '',
-    policy_number: cleanId(policyNumber),
-    exchange_subscriber_id: cleanId(row['Exchange Subscriber ID']),
-    exchange_policy_id: '',
-    issuer_policy_id: '',
-    issuer_subscriber_id: cleanId(policyNumber),
-    agent_name: (row['Broker Name'] || '').trim(),
-    agent_npn: npn,
-    aor_bucket: aorBucket,
-    pay_entity: '',
-    status: (row['Policy Status'] || '').trim(),
-    policy_term_date: normalizeDate(row['Policy Term Date']),
-    paid_through_date: normalizeDate(row['Paid Through Date']),
-    effective_date: normalizeDate(row['Policy Effective Date']),
-    premium: parseNum(row['Monthly Premium Amount']),
-    net_premium: null,
-    commission_amount: null,
-    eligible_for_commission: normalizeEligible(row['Eligible for Commission']),
-    member_key: '',
-    raw_json: row,
-  };
-  r.member_key = buildMemberKey(r);
-  return r;
+/**
+ * Back Office normalization dispatches to the registered carrier adapter.
+ * Today only Ambetter is registered; adding Molina / Cigna / etc. is a new
+ * file under src/lib/carriers/<name>/ plus a registry entry.
+ */
+export function normalizeBackOfficeRow(
+  row: Record<string, string>,
+  fileLabel: string,
+  aorBucket: string,
+): NormalizedRecord {
+  const adapter = getBackOfficeAdapter('Ambetter');
+  return adapter.normalizeRow(row, fileLabel, aorBucket);
 }
 
 export function normalizeCommissionRow(row: Record<string, string>, fileLabel: string, payEntity: string): NormalizedRecord | null {
   if (!isAmbetterCommission(row)) return null;
-  let policyNum = stripApostrophe(row['Policy Number'] || '');
+  const policyNum = stripApostrophe(row['Policy Number'] || '');
   const agentName = (row['Agent Name_1'] || row['Agent Name.1'] || row['Agent Name'] || '').trim();
-  let npn = stripApostrophe(row['Writing Agent ID'] || '');
-  const r: NormalizedRecord = {
+  const npn = stripApostrophe(row['Writing Agent ID'] || '');
+  // Messer commission statements carry two identifiers for the writing
+  // agent: a carrier-specific "Agent ID" and an FMO "eACID". Prefer eACID
+  // when present (it's the cross-carrier identifier Messer uses); fall back
+  // to Agent ID for backwards compat.
+  const writingAgentCarrierId = (row['eACID'] || row['Agent ID'] || '').toString().trim();
+
+  const r = newRecord({
     source_type: 'COMMISSION',
     source_file_label: fileLabel,
     carrier: 'Ambetter',
     applicant_name: (row['Policyholder Name'] || '').trim(),
-    first_name: '',
-    last_name: '',
-    dob: null,
-    member_id: '',
     policy_number: cleanId(policyNum),
-    exchange_subscriber_id: '',
-    exchange_policy_id: '',
-    issuer_policy_id: '',
     issuer_subscriber_id: cleanId(policyNum),
     agent_name: agentName,
     agent_npn: cleanId(npn) || npn,
-    aor_bucket: '',
     pay_entity: payEntity,
     status: (row['Policy Status'] || '').trim(),
     effective_date: normalizeDate(row['Issue Date']),
     premium: parseNum(row['Commissionable']),
-    net_premium: null,
     commission_amount: parseMoney(row['Gross Commission']),
-    eligible_for_commission: '',
-    policy_term_date: null,
-    paid_through_date: null,
-    member_key: '',
+    // Phase 1b: cross-month attribution + per-state writing agent id
+    paid_to_date: normalizeDate(row['Paid-To Date']),
+    months_paid: parseInteger(row['Months Paid']),
+    writing_agent_carrier_id: writingAgentCarrierId,
     raw_json: row,
-  };
-  const npnInfo = NPN_MAP[r.agent_npn as keyof typeof NPN_MAP];
-  if (npnInfo) r.aor_bucket = npnInfo.name;
+  });
+
+  applyNpnBucket(r);
   r.member_key = buildMemberKey(r);
   return r;
 }
