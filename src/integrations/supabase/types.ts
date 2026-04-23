@@ -14,6 +14,41 @@ export type Database = {
   }
   public: {
     Tables: {
+      bo_snapshots: {
+        Row: {
+          agent_bucket: string | null
+          carrier: string
+          created_at: string
+          id: string
+          snapshot_date: string
+          uploaded_file_id: string | null
+        }
+        Insert: {
+          agent_bucket?: string | null
+          carrier?: string
+          created_at?: string
+          id?: string
+          snapshot_date?: string
+          uploaded_file_id?: string | null
+        }
+        Update: {
+          agent_bucket?: string | null
+          carrier?: string
+          created_at?: string
+          id?: string
+          snapshot_date?: string
+          uploaded_file_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bo_snapshots_uploaded_file_id_fkey"
+            columns: ["uploaded_file_id"]
+            isOneToOne: false
+            referencedRelation: "uploaded_files"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       commission_estimates: {
         Row: {
           basis: string | null
@@ -45,6 +80,38 @@ export type Database = {
             columns: ["batch_id"]
             isOneToOne: false
             referencedRelation: "upload_batches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ede_snapshots: {
+        Row: {
+          created_at: string
+          id: string
+          snapshot_date: string
+          source_kind: string | null
+          uploaded_file_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          snapshot_date?: string
+          source_kind?: string | null
+          uploaded_file_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          snapshot_date?: string
+          source_kind?: string | null
+          uploaded_file_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ede_snapshots_uploaded_file_id_fkey"
+            columns: ["uploaded_file_id"]
+            isOneToOne: false
+            referencedRelation: "uploaded_files"
             referencedColumns: ["id"]
           },
         ]
@@ -206,6 +273,20 @@ export type Database = {
             columns: ["batch_id"]
             isOneToOne: false
             referencedRelation: "upload_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "normalized_records_bo_snapshot_id_fkey"
+            columns: ["bo_snapshot_id"]
+            isOneToOne: false
+            referencedRelation: "bo_snapshots"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "normalized_records_ede_snapshot_id_fkey"
+            columns: ["ede_snapshot_id"]
+            isOneToOne: false
+            referencedRelation: "ede_snapshots"
             referencedColumns: ["id"]
           },
           {
