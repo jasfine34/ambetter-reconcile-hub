@@ -276,14 +276,22 @@ function hasCommissionForMonth(records: NormalizedRecord[], month: MonthKey): bo
 /**
  * Month M is ripe when:
  *   1. A commission statement whose service-month set includes M has been
- *      uploaded, AND
- *   2. A BO snapshot dated on or after first-of-(M+1) has been uploaded.
+ *      uploaded (some commission row has paid_to_date falling in M), AND
+ *   2. When snapshot dates are plumbed through, a BO snapshot dated on or
+ *      after first-of-(M+1) has been uploaded.
  *
- * Condition 1 lets us know commissions for M ran; condition 2 lets the
- * premium-paid gate see a snapshot that could show the M-end paid-through.
+ * Condition 1 tells us the commission run for month M has happened, so we
+ * can distinguish "paid" from "expected and missing." Condition 2 gives the
+ * premium-paid gate a snapshot that could reflect M-end paid-through status.
+ *
+ * Today, snapshot dates aren't plumbed onto records, so when the caller
+ * passes an empty boSnapshotDates, we treat condition 2 as satisfied and
+ * rely solely on commission-statement presence. This makes ripeness align
+ * with the user's mental model: "did the statement that pays for M arrive?"
  */
 export function isMonthRipe(month: MonthKey, context: ClassifierContext): boolean {
   if (!context.commissionStatementMonths.has(month)) return false;
+  if (context.boSnapshotDates.length === 0) return true;
   const nextMonthStart = monthKeyToFirstOfMonth(addMonths(month, 1));
   return context.boSnapshotDates.some(d => d >= nextMonthStart);
 }

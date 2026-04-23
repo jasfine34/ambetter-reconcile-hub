@@ -229,15 +229,16 @@ export default function MemberTimelinePage() {
       arr.push(r);
     }
 
-    // Build a context. We don't have BO snapshot dates here (they live in the
-    // bo_snapshots table, not joined into records today), so for now treat
-    // every month in the selected range as ripe — the Member Timeline is
-    // showing raw data for user review rather than driving dispute decisions.
-    // Phase 3 wires real ripeness for the dispute workflow, not here.
-    const context = buildClassifierContext(filteredRecords as any, monthList, ['9999-12-31']);
-    for (const m of monthList) {
-      context.commissionStatementMonths.add(m);
-    }
+    // Build a context. boSnapshotDates is empty — snapshot dates aren't
+    // plumbed onto records yet (they live on the bo_snapshots table). When
+    // empty, the classifier falls back to commission-statement-only ripeness,
+    // which matches the operational question the user actually asks: "has
+    // the statement that would pay for this service month arrived?"
+    //
+    // Practical consequence: if you've uploaded the Feb 21 statement (pays
+    // January service), Jan cells evaluate fully and Feb cells show as
+    // "pending" until the March 21 statement is uploaded into its batch.
+    const context = buildClassifierContext(filteredRecords as any, monthList, []);
 
     return allRows.map(row => {
       const recs = byMember.get(row.member_key) ?? [];
