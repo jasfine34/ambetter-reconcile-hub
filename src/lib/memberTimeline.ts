@@ -1,5 +1,6 @@
 import type { NormalizedRecord } from './normalize';
 import { parseMoney } from './normalize';
+import type { ClassificationState, RollupStatus } from './classifier';
 
 export interface MonthCell {
   month: string;                   // 'YYYY-MM'
@@ -9,6 +10,13 @@ export interface MonthCell {
   paid_amount: number;             // sum of commission $ attributed to this service month
   payment_count: number;
   due: boolean;                    // active in BO OR qualified EDE this month
+  /**
+   * Phase 2c — classifier state for this cell (optional so legacy callers
+   * still work). Populated by MemberTimelinePage after building the row.
+   */
+  state?: ClassificationState;
+  /** Classifier's human-readable explanation, surfaced in the cell tooltip. */
+  state_reason?: string;
 }
 
 export interface MemberTimelineRow {
@@ -25,6 +33,10 @@ export interface MemberTimelineRow {
   months_due: number;
   months_paid: number;
   months_unpaid: number;
+  /** Phase 2c — classifier rollup for the selected month range. */
+  rollup?: RollupStatus;
+  /** True if any cell in range is state = manual_review. */
+  needs_manual_review?: boolean;
 }
 
 const QUALIFIED_EDE_RAW_STATUSES = new Set([

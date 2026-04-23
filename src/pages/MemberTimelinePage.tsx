@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useBatch } from '@/contexts/BatchContext';
 import { BatchSelector } from '@/components/BatchSelector';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,6 +17,7 @@ import { exportToCSV } from '@/lib/csvParser';
 import { NPN_MAP } from '@/lib/constants';
 import { isCoverallAORByName } from '@/lib/agents';
 import { statementMonthKey, currentMonthKey, addMonths } from '@/lib/dateRange';
+import { classifyMember, buildClassifierContext } from '@/lib/classifier';
 
 type PayEntityScope = 'Coverall' | 'Vix' | 'All';
 type AorScope = 'official' | 'all';
@@ -73,7 +74,7 @@ export default function MemberTimelinePage() {
   const [records, setRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'all' | 'unpaid' | 'paid' | 'partial'>('all');
+  const [filter, setFilter] = useState<'all' | 'unpaid' | 'paid' | 'partial' | 'review'>('all');
   const [page, setPage] = useState(0);
 
   useEffect(() => {
@@ -213,13 +214,63 @@ export default function MemberTimelinePage() {
     [filteredRecords, monthList, isDueEligibleRecord]
   );
 
+  // Phase 2c — enrich each row's cells with the classifier's per-cell state
+  // and compute the member-level rollup. Runs once per render of filteredRecords
+  // and monthList; relatively cheap since the classifier is pure TS.
+  const classifiedRows = useMemo(() => {
+    if (allRows.length === 0 || monthList.length === 0) return allRows;
+
+    // Group records by member_key (same key buildMemberTimeline used)
+    const byMember = new Map<string, any[]>();
+    for (const r of filteredRecords) {
+      const key = r.member_key || r.applicant_name || 'unknown';
+      let arr = byMember.get(key);
+      if (!arr) { arr = []; byMember.set(key, arr); }
+      arr.push(r);
+    }
+
+    // Build a context. We don't have BO snapshot dates here (they live in the
+    // bo_snapshots table, not joined into records today), so for now treat
+    // every month as ripe if commission has landed for it. This will be
+    // refined in Phase 2d once we expose snapshot_date on records.
+    const context = buildClassifierContext(filteredRecords as any, monthList, []);
+    // Soften ripeness: without BO snapshot dates plumbed in yet, treat all
+    // months in the selected range as ripe so unpaid members don't all show
+    // as "pending". The dispute workflow in Phase 3 will wire the real
+    // ripeness check.
+    context.boSnapshotDates = monthList.map(m => `${m}-28`);
+
+    return allRows.map(row => {
+      const recs = byMember.get(row.member_key) ?? [];
+      if (recs.length === 0) return row;
+      const classification = classifyMember(recs as any, context);
+      const newCells = { ...row.cells };
+      for (const m of monthList) {
+        const c = classification.cells[m];
+        if (!c || !newCells[m]) continue;
+        newCells[m] = {
+          ...newCells[m],
+          state: c.state,
+          state_reason: c.reason,
+        };
+      }
+      return {
+        ...row,
+        cells: newCells,
+        rollup: classification.rollup,
+        needs_manual_review: classification.needs_manual_review,
+      } as MemberTimelineRow;
+    });
+  }, [allRows, filteredRecords, monthList]);
+
   const filteredRows = useMemo(() => {
     // Base set: only members with at least one due month in the selected range.
     // Members with no due months have nothing to reconcile and are excluded from all buckets.
-    let rows = allRows.filter(r => r.months_due > 0);
+    let rows = classifiedRows.filter(r => r.months_due > 0);
     if (filter === 'unpaid') rows = rows.filter(r => r.months_unpaid > 0);
     else if (filter === 'paid') rows = rows.filter(r => r.months_unpaid === 0);
     else if (filter === 'partial') rows = rows.filter(r => r.months_paid > 0 && r.months_unpaid > 0);
+    else if (filter === 'review') rows = rows.filter(r => r.needs_manual_review);
     if (search) {
       const s = search.toLowerCase();
       rows = rows.filter(r =>
@@ -231,7 +282,7 @@ export default function MemberTimelinePage() {
       );
     }
     return rows;
-  }, [allRows, filter, search]);
+  }, [classifiedRows, filter, search]);
 
   const [pageSizeOpt, setPageSizeOpt] = useState<PageSizeOption>('50');
   const showAll = pageSizeOpt === 'all';
@@ -458,14 +509,15 @@ export default function MemberTimelinePage() {
 
         <div className="flex items-center gap-2 flex-wrap text-xs">
           {(() => {
-            const dueRows = allRows.filter(r => r.months_due > 0);
+            const dueRows = classifiedRows.filter(r => r.months_due > 0);
             const counts = {
               all: dueRows.length,
               unpaid: dueRows.filter(r => r.months_unpaid > 0).length,
               partial: dueRows.filter(r => r.months_paid > 0 && r.months_unpaid > 0).length,
               paid: dueRows.filter(r => r.months_unpaid === 0).length,
+              review: dueRows.filter(r => r.needs_manual_review).length,
             };
-            return (['all', 'unpaid', 'partial', 'paid'] as const).map(f => {
+            return (['all', 'unpaid', 'partial', 'paid', 'review'] as const).map(f => {
               const tip =
                 f === 'all'
                   ? 'All members with at least one due month in the selected range.'
@@ -473,7 +525,9 @@ export default function MemberTimelinePage() {
                   ? 'Members with at least one due month that has not been paid (gap in commission).'
                   : f === 'partial'
                   ? 'Members who have been paid for some due months but still have one or more unpaid due months.'
-                  : 'Members where every due month in the range has been paid in full.';
+                  : f === 'paid'
+                  ? 'Members where every due month in the range has been paid in full.'
+                  : 'Members where the classifier could not determine eligibility automatically — signals conflict or are inconclusive. Check the cell tooltips to see what needs a human decision.';
               const label =
                 f === 'all'
                   ? `All (${counts.all})`
@@ -481,7 +535,9 @@ export default function MemberTimelinePage() {
                   ? `Has unpaid (${counts.unpaid})`
                   : f === 'partial'
                   ? `Partially paid (${counts.partial})`
-                  : `Fully paid (${counts.paid})`;
+                  : f === 'paid'
+                  ? `Fully paid (${counts.paid})`
+                  : `Needs review (${counts.review})`;
               return (
                 <div key={f} className="inline-flex items-center">
                   <button
@@ -576,10 +632,47 @@ export default function MemberTimelinePage() {
                       {monthList.map(m => {
                         const c = row.cells[m];
                         const hasAny = c.in_ede || c.in_back_office || c.in_commission;
+
+                        // Phase 2c — prefer classifier state when present, fall
+                        // back to the due/paid_amount shape for legacy callers.
                         let cellCls = 'bg-transparent';
-                        if (c.due && c.paid_amount > 0.0001) cellCls = 'bg-success/15 border border-success/30';
-                        else if (c.due) cellCls = 'bg-destructive/15 border border-destructive/30';
-                        else if (hasAny) cellCls = 'bg-muted/40 border border-border';
+                        let inlineLabel: ReactNode = '';
+                        switch (c.state) {
+                          case 'paid':
+                            cellCls = 'bg-success/15 border border-success/30';
+                            inlineLabel = `$${c.paid_amount.toFixed(2)}`;
+                            break;
+                          case 'unpaid':
+                            cellCls = 'bg-destructive/15 border border-destructive/30';
+                            inlineLabel = <span className="text-destructive">unpaid</span>;
+                            break;
+                          case 'pending':
+                            cellCls = 'bg-amber-200/30 border border-amber-400/40 dark:bg-amber-500/15';
+                            inlineLabel = <span className="text-amber-700 dark:text-amber-500">pending</span>;
+                            break;
+                          case 'manual_review':
+                            cellCls = 'bg-purple-200/30 border border-purple-400/40 dark:bg-purple-500/15';
+                            inlineLabel = <span className="text-purple-700 dark:text-purple-400">review</span>;
+                            break;
+                          case 'not_expected_premium_unpaid':
+                          case 'not_expected_pre_eligibility':
+                          case 'not_expected_cancelled':
+                          case 'not_expected_not_ours':
+                            cellCls = 'bg-muted/40 border border-dashed border-border';
+                            inlineLabel = hasAny ? <span className="text-muted-foreground/70 text-[9px]">n/a</span> : '';
+                            break;
+                          default:
+                            // No classifier state — use original visual
+                            if (c.due && c.paid_amount > 0.0001) {
+                              cellCls = 'bg-success/15 border border-success/30';
+                              inlineLabel = `$${c.paid_amount.toFixed(2)}`;
+                            } else if (c.due) {
+                              cellCls = 'bg-destructive/15 border border-destructive/30';
+                              inlineLabel = <span className="text-destructive">unpaid</span>;
+                            } else if (hasAny) {
+                              cellCls = 'bg-muted/40 border border-border';
+                            }
+                        }
 
                         return (
                           <td key={m} className="px-1 py-1 text-center align-middle">
@@ -593,14 +686,20 @@ export default function MemberTimelinePage() {
                                     {!hasAny && <span className="text-muted-foreground/50 text-[10px]">—</span>}
                                   </div>
                                   <div className="text-[10px] font-medium text-foreground leading-tight">
-                                    {c.paid_amount > 0.0001
-                                      ? `$${c.paid_amount.toFixed(2)}`
-                                      : c.due ? <span className="text-destructive">unpaid</span> : ''}
+                                    {inlineLabel}
                                   </div>
                                 </div>
                               </TooltipTrigger>
-                              <TooltipContent side="top" className="text-xs">
+                              <TooltipContent side="top" className="text-xs max-w-[280px]">
                                 <div className="font-semibold mb-1">{formatMonthLabel(m)}</div>
+                                {c.state && (
+                                  <div className="mb-1 text-[11px]">
+                                    <span className="font-medium">State:</span> {c.state.replace(/_/g, ' ')}
+                                  </div>
+                                )}
+                                {c.state_reason && (
+                                  <div className="mb-1 text-muted-foreground">{c.state_reason}</div>
+                                )}
                                 <div>EDE: {c.in_ede ? 'yes' : 'no'}</div>
                                 <div>Back Office: {c.in_back_office ? 'active' : 'no'}</div>
                                 <div>Commission: {c.in_commission ? `${c.payment_count} payment(s)` : 'no'}</div>
@@ -618,14 +717,26 @@ export default function MemberTimelinePage() {
             </div>
 
             <div className="flex items-center justify-between mt-3 text-sm text-muted-foreground">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <span className="flex items-center gap-1.5">
                   <span className="inline-block w-3 h-3 rounded bg-success/30 border border-success/50" />
                   Paid
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span className="inline-block w-3 h-3 rounded bg-destructive/30 border border-destructive/50" />
-                  Due, unpaid
+                  Unpaid (disputable)
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block w-3 h-3 rounded bg-amber-200/60 border border-amber-400/60 dark:bg-amber-500/30" />
+                  Pending (not ripe)
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block w-3 h-3 rounded bg-purple-200/60 border border-purple-400/60 dark:bg-purple-500/30" />
+                  Needs review
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block w-3 h-3 rounded bg-muted border border-dashed border-border" />
+                  Not expected
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span className="inline-block w-3 h-3 rounded bg-muted border border-border" />
