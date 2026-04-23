@@ -10,7 +10,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Search, Download, ChevronDown, Info } from 'lucide-react';
-import { getNormalizedRecords } from '@/lib/persistence';
+import { getNormalizedRecords, getAllNormalizedRecords } from '@/lib/persistence';
 import { buildMemberTimeline, buildMonthList, formatMonthLabel, type MemberTimelineRow } from '@/lib/memberTimeline';
 import { assignMergedMemberKeys } from '@/lib/memberMerge';
 import { exportToCSV } from '@/lib/csvParser';
@@ -24,6 +24,16 @@ type AorScope = 'official' | 'all';
 
 const PAY_ENTITY_STORAGE_KEY = 'timeline_pay_entity_filter';
 const AOR_SCOPE_STORAGE_KEY = 'timeline_aor_scope_filter';
+const BATCH_SCOPE_STORAGE_KEY = 'timeline_batch_scope_filter';
+
+type BatchScope = 'current' | 'all';
+function getStoredBatchScope(): BatchScope {
+  try {
+    const v = localStorage.getItem(BATCH_SCOPE_STORAGE_KEY);
+    if (v === 'current' || v === 'all') return v;
+  } catch {}
+  return 'current';
+}
 
 function getStoredPayEntity(): PayEntityScope {
   try {
@@ -89,6 +99,7 @@ export default function MemberTimelinePage() {
   const [carrier, setCarrier] = useState<string>('all');
   const [aorBuckets, setAorBuckets] = useState<string[]>([]); // empty = all
   const [aorScope, setAorScope] = useState<AorScope>(getStoredAorScope);
+  const [batchScope, setBatchScope] = useState<BatchScope>(getStoredBatchScope);
   const [payEntity, setPayEntity] = useState<PayEntityScope>(getStoredPayEntity);
   // Only date range is gated behind Apply (carrier/AOR apply immediately)
   const [draftStartMonth, setDraftStartMonth] = useState(initial.start);
@@ -105,6 +116,9 @@ export default function MemberTimelinePage() {
   useEffect(() => {
     try { localStorage.setItem(AOR_SCOPE_STORAGE_KEY, aorScope); } catch {}
   }, [aorScope]);
+  useEffect(() => {
+    try { localStorage.setItem(BATCH_SCOPE_STORAGE_KEY, batchScope); } catch {}
+  }, [batchScope]);
 
   const hasPendingChanges =
     draftStartMonth !== startMonth ||
@@ -116,30 +130,51 @@ export default function MemberTimelinePage() {
   };
 
   useEffect(() => {
-    if (!currentBatchId) { setRecords([]); return; }
     setLoading(true);
-    getNormalizedRecords(currentBatchId)
+    const fetch = batchScope === 'all'
+      ? getAllNormalizedRecords()
+      : currentBatchId
+        ? getNormalizedRecords(currentBatchId)
+        : Promise.resolve([] as any[]);
+    fetch
       .then(recs => {
         // Re-key records using the same multi-strategy union-find that
         // reconcile uses, so the same person across EDE / Back Office /
         // Commission collapses into ONE timeline row (e.g. Aaron Barrett by
-        // U-sub-id + by Ambetter policy number).
+        // U-sub-id + by Ambetter policy number). Also merges cross-batch
+        // records for the same member when batchScope is 'all'.
         assignMergedMemberKeys(recs as any);
         setRecords(recs);
       })
+      .catch(() => setRecords([]))
       .finally(() => setLoading(false));
-  }, [currentBatchId]);
+  }, [currentBatchId, batchScope]);
 
-  // Reset to default range when batch changes (apply immediately)
+  // Reset to default range when batch or batch scope changes (apply immediately).
+  // In 'all' mode, span the earliest to latest statement_month across all
+  // batches so the timeline shows every month with data available.
   useEffect(() => {
-    const r = defaultRange(currentBatch?.statement_month);
+    let r: { start: string; end: string };
+    if (batchScope === 'all') {
+      const months = batches
+        .map((b: any) => statementMonthKey(b.statement_month))
+        .filter(Boolean)
+        .sort();
+      if (months.length > 0) {
+        r = { start: months[0], end: months[months.length - 1] };
+      } else {
+        r = defaultRange(currentBatch?.statement_month);
+      }
+    } else {
+      r = defaultRange(currentBatch?.statement_month);
+    }
     setStartMonth(r.start);
     setEndMonth(r.end);
     setDraftStartMonth(r.start);
     setDraftEndMonth(r.end);
     setCarrier('all');
     setAorBuckets([]);
-  }, [currentBatchId]);
+  }, [currentBatchId, batchScope, batches.length]);
 
   const monthList = useMemo(() => {
     if (startMonth > endMonth) return [];
@@ -406,10 +441,32 @@ export default function MemberTimelinePage() {
 
         <Card>
           <CardContent className="pt-6 space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-8 gap-4 items-end">
+            <div className="grid grid-cols-1 md:grid-cols-9 gap-4 items-end">
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block flex items-center gap-1">
-                  Scope
+                  Batches
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="cursor-help inline-flex"><Info className="h-3 w-3 opacity-60" /></span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[300px] text-xs leading-relaxed">
+                      <strong>Current batch:</strong> only records from the batch selected at the top. Good for inspecting what a specific statement paid for.
+                      <br />
+                      <strong>All batches:</strong> combines records across every batch so retroactive catch-ups on later statements flip earlier months to paid. Recommended for year-to-date review.
+                    </TooltipContent>
+                  </Tooltip>
+                </label>
+                <Select value={batchScope} onValueChange={(v) => setBatchScope(v as BatchScope)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="current">Current batch</SelectItem>
+                    <SelectItem value="all">All batches</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block flex items-center gap-1">
+                  AOR scope
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <span className="cursor-help inline-flex"><Info className="h-3 w-3 opacity-60" /></span>

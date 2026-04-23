@@ -273,6 +273,32 @@ export async function getNormalizedRecords(batchId: string) {
 }
 
 /**
+ * Returns CURRENT (non-superseded) normalized records across every batch.
+ * Powers the Member Timeline's cross-batch scope, where the user wants to see
+ * a member's full history (e.g. Jan batch's Jan service + Feb batch's
+ * retroactive Jan catch-up together) rather than inspecting batches one at
+ * a time. Paged to keep the Supabase query size manageable.
+ */
+export async function getAllNormalizedRecords() {
+  const allData: any[] = [];
+  let from = 0;
+  const pageSize = 1000;
+  while (true) {
+    const { data, error } = await supabase
+      .from('normalized_records')
+      .select('*')
+      .is('superseded_at', null)
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    allData.push(...data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return allData;
+}
+
+/**
  * Returns ALL normalized records for a batch, including superseded rows from
  * prior snapshot uploads. Use this when you need to reason about snapshot
  * history (e.g. "paid-through date as of the Feb 1 BO snapshot vs the Mar 1
