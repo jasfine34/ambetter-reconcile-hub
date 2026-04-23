@@ -1000,6 +1000,14 @@ export default function MemberTimelinePage() {
             </div>
           </CardContent>
         </Card>
+
+        {debugOpen && audit && (
+          <PaidDollarsAuditPanel
+            audit={audit}
+            monthList={monthList}
+            timelineTotalPaid={unsearchedTotalPaid}
+          />
+        )}
       </div>
     </TooltipProvider>
   );
