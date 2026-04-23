@@ -74,7 +74,7 @@ export default function MemberTimelinePage() {
   const [records, setRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'all' | 'unpaid' | 'paid' | 'partial' | 'review'>('all');
+  const [filter, setFilter] = useState<'all' | 'unpaid' | 'paid' | 'partial' | 'pending' | 'review'>('all');
   const [page, setPage] = useState(0);
 
   useEffect(() => {
@@ -245,20 +245,53 @@ export default function MemberTimelinePage() {
       if (recs.length === 0) return row;
       const classification = classifyMember(recs as any, context);
       const newCells = { ...row.cells };
+      // Recompute per-member counters based on the classifier state so filter
+      // pills reflect the same truth the cells display. Legacy `due` flag only
+      // said "active this month"; classifier says paid/unpaid/pending/review.
+      let months_paid = 0;
+      let months_unpaid = 0;
+      let months_pending = 0;
+      let months_due = 0;
       for (const m of monthList) {
         const c = classification.cells[m];
-        if (!c || !newCells[m]) continue;
+        const existing = newCells[m];
+        if (!c || !existing) continue;
         newCells[m] = {
-          ...newCells[m],
+          ...existing,
           state: c.state,
           state_reason: c.reason,
         };
+        // Count states. Only eligible cells contribute to due/paid/unpaid.
+        switch (c.state) {
+          case 'paid':
+            months_paid++;
+            months_due++;
+            break;
+          case 'unpaid':
+            months_unpaid++;
+            months_due++;
+            break;
+          case 'pending':
+            months_pending++;
+            months_due++;
+            break;
+          case 'manual_review':
+            // Counts as due but doesn't resolve to paid or unpaid
+            months_due++;
+            break;
+          default:
+            // not_expected_* — not due, skip
+            break;
+        }
       }
       return {
         ...row,
         cells: newCells,
         rollup: classification.rollup,
         needs_manual_review: classification.needs_manual_review,
+        months_paid,
+        months_unpaid,
+        months_due,
       } as MemberTimelineRow;
     });
   }, [allRows, filteredRecords, monthList]);
@@ -267,9 +300,16 @@ export default function MemberTimelinePage() {
     // Base set: only members with at least one due month in the selected range.
     // Members with no due months have nothing to reconcile and are excluded from all buckets.
     let rows = classifiedRows.filter(r => r.months_due > 0);
+    const isPending = (r: MemberTimelineRow): boolean =>
+      Object.values(r.cells).some(c => c.state === 'pending');
     if (filter === 'unpaid') rows = rows.filter(r => r.months_unpaid > 0);
-    else if (filter === 'paid') rows = rows.filter(r => r.months_unpaid === 0);
+    else if (filter === 'paid') {
+      // Fully paid = every due month is paid (not just "no unpaid"). Members
+      // with pending cells don't qualify — they're waiting, not resolved.
+      rows = rows.filter(r => r.months_paid === r.months_due && r.months_due > 0);
+    }
     else if (filter === 'partial') rows = rows.filter(r => r.months_paid > 0 && r.months_unpaid > 0);
+    else if (filter === 'pending') rows = rows.filter(r => isPending(r));
     else if (filter === 'review') rows = rows.filter(r => r.needs_manual_review);
     if (search) {
       const s = search.toLowerCase();
@@ -510,24 +550,29 @@ export default function MemberTimelinePage() {
         <div className="flex items-center gap-2 flex-wrap text-xs">
           {(() => {
             const dueRows = classifiedRows.filter(r => r.months_due > 0);
+            const isPending = (r: MemberTimelineRow): boolean =>
+              Object.values(r.cells).some(c => c.state === 'pending');
             const counts = {
               all: dueRows.length,
               unpaid: dueRows.filter(r => r.months_unpaid > 0).length,
               partial: dueRows.filter(r => r.months_paid > 0 && r.months_unpaid > 0).length,
-              paid: dueRows.filter(r => r.months_unpaid === 0).length,
+              paid: dueRows.filter(r => r.months_paid === r.months_due).length,
+              pending: dueRows.filter(r => isPending(r)).length,
               review: dueRows.filter(r => r.needs_manual_review).length,
             };
-            return (['all', 'unpaid', 'partial', 'paid', 'review'] as const).map(f => {
+            return (['all', 'unpaid', 'partial', 'paid', 'pending', 'review'] as const).map(f => {
               const tip =
                 f === 'all'
                   ? 'All members with at least one due month in the selected range.'
                   : f === 'unpaid'
-                  ? 'Members with at least one due month that has not been paid (gap in commission).'
+                  ? 'Members with at least one due month classified as unpaid — commission expected and not received.'
                   : f === 'partial'
-                  ? 'Members who have been paid for some due months but still have one or more unpaid due months.'
+                  ? 'Members paid for some due months but unpaid in others. Excludes pending (not-yet-ripe) months.'
                   : f === 'paid'
-                  ? 'Members where every due month in the range has been paid in full.'
-                  : 'Members where the classifier could not determine eligibility automatically — signals conflict or are inconclusive. Check the cell tooltips to see what needs a human decision.';
+                  ? 'Members where every due month in the range has been paid. Excludes members with any pending or manual-review cells.'
+                  : f === 'pending'
+                  ? 'Members with at least one month that is not yet ripe — the commission statement that would pay for that service month has not been uploaded into this batch.'
+                  : 'Members where the classifier could not determine eligibility automatically — signals conflict or are inconclusive. Check the cell tooltips for details.';
               const label =
                 f === 'all'
                   ? `All (${counts.all})`
@@ -537,6 +582,8 @@ export default function MemberTimelinePage() {
                   ? `Partially paid (${counts.partial})`
                   : f === 'paid'
                   ? `Fully paid (${counts.paid})`
+                  : f === 'pending'
+                  ? `Has pending (${counts.pending})`
                   : `Needs review (${counts.review})`;
               return (
                 <div key={f} className="inline-flex items-center">
