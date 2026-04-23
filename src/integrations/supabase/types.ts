@@ -164,12 +164,22 @@ export type Database = {
           agent_npn: string | null
           aor_bucket: string | null
           applicant_name: string | null
+          auto_renewal: boolean | null
           batch_id: string
           bo_snapshot_id: string | null
+          broker_effective_date: string | null
+          broker_term_date: string | null
           carrier: string | null
+          client_address_1: string | null
+          client_address_2: string | null
+          client_city: string | null
+          client_state_full: string | null
+          client_zip: string | null
           commission_amount: number | null
           created_at: string
           dob: string | null
+          ede_bucket: string | null
+          ede_policy_origin_type: string | null
           ede_snapshot_id: string | null
           effective_date: string | null
           eligible_for_commission: string | null
@@ -182,9 +192,14 @@ export type Database = {
           last_name: string | null
           member_id: string | null
           member_key: string | null
+          member_responsibility: number | null
+          months_paid: number | null
           net_premium: number | null
+          on_off_exchange: string | null
           paid_through_date: string | null
+          paid_to_date: string | null
           pay_entity: string | null
+          policy_modified_date: string | null
           policy_number: string | null
           policy_term_date: string | null
           premium: number | null
@@ -194,18 +209,29 @@ export type Database = {
           status: string | null
           superseded_at: string | null
           uploaded_file_id: string
+          writing_agent_carrier_id: string | null
         }
         Insert: {
           agent_name?: string | null
           agent_npn?: string | null
           aor_bucket?: string | null
           applicant_name?: string | null
+          auto_renewal?: boolean | null
           batch_id: string
           bo_snapshot_id?: string | null
+          broker_effective_date?: string | null
+          broker_term_date?: string | null
           carrier?: string | null
+          client_address_1?: string | null
+          client_address_2?: string | null
+          client_city?: string | null
+          client_state_full?: string | null
+          client_zip?: string | null
           commission_amount?: number | null
           created_at?: string
           dob?: string | null
+          ede_bucket?: string | null
+          ede_policy_origin_type?: string | null
           ede_snapshot_id?: string | null
           effective_date?: string | null
           eligible_for_commission?: string | null
@@ -218,9 +244,14 @@ export type Database = {
           last_name?: string | null
           member_id?: string | null
           member_key?: string | null
+          member_responsibility?: number | null
+          months_paid?: number | null
           net_premium?: number | null
+          on_off_exchange?: string | null
           paid_through_date?: string | null
+          paid_to_date?: string | null
           pay_entity?: string | null
+          policy_modified_date?: string | null
           policy_number?: string | null
           policy_term_date?: string | null
           premium?: number | null
@@ -230,18 +261,29 @@ export type Database = {
           status?: string | null
           superseded_at?: string | null
           uploaded_file_id: string
+          writing_agent_carrier_id?: string | null
         }
         Update: {
           agent_name?: string | null
           agent_npn?: string | null
           aor_bucket?: string | null
           applicant_name?: string | null
+          auto_renewal?: boolean | null
           batch_id?: string
           bo_snapshot_id?: string | null
+          broker_effective_date?: string | null
+          broker_term_date?: string | null
           carrier?: string | null
+          client_address_1?: string | null
+          client_address_2?: string | null
+          client_city?: string | null
+          client_state_full?: string | null
+          client_zip?: string | null
           commission_amount?: number | null
           created_at?: string
           dob?: string | null
+          ede_bucket?: string | null
+          ede_policy_origin_type?: string | null
           ede_snapshot_id?: string | null
           effective_date?: string | null
           eligible_for_commission?: string | null
@@ -254,9 +296,14 @@ export type Database = {
           last_name?: string | null
           member_id?: string | null
           member_key?: string | null
+          member_responsibility?: number | null
+          months_paid?: number | null
           net_premium?: number | null
+          on_off_exchange?: string | null
           paid_through_date?: string | null
+          paid_to_date?: string | null
           pay_entity?: string | null
+          policy_modified_date?: string | null
           policy_number?: string | null
           policy_term_date?: string | null
           premium?: number | null
@@ -266,6 +313,7 @@ export type Database = {
           status?: string | null
           superseded_at?: string | null
           uploaded_file_id?: string
+          writing_agent_carrier_id?: string | null
         }
         Relationships: [
           {
