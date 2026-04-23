@@ -51,8 +51,8 @@ export default function UploadPage() {
         normalized = rawRows.map(r => normalizeCommissionRow(r, p.fileLabel, p.payEntity!)).filter(Boolean) as any[];
       }
 
-      const fileRecord = await uploadFileRecord(currentBatchId!, p.fileLabel, p.file.name, p.sourceType, p.payEntity, p.aorBucket, storagePath);
-      await insertNormalizedRecords(currentBatchId!, fileRecord.id, normalized);
+      const { file: fileRecord, snapshot } = await uploadFileRecord(currentBatchId!, p.fileLabel, p.file.name, p.sourceType, p.payEntity, p.aorBucket, storagePath);
+      await insertNormalizedRecords(currentBatchId!, fileRecord.id, normalized, snapshot);
 
       const allRecords = await getNormalizedRecords(currentBatchId!);
       const currentBatch = batches.find((b: any) => b.id === currentBatchId);

@@ -7,6 +7,7 @@ import {
   insertNormalizedRecords,
   saveReconciledMembers,
   getNormalizedRecords,
+  getOrCreateSnapshotForFile,
 } from './persistence';
 
 /**
@@ -67,10 +68,12 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
     );
   }
 
-  // 3 + 4. Delete normalized + reconciled (commission_estimates cascade via saveReconciledMembers)
+  // 3 + 4. Delete reconciled + CURRENT normalized records.
+  // Superseded normalized_records (from prior snapshot uploads) are preserved
+  // as history — rebuild only regenerates the current working set.
   await supabase.from('reconciled_members').delete().eq('batch_id', batchId);
   await supabase.from('commission_estimates').delete().eq('batch_id', batchId);
-  await supabase.from('normalized_records').delete().eq('batch_id', batchId);
+  await supabase.from('normalized_records').delete().eq('batch_id', batchId).is('superseded_at', null);
 
   // 2 + 5. Re-download + re-normalize each file
   let totalNormalized = 0;
@@ -96,7 +99,16 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
       normalized = rawRows.map(r => normalizeCommissionRow(r, f.file_label, f.pay_entity || '')).filter(Boolean) as any[];
     }
 
-    await insertNormalizedRecords(batchId, f.id, normalized);
+    // Find the snapshot for this uploaded file; create one dated to the
+    // original upload date if it predates Phase 1a (lazy backfill).
+    const snapshot = await getOrCreateSnapshotForFile({
+      id: f.id,
+      source_type: f.source_type,
+      aor_bucket: f.aor_bucket ?? null,
+      file_label: f.file_label,
+      created_at: f.created_at,
+    });
+    await insertNormalizedRecords(batchId, f.id, normalized, snapshot);
     totalNormalized += normalized.length;
   }
 
