@@ -231,14 +231,13 @@ export default function MemberTimelinePage() {
 
     // Build a context. We don't have BO snapshot dates here (they live in the
     // bo_snapshots table, not joined into records today), so for now treat
-    // every month as ripe if commission has landed for it. This will be
-    // refined in Phase 2d once we expose snapshot_date on records.
-    const context = buildClassifierContext(filteredRecords as any, monthList, []);
-    // Soften ripeness: without BO snapshot dates plumbed in yet, treat all
-    // months in the selected range as ripe so unpaid members don't all show
-    // as "pending". The dispute workflow in Phase 3 will wire the real
-    // ripeness check.
-    context.boSnapshotDates = monthList.map(m => `${m}-28`);
+    // every month in the selected range as ripe — the Member Timeline is
+    // showing raw data for user review rather than driving dispute decisions.
+    // Phase 3 wires real ripeness for the dispute workflow, not here.
+    const context = buildClassifierContext(filteredRecords as any, monthList, ['9999-12-31']);
+    for (const m of monthList) {
+      context.commissionStatementMonths.add(m);
+    }
 
     return allRows.map(row => {
       const recs = byMember.get(row.member_key) ?? [];
