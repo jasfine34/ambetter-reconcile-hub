@@ -21,6 +21,37 @@ export async function createBatch(statementMonth: string, notes?: string) {
   return data;
 }
 
+/**
+ * Check whether a batch already exists for the given (statement_month, carrier)
+ * combination. Used to warn before creating duplicates. Ambetter is the default
+ * carrier since that's what `createBatch` inserts.
+ */
+export async function findExistingBatches(statementMonth: string, carrier: string = 'Ambetter') {
+  const { data, error } = await supabase
+    .from('upload_batches')
+    .select('*')
+    .eq('statement_month', statementMonth)
+    .eq('carrier', carrier);
+  if (error) throw error;
+  return data ?? [];
+}
+
+/**
+ * Permanently delete a batch and all its cascade data (uploaded_files,
+ * normalized_records, reconciled_members, commission_estimates, and
+ * snapshot rows all have ON DELETE CASCADE → removing a batch cleans them
+ * up automatically). Storage objects are left alone since they're shared
+ * across potential re-uploads; callers can prune `commission-files`
+ * manually if disk pressure matters.
+ */
+export async function deleteBatch(batchId: string) {
+  const { error } = await supabase
+    .from('upload_batches')
+    .delete()
+    .eq('id', batchId);
+  if (error) throw error;
+}
+
 export async function getBatches() {
   const { data, error } = await supabase
     .from('upload_batches')
