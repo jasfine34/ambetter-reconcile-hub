@@ -886,39 +886,57 @@ export default function MemberTimelinePage() {
                             }
                         }
 
+                        const cellInner = (
+                          <div
+                            className={`rounded-md px-2 py-1.5 ${cellCls} ${
+                              debugOpen && audit ? 'cursor-pointer hover:ring-2 hover:ring-primary/40' : 'cursor-default'
+                            }`}
+                          >
+                            <div className="flex justify-center gap-0.5 mb-0.5">
+                              {c.in_ede && <Badge variant="secondary" className="h-4 px-1 text-[9px] font-mono">E</Badge>}
+                              {c.in_back_office && <Badge variant="secondary" className="h-4 px-1 text-[9px] font-mono">B</Badge>}
+                              {c.in_commission && <Badge variant="secondary" className="h-4 px-1 text-[9px] font-mono">C</Badge>}
+                              {!hasAny && <span className="text-muted-foreground/50 text-[10px]">—</span>}
+                            </div>
+                            <div className="text-[10px] font-medium text-foreground leading-tight">
+                              {inlineLabel}
+                            </div>
+                          </div>
+                        );
+
                         return (
                           <td key={m} className="px-1 py-1 text-center align-middle">
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <div className={`rounded-md px-2 py-1.5 ${cellCls} cursor-default`}>
-                                  <div className="flex justify-center gap-0.5 mb-0.5">
-                                    {c.in_ede && <Badge variant="secondary" className="h-4 px-1 text-[9px] font-mono">E</Badge>}
-                                    {c.in_back_office && <Badge variant="secondary" className="h-4 px-1 text-[9px] font-mono">B</Badge>}
-                                    {c.in_commission && <Badge variant="secondary" className="h-4 px-1 text-[9px] font-mono">C</Badge>}
-                                    {!hasAny && <span className="text-muted-foreground/50 text-[10px]">—</span>}
-                                  </div>
-                                  <div className="text-[10px] font-medium text-foreground leading-tight">
-                                    {inlineLabel}
-                                  </div>
-                                </div>
-                              </TooltipTrigger>
-                              <TooltipContent side="top" className="text-xs max-w-[280px]">
-                                <div className="font-semibold mb-1">{formatMonthLabel(m)}</div>
-                                {c.state && (
-                                  <div className="mb-1 text-[11px]">
-                                    <span className="font-medium">State:</span> {c.state.replace(/_/g, ' ')}
-                                  </div>
-                                )}
-                                {c.state_reason && (
-                                  <div className="mb-1 text-muted-foreground">{c.state_reason}</div>
-                                )}
-                                <div>EDE: {c.in_ede ? 'yes' : 'no'}</div>
-                                <div>Back Office: {c.in_back_office ? 'active' : 'no'}</div>
-                                <div>Commission: {c.in_commission ? `${c.payment_count} payment(s)` : 'no'}</div>
-                                <div>Paid: ${c.paid_amount.toFixed(2)}</div>
-                                <div>Due: {c.due ? 'yes' : 'no'}</div>
-                              </TooltipContent>
-                            </Tooltip>
+                            {debugOpen && audit ? (
+                              <CellAttributionPopover
+                                audit={audit}
+                                member_key={row.member_key}
+                                member_name={row.applicant_name}
+                                cell={c}
+                                month={m}
+                              >
+                                {cellInner}
+                              </CellAttributionPopover>
+                            ) : (
+                              <Tooltip>
+                                <TooltipTrigger asChild>{cellInner}</TooltipTrigger>
+                                <TooltipContent side="top" className="text-xs max-w-[280px]">
+                                  <div className="font-semibold mb-1">{formatMonthLabel(m)}</div>
+                                  {c.state && (
+                                    <div className="mb-1 text-[11px]">
+                                      <span className="font-medium">State:</span> {c.state.replace(/_/g, ' ')}
+                                    </div>
+                                  )}
+                                  {c.state_reason && (
+                                    <div className="mb-1 text-muted-foreground">{c.state_reason}</div>
+                                  )}
+                                  <div>EDE: {c.in_ede ? 'yes' : 'no'}</div>
+                                  <div>Back Office: {c.in_back_office ? 'active' : 'no'}</div>
+                                  <div>Commission: {c.in_commission ? `${c.payment_count} payment(s)` : 'no'}</div>
+                                  <div>Paid: ${c.paid_amount.toFixed(2)}</div>
+                                  <div>Due: {c.due ? 'yes' : 'no'}</div>
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
                           </td>
                         );
                       })}
