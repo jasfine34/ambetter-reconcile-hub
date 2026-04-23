@@ -203,9 +203,24 @@ export function computeFirstEligibleMonth(records: NormalizedRecord[]): MonthKey
   return earliestEdeMonth;
 }
 
-/** True if the member has ANY record tying them to us (BO AOR or EDE AOR). */
+/**
+ * True if the member has ANY record tying them to us — BO/EDE AOR, or a
+ * commission row whose NPN/aor_bucket says we got paid for them. Without the
+ * commission fallback, members who only have a commission record (no
+ * EDE/BO presence in the dataset, but we *did* receive money for them)
+ * classify as `not_expected_not_ours`, which then drops them from the
+ * Member Timeline's `months_due > 0` base filter and from the summary's
+ * Total Paid — even though the dollars are real and ours.
+ */
 function memberBelongsToUs(records: NormalizedRecord[]): boolean {
-  return records.some(r => isBoRecordOurs(r) || isEdeRecordOurs(r));
+  return records.some(r => {
+    if (isBoRecordOurs(r) || isEdeRecordOurs(r)) return true;
+    if (r.source_type === 'COMMISSION') {
+      if (isCoverallAORByNPN(r.agent_npn)) return true;
+      if (isCoverallAORByName(r.aor_bucket)) return true;
+    }
+    return false;
+  });
 }
 
 /** Most recent BO paid-through date across all snapshots, as MonthKey. */
