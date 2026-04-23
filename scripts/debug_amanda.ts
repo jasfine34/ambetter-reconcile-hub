@@ -39,7 +39,7 @@ function isDueEligible(r: any, payEntity = 'Coverall'): boolean {
   for (const r of amanda) {
     console.log(`  ${r.source_type} pe=${r.pay_entity||''} npn=${r.agent_npn||''} ptd=${r.paid_to_date||''} amt=${r.commission_amount||''} eligible=${isDueEligible(r)}`);
   }
-  const eligible = amanda.filter(isDueEligible);
+  const eligible = amanda.filter(r => isDueEligible(r));
   console.log('\nClassifier-eligible records:', eligible.length);
   const ctx = buildClassifierContext(eligible as any, ['2026-01'], []);
   console.log('Statement months:', [...ctx.commissionStatementMonths]);
