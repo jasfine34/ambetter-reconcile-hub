@@ -382,7 +382,7 @@ export default function MemberTimelinePage() {
         months_due,
       } as MemberTimelineRow;
     });
-  }, [allRows, filteredRecords, monthList]);
+  }, [allRows, filteredRecords, monthList, isDueEligibleRecord]);
 
   const filteredRows = useMemo(() => {
     // Base set: only members with at least one due month in the selected range.
