@@ -233,8 +233,16 @@ export default function MemberTimelinePage() {
   // appear in the cells regardless, so context is preserved.
   const isDueEligibleRecord = useMemo(() => {
     return (r: any): boolean => {
-      // AOR scope: record must be tied to one of our official AORs
-      if (aorScope === 'official') {
+      const isCommission = r.source_type === 'COMMISSION';
+
+      // AOR scope: record must be tied to one of our official AORs.
+      //
+      // Business rule: COMMISSION records are scoped by which statement slot
+      // they were uploaded into (pay_entity), NOT by writing-agent identity.
+      // Downline commissions and former-employee book commissions appearing
+      // on a Coverall/Vix statement are that entity's property regardless of
+      // current AOR mapping. So skip the AOR check for commissions entirely.
+      if (aorScope === 'official' && !isCommission) {
         // Match on any of the three identifying strings carried by a record:
         // aor_bucket (our own normalization), EDE's currentPolicyAOR, or
         // BO's Broker Name. Centralized in isCoverallAORByName so adding or
@@ -252,16 +260,15 @@ export default function MemberTimelinePage() {
       //
       //   - COMMISSION records carry a direct `pay_entity` from the upload slot
       //     they came in on ("Coverall Commission Statement" → 'Coverall',
-      //     "Vix Commission Statement" → 'Vix'). Use it directly. This prevents
-      //     Erica's Vix-paid commissions from incorrectly appearing in the
-      //     Coverall view just because her NPN is flagged Coverall_or_Vix.
+      //     "Vix Commission Statement" → 'Vix'). Filter strictly on that —
+      //     anything on a statement belongs to that entity (downline included).
       //
       //   - EDE / BO records have no pay_entity on the record — use the
       //     agent's expected_pay_entity from NPN_MAP instead.
       if (payEntity !== 'All') {
-        if (r.source_type === 'COMMISSION') {
+        if (isCommission) {
           const recPayEntity = String(r.pay_entity || '').trim();
-          if (recPayEntity && recPayEntity !== payEntity) return false;
+          if (recPayEntity !== payEntity) return false;
         } else {
           const npn = String(r.agent_npn || '').trim();
           const info = NPN_MAP[npn as keyof typeof NPN_MAP];
