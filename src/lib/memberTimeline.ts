@@ -1,5 +1,4 @@
 import type { NormalizedRecord } from './normalize';
-import { parseMoney } from './normalize';
 import type { ClassificationState, RollupStatus } from './classifier';
 
 export interface MonthCell {
@@ -136,11 +135,10 @@ function commissionServiceMonths(r: NormalizedRecord): { months: string[]; per: 
   const total = r.commission_amount ?? 0;
   if (total === 0) return { months: [], per: 0, total: 0 };
 
-  // Prefer the typed column (already normalized to YYYY-MM-DD by the parser),
-  // fall back to raw_json only if the column is empty for legacy rows.
-  const paidToYM =
-    ymOf(r.paid_to_date) ||
-    ymOf(typeof r.raw_json?.['Paid-To Date'] === 'string' ? (r.raw_json['Paid-To Date'] as string) : null);
+  // Use the typed normalized column only. If it's missing, do not fall back to
+  // raw string parsing here — classification already relies on the typed date,
+  // and keeping one source of truth avoids attribution drift.
+  const paidToYM = ymOf(r.paid_to_date);
 
   if (!paidToYM) {
     // No identifiable service month — do NOT guess from Issue Date.
