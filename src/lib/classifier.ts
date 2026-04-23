@@ -95,10 +95,17 @@ function isBoRecordOurs(r: NormalizedRecord): boolean {
   return isCoverallAORByNPN(r.agent_npn) || isCoverallAORByName(r.agent_name);
 }
 
-/** True if the EDE row shows one of our NPNs as currentPolicyAOR. */
+/**
+ * True if the EDE row shows one of our NPNs as the CURRENT policy AOR.
+ *
+ * We intentionally only look at currentPolicyAOR (not the original enroller
+ * in r.agent_npn / r.agent_name). For an NPN override case, the original
+ * enroller might be ours but current AOR might not be — in which case we're
+ * no longer eligible for commission on that policy. This matches the filter
+ * used by reconcile.ts's isExpectedEDERow.
+ */
 function isEdeRecordOurs(r: NormalizedRecord): boolean {
   if (r.source_type !== 'EDE') return false;
-  if (isCoverallAORByNPN(r.agent_npn)) return true;
   const rawAor = (r.raw_json?.['currentPolicyAOR'] ?? '') as string;
   return isCoverallAORByName(rawAor);
 }
