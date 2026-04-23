@@ -98,12 +98,10 @@ export type Database = {
           aor_bucket: string | null
           applicant_name: string | null
           batch_id: string
-          bo_snapshot_id: string | null
           carrier: string | null
           commission_amount: number | null
           created_at: string
           dob: string | null
-          ede_snapshot_id: string | null
           effective_date: string | null
           eligible_for_commission: string | null
           exchange_policy_id: string | null
@@ -125,7 +123,6 @@ export type Database = {
           source_file_label: string
           source_type: string
           status: string | null
-          superseded_at: string | null
           uploaded_file_id: string
         }
         Insert: {
@@ -134,12 +131,10 @@ export type Database = {
           aor_bucket?: string | null
           applicant_name?: string | null
           batch_id: string
-          bo_snapshot_id?: string | null
           carrier?: string | null
           commission_amount?: number | null
           created_at?: string
           dob?: string | null
-          ede_snapshot_id?: string | null
           effective_date?: string | null
           eligible_for_commission?: string | null
           exchange_policy_id?: string | null
@@ -161,7 +156,6 @@ export type Database = {
           source_file_label: string
           source_type: string
           status?: string | null
-          superseded_at?: string | null
           uploaded_file_id: string
         }
         Update: {
@@ -170,12 +164,10 @@ export type Database = {
           aor_bucket?: string | null
           applicant_name?: string | null
           batch_id?: string
-          bo_snapshot_id?: string | null
           carrier?: string | null
           commission_amount?: number | null
           created_at?: string
           dob?: string | null
-          ede_snapshot_id?: string | null
           effective_date?: string | null
           eligible_for_commission?: string | null
           exchange_policy_id?: string | null
@@ -197,7 +189,6 @@ export type Database = {
           source_file_label?: string
           source_type?: string
           status?: string | null
-          superseded_at?: string | null
           uploaded_file_id?: string
         }
         Relationships: [
@@ -366,10 +357,8 @@ export type Database = {
           file_name: string
           id: string
           pay_entity: string | null
-          snapshot_date: string | null
           source_type: string
           storage_path: string | null
-          superseded_at: string | null
         }
         Insert: {
           aor_bucket?: string | null
@@ -379,10 +368,8 @@ export type Database = {
           file_name: string
           id?: string
           pay_entity?: string | null
-          snapshot_date?: string | null
           source_type: string
           storage_path?: string | null
-          superseded_at?: string | null
         }
         Update: {
           aor_bucket?: string | null
@@ -392,10 +379,8 @@ export type Database = {
           file_name?: string
           id?: string
           pay_entity?: string | null
-          snapshot_date?: string | null
           source_type?: string
           storage_path?: string | null
-          superseded_at?: string | null
         }
         Relationships: [
           {
