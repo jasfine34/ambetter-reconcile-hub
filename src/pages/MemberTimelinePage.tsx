@@ -434,6 +434,44 @@ export default function MemberTimelinePage() {
     return { totalPaid, totalUnpaidMonths, membersWithUnpaid };
   }, [filteredRows]);
 
+  /**
+   * Paid Dollars audit — built only when the Debug panel is open so we don't
+   * pay for the extra pass on every render. Uses the same record set + scope
+   * predicate as buildMemberTimeline, so its attributed_total must equal
+   * summary.totalPaid (this is the self-check displayed in the panel).
+   *
+   * NOTE: filteredRows already applies the search filter (name/policy/etc).
+   * The audit intentionally ignores `search` — it audits the full visible
+   * timeline scope (batches × pay entity × AOR × carrier × date range), not
+   * the search-narrowed slice. The panel has its own search field for
+   * filtering the audit display without affecting the totals.
+   */
+  const audit = useMemo(() => {
+    if (!debugOpen) return null;
+    return buildPaidDollarsAudit({
+      allRecords: filteredRecords as any,
+      monthList,
+      isDueEligibleRecord: isDueEligibleRecord as any,
+      payEntity,
+      aorScope,
+      batches,
+    });
+  }, [debugOpen, filteredRecords, monthList, isDueEligibleRecord, payEntity, aorScope, batches]);
+
+  /**
+   * For the audit's "Member Timeline Total Paid" self-check we need the total
+   * computed over the SAME scope the audit saw — i.e. before search filtering.
+   * Otherwise typing in the search box would make the audit "drift" against
+   * the timeline by definition.
+   */
+  const unsearchedTotalPaid = useMemo(() => {
+    let t = 0;
+    for (const r of classifiedRows) {
+      if (r.months_due > 0) t += r.total_paid;
+    }
+    return t;
+  }, [classifiedRows]);
+
   const handleExport = () => {
     const flat = filteredRows.map(r => {
       const base: Record<string, unknown> = {
