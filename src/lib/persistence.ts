@@ -351,6 +351,7 @@ export async function getNormalizedRecordsAllSnapshots(batchId: string) {
       .from('normalized_records')
       .select('*')
       .eq('batch_id', batchId)
+      .order('id', { ascending: true })
       .range(from, from + pageSize - 1);
     if (error) throw error;
     if (!data || data.length === 0) break;
