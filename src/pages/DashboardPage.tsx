@@ -13,6 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { RebuildBatchButton } from '@/components/RebuildBatchButton';
 import { RECONCILE_LOGIC_VERSION } from '@/lib/rebuild';
 import { CollapsibleDebugCard } from '@/components/CollapsibleDebugCard';
+import { isCoverallAORByName } from '@/lib/agents';
 
 const EDE_RAW_DRILLDOWN_COLUMNS = [
   { key: 'currentPolicyAOR', label: 'Current Policy AOR' },
@@ -110,7 +111,6 @@ export default function DashboardPage() {
       const all = await getNormalizedRecords(currentBatchId);
       const targetDate = month === '2026-01' ? '2026-01-01' : '2026-02-01';
       const QUALIFIED = new Set(['effectuated', 'pendingeffectuation', 'pendingtermination']);
-      const AOR_PREFIXES = ['jason fine', 'erica fine', 'becky shuta'];
       const rows = (all as any[])
         .filter(r => r.source_type === 'EDE')
         .filter(r => {
@@ -133,8 +133,7 @@ export default function DashboardPage() {
           if (!QUALIFIED.has(status)) return false;
           const issuer = String(raw.issuer ?? r.carrier ?? '').toLowerCase();
           if (!issuer.includes('ambetter')) return false;
-          const aor = String(raw.currentPolicyAOR ?? '').toLowerCase().trim();
-          return AOR_PREFIXES.some(p => aor.startsWith(p));
+          return isCoverallAORByName(String(raw.currentPolicyAOR ?? ''));
         })
         .map(r => {
           const raw = r.raw_json || {};

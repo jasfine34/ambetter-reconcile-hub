@@ -15,8 +15,7 @@ import { buildMemberTimeline, buildMonthList, formatMonthLabel, type MemberTimel
 import { assignMergedMemberKeys } from '@/lib/memberMerge';
 import { exportToCSV } from '@/lib/csvParser';
 import { NPN_MAP } from '@/lib/constants';
-
-const OFFICIAL_AOR_PREFIXES = ['jason fine', 'erica fine', 'becky shuta'];
+import { isCoverallAORByName } from '@/lib/agents';
 
 type PayEntityScope = 'Coverall' | 'Vix' | 'All';
 type AorScope = 'official' | 'all';
@@ -169,16 +168,17 @@ export default function MemberTimelinePage() {
     return (r: any): boolean => {
       // AOR scope: record must be tied to one of our official AORs
       if (aorScope === 'official') {
-        const bucket = String(r.aor_bucket || '').toLowerCase().trim();
-        const rawAor = String(r.raw_json?.['currentPolicyAOR'] || '').toLowerCase().trim();
-        // For BO rows, also consult the broker name (current AOR snapshot)
-        const brokerName = String(
-          r.raw_json?.['Broker Name'] || r.raw_json?.['broker_name'] || ''
-        ).toLowerCase().trim();
+        // Match on any of the three identifying strings carried by a record:
+        // aor_bucket (our own normalization), EDE's currentPolicyAOR, or
+        // BO's Broker Name. Centralized in isCoverallAORByName so adding or
+        // removing an AOR is a one-file change in src/lib/agents.ts.
         const aorMatch =
-          OFFICIAL_AOR_PREFIXES.some(p => bucket.startsWith(p)) ||
-          OFFICIAL_AOR_PREFIXES.some(p => rawAor.startsWith(p)) ||
-          OFFICIAL_AOR_PREFIXES.some(p => brokerName.startsWith(p));
+          isCoverallAORByName(r.aor_bucket) ||
+          isCoverallAORByName(r.raw_json?.['currentPolicyAOR'] as string | undefined) ||
+          isCoverallAORByName(
+            (r.raw_json?.['Broker Name'] as string | undefined) ??
+            (r.raw_json?.['broker_name'] as string | undefined)
+          );
         if (!aorMatch) return false;
       }
       // Pay entity: record's agent NPN must map to the chosen entity

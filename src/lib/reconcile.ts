@@ -1,6 +1,7 @@
 import { NPN_MAP, DEFAULT_COMMISSION_ESTIMATE } from './constants';
 import { cleanId, normalizePolicyStatus } from './normalize';
 import type { NormalizedRecord } from './normalize';
+import { isCoverallAORByName } from './agents';
 
 // Qualified EDE rows must match user's exact filter, applied to the RAW source
 // fields (raw_json) so we replicate the export they validated against.
@@ -9,7 +10,6 @@ const QUALIFIED_RAW_STATUSES = new Set([
   'pendingeffectuation',
   'pendingtermination',
 ]);
-const EXPECTED_AOR_PREFIXES = ['jason fine', 'erica fine', 'becky shuta'];
 const EXPECTED_EFFECTIVE_DATES = new Set(['2026-01-01', '2026-02-01']);
 
 function rawStatusKey(r: NormalizedRecord): string {
@@ -32,8 +32,7 @@ function isExpectedEDERow(r: NormalizedRecord): boolean {
   if (!r.effective_date || !EXPECTED_EFFECTIVE_DATES.has(r.effective_date)) return false;
   if (!QUALIFIED_RAW_STATUSES.has(rawStatusKey(r))) return false;
   if (!rawIssuerKey(r).includes('ambetter')) return false;
-  const aor = rawAorKey(r);
-  return EXPECTED_AOR_PREFIXES.some(p => aor.startsWith(p));
+  return isCoverallAORByName(rawAorKey(r));
 }
 
 export interface ReconciledMember {
