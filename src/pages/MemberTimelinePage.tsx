@@ -248,13 +248,27 @@ export default function MemberTimelinePage() {
           );
         if (!aorMatch) return false;
       }
-      // Pay entity: record's agent NPN must map to the chosen entity
+      // Pay entity filtering — different rules for commission vs enrollment data:
+      //
+      //   - COMMISSION records carry a direct `pay_entity` from the upload slot
+      //     they came in on ("Coverall Commission Statement" → 'Coverall',
+      //     "Vix Commission Statement" → 'Vix'). Use it directly. This prevents
+      //     Erica's Vix-paid commissions from incorrectly appearing in the
+      //     Coverall view just because her NPN is flagged Coverall_or_Vix.
+      //
+      //   - EDE / BO records have no pay_entity on the record — use the
+      //     agent's expected_pay_entity from NPN_MAP instead.
       if (payEntity !== 'All') {
-        const npn = String(r.agent_npn || '').trim();
-        const info = NPN_MAP[npn as keyof typeof NPN_MAP];
-        if (!info) return false;
-        if (info.expectedPayEntity !== payEntity && info.expectedPayEntity !== 'Coverall_or_Vix') {
-          return false;
+        if (r.source_type === 'COMMISSION') {
+          const recPayEntity = String(r.pay_entity || '').trim();
+          if (recPayEntity && recPayEntity !== payEntity) return false;
+        } else {
+          const npn = String(r.agent_npn || '').trim();
+          const info = NPN_MAP[npn as keyof typeof NPN_MAP];
+          if (!info) return false;
+          if (info.expectedPayEntity !== payEntity && info.expectedPayEntity !== 'Coverall_or_Vix') {
+            return false;
+          }
         }
       }
       return true;
