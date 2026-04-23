@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Search, Download, ChevronDown, Info } from 'lucide-react';
+import { Search, Download, ChevronDown, Info, Bug } from 'lucide-react';
 import { getNormalizedRecords, getAllNormalizedRecords } from '@/lib/persistence';
 import { buildMemberTimeline, buildMonthList, formatMonthLabel, type MemberTimelineRow } from '@/lib/memberTimeline';
 import { assignMergedMemberKeys } from '@/lib/memberMerge';
@@ -18,6 +18,9 @@ import { NPN_MAP } from '@/lib/constants';
 import { isCoverallAORByName } from '@/lib/agents';
 import { statementMonthKey, currentMonthKey, addMonths } from '@/lib/dateRange';
 import { classifyMember, buildClassifierContext } from '@/lib/classifier';
+import { buildPaidDollarsAudit } from '@/lib/paidDollarsAudit';
+import { PaidDollarsAuditPanel } from '@/components/PaidDollarsAuditPanel';
+import { CellAttributionPopover } from '@/components/CellAttributionPopover';
 
 type PayEntityScope = 'Coverall' | 'Vix' | 'All';
 type AorScope = 'official' | 'all';
@@ -109,6 +112,7 @@ export default function MemberTimelinePage() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'unpaid' | 'paid' | 'partial' | 'pending' | 'review'>('all');
   const [page, setPage] = useState(0);
+  const [debugOpen, setDebugOpen] = useState(false);
 
   useEffect(() => {
     try { localStorage.setItem(PAY_ENTITY_STORAGE_KEY, payEntity); } catch {}
@@ -430,6 +434,44 @@ export default function MemberTimelinePage() {
     return { totalPaid, totalUnpaidMonths, membersWithUnpaid };
   }, [filteredRows]);
 
+  /**
+   * Paid Dollars audit — built only when the Debug panel is open so we don't
+   * pay for the extra pass on every render. Uses the same record set + scope
+   * predicate as buildMemberTimeline, so its attributed_total must equal
+   * summary.totalPaid (this is the self-check displayed in the panel).
+   *
+   * NOTE: filteredRows already applies the search filter (name/policy/etc).
+   * The audit intentionally ignores `search` — it audits the full visible
+   * timeline scope (batches × pay entity × AOR × carrier × date range), not
+   * the search-narrowed slice. The panel has its own search field for
+   * filtering the audit display without affecting the totals.
+   */
+  const audit = useMemo(() => {
+    if (!debugOpen) return null;
+    return buildPaidDollarsAudit({
+      allRecords: filteredRecords as any,
+      monthList,
+      isDueEligibleRecord: isDueEligibleRecord as any,
+      payEntity,
+      aorScope,
+      batches,
+    });
+  }, [debugOpen, filteredRecords, monthList, isDueEligibleRecord, payEntity, aorScope, batches]);
+
+  /**
+   * For the audit's "Member Timeline Total Paid" self-check we need the total
+   * computed over the SAME scope the audit saw — i.e. before search filtering.
+   * Otherwise typing in the search box would make the audit "drift" against
+   * the timeline by definition.
+   */
+  const unsearchedTotalPaid = useMemo(() => {
+    let t = 0;
+    for (const r of classifiedRows) {
+      if (r.months_due > 0) t += r.total_paid;
+    }
+    return t;
+  }, [classifiedRows]);
+
   const handleExport = () => {
     const flat = filteredRows.map(r => {
       const base: Record<string, unknown> = {
@@ -644,6 +686,15 @@ export default function MemberTimelinePage() {
                 <span className="text-xs text-muted-foreground">Unapplied changes</span>
               )}
               <Button
+                variant={debugOpen ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setDebugOpen(v => !v)}
+                title="Show paid-dollars audit panel and clickable cell breakdowns"
+              >
+                <Bug className="h-4 w-4 mr-1" />
+                {debugOpen ? 'Debug on' : 'Debug'}
+              </Button>
+              <Button
                 variant="outline"
                 size="sm"
                 onClick={() => {
@@ -835,39 +886,57 @@ export default function MemberTimelinePage() {
                             }
                         }
 
+                        const cellInner = (
+                          <div
+                            className={`rounded-md px-2 py-1.5 ${cellCls} ${
+                              debugOpen && audit ? 'cursor-pointer hover:ring-2 hover:ring-primary/40' : 'cursor-default'
+                            }`}
+                          >
+                            <div className="flex justify-center gap-0.5 mb-0.5">
+                              {c.in_ede && <Badge variant="secondary" className="h-4 px-1 text-[9px] font-mono">E</Badge>}
+                              {c.in_back_office && <Badge variant="secondary" className="h-4 px-1 text-[9px] font-mono">B</Badge>}
+                              {c.in_commission && <Badge variant="secondary" className="h-4 px-1 text-[9px] font-mono">C</Badge>}
+                              {!hasAny && <span className="text-muted-foreground/50 text-[10px]">—</span>}
+                            </div>
+                            <div className="text-[10px] font-medium text-foreground leading-tight">
+                              {inlineLabel}
+                            </div>
+                          </div>
+                        );
+
                         return (
                           <td key={m} className="px-1 py-1 text-center align-middle">
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <div className={`rounded-md px-2 py-1.5 ${cellCls} cursor-default`}>
-                                  <div className="flex justify-center gap-0.5 mb-0.5">
-                                    {c.in_ede && <Badge variant="secondary" className="h-4 px-1 text-[9px] font-mono">E</Badge>}
-                                    {c.in_back_office && <Badge variant="secondary" className="h-4 px-1 text-[9px] font-mono">B</Badge>}
-                                    {c.in_commission && <Badge variant="secondary" className="h-4 px-1 text-[9px] font-mono">C</Badge>}
-                                    {!hasAny && <span className="text-muted-foreground/50 text-[10px]">—</span>}
-                                  </div>
-                                  <div className="text-[10px] font-medium text-foreground leading-tight">
-                                    {inlineLabel}
-                                  </div>
-                                </div>
-                              </TooltipTrigger>
-                              <TooltipContent side="top" className="text-xs max-w-[280px]">
-                                <div className="font-semibold mb-1">{formatMonthLabel(m)}</div>
-                                {c.state && (
-                                  <div className="mb-1 text-[11px]">
-                                    <span className="font-medium">State:</span> {c.state.replace(/_/g, ' ')}
-                                  </div>
-                                )}
-                                {c.state_reason && (
-                                  <div className="mb-1 text-muted-foreground">{c.state_reason}</div>
-                                )}
-                                <div>EDE: {c.in_ede ? 'yes' : 'no'}</div>
-                                <div>Back Office: {c.in_back_office ? 'active' : 'no'}</div>
-                                <div>Commission: {c.in_commission ? `${c.payment_count} payment(s)` : 'no'}</div>
-                                <div>Paid: ${c.paid_amount.toFixed(2)}</div>
-                                <div>Due: {c.due ? 'yes' : 'no'}</div>
-                              </TooltipContent>
-                            </Tooltip>
+                            {debugOpen && audit ? (
+                              <CellAttributionPopover
+                                audit={audit}
+                                member_key={row.member_key}
+                                member_name={row.applicant_name}
+                                cell={c}
+                                month={m}
+                              >
+                                {cellInner}
+                              </CellAttributionPopover>
+                            ) : (
+                              <Tooltip>
+                                <TooltipTrigger asChild>{cellInner}</TooltipTrigger>
+                                <TooltipContent side="top" className="text-xs max-w-[280px]">
+                                  <div className="font-semibold mb-1">{formatMonthLabel(m)}</div>
+                                  {c.state && (
+                                    <div className="mb-1 text-[11px]">
+                                      <span className="font-medium">State:</span> {c.state.replace(/_/g, ' ')}
+                                    </div>
+                                  )}
+                                  {c.state_reason && (
+                                    <div className="mb-1 text-muted-foreground">{c.state_reason}</div>
+                                  )}
+                                  <div>EDE: {c.in_ede ? 'yes' : 'no'}</div>
+                                  <div>Back Office: {c.in_back_office ? 'active' : 'no'}</div>
+                                  <div>Commission: {c.in_commission ? `${c.payment_count} payment(s)` : 'no'}</div>
+                                  <div>Paid: ${c.paid_amount.toFixed(2)}</div>
+                                  <div>Due: {c.due ? 'yes' : 'no'}</div>
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
                           </td>
                         );
                       })}
@@ -931,6 +1000,14 @@ export default function MemberTimelinePage() {
             </div>
           </CardContent>
         </Card>
+
+        {debugOpen && audit && (
+          <PaidDollarsAuditPanel
+            audit={audit}
+            monthList={monthList}
+            timelineTotalPaid={unsearchedTotalPaid}
+          />
+        )}
       </div>
     </TooltipProvider>
   );
