@@ -18,10 +18,12 @@ interface BatchContextType {
   uploadedFiles: any[];
   counts: BatchCounts;
   debugStats: MatchDebugStats | null;
+  resolverIndex: ResolverIndex | null;
   refreshBatches: () => Promise<void>;
   refreshReconciled: () => Promise<void>;
   refreshFiles: () => Promise<void>;
   refreshAll: () => Promise<void>;
+  refreshResolverIndex: () => Promise<void>;
   loading: boolean;
 }
 
@@ -30,9 +32,12 @@ const BatchContext = createContext<BatchContextType>({
   reconciled: [], uploadedFiles: [],
   counts: { uploadedFiles: 0, normalizedRecords: 0, reconciledMembers: 0 },
   debugStats: null,
+  resolverIndex: null,
   refreshBatches: async () => {},
   refreshReconciled: async () => {}, refreshFiles: async () => {},
-  refreshAll: async () => {}, loading: false,
+  refreshAll: async () => {},
+  refreshResolverIndex: async () => {},
+  loading: false,
 });
 
 export const useBatch = () => useContext(BatchContext);
