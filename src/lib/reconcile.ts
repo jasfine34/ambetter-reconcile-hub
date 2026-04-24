@@ -3,6 +3,7 @@ import { cleanId, normalizePolicyStatus } from './normalize';
 import type { NormalizedRecord } from './normalize';
 import { isCoverallAORByName } from './agents';
 import { getCoveredMonths, getCoveredEffectiveDates, fallbackReconcileMonth } from './dateRange';
+import { lookupResolved, type ResolverIndex } from './resolvedIdentities';
 
 // Qualified EDE rows must match user's exact filter, applied to the RAW source
 // fields (raw_json) so we replicate the export they validated against.
