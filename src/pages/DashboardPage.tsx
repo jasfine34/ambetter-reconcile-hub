@@ -295,8 +295,8 @@ export default function DashboardPage() {
   // keeps the Expected Enrollments card aligned with the EDE Expected
   // Enrollment Debug panel (which uses the same filter).
   const filteredEde = useMemo(
-    () => computeFilteredEde(normalizedRecords, reconciled, payEntityFilter, coveredMonths),
-    [normalizedRecords, reconciled, payEntityFilter, coveredMonths]
+    () => computeFilteredEde(normalizedRecords, reconciled, payEntityFilter, coveredMonths, resolverIndex),
+    [normalizedRecords, reconciled, payEntityFilter, coveredMonths, resolverIndex]
   );
 
   const dashboardTitle = useMemo(() => {
