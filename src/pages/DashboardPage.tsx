@@ -1001,6 +1001,36 @@ export default function DashboardPage() {
           })()}
         </DialogContent>
       </Dialog>
+
+      {/* Resolve Identities confirmation */}
+      <Dialog open={resolveConfirmOpen} onOpenChange={setResolveConfirmOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Link2 className="h-5 w-5 text-primary" />
+              Resolve Identities Across Batches
+            </DialogTitle>
+            <DialogDescription className="space-y-2 pt-2">
+              <span className="block">
+                Scans every batch for matching applicants (by FFM App ID, falling back to Exchange Subscriber ID) and learns issuer subscriber IDs, issuer policy IDs, and exchange policy IDs that were blank in earlier files but revealed in later ones.
+              </span>
+              <span className="block text-foreground font-medium">
+                Originals are NOT modified. Resolved values are stored in a sidecar table and layered in only when the record's own field is blank.
+              </span>
+              <span className="block">
+                After resolution completes, reconciliation will automatically re-run for the current batch so downstream counts update.
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResolveConfirmOpen(false)} disabled={resolving}>Cancel</Button>
+            <Button onClick={handleResolveIdentities} disabled={resolving}>
+              <Link2 className={`h-4 w-4 mr-1 ${resolving ? 'animate-pulse' : ''}`} />
+              {resolving ? 'Resolving...' : 'Run Resolution'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
