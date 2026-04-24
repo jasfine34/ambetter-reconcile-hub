@@ -667,6 +667,8 @@ export default function DashboardPage() {
             })()}
             {(() => {
               const notInBo = filteredEde.notInBOCount;
+              const hasIssuer = filteredEde.missingFromBO.filter(r => String(r.issuer_subscriber_id ?? '').trim() !== '').length;
+              const missingIssuer = notInBo - hasIssuer;
               return (
                 <MetricCard
                   title="Not in Back Office"
@@ -674,7 +676,7 @@ export default function DashboardPage() {
                   icon={<AlertTriangle className="h-4 w-4" />}
                   variant={notInBo > 0 ? 'destructive' : 'success'}
                   onClick={() => setNotInBoOpen(true)}
-                  subtitle="EDE enrollments missing from Back Office — potential dispute candidates"
+                  subtitle={`${hasIssuer} disputable (has issuer ID) · ${missingIssuer} waiting (missing issuer ID)`}
                   tooltip={{
                     text: `Members that pass the Expected Enrollments filter but have no matching Back Office record (matched via the same Union-Find used by reconciliation: issuer_subscriber_id, exchange_subscriber_id, policy_number, name). Click to view the list and export to CSV.`,
                     why: "These are the policies to chase down with Ambetter so commissions will flow. Expected Enrollments = In Back Office (" + filteredEde.inBOCount + ") + Not in Back Office (" + notInBo + ").",
