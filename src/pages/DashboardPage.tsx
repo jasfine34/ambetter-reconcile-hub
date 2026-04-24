@@ -261,9 +261,22 @@ export default function DashboardPage() {
     const paidCommRecords = filtered.filter(r => r.in_commission).length;
     const paidEligible = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes' && r.in_commission).length;
     const unpaid = shouldPay - paidEligible;
-    // Use positive_commission only for total
-    const totalComm = filtered.filter(r => r.in_commission).reduce((s, r) => s + (r.positive_commission || 0), 0);
-    const totalClawbacks = filtered.reduce((s, r) => s + (r.clawback_amount || 0), 0);
+    // Gross / Clawbacks / Net Paid — computed from RAW commission records and
+    // scoped by the dashboard's pay_entity filter, so they match exactly what
+    // the carrier statement(s) for the selected scope contain. Aggregating from
+    // the per-member `filtered` set bleeds in cross-entity dollars whenever a
+    // member's expected_pay_entity differs from where they were actually paid
+    // (e.g. expected Coverall but Vix paid the row, or vice-versa).
+    let totalComm = 0;
+    let totalClawbacks = 0;
+    for (const rec of normalizedRecords) {
+      if (rec.source_type !== 'COMMISSION') continue;
+      if (payEntityFilter === 'Coverall' && rec.pay_entity !== 'Coverall') continue;
+      if (payEntityFilter === 'Vix' && rec.pay_entity !== 'Vix') continue;
+      const amt = Number(rec.commission_amount) || 0;
+      if (amt > 0) totalComm += amt;
+      else if (amt < 0) totalClawbacks += amt;
+    }
     // Coverall vs Downline split — computed from RAW commission records (not the
     // per-member aggregates) because positives and clawbacks within a single
     // reconciled member can come from rows with different writing-agent NPNs.
