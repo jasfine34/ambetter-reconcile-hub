@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, ReactNode, useCallback 
 import { getBatches, getReconciledMembers, getUploadedFiles, getBatchCounts, getNormalizedRecords } from '@/lib/persistence';
 import { reconcile, type MatchDebugStats } from '@/lib/reconcile';
 import { fallbackReconcileMonth } from '@/lib/dateRange';
+import { loadResolverIndex, type ResolverIndex } from '@/lib/resolvedIdentities';
 
 interface BatchCounts {
   uploadedFiles: number;
