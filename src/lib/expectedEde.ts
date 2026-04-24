@@ -98,17 +98,70 @@ export function computeFilteredEde(
   scope: PayEntityScope,
   coveredMonths: string[]
 ): FilteredEdeResult {
-  // Build a fast lookup of in_back_office by member_key.
-  const boByKey = new Map<string, boolean>();
+  // Build a multi-key in_back_office lookup keyed on every ID a reconciled
+  // member exposes (issuer_sub_id, exchange_sub_id, policy_number, normalized
+  // name). This is necessary because raw normalized_records carry their
+  // *pre-Union-Find* member_key (assigned at normalize time), while
+  // reconciled_members carry the *post-Union-Find* member_key. A direct
+  // member_key→reconciled lookup misses ~all of them, which is what made
+  // "Not in Back Office" report ~1,167 instead of the true ~76.
+  //
+  // By indexing every ID the reconciled member knows about, we replay the
+  // union-find result and tie out exactly to the Source Funnel EDE → BO gap.
+  const boByCandidateKey = new Map<string, boolean>();
+  const memberKeyByCandidate = new Map<string, string>();
+  const registerCandidate = (key: string, m: any) => {
+    if (!key) return;
+    // First wins (stable). Real conflicts are vanishingly rare since reconcile
+    // already collapsed by these IDs.
+    if (!boByCandidateKey.has(key)) {
+      boByCandidateKey.set(key, !!m.in_back_office);
+      memberKeyByCandidate.set(key, m.member_key);
+    }
+  };
   for (const m of reconciled) {
-    boByKey.set(m.member_key, !!m.in_back_office);
+    if (m.issuer_subscriber_id) registerCandidate(`issub:${m.issuer_subscriber_id}`, m);
+    if (m.exchange_subscriber_id) registerCandidate(`sub:${m.exchange_subscriber_id}`, m);
+    if (m.policy_number) registerCandidate(`policy:${m.policy_number}`, m);
+    if (m.applicant_name) registerCandidate(`name:${normalizeFullName(m.applicant_name)}`, m);
+    // Direct member_key fallback (handles `grp:N` synthetic keys from reconcile).
+    registerCandidate(m.member_key, m);
+  }
+
+  /** Same priority order reconcile uses to pick a group's member_key. */
+  function lookupReconciled(r: any, raw: Record<string, any>): { key: string; inBO: boolean } {
+    const issub = String(raw.issuerSubscriberId ?? r.issuer_subscriber_id ?? '').trim();
+    if (issub) {
+      const k = `issub:${issub}`;
+      if (boByCandidateKey.has(k)) return { key: memberKeyByCandidate.get(k)!, inBO: boByCandidateKey.get(k)! };
+    }
+    const exsub = String(raw.exchangeSubscriberId ?? r.exchange_subscriber_id ?? '').trim();
+    if (exsub) {
+      const k = `sub:${exsub}`;
+      if (boByCandidateKey.has(k)) return { key: memberKeyByCandidate.get(k)!, inBO: boByCandidateKey.get(k)! };
+    }
+    const polNum = String(r.policy_number ?? raw.exchangePolicyId ?? '').trim();
+    if (polNum) {
+      const k = `policy:${polNum}`;
+      if (boByCandidateKey.has(k)) return { key: memberKeyByCandidate.get(k)!, inBO: boByCandidateKey.get(k)! };
+    }
+    const name = normalizeFullName(r.applicant_name);
+    if (name) {
+      const k = `name:${name}`;
+      if (boByCandidateKey.has(k)) return { key: memberKeyByCandidate.get(k)!, inBO: boByCandidateKey.get(k)! };
+    }
+    // Last-ditch: try the raw record's stored member_key (works only if
+    // reconcile didn't merge this record into a different group).
+    const ownKey = r.member_key || '';
+    if (ownKey && boByCandidateKey.has(ownKey)) {
+      return { key: memberKeyByCandidate.get(ownKey)!, inBO: boByCandidateKey.get(ownKey)! };
+    }
+    return { key: ownKey || `unmatched:${r.id ?? Math.random()}`, inBO: false };
   }
 
   const monthSet = new Set(coveredMonths.filter(Boolean));
 
-  // Pass 1: collect qualified EDE rows, deduped by member_key.
-  // If a member has rows in multiple months, prefer the statementMonth row
-  // (last in coveredMonths array) to match the user's "current month" intuition.
+  // Pass 1: collect qualified EDE rows, deduped by *resolved* member_key.
   const byKey = new Map<string, FilteredEdeRow>();
 
   for (const r of normalizedRecords) {
@@ -136,15 +189,14 @@ export function computeFilteredEde(
     const effMonth = effDate.substring(0, 7);
     if (monthSet.size > 0 && !monthSet.has(effMonth)) continue;
 
-    const memberKey = r.member_key || r.id;
-    if (!memberKey) continue;
+    const { key: resolvedKey, inBO } = lookupReconciled(r, raw);
 
     const cmcRaw = raw.coveredMemberCount ?? raw.CoveredMemberCount ?? raw.covered_member_count;
     const cmcParsed = cmcRaw != null && String(cmcRaw).trim() !== '' ? parseInt(String(cmcRaw), 10) : NaN;
     const coveredMembers = Number.isFinite(cmcParsed) && cmcParsed > 0 ? cmcParsed : 1;
 
     const row: FilteredEdeRow = {
-      member_key: memberKey,
+      member_key: resolvedKey,
       applicant_name: r.applicant_name ?? '',
       policy_number: String(raw.exchangePolicyId ?? r.exchange_policy_id ?? r.policy_number ?? ''),
       exchange_subscriber_id: String(raw.exchangeSubscriberId ?? r.exchange_subscriber_id ?? ''),
@@ -154,17 +206,17 @@ export function computeFilteredEde(
       policy_status: String(raw.policyStatus ?? r.status ?? ''),
       covered_member_count: coveredMembers,
       effective_month: effMonth,
-      in_back_office: boByKey.get(memberKey) ?? false,
+      in_back_office: inBO,
     };
 
-    const existing = byKey.get(memberKey);
+    const existing = byKey.get(resolvedKey);
     if (!existing) {
-      byKey.set(memberKey, row);
+      byKey.set(resolvedKey, row);
     } else {
       // Prefer the row whose effective_month appears LATER in coveredMonths.
       const idxNew = coveredMonths.indexOf(effMonth);
       const idxOld = coveredMonths.indexOf(existing.effective_month);
-      if (idxNew > idxOld) byKey.set(memberKey, row);
+      if (idxNew > idxOld) byKey.set(resolvedKey, row);
     }
   }
 
@@ -186,4 +238,10 @@ export function computeFilteredEde(
     notInBOCount: missingFromBO.length,
     missingFromBO,
   };
+}
+
+/** Same as reconcile.ts — kept inline to avoid an import cycle. */
+function normalizeFullName(applicantName: string | undefined | null): string {
+  if (!applicantName) return '';
+  return applicantName.trim().toLowerCase().replace(/[^a-z]/g, '');
 }
