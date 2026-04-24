@@ -82,7 +82,7 @@ export function BatchProvider({ children }: { children: ReactNode }) {
         const reconcileMonth = currentBatch?.statement_month
           ? String(currentBatch.statement_month).substring(0, 7)
           : fallbackReconcileMonth();
-        const { debug } = reconcile(normalized as any[], reconcileMonth);
+        const { debug } = reconcile(normalized as any[], reconcileMonth, resolverIndex);
         setDebugStats(debug);
       } catch {
         setDebugStats(null);
