@@ -984,6 +984,14 @@ export default function DashboardPage() {
                     columns={NOT_IN_BO_COLUMNS}
                     exportFileName={`not-in-bo-has-issuer-id${fileSuffix}.csv`}
                     pageSize={25}
+                    renderCell={(key, row) => {
+                      if (key !== 'issuer_subscriber_id') return undefined;
+                      const meta = (row as any).issuer_subscriber_id_resolved as { source_kind?: string; batch_month?: string } | undefined;
+                      const v = row[key];
+                      const text = v == null || v === '' ? '—' : String(v);
+                      if (!meta) return text;
+                      return <span>{text}<ResolvedBadge sourceKind={meta.source_kind} batchMonth={meta.batch_month} /></span>;
+                    }}
                   />
                 </TabsContent>
                 <TabsContent value="missing-issuer" className="space-y-3">
