@@ -21,6 +21,8 @@ import { classifyMember, buildClassifierContext } from '@/lib/classifier';
 import { buildPaidDollarsAudit } from '@/lib/paidDollarsAudit';
 import { PaidDollarsAuditPanel } from '@/components/PaidDollarsAuditPanel';
 import { CellAttributionPopover } from '@/components/CellAttributionPopover';
+import { ResolvedBadge } from '@/components/ResolvedBadge';
+import { lookupResolved } from '@/lib/resolvedIdentities';
 
 type PayEntityScope = 'Coverall' | 'Vix' | 'All';
 type AorScope = 'official' | 'all';
