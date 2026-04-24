@@ -94,7 +94,7 @@ function defaultRange(statementMonth: string | null | undefined): { start: strin
 }
 
 export default function MemberTimelinePage() {
-  const { currentBatchId, batches } = useBatch();
+  const { currentBatchId, batches, resolverIndex } = useBatch();
   const currentBatch = batches.find((b: any) => b.id === currentBatchId);
   const initial = defaultRange(currentBatch?.statement_month);
 
