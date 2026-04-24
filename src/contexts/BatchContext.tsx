@@ -111,14 +111,16 @@ export function BatchProvider({ children }: { children: ReactNode }) {
     await Promise.all([refreshFiles(), refreshReconciled(), refreshCounts()]);
   }, [refreshFiles, refreshReconciled, refreshCounts]);
 
-  useEffect(() => { refreshBatches(); }, []);
+  useEffect(() => { refreshBatches(); refreshResolverIndex(); }, []);
   useEffect(() => { refreshAll(); }, [currentBatchId]);
 
   return (
     <BatchContext.Provider value={{
       batches, currentBatchId, setCurrentBatchId,
       reconciled, uploadedFiles, counts, debugStats,
+      resolverIndex,
       refreshBatches, refreshReconciled, refreshFiles, refreshAll,
+      refreshResolverIndex,
       loading,
     }}>
       {children}
