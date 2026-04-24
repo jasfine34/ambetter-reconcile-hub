@@ -103,7 +103,8 @@ export function computeFilteredEde(
   normalizedRecords: any[],
   reconciled: any[],
   scope: PayEntityScope,
-  coveredMonths: string[]
+  coveredMonths: string[],
+  resolverIndex?: ResolverIndex | null,
 ): FilteredEdeResult {
   // Build a multi-key in_back_office lookup keyed on every ID a reconciled
   // member exposes (issuer_sub_id, exchange_sub_id, policy_number, normalized
