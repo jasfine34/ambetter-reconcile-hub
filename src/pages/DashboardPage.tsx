@@ -111,7 +111,7 @@ function getStoredPayEntity(): PayEntityFilter {
 }
 
 export default function DashboardPage() {
-  const { reconciled, loading, counts, debugStats, currentBatchId, refreshAll, batches } = useBatch();
+  const { reconciled, loading, counts, debugStats, currentBatchId, refreshAll, batches, resolverIndex, refreshResolverIndex } = useBatch();
   const currentBatch = useMemo(() => batches.find((b: any) => b.id === currentBatchId), [batches, currentBatchId]);
   const lastRebuildAt = currentBatch?.last_full_rebuild_at as string | null | undefined;
   const lastRebuildVersion = currentBatch?.last_rebuild_logic_version as string | null | undefined;
