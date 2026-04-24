@@ -10,6 +10,7 @@ import {
   getOrCreateSnapshotForFile,
 } from './persistence';
 import { fallbackReconcileMonth } from './dateRange';
+import { loadResolverIndex } from './resolvedIdentities';
 
 /**
  * Bumped whenever normalization or reconciliation logic changes in a way that
@@ -133,7 +134,10 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
     ? String(batchData.statement_month).substring(0, 7)
     : fallbackReconcileMonth();
 
-  const { members } = reconcile(allRecords as any[], reconcileMonth);
+  // Pull the cross-batch identity sidecar — read-through only; never mutates
+  // the originals on disk.
+  const resolverIndex = await loadResolverIndex(true);
+  const { members } = reconcile(allRecords as any[], reconcileMonth, resolverIndex);
 
   emit({
     phase: 'saving',

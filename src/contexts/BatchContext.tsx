@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, ReactNode, useCallback 
 import { getBatches, getReconciledMembers, getUploadedFiles, getBatchCounts, getNormalizedRecords } from '@/lib/persistence';
 import { reconcile, type MatchDebugStats } from '@/lib/reconcile';
 import { fallbackReconcileMonth } from '@/lib/dateRange';
+import { loadResolverIndex, type ResolverIndex } from '@/lib/resolvedIdentities';
 
 interface BatchCounts {
   uploadedFiles: number;
@@ -17,10 +18,12 @@ interface BatchContextType {
   uploadedFiles: any[];
   counts: BatchCounts;
   debugStats: MatchDebugStats | null;
+  resolverIndex: ResolverIndex | null;
   refreshBatches: () => Promise<void>;
   refreshReconciled: () => Promise<void>;
   refreshFiles: () => Promise<void>;
   refreshAll: () => Promise<void>;
+  refreshResolverIndex: () => Promise<void>;
   loading: boolean;
 }
 
@@ -29,9 +32,12 @@ const BatchContext = createContext<BatchContextType>({
   reconciled: [], uploadedFiles: [],
   counts: { uploadedFiles: 0, normalizedRecords: 0, reconciledMembers: 0 },
   debugStats: null,
+  resolverIndex: null,
   refreshBatches: async () => {},
   refreshReconciled: async () => {}, refreshFiles: async () => {},
-  refreshAll: async () => {}, loading: false,
+  refreshAll: async () => {},
+  refreshResolverIndex: async () => {},
+  loading: false,
 });
 
 export const useBatch = () => useContext(BatchContext);
@@ -43,7 +49,17 @@ export function BatchProvider({ children }: { children: ReactNode }) {
   const [uploadedFiles, setUploadedFiles] = useState<any[]>([]);
   const [counts, setCounts] = useState<BatchCounts>({ uploadedFiles: 0, normalizedRecords: 0, reconciledMembers: 0 });
   const [debugStats, setDebugStats] = useState<MatchDebugStats | null>(null);
+  const [resolverIndex, setResolverIndex] = useState<ResolverIndex | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const refreshResolverIndex = useCallback(async () => {
+    try {
+      const idx = await loadResolverIndex(true);
+      setResolverIndex(idx);
+    } catch {
+      setResolverIndex(null);
+    }
+  }, []);
 
   const refreshBatches = useCallback(async () => {
     const data = await getBatches();
@@ -66,7 +82,7 @@ export function BatchProvider({ children }: { children: ReactNode }) {
         const reconcileMonth = currentBatch?.statement_month
           ? String(currentBatch.statement_month).substring(0, 7)
           : fallbackReconcileMonth();
-        const { debug } = reconcile(normalized as any[], reconcileMonth);
+        const { debug } = reconcile(normalized as any[], reconcileMonth, resolverIndex);
         setDebugStats(debug);
       } catch {
         setDebugStats(null);
@@ -74,7 +90,7 @@ export function BatchProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [currentBatchId, batches]);
+  }, [currentBatchId, batches, resolverIndex]);
 
   const refreshFiles = useCallback(async () => {
     if (!currentBatchId) { setUploadedFiles([]); return; }
@@ -95,14 +111,16 @@ export function BatchProvider({ children }: { children: ReactNode }) {
     await Promise.all([refreshFiles(), refreshReconciled(), refreshCounts()]);
   }, [refreshFiles, refreshReconciled, refreshCounts]);
 
-  useEffect(() => { refreshBatches(); }, []);
+  useEffect(() => { refreshBatches(); refreshResolverIndex(); }, []);
   useEffect(() => { refreshAll(); }, [currentBatchId]);
 
   return (
     <BatchContext.Provider value={{
       batches, currentBatchId, setCurrentBatchId,
       reconciled, uploadedFiles, counts, debugStats,
+      resolverIndex,
       refreshBatches, refreshReconciled, refreshFiles, refreshAll,
+      refreshResolverIndex,
       loading,
     }}>
       {children}

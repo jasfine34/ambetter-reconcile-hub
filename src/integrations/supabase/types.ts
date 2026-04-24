@@ -519,6 +519,69 @@ export type Database = {
           },
         ]
       }
+      resolved_identities: {
+        Row: {
+          conflict_count: number
+          conflict_details: Json | null
+          id: string
+          match_key_type: string
+          match_key_value: string
+          resolved_at: string
+          resolved_exchange_policy_id: string | null
+          resolved_issuer_policy_id: string | null
+          resolved_issuer_subscriber_id: string | null
+          reviewed_at: string | null
+          source_batch_id: string | null
+          source_file_id: string | null
+          source_kind: string | null
+        }
+        Insert: {
+          conflict_count?: number
+          conflict_details?: Json | null
+          id?: string
+          match_key_type: string
+          match_key_value: string
+          resolved_at?: string
+          resolved_exchange_policy_id?: string | null
+          resolved_issuer_policy_id?: string | null
+          resolved_issuer_subscriber_id?: string | null
+          reviewed_at?: string | null
+          source_batch_id?: string | null
+          source_file_id?: string | null
+          source_kind?: string | null
+        }
+        Update: {
+          conflict_count?: number
+          conflict_details?: Json | null
+          id?: string
+          match_key_type?: string
+          match_key_value?: string
+          resolved_at?: string
+          resolved_exchange_policy_id?: string | null
+          resolved_issuer_policy_id?: string | null
+          resolved_issuer_subscriber_id?: string | null
+          reviewed_at?: string | null
+          source_batch_id?: string | null
+          source_file_id?: string | null
+          source_kind?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "resolved_identities_source_batch_id_fkey"
+            columns: ["source_batch_id"]
+            isOneToOne: false
+            referencedRelation: "upload_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "resolved_identities_source_file_id_fkey"
+            columns: ["source_file_id"]
+            isOneToOne: false
+            referencedRelation: "uploaded_files"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       upload_batches: {
         Row: {
           carrier: string

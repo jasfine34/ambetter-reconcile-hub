@@ -10,6 +10,7 @@ import { uploadFileToStorage, uploadFileRecord, insertNormalizedRecords, saveRec
 import { useToast } from '@/hooks/use-toast';
 import { detectSchema, readCSVHeaders, type DetectedSchema } from '@/lib/schemaDetect';
 import { fallbackReconcileMonth } from '@/lib/dateRange';
+import { loadResolverIndex } from '@/lib/resolvedIdentities';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -60,7 +61,8 @@ export default function UploadPage() {
       const reconcileMonth = currentBatch?.statement_month
         ? String(currentBatch.statement_month).substring(0, 7)
         : fallbackReconcileMonth();
-      const { members: reconciledData } = reconcile(allRecords as any[], reconcileMonth);
+      const resolverIndex = await loadResolverIndex(true);
+      const { members: reconciledData } = reconcile(allRecords as any[], reconcileMonth, resolverIndex);
       await saveReconciledMembers(currentBatchId!, reconciledData);
 
       await refreshAll();

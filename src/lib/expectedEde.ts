@@ -17,6 +17,7 @@
  */
 import { NPN_MAP } from './constants';
 import { extractNpnFromAorString, isCoverallAORByName } from './agents';
+import { lookupResolved, type ResolverIndex } from './resolvedIdentities';
 
 const QUALIFIED_RAW_STATUSES = new Set([
   'effectuated',
@@ -66,6 +67,12 @@ export interface FilteredEdeRow {
   covered_member_count: number;
   effective_month: string; // YYYY-MM
   in_back_office: boolean;
+  /**
+   * If issuer_subscriber_id was filled in from resolved_identities (the row's
+   * own value was blank in the source file), this is metadata describing the
+   * winning source so the UI can show a small blue "resolved" badge.
+   */
+  issuer_subscriber_id_resolved?: { source_kind: string; batch_month: string };
 }
 
 export interface FilteredEdeResult {
@@ -96,7 +103,8 @@ export function computeFilteredEde(
   normalizedRecords: any[],
   reconciled: any[],
   scope: PayEntityScope,
-  coveredMonths: string[]
+  coveredMonths: string[],
+  resolverIndex?: ResolverIndex | null,
 ): FilteredEdeResult {
   // Build a multi-key in_back_office lookup keyed on every ID a reconciled
   // member exposes (issuer_sub_id, exchange_sub_id, policy_number, normalized
@@ -189,7 +197,30 @@ export function computeFilteredEde(
     const effMonth = effDate.substring(0, 7);
     if (monthSet.size > 0 && !monthSet.has(effMonth)) continue;
 
-    const { key: resolvedKey, inBO } = lookupReconciled(r, raw);
+    // Cross-batch identity overlay: when this EDE row's own
+    // issuer_subscriber_id is blank, try resolved_identities (keyed by
+    // ffmAppId then exchangeSubscriberId). The resolved value is used for
+    // BO matching AND displayed value, with badge metadata so the UI can
+    // show a "resolved" hint.
+    const ownIsid = String(raw.issuerSubscriberId ?? r.issuer_subscriber_id ?? '').trim();
+    let displayIsid = ownIsid;
+    let isidResolvedMeta: { source_kind: string; batch_month: string } | undefined;
+    let lookupRecord = r;
+    if (!ownIsid && resolverIndex && resolverIndex.totalRows > 0) {
+      const hit = lookupResolved(r, resolverIndex);
+      if (hit?.resolved_issuer_subscriber_id) {
+        displayIsid = hit.resolved_issuer_subscriber_id;
+        isidResolvedMeta = {
+          source_kind: hit.source_kind ?? 'unknown',
+          batch_month: '', // filled below from source_batch lookup if needed
+        };
+        // Make a virtual record with the resolved isid so lookupReconciled
+        // can find its BO sibling.
+        lookupRecord = { ...r, issuer_subscriber_id: hit.resolved_issuer_subscriber_id };
+      }
+    }
+
+    const { key: resolvedKey, inBO } = lookupReconciled(lookupRecord, lookupRecord === r ? raw : { ...raw, issuerSubscriberId: displayIsid });
 
     const cmcRaw = raw.coveredMemberCount ?? raw.CoveredMemberCount ?? raw.covered_member_count;
     const cmcParsed = cmcRaw != null && String(cmcRaw).trim() !== '' ? parseInt(String(cmcRaw), 10) : NaN;
@@ -200,13 +231,14 @@ export function computeFilteredEde(
       applicant_name: r.applicant_name ?? '',
       policy_number: String(raw.exchangePolicyId ?? r.exchange_policy_id ?? r.policy_number ?? ''),
       exchange_subscriber_id: String(raw.exchangeSubscriberId ?? r.exchange_subscriber_id ?? ''),
-      issuer_subscriber_id: String(raw.issuerSubscriberId ?? r.issuer_subscriber_id ?? ''),
+      issuer_subscriber_id: displayIsid,
       current_policy_aor: rawAor,
       effective_date: String(raw.effectiveDate ?? effDate),
       policy_status: String(raw.policyStatus ?? r.status ?? ''),
       covered_member_count: coveredMembers,
       effective_month: effMonth,
       in_back_office: inBO,
+      issuer_subscriber_id_resolved: isidResolvedMeta,
     };
 
     const existing = byKey.get(resolvedKey);

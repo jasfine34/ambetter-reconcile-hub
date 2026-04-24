@@ -6,7 +6,7 @@ import { BatchSelector } from '@/components/BatchSelector';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Users, Building2, DollarSign, AlertTriangle, CheckCircle2, XCircle, FileText, TrendingDown, Database, Info, ShieldAlert, RefreshCw, Hammer } from 'lucide-react';
+import { Users, Building2, DollarSign, AlertTriangle, CheckCircle2, XCircle, FileText, TrendingDown, Database, Info, ShieldAlert, RefreshCw, Hammer, Link2 } from 'lucide-react';
 import { getNormalizedRecords, saveReconciledMembers } from '@/lib/persistence';
 import { reconcile } from '@/lib/reconcile';
 import { useToast } from '@/hooks/use-toast';
@@ -18,8 +18,9 @@ import { isCoverallAORByName, isCoverallAORByNPN } from '@/lib/agents';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { getCoveredMonths, monthKeyToFirstOfMonth, fallbackReconcileMonth } from '@/lib/dateRange';
 import { computeFilteredEde } from '@/lib/expectedEde';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { runIdentityResolution, invalidateResolverCache } from '@/lib/resolvedIdentities';
 
 /** Format '2026-01' as '1/1/2026' for display. */
 function formatMonthStart(monthKey: string): string {
@@ -110,7 +111,7 @@ function getStoredPayEntity(): PayEntityFilter {
 }
 
 export default function DashboardPage() {
-  const { reconciled, loading, counts, debugStats, currentBatchId, refreshAll, batches } = useBatch();
+  const { reconciled, loading, counts, debugStats, currentBatchId, refreshAll, batches, resolverIndex, refreshResolverIndex } = useBatch();
   const currentBatch = useMemo(() => batches.find((b: any) => b.id === currentBatchId), [batches, currentBatchId]);
   const lastRebuildAt = currentBatch?.last_full_rebuild_at as string | null | undefined;
   const lastRebuildVersion = currentBatch?.last_rebuild_logic_version as string | null | undefined;
@@ -118,6 +119,8 @@ export default function DashboardPage() {
   const neverRebuilt = !lastRebuildAt;
   const [drilldown, setDrilldown] = useState<string | null>(null);
   const [rerunning, setRerunning] = useState(false);
+  const [resolving, setResolving] = useState(false);
+  const [resolveConfirmOpen, setResolveConfirmOpen] = useState(false);
   const [payEntityFilter, setPayEntityFilter] = useState<PayEntityFilter>(getStoredPayEntity);
   const [edeRawDrilldown, setEdeRawDrilldown] = useState<string | null>(null);
   const [edeRawRows, setEdeRawRows] = useState<Record<string, unknown>[]>([]);
@@ -222,7 +225,7 @@ export default function DashboardPage() {
       const reconcileMonth = currentBatch?.statement_month
         ? String(currentBatch.statement_month).substring(0, 7)
         : fallbackReconcileMonth();
-      const { members } = reconcile(allRecords as any[], reconcileMonth);
+      const { members } = reconcile(allRecords as any[], reconcileMonth, resolverIndex);
       await saveReconciledMembers(currentBatchId, members);
       await refreshAll();
       toast({ title: 'Reconciliation Complete', description: `${members.length} members reconciled` });
@@ -231,7 +234,40 @@ export default function DashboardPage() {
     } finally {
       setRerunning(false);
     }
-  }, [currentBatchId, currentBatch, refreshAll, toast]);
+  }, [currentBatchId, currentBatch, refreshAll, toast, resolverIndex]);
+
+  const handleResolveIdentities = useCallback(async () => {
+    setResolving(true);
+    try {
+      const summary = await runIdentityResolution();
+      invalidateResolverCache();
+      await refreshResolverIndex();
+      // Auto-trigger reconciliation re-run so downstream counts update with
+      // the freshly-resolved IDs layered in.
+      if (currentBatchId) {
+        const allRecords = await getNormalizedRecords(currentBatchId);
+        const reconcileMonth = currentBatch?.statement_month
+          ? String(currentBatch.statement_month).substring(0, 7)
+          : fallbackReconcileMonth();
+        // Re-load index post-invalidate for the rerun.
+        const { loadResolverIndex } = await import('@/lib/resolvedIdentities');
+        const freshIdx = await loadResolverIndex(true);
+        const { members } = reconcile(allRecords as any[], reconcileMonth, freshIdx);
+        await saveReconciledMembers(currentBatchId, members);
+        await refreshAll();
+      }
+      toast({
+        title: 'Identity Resolution Complete',
+        description: `Resolved ${summary.resolvedIssuerIds} issuer IDs, ${summary.resolvedIssuerPolicyIds} policy IDs, ${summary.resolvedExchangePolicyIds} exchange policy IDs from ${summary.sourceRecordsScanned.toLocaleString()} records across ${summary.batchesScanned} batches. ${summary.conflictCount} conflicts.`,
+      });
+    } catch (err: any) {
+      toast({ title: 'Resolution Error', description: err.message, variant: 'destructive' });
+    } finally {
+      setResolving(false);
+      setResolveConfirmOpen(false);
+    }
+  }, [currentBatchId, currentBatch, refreshAll, refreshResolverIndex, toast]);
+
 
   // Filter reconciled data by pay entity.
   // Include members whose EXPECTED entity is the selected one (so we can see unpaid expectations)
@@ -259,8 +295,8 @@ export default function DashboardPage() {
   // keeps the Expected Enrollments card aligned with the EDE Expected
   // Enrollment Debug panel (which uses the same filter).
   const filteredEde = useMemo(
-    () => computeFilteredEde(normalizedRecords, reconciled, payEntityFilter, coveredMonths),
-    [normalizedRecords, reconciled, payEntityFilter, coveredMonths]
+    () => computeFilteredEde(normalizedRecords, reconciled, payEntityFilter, coveredMonths, resolverIndex),
+    [normalizedRecords, reconciled, payEntityFilter, coveredMonths, resolverIndex]
   );
 
   const dashboardTitle = useMemo(() => {
@@ -409,6 +445,10 @@ export default function DashboardPage() {
           <Button variant="outline" size="sm" onClick={handleRerun} disabled={rerunning || !currentBatchId}>
             <RefreshCw className={`h-4 w-4 mr-1 ${rerunning ? 'animate-spin' : ''}`} />
             {rerunning ? 'Running...' : 'Re-run Reconciliation'}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setResolveConfirmOpen(true)} disabled={resolving}>
+            <Link2 className={`h-4 w-4 mr-1 ${resolving ? 'animate-pulse' : ''}`} />
+            {resolving ? 'Resolving...' : 'Resolve Identities Across Batches'}
           </Button>
           <RebuildBatchButton />
           <BatchSelector />
@@ -959,6 +999,36 @@ export default function DashboardPage() {
               </Tabs>
             );
           })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Resolve Identities confirmation */}
+      <Dialog open={resolveConfirmOpen} onOpenChange={setResolveConfirmOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Link2 className="h-5 w-5 text-primary" />
+              Resolve Identities Across Batches
+            </DialogTitle>
+            <DialogDescription className="space-y-2 pt-2">
+              <span className="block">
+                Scans every batch for matching applicants (by FFM App ID, falling back to Exchange Subscriber ID) and learns issuer subscriber IDs, issuer policy IDs, and exchange policy IDs that were blank in earlier files but revealed in later ones.
+              </span>
+              <span className="block text-foreground font-medium">
+                Originals are NOT modified. Resolved values are stored in a sidecar table and layered in only when the record's own field is blank.
+              </span>
+              <span className="block">
+                After resolution completes, reconciliation will automatically re-run for the current batch so downstream counts update.
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResolveConfirmOpen(false)} disabled={resolving}>Cancel</Button>
+            <Button onClick={handleResolveIdentities} disabled={resolving}>
+              <Link2 className={`h-4 w-4 mr-1 ${resolving ? 'animate-pulse' : ''}`} />
+              {resolving ? 'Resolving...' : 'Run Resolution'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
