@@ -642,7 +642,45 @@ export default function DashboardPage() {
       ) : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <MetricCard title="Expected Enrollments" value={metrics.expected} icon={<Users className="h-4 w-4" />} onClick={() => setDrilldown('expected')} subtitle={priorMonth && statementMonth ? `${formatMonthStart(priorMonth).replace(/\/\d{4}$/, '')}: ${metrics.expectedPriorMonth} · ${formatMonthStart(statementMonth).replace(/\/\d{4}$/, '')}: ${metrics.expectedStatementMonth}` : undefined} tooltip={{ text: "These are the Ambetter members we believe should exist based on our enrollment system (EDE), after filtering for active policies in the batch's covered months. Counts subscribers (one per EDE record).", why: "This is your baseline. All other numbers are measured against this to determine if anything is missing or incorrect." }} />
+            {(() => {
+              // Expected Enrollments — sourced from the FILTERED EDE count
+              // (raw rows, post issuer/AOR/status/effective-date filter), so it
+              // matches the EDE Expected Enrollment Debug panel and the user's
+              // manual workbook ground truth.
+              const expectedTotal = filteredEde.uniqueKeys;
+              const expectedPrior = priorMonth ? (filteredEde.byMonth[priorMonth] ?? 0) : 0;
+              const expectedStatement = statementMonth ? (filteredEde.byMonth[statementMonth] ?? 0) : 0;
+              const tieOut = filteredEde.inBOCount + filteredEde.notInBOCount;
+              const tiesOut = tieOut === expectedTotal;
+              const tooltipText = `Total Ambetter policies with a Coverall AOR (scope: ${payEntityFilter}) in a qualifying status (Effectuated / PendingEffectuation / PendingTermination), effective in this batch's covered months. Sourced from raw EDE rows so this matches the EDE debug panel exactly. Tie-out check: In BO ${filteredEde.inBOCount} + Not in BO ${filteredEde.notInBOCount} = ${tieOut} ${tiesOut ? '✓' : '⚠️ MISMATCH vs ' + expectedTotal}.`;
+              return (
+                <MetricCard
+                  title="Expected Enrollments"
+                  value={expectedTotal}
+                  icon={<Users className="h-4 w-4" />}
+                  onClick={() => setDrilldown('expected')}
+                  subtitle={priorMonth && statementMonth ? `${formatMonthStart(priorMonth).replace(/\/\d{4}$/, '')}: ${expectedPrior} · ${formatMonthStart(statementMonth).replace(/\/\d{4}$/, '')}: ${expectedStatement}` : undefined}
+                  tooltip={{ text: tooltipText, why: "This is what Coverall SHOULD be paid if every record is captured downstream. All other numbers are measured against this." }}
+                />
+              );
+            })()}
+            {(() => {
+              const notInBo = filteredEde.notInBOCount;
+              return (
+                <MetricCard
+                  title="Not in Back Office"
+                  value={notInBo}
+                  icon={<AlertTriangle className="h-4 w-4" />}
+                  variant={notInBo > 0 ? 'destructive' : 'success'}
+                  onClick={() => setNotInBoOpen(true)}
+                  subtitle="EDE enrollments missing from Back Office — potential dispute candidates"
+                  tooltip={{
+                    text: `Members that pass the Expected Enrollments filter but have no matching Back Office record (matched via the same Union-Find used by reconciliation: issuer_subscriber_id, exchange_subscriber_id, policy_number, name). Click to view the list and export to CSV.`,
+                    why: "These are the policies to chase down with Ambetter so commissions will flow. Expected Enrollments = In Back Office (" + filteredEde.inBOCount + ") + Not in Back Office (" + notInBo + ").",
+                  }}
+                />
+              );
+            })()}
             <MetricCard title="Total Covered Lives" value={debugStats?.totalCoveredLives ?? 0} icon={<Users className="h-4 w-4" />} variant="info" subtitle={debugStats && priorMonth && statementMonth ? `${formatMonthStart(priorMonth).replace(/\/\d{4}$/, '')}: ${debugStats.totalCoveredLivesByMonth[priorMonth] ?? 0} · ${formatMonthStart(statementMonth).replace(/\/\d{4}$/, '')}: ${debugStats.totalCoveredLivesByMonth[statementMonth] ?? 0}` : undefined} tooltip={{ text: "Sum of coveredMemberCount across all qualified EDE records — counts the subscriber plus every dependent on each policy.", why: "Reflects the actual number of insured lives, not just policy holders. Use this when reporting total members served or comparing to per-life carrier metrics." }} />
             <MetricCard title="Found in Back Office" value={metrics.foundBO} icon={<Building2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('foundBO')} tooltip={{ text: "Out of the expected members, these are the ones Ambetter recognizes in their system.", why: "If members are missing here, Ambetter may not have the policy correctly recorded, which can prevent payment." }} />
             <MetricCard title="Eligible for Commission" value={metrics.eligible} icon={<CheckCircle2 className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('eligible')} tooltip={{ text: "These are members that exist in Ambetter's system and are marked as eligible for commission.", why: "Only members in this group can generate commission. If eligibility is wrong, payments will not occur." }} />
