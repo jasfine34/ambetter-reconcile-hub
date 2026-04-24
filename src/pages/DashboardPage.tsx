@@ -83,7 +83,16 @@ const COVERAGE_DRILLDOWN_COLUMNS = [
   { key: 'actual_commission', label: 'Commission $' },
 ];
 
-const PAY_ENTITY_STORAGE_KEY = 'dashboard_pay_entity_filter';
+const NOT_IN_BO_COLUMNS = [
+  { key: 'applicant_name', label: 'Full Name' },
+  { key: 'policy_number', label: 'Policy # (EDE)' },
+  { key: 'exchange_subscriber_id', label: 'Exchange Sub ID' },
+  { key: 'issuer_subscriber_id', label: 'Issuer Sub ID' },
+  { key: 'current_policy_aor', label: 'Current Policy AOR' },
+  { key: 'effective_date', label: 'Effective Date' },
+  { key: 'policy_status', label: 'Policy Status' },
+  { key: 'covered_member_count', label: 'Covered Members' },
+];
 
 const ERICA_NPN = '21277051';
 
