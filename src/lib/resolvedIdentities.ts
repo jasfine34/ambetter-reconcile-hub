@@ -45,6 +45,8 @@ export interface ResolvedIdentityRow {
   conflict_count: number;
   conflict_details: any | null;
   reviewed_at: string | null;
+  /** Joined client-side from upload_batches.statement_month — 'YYYY-MM' or ''. */
+  source_batch_month?: string;
 }
 
 export interface ResolverRunSummary {
