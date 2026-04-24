@@ -14,7 +14,8 @@ import { RebuildBatchButton } from '@/components/RebuildBatchButton';
 import { RECONCILE_LOGIC_VERSION } from '@/lib/rebuild';
 import { CollapsibleDebugCard } from '@/components/CollapsibleDebugCard';
 import { SourceFunnelCard } from '@/components/SourceFunnelCard';
-import { isCoverallAORByName } from '@/lib/agents';
+import { isCoverallAORByName, isCoverallAORByNPN } from '@/lib/agents';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { getCoveredMonths, monthKeyToFirstOfMonth, fallbackReconcileMonth } from '@/lib/dateRange';
 
 /** Format '2026-01' as '1/1/2026' for display. */
@@ -263,6 +264,21 @@ export default function DashboardPage() {
     // Use positive_commission only for total
     const totalComm = filtered.filter(r => r.in_commission).reduce((s, r) => s + (r.positive_commission || 0), 0);
     const totalClawbacks = filtered.reduce((s, r) => s + (r.clawback_amount || 0), 0);
+    // Coverall vs Downline split of Net Paid Commission.
+    // Splits the same dollars the Net Paid card sums (positive_commission + clawback_amount)
+    // by whether the writing-agent NPN on the reconciled member is one of the three
+    // Coverall NPNs (Jason / Erica / Becky). Anything else with in_commission=true is
+    // treated as a downline override that landed on a Coverall statement.
+    let coverallDirectNet = 0;
+    let downlineNet = 0;
+    for (const r of filtered) {
+      if (!r.in_commission) continue;
+      const net = (r.positive_commission || 0) + (r.clawback_amount || 0);
+      if (isCoverallAORByNPN(r.agent_npn)) coverallDirectNet += net;
+      else downlineNet += net;
+    }
+    const netPaidTotal = totalComm + totalClawbacks;
+    const splitDelta = netPaidTotal - (coverallDirectNet + downlineNet);
     const estMissing = filtered.reduce((s, r) => s + (r.estimated_missing_commission || 0), 0);
     const difference = shouldPay - paidEligible;
     const unpaidVariance = unpaid - difference;
@@ -277,7 +293,7 @@ export default function DashboardPage() {
     const unpaidExpected = filtered.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission).length;
     const totalPaidAll = filtered.filter(r => r.in_commission).length;
     const paidOutsideExpected = filtered.filter(r => !r.in_ede && r.in_commission).length;
-    return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidOutsideEde, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, paidOutsideExpected };
+    return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidOutsideEde, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, paidOutsideExpected, coverallDirectNet, downlineNet, netPaidTotal, splitDelta };
   }, [filtered]);
 
   const unpaidSample = useMemo(() => {
@@ -571,7 +587,96 @@ export default function DashboardPage() {
             <MetricCard title="Paid Commission Records" value={metrics.paidCommRecords} icon={<CheckCircle2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('paidComm')} tooltip={{ text: "These are all members that appear on the commission statements as having been paid, regardless of whether they match our expected book.", why: "This shows what the carrier actually paid, including payments that may not belong to your tracked enrollments." }} />
             <MetricCard title="Paid Within Eligible Cohort" value={metrics.paidEligible} icon={<CheckCircle2 className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('paidEligible')} tooltip={{ text: "These are members we expected to be paid on AND actually received commission for.", why: "This is your true success rate — how much of your expected revenue you actually collected." }} />
             <MetricCard title="Unpaid Policies" value={metrics.unpaid} icon={<XCircle className="h-4 w-4" />} variant="destructive" onClick={() => setDrilldown('unpaid')} tooltip={{ text: "These are members we expected to be paid on but did not receive commission for.", why: "This is your potential revenue loss and the most important number for recovery and escalation." }} />
-            <MetricCard title="Net Paid Commission" value={`$${(metrics.totalComm + metrics.totalClawbacks).toLocaleString(undefined, { minimumFractionDigits: 2 })}`} icon={<DollarSign className="h-4 w-4" />} variant="success" subtitle={`Gross $${metrics.totalComm.toLocaleString(undefined, { minimumFractionDigits: 2 })} − Clawbacks $${Math.abs(metrics.totalClawbacks).toLocaleString(undefined, { minimumFractionDigits: 2 })}`} tooltip={{ text: "Positive commission received minus clawbacks/adjustments.", why: "This is your true take-home revenue after all reversals are applied." }} />
+            <div className="relative rounded-xl border p-5 text-left bg-success/10 border-success/30">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Net Paid Commission</span>
+                <div className="flex items-center gap-1.5">
+                  <TooltipProvider delayDuration={200}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-help">
+                          <Info className="h-3.5 w-3.5" />
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[300px] text-xs leading-relaxed">
+                        <div className="space-y-1.5">
+                          <p>Positive commission received minus clawbacks/adjustments.</p>
+                          <p className="text-primary/80 font-medium">Why this matters: This is your true take-home revenue after all reversals are applied.</p>
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  <DollarSign className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </div>
+              <div className="text-3xl font-bold text-success">
+                ${metrics.netPaidTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">
+                Gross ${metrics.totalComm.toLocaleString(undefined, { minimumFractionDigits: 2 })} − Clawbacks ${Math.abs(metrics.totalClawbacks).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              </div>
+              {payEntityFilter === 'Vix' ? (
+                <div className="mt-3 pt-3 border-t border-success/30 text-[11px] text-muted-foreground italic">
+                  Split not applicable under Vix scope.
+                </div>
+              ) : (
+                <div className="mt-3 pt-3 border-t border-success/30">
+                  <div className="grid grid-cols-2 gap-2 divide-x divide-success/30">
+                    <div className="pr-2">
+                      <div className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                        <span>Coverall (direct)</span>
+                        <TooltipProvider delayDuration={200}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Info className="h-3 w-3 text-muted-foreground/60 cursor-help" />
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-[260px] text-xs leading-relaxed">
+                              Members whose writing-agent NPN is one of the three Coverall NPNs (Jason 21055210, Erica 21277051, Becky 16531877). Net Paid (positive − clawbacks) for these members in the current scope.
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </div>
+                      <div className="text-base font-semibold text-foreground mt-0.5">
+                        ${metrics.coverallDirectNet.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                    <div className="pl-2">
+                      <div className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                        <span>Downline (overrides)</span>
+                        <TooltipProvider delayDuration={200}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Info className="h-3 w-3 text-muted-foreground/60 cursor-help" />
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-[260px] text-xs leading-relaxed">
+                              Override commissions Coverall receives where the writing agent is NOT one of the three Coverall NPNs (e.g. Allen Ford, former-employee books). Same Net Paid formula.
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </div>
+                      <div className="text-base font-semibold text-foreground mt-0.5">
+                        ${metrics.downlineNet.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                  </div>
+                  {Math.abs(metrics.splitDelta) > 0.01 && (
+                    <TooltipProvider delayDuration={200}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="mt-2 inline-flex items-center gap-1 rounded-md bg-destructive/15 border border-destructive/40 px-1.5 py-0.5 text-[10px] font-medium text-destructive cursor-help">
+                            <AlertTriangle className="h-3 w-3" />
+                            Split mismatch: ${metrics.splitDelta.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="max-w-[280px] text-xs leading-relaxed">
+                          Coverall (direct) + Downline does not equal Net Paid Commission. Difference: ${metrics.splitDelta.toFixed(2)}. Likely a reconciled member with in_commission=true but no positive_commission/clawback amount.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
+                </div>
+              )}
+            </div>
             <MetricCard title="Clawbacks / Adjustments" value={`$${metrics.totalClawbacks.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} icon={<TrendingDown className="h-4 w-4" />} variant="destructive" tooltip={{ text: "The total dollar amount of negative commission rows (clawbacks, reversals, adjustments).", why: "These reduce your net revenue. A high clawback amount may indicate policy cancellations or billing corrections." }} />
             <MetricCard title="Est. Missing Commission" value={`$${metrics.estMissing.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} icon={<TrendingDown className="h-4 w-4" />} variant="warning" tooltip={{ text: "This is an estimate of how much commission may be missing based on unpaid policies.", why: "This represents potential recoverable revenue and helps prioritize follow-up with carriers." }} />
           </div>
