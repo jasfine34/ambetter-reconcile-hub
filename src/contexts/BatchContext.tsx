@@ -90,7 +90,7 @@ export function BatchProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [currentBatchId, batches]);
+  }, [currentBatchId, batches, resolverIndex]);
 
   const refreshFiles = useCallback(async () => {
     if (!currentBatchId) { setUploadedFiles([]); return; }
