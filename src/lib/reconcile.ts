@@ -266,7 +266,8 @@ function setsOverlap(a: Set<string>, b: Set<string>): boolean {
 
 export function reconcile(
   records: NormalizedRecord[],
-  reconcileMonth: string = fallbackReconcileMonth()
+  reconcileMonth: string = fallbackReconcileMonth(),
+  resolverIndex?: ResolverIndex | null,
 ): { members: ReconciledMember[]; debug: MatchDebugStats } {
   // Derive the covered month window for this batch. For Feb 2026 (statement
   // month = 2026-02) this is ['2026-01','2026-02'] — the prior month plus
@@ -278,6 +279,30 @@ export function reconcile(
   for (const r of records) {
     reclean(r);
   }
+
+  // Step 1a: cross-batch identity overlay (sidecar). Read-through only —
+  // fills in issuer_subscriber_id / issuer_policy_id / exchange_policy_id
+  // when the record's own field is blank AND a resolved value exists in
+  // resolved_identities (keyed by ffmAppId, then exchangeSubscriberId
+  // fallback). Originals on disk stay byte-for-byte intact; this just
+  // mutates the in-memory copy reconcile is about to consume so blank
+  // EDE rows can join the right Union-Find group.
+  if (resolverIndex && resolverIndex.totalRows > 0) {
+    for (const r of records) {
+      const hit = lookupResolved(r as any, resolverIndex);
+      if (!hit) continue;
+      if (!r.issuer_subscriber_id && hit.resolved_issuer_subscriber_id) {
+        r.issuer_subscriber_id = cleanId(hit.resolved_issuer_subscriber_id);
+      }
+      if (!r.issuer_policy_id && hit.resolved_issuer_policy_id) {
+        r.issuer_policy_id = cleanId(hit.resolved_issuer_policy_id);
+      }
+      if (!r.exchange_policy_id && hit.resolved_exchange_policy_id) {
+        r.exchange_policy_id = cleanId(hit.resolved_exchange_policy_id);
+      }
+    }
+  }
+
 
   // Step 1b: Promote issuer_subscriber_id for EDE rows that are missing it
   // when a sibling COMMISSION/BACK_OFFICE record (matched by exchange_subscriber_id,
