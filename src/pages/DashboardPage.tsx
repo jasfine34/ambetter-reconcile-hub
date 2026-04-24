@@ -899,6 +899,29 @@ export default function DashboardPage() {
           )}
         </>
       )}
+
+      {/* Not in Back Office drilldown */}
+      <Dialog open={notInBoOpen} onOpenChange={setNotInBoOpen}>
+        <DialogContent className="max-w-6xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              EDE Enrollments Not in Back Office ({filteredEde.notInBOCount})
+            </DialogTitle>
+            <DialogDescription>
+              Members who pass the Expected Enrollments filter (scope: {payEntityFilter}) but have no
+              matching Back Office record. These are the seed for Back Office Reconciliation — chase
+              these policies down with Ambetter so commissions will flow.
+            </DialogDescription>
+          </DialogHeader>
+          <DataTable
+            data={filteredEde.missingFromBO}
+            columns={NOT_IN_BO_COLUMNS}
+            exportFileName={`not_in_back_office_${payEntityFilter.toLowerCase()}.csv`}
+            pageSize={25}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
