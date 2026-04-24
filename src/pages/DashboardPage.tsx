@@ -694,8 +694,16 @@ export default function DashboardPage() {
                             Split mismatch: ${metrics.splitDelta.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                           </div>
                         </TooltipTrigger>
-                        <TooltipContent side="bottom" className="max-w-[280px] text-xs leading-relaxed">
-                          Coverall (direct) + Downline does not equal Net Paid Commission. Difference: ${metrics.splitDelta.toFixed(2)}. Likely a reconciled member with in_commission=true but no positive_commission/clawback amount.
+                        <TooltipContent side="bottom" className="max-w-[320px] text-xs leading-relaxed">
+                          <div className="space-y-1">
+                            <div>Coverall (direct) + Downline does not equal Net Paid Commission. Difference: ${metrics.splitDelta.toFixed(2)}.</div>
+                            <div className="pt-1 border-t border-border/40">
+                              <div>Coverall (direct) rows: <strong>{metrics.coverallDirectRows.toLocaleString()}</strong></div>
+                              <div>Downline rows: <strong>{metrics.downlineRows.toLocaleString()}</strong></div>
+                              <div>Unclassified rows (excluded): <strong>{metrics.unclassifiedRows.toLocaleString()}</strong> (${metrics.unclassifiedNet.toFixed(2)})</div>
+                            </div>
+                            <div className="pt-1 text-muted-foreground">Unclassified = commission rows whose pay_entity is neither Coverall nor matches scope; check if any Coverall-scope drift remains in the underlying records.</div>
+                          </div>
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
