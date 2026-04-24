@@ -10,6 +10,7 @@ import {
   getOrCreateSnapshotForFile,
 } from './persistence';
 import { fallbackReconcileMonth } from './dateRange';
+import { loadResolverIndex } from './resolvedIdentities';
 
 /**
  * Bumped whenever normalization or reconciliation logic changes in a way that
