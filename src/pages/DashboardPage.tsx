@@ -252,6 +252,16 @@ export default function DashboardPage() {
     );
   }, [reconciled, payEntityFilter]);
 
+  // Filtered EDE metrics — counted from RAW normalized records, not from the
+  // post-reconcile member set. This is the count the user validated against
+  // their manual workbook (Jan 2026 Coverall = 1,627). Sourcing from raw rows
+  // keeps the Expected Enrollments card aligned with the EDE Expected
+  // Enrollment Debug panel (which uses the same filter).
+  const filteredEde = useMemo(
+    () => computeFilteredEde(normalizedRecords, reconciled, payEntityFilter, coveredMonths),
+    [normalizedRecords, reconciled, payEntityFilter, coveredMonths]
+  );
+
   const dashboardTitle = useMemo(() => {
     switch (payEntityFilter) {
       case 'Coverall': return 'Coverall Commission Reconciliation';
