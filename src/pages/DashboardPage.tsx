@@ -17,6 +17,8 @@ import { SourceFunnelCard } from '@/components/SourceFunnelCard';
 import { isCoverallAORByName, isCoverallAORByNPN } from '@/lib/agents';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { getCoveredMonths, monthKeyToFirstOfMonth, fallbackReconcileMonth } from '@/lib/dateRange';
+import { computeFilteredEde } from '@/lib/expectedEde';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 /** Format '2026-01' as '1/1/2026' for display. */
 function formatMonthStart(monthKey: string): string {
