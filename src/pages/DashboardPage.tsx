@@ -94,6 +94,8 @@ const NOT_IN_BO_COLUMNS = [
   { key: 'covered_member_count', label: 'Covered Members' },
 ];
 
+const PAY_ENTITY_STORAGE_KEY = 'dashboard_pay_entity_filter';
+
 const ERICA_NPN = '21277051';
 
 type PayEntityFilter = 'Coverall' | 'Vix' | 'All';
