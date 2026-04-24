@@ -446,6 +446,10 @@ export default function DashboardPage() {
             <RefreshCw className={`h-4 w-4 mr-1 ${rerunning ? 'animate-spin' : ''}`} />
             {rerunning ? 'Running...' : 'Re-run Reconciliation'}
           </Button>
+          <Button variant="outline" size="sm" onClick={() => setResolveConfirmOpen(true)} disabled={resolving}>
+            <Link2 className={`h-4 w-4 mr-1 ${resolving ? 'animate-pulse' : ''}`} />
+            {resolving ? 'Resolving...' : 'Resolve Identities Across Batches'}
+          </Button>
           <RebuildBatchButton />
           <BatchSelector />
         </div>
