@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, type ReactNode } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -11,9 +11,15 @@ interface DataTableProps {
   exportFileName?: string;
   pageSize?: number;
   filterChips?: { label: string; value: string; field: string }[];
+  /**
+   * Optional per-cell render override. Return `undefined` to fall through to
+   * the default rendering. Useful for adornments like a "resolved identity"
+   * badge that should appear next to certain ID values.
+   */
+  renderCell?: (key: string, row: Record<string, unknown>) => ReactNode | undefined;
 }
 
-export function DataTable({ data, columns, exportFileName, pageSize = 25, filterChips }: DataTableProps) {
+export function DataTable({ data, columns, exportFileName, pageSize = 25, filterChips, renderCell }: DataTableProps) {
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState('');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
