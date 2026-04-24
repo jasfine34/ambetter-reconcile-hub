@@ -915,7 +915,7 @@ export default function DashboardPage() {
             </DialogDescription>
           </DialogHeader>
           <DataTable
-            data={filteredEde.missingFromBO}
+            data={filteredEde.missingFromBO as unknown as Record<string, unknown>[]}
             columns={NOT_IN_BO_COLUMNS}
             exportFileName={`not_in_back_office_${payEntityFilter.toLowerCase()}.csv`}
             pageSize={25}
