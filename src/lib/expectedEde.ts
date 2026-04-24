@@ -67,6 +67,12 @@ export interface FilteredEdeRow {
   covered_member_count: number;
   effective_month: string; // YYYY-MM
   in_back_office: boolean;
+  /**
+   * If issuer_subscriber_id was filled in from resolved_identities (the row's
+   * own value was blank in the source file), this is metadata describing the
+   * winning source so the UI can show a small blue "resolved" badge.
+   */
+  issuer_subscriber_id_resolved?: { source_kind: string; batch_month: string };
 }
 
 export interface FilteredEdeResult {
