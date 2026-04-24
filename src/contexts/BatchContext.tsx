@@ -49,7 +49,17 @@ export function BatchProvider({ children }: { children: ReactNode }) {
   const [uploadedFiles, setUploadedFiles] = useState<any[]>([]);
   const [counts, setCounts] = useState<BatchCounts>({ uploadedFiles: 0, normalizedRecords: 0, reconciledMembers: 0 });
   const [debugStats, setDebugStats] = useState<MatchDebugStats | null>(null);
+  const [resolverIndex, setResolverIndex] = useState<ResolverIndex | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const refreshResolverIndex = useCallback(async () => {
+    try {
+      const idx = await loadResolverIndex(true);
+      setResolverIndex(idx);
+    } catch {
+      setResolverIndex(null);
+    }
+  }, []);
 
   const refreshBatches = useCallback(async () => {
     const data = await getBatches();
