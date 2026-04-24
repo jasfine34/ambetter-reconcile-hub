@@ -264,6 +264,21 @@ export default function DashboardPage() {
     // Use positive_commission only for total
     const totalComm = filtered.filter(r => r.in_commission).reduce((s, r) => s + (r.positive_commission || 0), 0);
     const totalClawbacks = filtered.reduce((s, r) => s + (r.clawback_amount || 0), 0);
+    // Coverall vs Downline split of Net Paid Commission.
+    // Splits the same dollars the Net Paid card sums (positive_commission + clawback_amount)
+    // by whether the writing-agent NPN on the reconciled member is one of the three
+    // Coverall NPNs (Jason / Erica / Becky). Anything else with in_commission=true is
+    // treated as a downline override that landed on a Coverall statement.
+    let coverallDirectNet = 0;
+    let downlineNet = 0;
+    for (const r of filtered) {
+      if (!r.in_commission) continue;
+      const net = (r.positive_commission || 0) + (r.clawback_amount || 0);
+      if (isCoverallAORByNPN(r.agent_npn)) coverallDirectNet += net;
+      else downlineNet += net;
+    }
+    const netPaidTotal = totalComm + totalClawbacks;
+    const splitDelta = netPaidTotal - (coverallDirectNet + downlineNet);
     const estMissing = filtered.reduce((s, r) => s + (r.estimated_missing_commission || 0), 0);
     const difference = shouldPay - paidEligible;
     const unpaidVariance = unpaid - difference;
