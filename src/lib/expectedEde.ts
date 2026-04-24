@@ -17,6 +17,7 @@
  */
 import { NPN_MAP } from './constants';
 import { extractNpnFromAorString, isCoverallAORByName } from './agents';
+import { lookupResolved, type ResolverIndex } from './resolvedIdentities';
 
 const QUALIFIED_RAW_STATUSES = new Set([
   'effectuated',
