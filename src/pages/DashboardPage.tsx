@@ -264,18 +264,44 @@ export default function DashboardPage() {
     // Use positive_commission only for total
     const totalComm = filtered.filter(r => r.in_commission).reduce((s, r) => s + (r.positive_commission || 0), 0);
     const totalClawbacks = filtered.reduce((s, r) => s + (r.clawback_amount || 0), 0);
-    // Coverall vs Downline split of Net Paid Commission.
-    // Splits the same dollars the Net Paid card sums (positive_commission + clawback_amount)
-    // by whether the writing-agent NPN on the reconciled member is one of the three
-    // Coverall NPNs (Jason / Erica / Becky). Anything else with in_commission=true is
-    // treated as a downline override that landed on a Coverall statement.
+    // Coverall vs Downline split — computed from RAW commission records (not the
+    // per-member aggregates) because positives and clawbacks within a single
+    // reconciled member can come from rows with different writing-agent NPNs.
+    //
+    // Bucketing per row (commission rows only):
+    //   - Coverall (direct): writing-agent NPN ∈ COVERALL_NPN_SET (any pay_entity).
+    //   - Downline (overrides): pay_entity = "Coverall" AND writing-agent NPN ∉ COVERALL_NPN_SET
+    //     (this also catches blank/unknown NPNs on Coverall statements per the
+    //     "income belongs to Coverall regardless of who wrote it" rule).
+    //   - Otherwise: not in either bucket (e.g. Vix-statement rows for non-Coverall NPNs).
+    //
+    // Each bucket is NET (positives minus clawbacks within the bucket), so
+    // direct + downline ties to Net Paid Commission exactly when scope is
+    // Coverall or All.
     let coverallDirectNet = 0;
     let downlineNet = 0;
-    for (const r of filtered) {
-      if (!r.in_commission) continue;
-      const net = (r.positive_commission || 0) + (r.clawback_amount || 0);
-      if (isCoverallAORByNPN(r.agent_npn)) coverallDirectNet += net;
-      else downlineNet += net;
+    let coverallDirectRows = 0;
+    let downlineRows = 0;
+    let unclassifiedRows = 0;
+    let unclassifiedNet = 0;
+    for (const rec of normalizedRecords) {
+      if (rec.source_type !== 'COMMISSION') continue;
+      const amt = Number(rec.commission_amount) || 0;
+      if (amt === 0) continue;
+      // Apply same pay-entity scope as the rest of the dashboard.
+      if (payEntityFilter === 'Coverall' && rec.pay_entity !== 'Coverall') continue;
+      if (payEntityFilter === 'Vix' && rec.pay_entity !== 'Vix') continue;
+      const isCoverallNpn = isCoverallAORByNPN(rec.agent_npn);
+      if (isCoverallNpn) {
+        coverallDirectNet += amt;
+        coverallDirectRows += 1;
+      } else if (rec.pay_entity === 'Coverall') {
+        downlineNet += amt;
+        downlineRows += 1;
+      } else {
+        unclassifiedRows += 1;
+        unclassifiedNet += amt;
+      }
     }
     const netPaidTotal = totalComm + totalClawbacks;
     const splitDelta = netPaidTotal - (coverallDirectNet + downlineNet);
@@ -293,8 +319,8 @@ export default function DashboardPage() {
     const unpaidExpected = filtered.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission).length;
     const totalPaidAll = filtered.filter(r => r.in_commission).length;
     const paidOutsideExpected = filtered.filter(r => !r.in_ede && r.in_commission).length;
-    return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidOutsideEde, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, paidOutsideExpected, coverallDirectNet, downlineNet, netPaidTotal, splitDelta };
-  }, [filtered]);
+    return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidOutsideEde, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, paidOutsideExpected, coverallDirectNet, downlineNet, netPaidTotal, splitDelta, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
+  }, [filtered, normalizedRecords, payEntityFilter]);
 
   const unpaidSample = useMemo(() => {
     return filtered
@@ -668,8 +694,16 @@ export default function DashboardPage() {
                             Split mismatch: ${metrics.splitDelta.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                           </div>
                         </TooltipTrigger>
-                        <TooltipContent side="bottom" className="max-w-[280px] text-xs leading-relaxed">
-                          Coverall (direct) + Downline does not equal Net Paid Commission. Difference: ${metrics.splitDelta.toFixed(2)}. Likely a reconciled member with in_commission=true but no positive_commission/clawback amount.
+                        <TooltipContent side="bottom" className="max-w-[320px] text-xs leading-relaxed">
+                          <div className="space-y-1">
+                            <div>Coverall (direct) + Downline does not equal Net Paid Commission. Difference: ${metrics.splitDelta.toFixed(2)}.</div>
+                            <div className="pt-1 border-t border-border/40">
+                              <div>Coverall (direct) rows: <strong>{metrics.coverallDirectRows.toLocaleString()}</strong></div>
+                              <div>Downline rows: <strong>{metrics.downlineRows.toLocaleString()}</strong></div>
+                              <div>Unclassified rows (excluded): <strong>{metrics.unclassifiedRows.toLocaleString()}</strong> (${metrics.unclassifiedNet.toFixed(2)})</div>
+                            </div>
+                            <div className="pt-1 text-muted-foreground">Unclassified = commission rows whose pay_entity is neither Coverall nor matches scope; check if any Coverall-scope drift remains in the underlying records.</div>
+                          </div>
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
