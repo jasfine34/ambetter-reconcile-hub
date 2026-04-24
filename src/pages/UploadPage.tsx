@@ -10,6 +10,7 @@ import { uploadFileToStorage, uploadFileRecord, insertNormalizedRecords, saveRec
 import { useToast } from '@/hooks/use-toast';
 import { detectSchema, readCSVHeaders, type DetectedSchema } from '@/lib/schemaDetect';
 import { fallbackReconcileMonth } from '@/lib/dateRange';
+import { loadResolverIndex } from '@/lib/resolvedIdentities';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
