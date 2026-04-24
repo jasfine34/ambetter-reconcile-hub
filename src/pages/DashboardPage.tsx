@@ -119,6 +119,8 @@ export default function DashboardPage() {
   const neverRebuilt = !lastRebuildAt;
   const [drilldown, setDrilldown] = useState<string | null>(null);
   const [rerunning, setRerunning] = useState(false);
+  const [resolving, setResolving] = useState(false);
+  const [resolveConfirmOpen, setResolveConfirmOpen] = useState(false);
   const [payEntityFilter, setPayEntityFilter] = useState<PayEntityFilter>(getStoredPayEntity);
   const [edeRawDrilldown, setEdeRawDrilldown] = useState<string | null>(null);
   const [edeRawRows, setEdeRawRows] = useState<Record<string, unknown>[]>([]);
