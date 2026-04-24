@@ -19,6 +19,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { getCoveredMonths, monthKeyToFirstOfMonth, fallbackReconcileMonth } from '@/lib/dateRange';
 import { computeFilteredEde } from '@/lib/expectedEde';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
 /** Format '2026-01' as '1/1/2026' for display. */
 function formatMonthStart(monthKey: string): string {
@@ -666,6 +667,8 @@ export default function DashboardPage() {
             })()}
             {(() => {
               const notInBo = filteredEde.notInBOCount;
+              const hasIssuer = filteredEde.missingFromBO.filter(r => String(r.issuer_subscriber_id ?? '').trim() !== '').length;
+              const missingIssuer = notInBo - hasIssuer;
               return (
                 <MetricCard
                   title="Not in Back Office"
@@ -673,7 +676,7 @@ export default function DashboardPage() {
                   icon={<AlertTriangle className="h-4 w-4" />}
                   variant={notInBo > 0 ? 'destructive' : 'success'}
                   onClick={() => setNotInBoOpen(true)}
-                  subtitle="EDE enrollments missing from Back Office — potential dispute candidates"
+                  subtitle={`${hasIssuer} disputable (has issuer ID) · ${missingIssuer} waiting (missing issuer ID)`}
                   tooltip={{
                     text: `Members that pass the Expected Enrollments filter but have no matching Back Office record (matched via the same Union-Find used by reconciliation: issuer_subscriber_id, exchange_subscriber_id, policy_number, name). Click to view the list and export to CSV.`,
                     why: "These are the policies to chase down with Ambetter so commissions will flow. Expected Enrollments = In Back Office (" + filteredEde.inBOCount + ") + Not in Back Office (" + notInBo + ").",
@@ -910,16 +913,52 @@ export default function DashboardPage() {
             </DialogTitle>
             <DialogDescription>
               Members who pass the Expected Enrollments filter (scope: {payEntityFilter}) but have no
-              matching Back Office record. These are the seed for Back Office Reconciliation — chase
-              these policies down with Ambetter so commissions will flow.
+              matching Back Office record. Split into two action-distinct buckets below.
             </DialogDescription>
           </DialogHeader>
-          <DataTable
-            data={filteredEde.missingFromBO as unknown as Record<string, unknown>[]}
-            columns={NOT_IN_BO_COLUMNS}
-            exportFileName={`not_in_back_office_${payEntityFilter.toLowerCase()}.csv`}
-            pageSize={25}
-          />
+          {(() => {
+            const hasIssuerRows = filteredEde.missingFromBO.filter(r => String(r.issuer_subscriber_id ?? '').trim() !== '');
+            const missingIssuerRows = filteredEde.missingFromBO.filter(r => String(r.issuer_subscriber_id ?? '').trim() === '');
+            const monthSuffix = statementMonth || priorMonth || '';
+            const fileSuffix = monthSuffix ? `_${monthSuffix}` : '';
+            return (
+              <Tabs defaultValue="has-issuer" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger
+                    value="has-issuer"
+                    className="data-[state=active]:bg-destructive/10 data-[state=active]:text-destructive data-[state=active]:border-destructive/40 border border-transparent"
+                  >
+                    Has Issuer ID ({hasIssuerRows.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="missing-issuer">
+                    Missing Issuer ID ({missingIssuerRows.length})
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="has-issuer" className="space-y-3">
+                  <p className="text-xs text-destructive/90 bg-destructive/5 border border-destructive/20 rounded-md px-3 py-2">
+                    Issuer ID has been assigned but Back Office still has no record. Active dispute candidate — chase the BO team to add these policies.
+                  </p>
+                  <DataTable
+                    data={hasIssuerRows as unknown as Record<string, unknown>[]}
+                    columns={NOT_IN_BO_COLUMNS}
+                    exportFileName={`not-in-bo-has-issuer-id${fileSuffix}.csv`}
+                    pageSize={25}
+                  />
+                </TabsContent>
+                <TabsContent value="missing-issuer" className="space-y-3">
+                  <p className="text-xs text-muted-foreground bg-muted/40 border border-border rounded-md px-3 py-2">
+                    Waiting for Ambetter to assign a policy/issuer ID. Usually self-resolves within 1-2 months of effectuation. Chase only if aged.
+                  </p>
+                  <DataTable
+                    data={missingIssuerRows as unknown as Record<string, unknown>[]}
+                    columns={NOT_IN_BO_COLUMNS}
+                    exportFileName={`not-in-bo-missing-issuer-id${fileSuffix}.csv`}
+                    pageSize={25}
+                  />
+                </TabsContent>
+              </Tabs>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>
