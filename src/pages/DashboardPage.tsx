@@ -14,7 +14,8 @@ import { RebuildBatchButton } from '@/components/RebuildBatchButton';
 import { RECONCILE_LOGIC_VERSION } from '@/lib/rebuild';
 import { CollapsibleDebugCard } from '@/components/CollapsibleDebugCard';
 import { SourceFunnelCard } from '@/components/SourceFunnelCard';
-import { isCoverallAORByName } from '@/lib/agents';
+import { isCoverallAORByName, isCoverallAORByNPN } from '@/lib/agents';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { getCoveredMonths, monthKeyToFirstOfMonth, fallbackReconcileMonth } from '@/lib/dateRange';
 
 /** Format '2026-01' as '1/1/2026' for display. */
