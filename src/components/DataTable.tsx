@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, type ReactNode } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -11,9 +11,15 @@ interface DataTableProps {
   exportFileName?: string;
   pageSize?: number;
   filterChips?: { label: string; value: string; field: string }[];
+  /**
+   * Optional per-cell render override. Return `undefined` to fall through to
+   * the default rendering. Useful for adornments like a "resolved identity"
+   * badge that should appear next to certain ID values.
+   */
+  renderCell?: (key: string, row: Record<string, unknown>) => ReactNode | undefined;
 }
 
-export function DataTable({ data, columns, exportFileName, pageSize = 25, filterChips }: DataTableProps) {
+export function DataTable({ data, columns, exportFileName, pageSize = 25, filterChips, renderCell }: DataTableProps) {
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState('');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -86,11 +92,24 @@ export function DataTable({ data, columns, exportFileName, pageSize = 25, filter
               <TableRow><TableCell colSpan={columns.length} className="text-center text-muted-foreground py-8">No records found</TableCell></TableRow>
             ) : paged.map((row, i) => (
               <TableRow key={i}>
-                {columns.map(col => (
-                  <TableCell key={col.key} className="whitespace-nowrap text-sm">
-                    {row[col.key] == null ? '—' : typeof row[col.key] === 'boolean' ? (row[col.key] ? '✓' : '✗') : typeof row[col.key] === 'number' ? (col.key.includes('commission') || col.key.includes('premium') ? `$${(row[col.key] as number).toLocaleString(undefined, { minimumFractionDigits: 2 })}` : (row[col.key] as number).toLocaleString()) : String(row[col.key])}
-                  </TableCell>
-                ))}
+                {columns.map(col => {
+                  const override = renderCell?.(col.key, row);
+                  const v = row[col.key];
+                  const defaultRendered = v == null
+                    ? '—'
+                    : typeof v === 'boolean'
+                      ? (v ? '✓' : '✗')
+                      : typeof v === 'number'
+                        ? (col.key.includes('commission') || col.key.includes('premium')
+                            ? `$${(v as number).toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+                            : (v as number).toLocaleString())
+                        : String(v);
+                  return (
+                    <TableCell key={col.key} className="whitespace-nowrap text-sm">
+                      {override !== undefined ? override : defaultRendered}
+                    </TableCell>
+                  );
+                })}
               </TableRow>
             ))}
           </TableBody>

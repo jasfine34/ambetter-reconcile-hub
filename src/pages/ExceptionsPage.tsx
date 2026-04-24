@@ -3,6 +3,7 @@ import { useBatch } from '@/contexts/BatchContext';
 import { BatchSelector } from '@/components/BatchSelector';
 import { DataTable } from '@/components/DataTable';
 import { ISSUE_TYPES } from '@/lib/constants';
+import { IdentityResolutionConflictsPanel } from '@/components/IdentityResolutionConflictsPanel';
 
 const COLUMNS = [
   { key: 'applicant_name', label: 'Name' },
@@ -46,6 +47,7 @@ export default function ExceptionsPage() {
         <BatchSelector />
       </div>
       <DataTable data={exceptions} columns={COLUMNS} exportFileName="exception_queue.csv" filterChips={chips} />
+      <IdentityResolutionConflictsPanel />
     </div>
   );
 }

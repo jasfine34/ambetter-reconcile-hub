@@ -212,7 +212,7 @@ export function computeFilteredEde(
         displayIsid = hit.resolved_issuer_subscriber_id;
         isidResolvedMeta = {
           source_kind: hit.source_kind ?? 'unknown',
-          batch_month: '', // filled below from source_batch lookup if needed
+          batch_month: hit.source_batch_month ?? '',
         };
         // Make a virtual record with the resolved isid so lookupReconciled
         // can find its BO sibling.

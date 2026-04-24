@@ -45,6 +45,8 @@ export interface ResolvedIdentityRow {
   conflict_count: number;
   conflict_details: any | null;
   reviewed_at: string | null;
+  /** Joined client-side from upload_batches.statement_month — 'YYYY-MM' or ''. */
+  source_batch_month?: string;
 }
 
 export interface ResolverRunSummary {
@@ -341,14 +343,31 @@ export async function loadResolverIndex(force = false): Promise<ResolverIndex> {
     if (data.length < pageSize) break;
     from += pageSize;
   }
+  // Join statement_month from upload_batches so the UI badge tooltip can show
+  // "Resolved from ede Feb 2026" without a second round-trip per badge.
+  const batchIds = Array.from(new Set(all.map(r => r.source_batch_id).filter(Boolean)));
+  const monthByBatch = new Map<string, string>();
+  if (batchIds.length > 0) {
+    const { data: batchRows } = await supabase
+      .from('upload_batches')
+      .select('id, statement_month')
+      .in('id', batchIds as string[]);
+    for (const b of (batchRows || []) as any[]) {
+      monthByBatch.set(b.id, b.statement_month ? String(b.statement_month).substring(0, 7) : '');
+    }
+  }
   const idx: ResolverIndex = {
     byFfmApp: new Map(),
     byExchangeSub: new Map(),
     totalRows: all.length,
   };
   for (const r of all) {
-    if (r.match_key_type === 'ffmAppId') idx.byFfmApp.set(r.match_key_value, r as ResolvedIdentityRow);
-    else if (r.match_key_type === 'exchangeSubscriberId') idx.byExchangeSub.set(r.match_key_value, r as ResolvedIdentityRow);
+    const enriched: ResolvedIdentityRow = {
+      ...r,
+      source_batch_month: r.source_batch_id ? monthByBatch.get(r.source_batch_id) ?? '' : '',
+    };
+    if (enriched.match_key_type === 'ffmAppId') idx.byFfmApp.set(enriched.match_key_value, enriched);
+    else if (enriched.match_key_type === 'exchangeSubscriberId') idx.byExchangeSub.set(enriched.match_key_value, enriched);
   }
   _cachedIndex = idx;
   _cacheLoadedAt = Date.now();

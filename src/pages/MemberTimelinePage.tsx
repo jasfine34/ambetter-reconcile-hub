@@ -21,6 +21,8 @@ import { classifyMember, buildClassifierContext } from '@/lib/classifier';
 import { buildPaidDollarsAudit } from '@/lib/paidDollarsAudit';
 import { PaidDollarsAuditPanel } from '@/components/PaidDollarsAuditPanel';
 import { CellAttributionPopover } from '@/components/CellAttributionPopover';
+import { ResolvedBadge } from '@/components/ResolvedBadge';
+import { lookupResolved } from '@/lib/resolvedIdentities';
 
 type PayEntityScope = 'Coverall' | 'Vix' | 'All';
 type AorScope = 'official' | 'all';
@@ -92,7 +94,7 @@ function defaultRange(statementMonth: string | null | undefined): { start: strin
 }
 
 export default function MemberTimelinePage() {
-  const { currentBatchId, batches } = useBatch();
+  const { currentBatchId, batches, resolverIndex } = useBatch();
   const currentBatch = batches.find((b: any) => b.id === currentBatchId);
   const initial = defaultRange(currentBatch?.statement_month);
 
@@ -829,7 +831,17 @@ export default function MemberTimelinePage() {
                         </div>
                       </td>
                       <td className="px-2 py-2 font-mono text-[11px] text-muted-foreground whitespace-nowrap">
-                        {row.policy_number || row.issuer_subscriber_id || row.exchange_subscriber_id || '—'}
+                        {(() => {
+                          const display = row.policy_number || row.issuer_subscriber_id || row.exchange_subscriber_id || '—';
+                          // Badge only when the displayed token is the issuer_subscriber_id AND
+                          // the resolver has a matching winning value for this row.
+                          const isIsidShown = !row.policy_number && !!row.issuer_subscriber_id && display === row.issuer_subscriber_id;
+                          if (!isIsidShown || !resolverIndex || resolverIndex.totalRows === 0) return display;
+                          const hit = lookupResolved(row as any, resolverIndex);
+                          if (!hit || !hit.resolved_issuer_subscriber_id) return display;
+                          if (String(hit.resolved_issuer_subscriber_id) !== String(row.issuer_subscriber_id)) return display;
+                          return <span>{display}<ResolvedBadge sourceKind={hit.source_kind ?? undefined} batchMonth={hit.source_batch_month} /></span>;
+                        })()}
                       </td>
                       <td className="px-2 py-2 text-muted-foreground whitespace-nowrap truncate max-w-[160px]" title={row.current_policy_aor || row.aor_bucket}>
                         {row.current_policy_aor || row.aor_bucket || '—'}
