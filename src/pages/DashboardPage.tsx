@@ -225,7 +225,7 @@ export default function DashboardPage() {
       const reconcileMonth = currentBatch?.statement_month
         ? String(currentBatch.statement_month).substring(0, 7)
         : fallbackReconcileMonth();
-      const { members } = reconcile(allRecords as any[], reconcileMonth);
+      const { members } = reconcile(allRecords as any[], reconcileMonth, resolverIndex);
       await saveReconciledMembers(currentBatchId, members);
       await refreshAll();
       toast({ title: 'Reconciliation Complete', description: `${members.length} members reconciled` });
@@ -234,7 +234,40 @@ export default function DashboardPage() {
     } finally {
       setRerunning(false);
     }
-  }, [currentBatchId, currentBatch, refreshAll, toast]);
+  }, [currentBatchId, currentBatch, refreshAll, toast, resolverIndex]);
+
+  const handleResolveIdentities = useCallback(async () => {
+    setResolving(true);
+    try {
+      const summary = await runIdentityResolution();
+      invalidateResolverCache();
+      await refreshResolverIndex();
+      // Auto-trigger reconciliation re-run so downstream counts update with
+      // the freshly-resolved IDs layered in.
+      if (currentBatchId) {
+        const allRecords = await getNormalizedRecords(currentBatchId);
+        const reconcileMonth = currentBatch?.statement_month
+          ? String(currentBatch.statement_month).substring(0, 7)
+          : fallbackReconcileMonth();
+        // Re-load index post-invalidate for the rerun.
+        const { loadResolverIndex } = await import('@/lib/resolvedIdentities');
+        const freshIdx = await loadResolverIndex(true);
+        const { members } = reconcile(allRecords as any[], reconcileMonth, freshIdx);
+        await saveReconciledMembers(currentBatchId, members);
+        await refreshAll();
+      }
+      toast({
+        title: 'Identity Resolution Complete',
+        description: `Resolved ${summary.resolvedIssuerIds} issuer IDs, ${summary.resolvedIssuerPolicyIds} policy IDs, ${summary.resolvedExchangePolicyIds} exchange policy IDs from ${summary.sourceRecordsScanned.toLocaleString()} records across ${summary.batchesScanned} batches. ${summary.conflictCount} conflicts.`,
+      });
+    } catch (err: any) {
+      toast({ title: 'Resolution Error', description: err.message, variant: 'destructive' });
+    } finally {
+      setResolving(false);
+      setResolveConfirmOpen(false);
+    }
+  }, [currentBatchId, currentBatch, refreshAll, refreshResolverIndex, toast]);
+
 
   // Filter reconciled data by pay entity.
   // Include members whose EXPECTED entity is the selected one (so we can see unpaid expectations)
