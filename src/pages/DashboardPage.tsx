@@ -11,6 +11,7 @@ import { getNormalizedRecords, saveReconciledMembers } from '@/lib/persistence';
 import { reconcile } from '@/lib/reconcile';
 import { useToast } from '@/hooks/use-toast';
 import { RebuildBatchButton } from '@/components/RebuildBatchButton';
+import { RebuildAllBatchesButton } from '@/components/RebuildAllBatchesButton';
 import { RECONCILE_LOGIC_VERSION } from '@/lib/rebuild';
 import { CollapsibleDebugCard } from '@/components/CollapsibleDebugCard';
 import { SourceFunnelCard } from '@/components/SourceFunnelCard';
@@ -118,6 +119,17 @@ export default function DashboardPage() {
   const lastRebuildVersion = currentBatch?.last_rebuild_logic_version as string | null | undefined;
   const logicChanged = !!lastRebuildVersion && lastRebuildVersion !== RECONCILE_LOGIC_VERSION;
   const neverRebuilt = !lastRebuildAt;
+  // Cross-batch staleness: count how many batches have a stored logic version
+  // that doesn't match the current LOGIC_VERSION constant. Batches that have
+  // never been rebuilt are also considered stale.
+  const staleBatchesCount = useMemo(
+    () =>
+      (batches || []).filter((b: any) => {
+        const v = b?.last_rebuild_logic_version as string | null | undefined;
+        return !v || v !== RECONCILE_LOGIC_VERSION;
+      }).length,
+    [batches]
+  );
   const [drilldown, setDrilldown] = useState<string | null>(null);
   const [rerunning, setRerunning] = useState(false);
   const [resolving, setResolving] = useState(false);
