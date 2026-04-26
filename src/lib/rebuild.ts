@@ -138,7 +138,13 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
     totalNormalized += normalized.length;
   }
 
-  // 6. Re-run reconciliation from scratch
+  // 6. Re-run reconciliation from scratch — wrapped in a retry loop with a
+  // post-save sanity assertion. The Jan 2026 bug was a silent SAVE-step
+  // failure: reconcile() returned ~3,800 members, saveReconciledMembers()
+  // appeared to succeed, but the table was empty after the run. The Rebuild
+  // All flow then reported "Rebuilt 3 batches" because nothing threw. We now
+  // verify by counting rows post-save and retry up to 3 attempts total
+  // (1s, 3s backoff) before treating it as a hard failure.
   emit({
     phase: 'reconciling',
     filesProcessed: files.length,
@@ -163,14 +169,71 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
   const resolverIndex = await loadResolverIndex(true);
   const { members } = reconcile(allRecords as any[], reconcileMonth, resolverIndex);
 
-  emit({
-    phase: 'saving',
-    filesProcessed: files.length,
-    totalFiles: files.length,
-    recordsNormalized: totalNormalized,
-  });
+  // How many normalized rows DID we actually persist? If this is 0, "0
+  // reconciled" is the correct outcome and we should NOT retry.
+  const persistedNormalizedCount = await countCurrentNormalizedForBatch(batchId);
 
-  await saveReconciledMembers(batchId, members);
+  const MAX_ATTEMPTS = 3;
+  const BACKOFFS_MS = [0, 1000, 3000]; // first attempt no wait
+  let verifiedCount = 0;
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    if (BACKOFFS_MS[attempt - 1] > 0) {
+      await new Promise((r) => setTimeout(r, BACKOFFS_MS[attempt - 1]));
+    }
+    emit({
+      phase: attempt === 1 ? 'saving' : 'retrying',
+      filesProcessed: files.length,
+      totalFiles: files.length,
+      recordsNormalized: totalNormalized,
+      attempt,
+    });
+
+    try {
+      await saveReconciledMembers(batchId, members);
+    } catch (err: any) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      continue; // retry
+    }
+
+    emit({
+      phase: 'verifying',
+      filesProcessed: files.length,
+      totalFiles: files.length,
+      recordsNormalized: totalNormalized,
+      attempt,
+    });
+
+    verifiedCount = await countReconciledForBatch(batchId);
+
+    // Pass: nothing was expected (no normalized rows OR reconcile produced 0
+    // legitimately) — accept and break.
+    if (members.length === 0 || persistedNormalizedCount === 0) break;
+
+    // Pass: rows landed in the table.
+    if (verifiedCount > 0) break;
+
+    // Fail: we expected rows and got 0. Treat as transient and retry.
+    lastError = new Error(
+      `Rebuild produced 0 reconciled members for batch ${batchId} despite ` +
+        `${persistedNormalizedCount} normalized records and ${members.length} reconcile() outputs ` +
+        `— likely a transient backend write failure.`,
+    );
+  }
+
+  if (
+    members.length > 0 &&
+    persistedNormalizedCount > 0 &&
+    verifiedCount === 0
+  ) {
+    // Hard failure: do NOT stamp last_rebuild_logic_version so the staleness
+    // banner stays up and the user is prompted to retry.
+    throw new Error(
+      `Rebuild failed: 0 reconciled members written after ${MAX_ATTEMPTS} attempts ` +
+        `(expected ${members.length}). Last error: ${lastError?.message ?? 'unknown'}`,
+    );
+  }
 
   // Stamp the batch with rebuild metadata
   await supabase
@@ -186,11 +249,12 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
     filesProcessed: files.length,
     totalFiles: files.length,
     recordsNormalized: totalNormalized,
+    membersReconciled: verifiedCount,
   });
 
   return {
     filesProcessed: files.length,
     recordsNormalized: totalNormalized,
-    membersReconciled: members.length,
+    membersReconciled: verifiedCount,
   };
 }
