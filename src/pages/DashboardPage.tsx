@@ -428,6 +428,52 @@ export default function DashboardPage() {
     return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidOutsideEde, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, paidOutsideExpected, coverallDirectNet, downlineNet, netPaidTotal, splitDelta, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
   }, [filtered, normalizedRecords, payEntityFilter, filteredEde, priorMonth, statementMonth]);
 
+  // Clawback rows — every commission row with amount < 0 within the current
+  // pay-entity scope. Derived from RAW normalized commission records (same
+  // source as the totalClawbacks aggregate on the Net Paid card) so the rows
+  // sum exactly to the displayed total. Each row carries source_file_label
+  // and statement-date hints so the user can answer "why is a Mar 21 row in
+  // the Mar 2026 batch?" without leaving the dashboard.
+  const clawbackRows = useMemo(() => {
+    const out: Array<{
+      applicant_name: string;
+      policy_number: string;
+      pay_code: string;
+      amount: number;
+      pay_entity: string;
+      source_file_label: string;
+      statement_date: string;
+      member_key: string;
+    }> = [];
+    for (const rec of normalizedRecords) {
+      if (rec.source_type !== 'COMMISSION') continue;
+      const amt = Number(rec.commission_amount) || 0;
+      if (amt >= 0) continue;
+      if (payEntityFilter === 'Coverall' && rec.pay_entity !== 'Coverall') continue;
+      if (payEntityFilter === 'Vix' && rec.pay_entity !== 'Vix') continue;
+      const raw = rec.raw_json || {};
+      out.push({
+        applicant_name: rec.applicant_name || '',
+        policy_number: rec.policy_number || '',
+        pay_code:
+          String(raw['Pay Code'] ?? raw['PayCode'] ?? raw['Pay Type'] ?? '').trim() || '—',
+        amount: amt,
+        pay_entity: rec.pay_entity || '',
+        source_file_label: rec.source_file_label || '',
+        statement_date: String(
+          raw['Statement Date'] ??
+            raw['Statement Period'] ??
+            raw['Period End Date'] ??
+            raw['Pay Period'] ??
+            '',
+        ).trim(),
+        member_key: rec.member_key || '',
+      });
+    }
+    out.sort((a, b) => a.amount - b.amount); // most negative first
+    return out;
+  }, [normalizedRecords, payEntityFilter]);
+
   const unpaidSample = useMemo(() => {
     return filtered
       .filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission)
