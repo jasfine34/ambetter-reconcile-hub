@@ -65,14 +65,14 @@ export interface FilteredEdeRow {
   effective_date: string;
   policy_status: string;
   covered_member_count: number;
-  effective_month: string; // YYYY-MM — first active month within coveredMonths (span semantic)
+  effective_month: string; // YYYY-MM — the row's ACTUAL effective_date month (NOT span-anchored). Drives the per-month newly-effective breakdown so per-month numbers SUM to the total.
   /**
-   * SPAN SEMANTIC (2026-04-26): months within `coveredMonths` during which
-   * this EDE record was active. An Effectuated EDE row is an ongoing
-   * enrollment, not a single-month event — so we count it once per active
-   * covered month rather than only its effective_date month. Drives
-   * `byMonth` below and the dashboard's per-month Expected Enrollments
-   * breakdown.
+   * Months within `coveredMonths` during which this EDE record was active
+   * (span semantic — an Effectuated EDE row is an ongoing enrollment).
+   * Used by classifier/timeline gating. NOTE: per-month breakdowns on the
+   * Dashboard count by `effective_month` (newly-effective) instead, so the
+   * per-month numbers SUM to the card total — `active_months` would
+   * double-count carryover.
    */
   active_months: string[];
   in_back_office: boolean;
