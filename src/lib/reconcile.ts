@@ -309,7 +309,10 @@ export function reconcile(
   // month = 2026-02) this is ['2026-01','2026-02'] — the prior month plus
   // the statement month. See src/lib/dateRange.ts and §8 of ARCHITECTURE_PLAN.
   const coveredMonths = getCoveredMonths(reconcileMonth);
-  const expectedEffectiveDates: ReadonlySet<string> = new Set(getCoveredEffectiveDates(reconcileMonth));
+  // SPAN SEMANTIC (2026-04-26): EDE universe is now scope-checked against the
+  // batch's covered-month *window*, not a discrete set of effective dates.
+  // See isExpectedEDERow() for the span rule.
+  const sortedCoveredMonths: readonly string[] = coveredMonths.slice().sort();
 
   // Step 1: Re-clean all IDs
   for (const r of records) {
@@ -472,7 +475,7 @@ export function reconcile(
       }
       if (!r.effective_date) {
         debug.edeInvalidDateCount++;
-      } else if (isExpectedEDERow(r, expectedEffectiveDates)) {
+      } else if (isExpectedEDERow(r, sortedCoveredMonths)) {
         debug.edeAfterFilter++;
       }
     } else if (r.source_type === 'BACK_OFFICE') {
@@ -755,7 +758,7 @@ export function reconcile(
     let groupCovered = 0;
     let groupMonth = '';
     for (const r of recs) {
-      if (!isExpectedEDERow(r, expectedEffectiveDates)) continue;
+      if (!isExpectedEDERow(r, sortedCoveredMonths)) continue;
       edeQualifiedKeys.add(key);
       // Use the first qualified row's covered count + month for the group
       // (one EDE row per member per month is the norm)
@@ -905,12 +908,22 @@ export function reconcile(
       source_count: recs.length,
       commission_record_count: comm.length,
       has_mixed_sources: new Set(recs.map(r => r.source_type)).size > 1,
-      ede_qualified: ede.some(e => isExpectedEDERow(e, expectedEffectiveDates)),
-      is_in_expected_ede_universe: ede.some(e => isExpectedEDERow(e, expectedEffectiveDates)),
+      ede_qualified: ede.some(e => isExpectedEDERow(e, sortedCoveredMonths)),
+      is_in_expected_ede_universe: ede.some(e => isExpectedEDERow(e, sortedCoveredMonths)),
       expected_ede_effective_month: (() => {
-        const qualified = ede.find(e => isExpectedEDERow(e, expectedEffectiveDates));
-        if (!qualified || !qualified.effective_date) return '';
-        return qualified.effective_date.substring(0, 7); // 'YYYY-MM'
+        // First-active-month-in-scope across all qualified EDE rows for this
+        // member. Replaces the old "first qualified row's effective_date
+        // month" semantic, which under span semantics undercounted later
+        // months (a member effective 1/1 still active in March was anchored
+        // to 1/1, never 2/1 or 3/1). The dashboard's per-month breakdown
+        // now uses filteredEde.byMonth which is span-aware.
+        let earliest = '';
+        for (const e of ede) {
+          if (!isExpectedEDERow(e, sortedCoveredMonths)) continue;
+          const m = firstActiveCoveredMonth(e, sortedCoveredMonths);
+          if (m && (!earliest || m < earliest)) earliest = m;
+        }
+        return earliest;
       })(),
     });
   }
