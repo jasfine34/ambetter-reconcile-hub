@@ -34,11 +34,15 @@ export const RECONCILE_LOGIC_VERSION = '2026.04.26-perf-pagination';
 export const LOGIC_VERSION = RECONCILE_LOGIC_VERSION;
 
 export interface RebuildProgress {
-  phase: 'init' | 'fetching-files' | 'normalizing' | 'reconciling' | 'saving' | 'done';
+  phase: 'init' | 'fetching-files' | 'normalizing' | 'reconciling' | 'saving' | 'verifying' | 'retrying' | 'done';
   currentFile?: string;
   filesProcessed: number;
   totalFiles: number;
   recordsNormalized: number;
+  /** Populated once the post-save verification has run (final attempt). */
+  membersReconciled?: number;
+  /** Current attempt number for the reconcile+save step (1-based). */
+  attempt?: number;
 }
 
 type ProgressCb = (p: RebuildProgress) => void;
