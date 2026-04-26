@@ -501,6 +501,67 @@ export async function getReconciledMembers(batchId: string) {
   return allData;
 }
 
+/**
+ * Server-paginated reconciled_members query for the All Records page.
+ * Avoids loading all ~3,890 rows upfront — DB applies range, search, sort.
+ *
+ * `search` is matched case-insensitively across the same columns the old
+ * client-side DataTable searched: name, policy #, sub IDs, agent name, NPN.
+ * Empty search returns the unfiltered window.
+ *
+ * Returns the page rows + the total filtered count so the UI can render
+ * "Page X of Y" pagination identically to the old client-side experience.
+ */
+export async function getReconciledMembersPage(
+  batchId: string,
+  opts: {
+    page: number;        // 0-indexed
+    pageSize: number;
+    search?: string;
+    sortKey?: string;
+    sortDir?: 'asc' | 'desc';
+  },
+): Promise<{ rows: any[]; total: number }> {
+  const { page, pageSize, search, sortKey, sortDir } = opts;
+  const from = page * pageSize;
+  const to = from + pageSize - 1;
+
+  const buildBase = () => {
+    let q: any = supabase.from('reconciled_members').select('*', { count: 'exact' }).eq('batch_id', batchId);
+    if (search && search.trim()) {
+      // Escape commas/parens in user input — PostgREST treats them as
+      // separators inside .or(). A plain replace is sufficient here because
+      // we only allow ilike patterns; any user-supplied % is treated as a
+      // wildcard, which is the historical client-side behavior too.
+      const safe = search.trim().replace(/([,()])/g, '');
+      const pattern = `%${safe}%`;
+      q = q.or([
+        `applicant_name.ilike.${pattern}`,
+        `policy_number.ilike.${pattern}`,
+        `exchange_subscriber_id.ilike.${pattern}`,
+        `issuer_subscriber_id.ilike.${pattern}`,
+        `exchange_policy_id.ilike.${pattern}`,
+        `issuer_policy_id.ilike.${pattern}`,
+        `agent_name.ilike.${pattern}`,
+        `agent_npn.ilike.${pattern}`,
+      ].join(','));
+    }
+    // Stable sort: user-chosen column first, then id as a tiebreaker so
+    // pagination is deterministic even when the sort column has ties.
+    if (sortKey) {
+      q = q.order(sortKey, { ascending: sortDir !== 'desc', nullsFirst: false });
+      q = q.order('id', { ascending: true });
+    } else {
+      q = q.order('id', { ascending: true });
+    }
+    return q.range(from, to);
+  };
+
+  const { data, error, count } = await buildBase();
+  if (error) throw error;
+  return { rows: data ?? [], total: count ?? 0 };
+}
+
 export async function getBatchCounts(batchId: string) {
   const [files, normalized, reconciled] = await Promise.all([
     supabase.from('uploaded_files').select('id', { count: 'exact', head: true }).eq('batch_id', batchId).is('superseded_at', null),
