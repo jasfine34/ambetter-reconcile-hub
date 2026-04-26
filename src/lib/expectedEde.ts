@@ -65,7 +65,16 @@ export interface FilteredEdeRow {
   effective_date: string;
   policy_status: string;
   covered_member_count: number;
-  effective_month: string; // YYYY-MM
+  effective_month: string; // YYYY-MM — first active month within coveredMonths (span semantic)
+  /**
+   * SPAN SEMANTIC (2026-04-26): months within `coveredMonths` during which
+   * this EDE record was active. An Effectuated EDE row is an ongoing
+   * enrollment, not a single-month event — so we count it once per active
+   * covered month rather than only its effective_date month. Drives
+   * `byMonth` below and the dashboard's per-month Expected Enrollments
+   * breakdown.
+   */
+  active_months: string[];
   in_back_office: boolean;
   /**
    * If issuer_subscriber_id was filled in from resolved_identities (the row's
