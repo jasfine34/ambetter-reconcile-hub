@@ -786,6 +786,93 @@ export default function DashboardPage() {
         </CollapsibleDebugCard>
       )}
 
+      {/* Clawbacks Detail — every negative-amount commission row in scope.
+          Sourced from raw normalized commission records so it ties exactly to
+          the Net Paid card's "Clawbacks $X" line. Each row carries its source
+          file label + statement date so we can answer "why is a Mar 21 row in
+          the Mar 2026 batch?" without leaving the dashboard. */}
+      {clawbackRows.length > 0 && (
+        <CollapsibleDebugCard
+          title="Clawbacks Detail"
+          icon={<TrendingDown className="h-4 w-4 text-destructive" />}
+          summary={`${clawbackRows.length} rows · −$${Math.abs(metrics.totalClawbacks).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+        >
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>
+              All commission rows where amount &lt; 0 within the current{' '}
+              <strong>{payEntityFilter}</strong> scope, sorted most-negative first.
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => {
+                const header = ['applicant_name','policy_number','pay_code','amount','pay_entity','source_file_label','statement_date','member_key'];
+                const csv = [header.join(',')]
+                  .concat(
+                    clawbackRows.map((r) =>
+                      header
+                        .map((k) => {
+                          const v = String((r as any)[k] ?? '');
+                          return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+                        })
+                        .join(','),
+                    ),
+                  )
+                  .join('\n');
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `clawbacks-${payEntityFilter.toLowerCase()}-${currentBatchId ?? 'batch'}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+            >
+              Export CSV
+            </Button>
+          </div>
+          <div className="border rounded-md max-h-[420px] overflow-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/40 sticky top-0">
+                <tr className="text-left">
+                  <th className="px-2 py-1.5 font-medium">Member</th>
+                  <th className="px-2 py-1.5 font-medium">Policy #</th>
+                  <th className="px-2 py-1.5 font-medium">Pay Code</th>
+                  <th className="px-2 py-1.5 font-medium text-right">Amount</th>
+                  <th className="px-2 py-1.5 font-medium">Pay Entity</th>
+                  <th className="px-2 py-1.5 font-medium">Source File</th>
+                  <th className="px-2 py-1.5 font-medium">Statement Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clawbackRows.slice(0, 500).map((r, i) => (
+                  <tr key={i} className="border-t">
+                    <td className="px-2 py-1 truncate max-w-[160px]" title={r.applicant_name}>{r.applicant_name || '—'}</td>
+                    <td className="px-2 py-1 font-mono">{r.policy_number || '—'}</td>
+                    <td className="px-2 py-1 font-mono">{r.pay_code}</td>
+                    <td className="px-2 py-1 text-right font-mono text-destructive">
+                      ${r.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-2 py-1">{r.pay_entity || '—'}</td>
+                    <td className="px-2 py-1 truncate max-w-[200px]" title={r.source_file_label}>{r.source_file_label || '—'}</td>
+                    <td className="px-2 py-1">{r.statement_date || '—'}</td>
+                  </tr>
+                ))}
+                {clawbackRows.length > 500 && (
+                  <tr>
+                    <td colSpan={7} className="px-2 py-2 text-center text-muted-foreground italic">
+                      Showing first 500 of {clawbackRows.length}. Export CSV for the full list.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CollapsibleDebugCard>
+      )}
+
       {/* Source Funnel — Phase 2b introduction of the classifier (§4.5 of
           ARCHITECTURE_PLAN). Observational for now; Phase 3 wires dispute /
           attribution workflows off the gap counts. */}
