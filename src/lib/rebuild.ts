@@ -11,6 +11,8 @@ import {
   deleteReconciledForBatch,
   deleteCommissionEstimatesForBatch,
   deleteCurrentNormalizedForBatch,
+  countReconciledForBatch,
+  countCurrentNormalizedForBatch,
 } from './persistence';
 import { fallbackReconcileMonth } from './dateRange';
 import { loadResolverIndex } from './resolvedIdentities';
