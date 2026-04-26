@@ -18,7 +18,15 @@ import { loadResolverIndex } from './resolvedIdentities';
  * compares this to `upload_batches.last_rebuild_logic_version` and shows a
  * warning banner when the stored value is older than the current code.
  */
-export const RECONCILE_LOGIC_VERSION = '2026.04.23-dynamic-covered-months';
+export const RECONCILE_LOGIC_VERSION = '2026.04.26-ede-span-and-gating-fix';
+
+/**
+ * Alias kept for the cross-batch staleness banner / "Rebuild All" feature.
+ * Same value as RECONCILE_LOGIC_VERSION — bump that constant whenever
+ * classifier, attribution, span, or matching logic changes and every
+ * batch's stored `last_rebuild_logic_version` will surface as stale.
+ */
+export const LOGIC_VERSION = RECONCILE_LOGIC_VERSION;
 
 export interface RebuildProgress {
   phase: 'init' | 'fetching-files' | 'normalizing' | 'reconciling' | 'saving' | 'done';
