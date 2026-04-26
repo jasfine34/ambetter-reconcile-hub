@@ -407,6 +407,36 @@ export async function deleteReconciledForBatch(batchId: string) {
   await chunkedDeleteByIds('reconciled_members', ids);
 }
 
+/**
+ * Returns the number of reconciled_members rows currently stored for the given
+ * batch. Used by the rebuild orchestrator's silent-failure assertion: if a
+ * batch has normalized records but 0 reconciled members after a save, that
+ * almost always means a transient Supabase write failure and we retry.
+ */
+export async function countReconciledForBatch(batchId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from('reconciled_members')
+    .select('id', { count: 'exact', head: true })
+    .eq('batch_id', batchId);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+/**
+ * Returns the number of CURRENT (non-superseded) normalized_records rows for
+ * the given batch. Pairs with countReconciledForBatch() to detect the
+ * "0 reconciled despite N normalized" failure mode.
+ */
+export async function countCurrentNormalizedForBatch(batchId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from('normalized_records')
+    .select('id', { count: 'exact', head: true })
+    .eq('batch_id', batchId)
+    .is('superseded_at', null);
+  if (error) throw error;
+  return count ?? 0;
+}
+
 export async function deleteCommissionEstimatesForBatch(batchId: string) {
   const ids = await fetchAllIds('commission_estimates', (q) => q.eq('batch_id', batchId));
   await chunkedDeleteByIds('commission_estimates', ids);
