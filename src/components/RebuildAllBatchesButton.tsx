@@ -186,10 +186,22 @@ export function RebuildAllBatchesButton({ variant = 'outline', label = 'Rebuild 
                         : p.inner.phase === 'reconciling'
                           ? 'Reconciling members...'
                           : p.inner.phase === 'saving'
-                            ? 'Saving results...'
-                            : p.inner.phase === 'fetching-files'
-                              ? 'Fetching files...'
-                              : p.inner.phase}
+                            ? `Saving results${p.inner.attempt && p.inner.attempt > 1 ? ` (attempt ${p.inner.attempt})` : ''}...`
+                            : p.inner.phase === 'verifying'
+                              ? `Verifying write${p.inner.attempt && p.inner.attempt > 1 ? ` (attempt ${p.inner.attempt})` : ''}...`
+                              : p.inner.phase === 'retrying'
+                                ? `Retrying save (attempt ${p.inner.attempt ?? '?'})...`
+                                : p.inner.phase === 'fetching-files'
+                                  ? 'Fetching files...'
+                                  : p.inner.phase}
+                    </div>
+                  )}
+                  {p.status === 'done' && (
+                    <div className="text-xs text-green-600">
+                      {p.membersReconciled?.toLocaleString() ?? 0} members reconciled
+                      {p.membersReconciled === 0 && (
+                        <span className="text-destructive ml-1">⚠ unexpected zero</span>
+                      )}
                     </div>
                   )}
                   {p.status === 'error' && p.error && (
