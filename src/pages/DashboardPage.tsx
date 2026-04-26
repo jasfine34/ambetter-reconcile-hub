@@ -464,9 +464,30 @@ export default function DashboardPage() {
             {resolving ? 'Resolving...' : 'Resolve Identities Across Batches'}
           </Button>
           <RebuildBatchButton />
+          <RebuildAllBatchesButton />
           <BatchSelector />
         </div>
       </div>
+
+      {/* Cross-batch staleness banner */}
+      {staleBatchesCount > 0 && (
+        <Card className="border-yellow-500/40 bg-yellow-500/10">
+          <CardContent className="px-4 py-3">
+            <div className="flex items-start gap-3 text-sm">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-yellow-600" />
+              <div className="flex-1">
+                <div className="font-medium text-foreground">
+                  {staleBatchesCount} {staleBatchesCount === 1 ? 'batch was' : 'batches were'} reconciled under older logic. Rebuild all to refresh.
+                </div>
+                <div className="text-muted-foreground text-xs mt-1">
+                  Current logic version: <code className="font-mono">{RECONCILE_LOGIC_VERSION}</code>
+                </div>
+              </div>
+              <RebuildAllBatchesButton variant="default" label="Rebuild all" />
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Rebuild status / stale logic warning */}
       {currentBatchId && (logicChanged || neverRebuilt) && (
