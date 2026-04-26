@@ -32,6 +32,23 @@ function formatMonthStart(monthKey: string): string {
   return `${parseInt(m, 10)}/1/${y}`;
 }
 
+/**
+ * Format a per-month newly-effective breakdown so all distinct effective
+ * months in the qualifying universe appear, sorted ascending. Used by the
+ * Expected Enrollments card, Total Covered Lives card, and the EDE Expected
+ * Enrollment Debug card to guarantee per-month numbers SUM to the card total.
+ *
+ * Falls back to '' when there are no entries with positive counts.
+ */
+function formatMonthBreakdown(byMonth: Record<string, number>, opts?: { yearless?: boolean }): string {
+  const entries = Object.entries(byMonth)
+    .filter(([m, c]) => m && (c ?? 0) > 0)
+    .sort(([a], [b]) => a.localeCompare(b));
+  if (entries.length === 0) return '';
+  const fmt = (m: string) => opts?.yearless ? formatMonthStart(m).replace(/\/\d{4}$/, '') : formatMonthStart(m);
+  return entries.map(([m, c]) => `${fmt(m)}: ${c.toLocaleString()}`).join(' · ');
+}
+
 const EDE_RAW_DRILLDOWN_COLUMNS = [
   { key: 'currentPolicyAOR', label: 'Current Policy AOR' },
   { key: 'policyStatus', label: 'Policy Status' },
@@ -594,7 +611,7 @@ export default function DashboardPage() {
         <CollapsibleDebugCard
           title="EDE Expected Enrollment Debug"
           icon={<Users className="h-4 w-4" />}
-          summary={`${debugStats.edeAfterFilter} qualified · ${formatMonthStart(priorMonth)}: ${metrics.expectedPriorMonth} · ${formatMonthStart(statementMonth)}: ${metrics.expectedStatementMonth}`}
+          summary={`${debugStats.edeAfterFilter} qualified · ${formatMonthBreakdown(filteredEde.byMonth) || 'no months'}`}
         >
             <div className="flex flex-wrap gap-6 text-sm">
               <span className="text-muted-foreground">Total Raw EDE rows: <strong className="text-foreground">{debugStats.edeRawTotal}</strong></span>
@@ -605,23 +622,19 @@ export default function DashboardPage() {
               <span className="text-muted-foreground">Invalid date rows: <strong className="text-foreground">{debugStats.edeInvalidDateCount}</strong></span>
             </div>
             <div className="flex flex-wrap gap-6 text-sm border-t pt-2 items-center">
-              <span className="text-muted-foreground font-medium">Expected by month:</span>
-              {priorMonth && (
-                <button
-                  onClick={() => loadEdeRawDrilldown(priorMonth)}
-                  className="text-muted-foreground hover:text-primary underline-offset-4 hover:underline"
-                >
-                  {formatMonthStart(priorMonth)}: <strong className="text-foreground">{metrics.expectedPriorMonth}</strong>
-                </button>
-              )}
-              {statementMonth && (
-                <button
-                  onClick={() => loadEdeRawDrilldown(statementMonth)}
-                  className="text-muted-foreground hover:text-primary underline-offset-4 hover:underline"
-                >
-                  {formatMonthStart(statementMonth)}: <strong className="text-foreground">{metrics.expectedStatementMonth}</strong>
-                </button>
-              )}
+              <span className="text-muted-foreground font-medium">Expected by month (newly effective):</span>
+              {Object.entries(filteredEde.byMonth)
+                .filter(([m, c]) => m && (c ?? 0) > 0)
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([m, c]) => (
+                  <button
+                    key={m}
+                    onClick={() => loadEdeRawDrilldown(m)}
+                    className="text-muted-foreground hover:text-primary underline-offset-4 hover:underline"
+                  >
+                    {formatMonthStart(m)}: <strong className="text-foreground">{c.toLocaleString()}</strong>
+                  </button>
+                ))}
               <span className="text-xs text-muted-foreground italic">(click a count to drilldown into raw EDE rows)</span>
             </div>
             <div className="flex flex-wrap gap-4 text-sm border-t pt-2">
@@ -724,18 +737,17 @@ export default function DashboardPage() {
               // matches the EDE Expected Enrollment Debug panel and the user's
               // manual workbook ground truth.
               const expectedTotal = filteredEde.uniqueKeys;
-              const expectedPrior = priorMonth ? (filteredEde.byMonth[priorMonth] ?? 0) : 0;
-              const expectedStatement = statementMonth ? (filteredEde.byMonth[statementMonth] ?? 0) : 0;
               const tieOut = filteredEde.inBOCount + filteredEde.notInBOCount;
               const tiesOut = tieOut === expectedTotal;
-              const tooltipText = `Total Ambetter policies with a Coverall AOR (scope: ${payEntityFilter}) in a qualifying status (Effectuated / PendingEffectuation / PendingTermination), effective in this batch's covered months. Sourced from raw EDE rows so this matches the EDE debug panel exactly. Tie-out check: In BO ${filteredEde.inBOCount} + Not in BO ${filteredEde.notInBOCount} = ${tieOut} ${tiesOut ? '✓' : '⚠️ MISMATCH vs ' + expectedTotal}.`;
+              const monthBreakdown = formatMonthBreakdown(filteredEde.byMonth, { yearless: true });
+              const tooltipText = `Total Ambetter policies with a Coverall AOR (scope: ${payEntityFilter}) in a qualifying status (Effectuated / PendingEffectuation / PendingTermination), active in this batch's covered months. Per-month breakdown shows NEWLY-EFFECTIVE members per actual effective month, so per-month numbers SUM to the total. Sourced from raw EDE rows so this matches the EDE debug panel exactly. Tie-out check: In BO ${filteredEde.inBOCount} + Not in BO ${filteredEde.notInBOCount} = ${tieOut} ${tiesOut ? '✓' : '⚠️ MISMATCH vs ' + expectedTotal}.`;
               return (
                 <MetricCard
                   title="Expected Enrollments"
                   value={expectedTotal}
                   icon={<Users className="h-4 w-4" />}
                   onClick={() => setDrilldown('expected')}
-                  subtitle={priorMonth && statementMonth ? `${formatMonthStart(priorMonth).replace(/\/\d{4}$/, '')}: ${expectedPrior} · ${formatMonthStart(statementMonth).replace(/\/\d{4}$/, '')}: ${expectedStatement}` : undefined}
+                  subtitle={monthBreakdown || undefined}
                   tooltip={{ text: tooltipText, why: "This is what Coverall SHOULD be paid if every record is captured downstream. All other numbers are measured against this." }}
                 />
               );
@@ -759,7 +771,7 @@ export default function DashboardPage() {
                 />
               );
             })()}
-            <MetricCard title="Total Covered Lives" value={debugStats?.totalCoveredLives ?? 0} icon={<Users className="h-4 w-4" />} variant="info" subtitle={debugStats && priorMonth && statementMonth ? `${formatMonthStart(priorMonth).replace(/\/\d{4}$/, '')}: ${debugStats.totalCoveredLivesByMonth[priorMonth] ?? 0} · ${formatMonthStart(statementMonth).replace(/\/\d{4}$/, '')}: ${debugStats.totalCoveredLivesByMonth[statementMonth] ?? 0}` : undefined} tooltip={{ text: "Sum of coveredMemberCount across all qualified EDE records — counts the subscriber plus every dependent on each policy.", why: "Reflects the actual number of insured lives, not just policy holders. Use this when reporting total members served or comparing to per-life carrier metrics." }} />
+            <MetricCard title="Total Covered Lives" value={debugStats?.totalCoveredLives ?? 0} icon={<Users className="h-4 w-4" />} variant="info" subtitle={debugStats ? (formatMonthBreakdown(debugStats.totalCoveredLivesByMonth, { yearless: true }) || undefined) : undefined} tooltip={{ text: "Sum of coveredMemberCount across all qualified EDE records — counts the subscriber plus every dependent on each policy. Per-month breakdown is by actual effective month (newly effective lives) so per-month numbers SUM to the total.", why: "Reflects the actual number of insured lives, not just policy holders. Use this when reporting total members served or comparing to per-life carrier metrics." }} />
             <MetricCard title="Found in Back Office" value={metrics.foundBO} icon={<Building2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('foundBO')} tooltip={{ text: "Out of the expected members, these are the ones Ambetter recognizes in their system.", why: "If members are missing here, Ambetter may not have the policy correctly recorded, which can prevent payment." }} />
             <MetricCard title="Eligible for Commission" value={metrics.eligible} icon={<CheckCircle2 className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('eligible')} tooltip={{ text: "These are members that exist in Ambetter's system and are marked as eligible for commission.", why: "Only members in this group can generate commission. If eligibility is wrong, payments will not occur." }} />
             <MetricCard title="Should Be Paid" value={metrics.shouldPay} icon={<DollarSign className="h-4 w-4" />} tooltip={{ text: "This is the total number of members we expect to receive commission for based on enrollment, carrier records, and eligibility.", why: "This represents your true payable book of business and is the key number for identifying missing revenue." }} />
