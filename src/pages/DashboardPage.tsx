@@ -32,6 +32,23 @@ function formatMonthStart(monthKey: string): string {
   return `${parseInt(m, 10)}/1/${y}`;
 }
 
+/**
+ * Format a per-month newly-effective breakdown so all distinct effective
+ * months in the qualifying universe appear, sorted ascending. Used by the
+ * Expected Enrollments card, Total Covered Lives card, and the EDE Expected
+ * Enrollment Debug card to guarantee per-month numbers SUM to the card total.
+ *
+ * Falls back to '' when there are no entries with positive counts.
+ */
+function formatMonthBreakdown(byMonth: Record<string, number>, opts?: { yearless?: boolean }): string {
+  const entries = Object.entries(byMonth)
+    .filter(([m, c]) => m && (c ?? 0) > 0)
+    .sort(([a], [b]) => a.localeCompare(b));
+  if (entries.length === 0) return '';
+  const fmt = (m: string) => opts?.yearless ? formatMonthStart(m).replace(/\/\d{4}$/, '') : formatMonthStart(m);
+  return entries.map(([m, c]) => `${fmt(m)}: ${c.toLocaleString()}`).join(' · ');
+}
+
 const EDE_RAW_DRILLDOWN_COLUMNS = [
   { key: 'currentPolicyAOR', label: 'Current Policy AOR' },
   { key: 'policyStatus', label: 'Policy Status' },
