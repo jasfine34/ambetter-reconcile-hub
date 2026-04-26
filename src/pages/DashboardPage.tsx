@@ -1175,6 +1175,65 @@ export default function DashboardPage() {
         </>
       )}
 
+      {/* Clawbacks drilldown — opened from the Net Paid Commission card. */}
+      <Dialog open={clawbacksOpen} onOpenChange={setClawbacksOpen}>
+        <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <TrendingDown className="h-5 w-5 text-destructive" />
+              Clawbacks ({clawbackRows.length} rows · −${Math.abs(metrics.totalClawbacks).toLocaleString(undefined, { minimumFractionDigits: 2 })})
+            </DialogTitle>
+            <DialogDescription>
+              All commission rows where amount &lt; 0 within the current{' '}
+              <strong>{payEntityFilter}</strong> scope. These are the exact rows that produce the
+              Clawbacks total on the Net Paid Commission card. Source File and Statement Date columns
+              show which statement each row originated from — useful for spotting prior-month statements
+              that landed in this batch.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="border rounded-md overflow-auto max-h-[60vh]">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/40 sticky top-0">
+                <tr className="text-left">
+                  <th className="px-2 py-1.5 font-medium">Member</th>
+                  <th className="px-2 py-1.5 font-medium">Policy #</th>
+                  <th className="px-2 py-1.5 font-medium">Pay Code</th>
+                  <th className="px-2 py-1.5 font-medium text-right">Amount</th>
+                  <th className="px-2 py-1.5 font-medium">Pay Entity</th>
+                  <th className="px-2 py-1.5 font-medium">Source File</th>
+                  <th className="px-2 py-1.5 font-medium">Statement Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clawbackRows.map((r, i) => (
+                  <tr key={i} className="border-t">
+                    <td className="px-2 py-1 truncate max-w-[180px]" title={r.applicant_name}>{r.applicant_name || '—'}</td>
+                    <td className="px-2 py-1 font-mono">{r.policy_number || '—'}</td>
+                    <td className="px-2 py-1 font-mono">{r.pay_code}</td>
+                    <td className="px-2 py-1 text-right font-mono text-destructive">
+                      ${r.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-2 py-1">{r.pay_entity || '—'}</td>
+                    <td className="px-2 py-1 truncate max-w-[220px]" title={r.source_file_label}>{r.source_file_label || '—'}</td>
+                    <td className="px-2 py-1">{r.statement_date || '—'}</td>
+                  </tr>
+                ))}
+                {clawbackRows.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-2 py-3 text-center text-muted-foreground italic">
+                      No clawback rows in scope.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClawbacksOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Not in Back Office drilldown */}
       <Dialog open={notInBoOpen} onOpenChange={setNotInBoOpen}>
         <DialogContent className="max-w-6xl max-h-[85vh] overflow-y-auto">
