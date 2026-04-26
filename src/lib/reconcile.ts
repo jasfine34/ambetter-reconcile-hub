@@ -911,16 +911,16 @@ export function reconcile(
       ede_qualified: ede.some(e => isExpectedEDERow(e, sortedCoveredMonths)),
       is_in_expected_ede_universe: ede.some(e => isExpectedEDERow(e, sortedCoveredMonths)),
       expected_ede_effective_month: (() => {
-        // First-active-month-in-scope across all qualified EDE rows for this
-        // member. Replaces the old "first qualified row's effective_date
-        // month" semantic, which under span semantics undercounted later
-        // months (a member effective 1/1 still active in March was anchored
-        // to 1/1, never 2/1 or 3/1). The dashboard's per-month breakdown
-        // now uses filteredEde.byMonth which is span-aware.
+        // The member's actual earliest effective_date month across qualified
+        // EDE rows (NOT span-anchored to the batch's covered window). This
+        // lets the Dashboard's per-month breakdown attribute each unique
+        // member to their real effectuation month so the per-month numbers
+        // SUM to the card total. Carryover months from prior to the visible
+        // window appear naturally in breakdowns.
         let earliest = '';
         for (const e of ede) {
           if (!isExpectedEDERow(e, sortedCoveredMonths)) continue;
-          const m = firstActiveCoveredMonth(e, sortedCoveredMonths);
+          const m = e.effective_date ? e.effective_date.substring(0, 7) : '';
           if (m && (!earliest || m < earliest)) earliest = m;
         }
         return earliest;
