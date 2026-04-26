@@ -243,11 +243,18 @@ export function buildMemberTimeline(
           if (termYM) end = addMonths(termYM, -1);
         }
         const edeQualified = isEDEQualified(r);
+        // FOLLOWUP FIX: gate in_ede with the same predicates as `due` so the
+        // E badge respects AOR scope + qualifying status. An EDE row from a
+        // non-Coverall AOR (under Coverall scope) or a Cancelled row should
+        // not light up the E badge — the renderer reads c.in_ede directly,
+        // so all four "no E" conditions (cancelled/terminated, AOR moved,
+        // non-qualifying status, dropped from EDE) collapse to this one gate.
+        if (!eligibleForDue || !edeQualified) continue;
         for (const m of monthList) {
           if (m < start) continue;
           if (end && m > end) continue;
           cells[m].in_ede = true;
-          if (eligibleForDue && edeQualified) cells[m].due = true;
+          cells[m].due = true;
         }
       } else if (r.source_type === 'BACK_OFFICE') {
         const { start, end } = backOfficeActiveRange(r);
