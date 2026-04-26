@@ -8,12 +8,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Textarea } from '@/components/ui/textarea';
 import { getNormalizedRecords, saveManualOverride } from '@/lib/persistence';
 import { useToast } from '@/hooks/use-toast';
+import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { Link2 } from 'lucide-react';
 
 export default function ManualMatchPage() {
   const { currentBatchId, refreshReconciled } = useBatch();
   const [records, setRecords] = useState<any[]>([]);
   const [search, setSearch] = useState('');
+  // Debounce keystrokes so the candidates list doesn't re-filter the entire
+  // normalized_records dump on every character typed.
+  const debouncedSearch = useDebouncedValue(search, 250);
   const [selected, setSelected] = useState<{ left: any; right: any } | null>(null);
   const [reason, setReason] = useState('');
   const { toast } = useToast();
@@ -30,14 +34,14 @@ export default function ManualMatchPage() {
 
   const ede = useMemo(() => unmatched.filter(r => r.source_type === 'EDE'), [unmatched]);
   const candidates = useMemo(() => {
-    if (!search) return records.filter(r => r.source_type !== 'EDE').slice(0, 50);
-    const s = search.toLowerCase();
+    if (!debouncedSearch) return records.filter(r => r.source_type !== 'EDE').slice(0, 50);
+    const s = debouncedSearch.toLowerCase();
     return records.filter(r => r.source_type !== 'EDE' && (
       (r.applicant_name || '').toLowerCase().includes(s) ||
       (r.policy_number || '').toLowerCase().includes(s) ||
       (r.exchange_subscriber_id || '').toLowerCase().includes(s)
     )).slice(0, 50);
-  }, [records, search]);
+  }, [records, debouncedSearch]);
 
   const handleSave = async () => {
     if (!selected) return;
