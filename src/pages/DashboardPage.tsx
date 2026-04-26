@@ -737,18 +737,17 @@ export default function DashboardPage() {
               // matches the EDE Expected Enrollment Debug panel and the user's
               // manual workbook ground truth.
               const expectedTotal = filteredEde.uniqueKeys;
-              const expectedPrior = priorMonth ? (filteredEde.byMonth[priorMonth] ?? 0) : 0;
-              const expectedStatement = statementMonth ? (filteredEde.byMonth[statementMonth] ?? 0) : 0;
               const tieOut = filteredEde.inBOCount + filteredEde.notInBOCount;
               const tiesOut = tieOut === expectedTotal;
-              const tooltipText = `Total Ambetter policies with a Coverall AOR (scope: ${payEntityFilter}) in a qualifying status (Effectuated / PendingEffectuation / PendingTermination), effective in this batch's covered months. Sourced from raw EDE rows so this matches the EDE debug panel exactly. Tie-out check: In BO ${filteredEde.inBOCount} + Not in BO ${filteredEde.notInBOCount} = ${tieOut} ${tiesOut ? '✓' : '⚠️ MISMATCH vs ' + expectedTotal}.`;
+              const monthBreakdown = formatMonthBreakdown(filteredEde.byMonth, { yearless: true });
+              const tooltipText = `Total Ambetter policies with a Coverall AOR (scope: ${payEntityFilter}) in a qualifying status (Effectuated / PendingEffectuation / PendingTermination), active in this batch's covered months. Per-month breakdown shows NEWLY-EFFECTIVE members per actual effective month, so per-month numbers SUM to the total. Sourced from raw EDE rows so this matches the EDE debug panel exactly. Tie-out check: In BO ${filteredEde.inBOCount} + Not in BO ${filteredEde.notInBOCount} = ${tieOut} ${tiesOut ? '✓' : '⚠️ MISMATCH vs ' + expectedTotal}.`;
               return (
                 <MetricCard
                   title="Expected Enrollments"
                   value={expectedTotal}
                   icon={<Users className="h-4 w-4" />}
                   onClick={() => setDrilldown('expected')}
-                  subtitle={priorMonth && statementMonth ? `${formatMonthStart(priorMonth).replace(/\/\d{4}$/, '')}: ${expectedPrior} · ${formatMonthStart(statementMonth).replace(/\/\d{4}$/, '')}: ${expectedStatement}` : undefined}
+                  subtitle={monthBreakdown || undefined}
                   tooltip={{ text: tooltipText, why: "This is what Coverall SHOULD be paid if every record is captured downstream. All other numbers are measured against this." }}
                 />
               );
