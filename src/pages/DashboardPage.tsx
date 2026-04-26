@@ -507,6 +507,34 @@ export default function DashboardPage() {
         </Card>
       )}
 
+      {/* Fail-safe: per-batch silent-rebuild detection. If the selected batch
+          has normalized records but ZERO reconciled members, the rebuild
+          orchestrator's assertion missed (or the batch hasn't been rebuilt
+          since the assertion shipped). Surface a red banner so we can recover
+          with a single click. */}
+      {currentBatchId &&
+        counts.normalizedRecords > 0 &&
+        counts.reconciledMembers === 0 && (
+          <Card className="border-destructive bg-destructive/10">
+            <CardContent className="px-4 py-3">
+              <div className="flex items-start gap-3 text-sm">
+                <ShieldAlert className="h-4 w-4 mt-0.5 shrink-0 text-destructive" />
+                <div className="flex-1">
+                  <div className="font-semibold text-destructive">
+                    This batch has {counts.normalizedRecords.toLocaleString()} normalized records
+                    but 0 reconciled members.
+                  </div>
+                  <div className="text-muted-foreground text-xs mt-1">
+                    A previous rebuild appears to have silently dropped the reconciled set.
+                    Click <strong>Rebuild Entire Batch</strong> to fix.
+                  </div>
+                </div>
+                <RebuildBatchButton />
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
       {/* Rebuild status / stale logic warning */}
       {currentBatchId && (logicChanged || neverRebuilt) && (
         <Card className="border-destructive/40 bg-destructive/5">
