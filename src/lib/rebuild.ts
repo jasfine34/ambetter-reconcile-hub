@@ -21,7 +21,7 @@ import { loadResolverIndex } from './resolvedIdentities';
  * compares this to `upload_batches.last_rebuild_logic_version` and shows a
  * warning banner when the stored value is older than the current code.
  */
-export const RECONCILE_LOGIC_VERSION = '2026.04.26-newly-effective-breakdown';
+export const RECONCILE_LOGIC_VERSION = '2026.04.26-perf-pagination';
 
 /**
  * Alias kept for the cross-batch staleness banner / "Rebuild All" feature.
