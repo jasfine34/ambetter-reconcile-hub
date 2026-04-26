@@ -773,8 +773,11 @@ export function reconcile(
     }
     if (groupCovered > 0) {
       debug.totalCoveredLives += groupCovered;
-      if (groupMonth && debug.totalCoveredLivesByMonth[groupMonth] != null) {
-        debug.totalCoveredLivesByMonth[groupMonth] += groupCovered;
+      if (groupMonth) {
+        // Allow carryover months outside the batch's covered window so the
+        // Dashboard's per-month breakdown can SUM to the total.
+        debug.totalCoveredLivesByMonth[groupMonth] =
+          (debug.totalCoveredLivesByMonth[groupMonth] ?? 0) + groupCovered;
       }
     }
   }
