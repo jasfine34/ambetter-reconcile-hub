@@ -11,6 +11,7 @@ import { getNormalizedRecords, saveReconciledMembers } from '@/lib/persistence';
 import { reconcile } from '@/lib/reconcile';
 import { useToast } from '@/hooks/use-toast';
 import { RebuildBatchButton } from '@/components/RebuildBatchButton';
+import { RebuildAllBatchesButton } from '@/components/RebuildAllBatchesButton';
 import { RECONCILE_LOGIC_VERSION } from '@/lib/rebuild';
 import { CollapsibleDebugCard } from '@/components/CollapsibleDebugCard';
 import { SourceFunnelCard } from '@/components/SourceFunnelCard';
@@ -118,6 +119,17 @@ export default function DashboardPage() {
   const lastRebuildVersion = currentBatch?.last_rebuild_logic_version as string | null | undefined;
   const logicChanged = !!lastRebuildVersion && lastRebuildVersion !== RECONCILE_LOGIC_VERSION;
   const neverRebuilt = !lastRebuildAt;
+  // Cross-batch staleness: count how many batches have a stored logic version
+  // that doesn't match the current LOGIC_VERSION constant. Batches that have
+  // never been rebuilt are also considered stale.
+  const staleBatchesCount = useMemo(
+    () =>
+      (batches || []).filter((b: any) => {
+        const v = b?.last_rebuild_logic_version as string | null | undefined;
+        return !v || v !== RECONCILE_LOGIC_VERSION;
+      }).length,
+    [batches]
+  );
   const [drilldown, setDrilldown] = useState<string | null>(null);
   const [rerunning, setRerunning] = useState(false);
   const [resolving, setResolving] = useState(false);
@@ -452,9 +464,30 @@ export default function DashboardPage() {
             {resolving ? 'Resolving...' : 'Resolve Identities Across Batches'}
           </Button>
           <RebuildBatchButton />
+          <RebuildAllBatchesButton />
           <BatchSelector />
         </div>
       </div>
+
+      {/* Cross-batch staleness banner */}
+      {staleBatchesCount > 0 && (
+        <Card className="border-yellow-500/40 bg-yellow-500/10">
+          <CardContent className="px-4 py-3">
+            <div className="flex items-start gap-3 text-sm">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-yellow-600" />
+              <div className="flex-1">
+                <div className="font-medium text-foreground">
+                  {staleBatchesCount} {staleBatchesCount === 1 ? 'batch was' : 'batches were'} reconciled under older logic. Rebuild all to refresh.
+                </div>
+                <div className="text-muted-foreground text-xs mt-1">
+                  Current logic version: <code className="font-mono">{RECONCILE_LOGIC_VERSION}</code>
+                </div>
+              </div>
+              <RebuildAllBatchesButton variant="default" label="Rebuild all" />
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Rebuild status / stale logic warning */}
       {currentBatchId && (logicChanged || neverRebuilt) && (
