@@ -2,7 +2,7 @@ import { NPN_MAP, DEFAULT_COMMISSION_ESTIMATE } from './constants';
 import { cleanId, normalizePolicyStatus } from './normalize';
 import type { NormalizedRecord } from './normalize';
 import { isCoverallAORByName } from './agents';
-import { getCoveredMonths, getCoveredEffectiveDates, fallbackReconcileMonth } from './dateRange';
+import { getCoveredMonths, fallbackReconcileMonth } from './dateRange';
 import { lookupResolved, type ResolverIndex } from './resolvedIdentities';
 
 // Qualified EDE rows must match user's exact filter, applied to the RAW source
@@ -28,12 +28,48 @@ function rawIssuerKey(r: NormalizedRecord): string {
   return String(raw).toLowerCase();
 }
 
-function isExpectedEDERow(r: NormalizedRecord, expectedDates: ReadonlySet<string>): boolean {
+/**
+ * SPAN SEMANTIC (2026-04-26): an Effectuated EDE row is an ongoing enrollment,
+ * not a single-month event. A row qualifies for the "expected EDE universe"
+ * for a batch if its active span overlaps the batch's covered months:
+ *   include if  effectiveMonth ≤ latestCoveredMonth
+ *          AND  (policyTermMonth is null OR policyTermMonth > earliestCoveredMonth)
+ * (term date is exclusive — same convention as memberTimeline.ts and BO.)
+ *
+ * `coveredMonths` is sorted YYYY-MM strings (e.g. ['2026-02','2026-03']).
+ */
+function isExpectedEDERow(r: NormalizedRecord, coveredMonths: readonly string[]): boolean {
   if (r.source_type !== 'EDE') return false;
-  if (!r.effective_date || !expectedDates.has(r.effective_date)) return false;
+  if (!r.effective_date) return false;
+  if (coveredMonths.length > 0) {
+    const effMonth = r.effective_date.substring(0, 7);
+    const earliest = coveredMonths[0];
+    const latest = coveredMonths[coveredMonths.length - 1];
+    if (effMonth > latest) return false;
+    const termMonth = r.policy_term_date ? r.policy_term_date.substring(0, 7) : '';
+    if (termMonth && termMonth <= earliest) return false;
+  }
   if (!QUALIFIED_RAW_STATUSES.has(rawStatusKey(r))) return false;
   if (!rawIssuerKey(r).includes('ambetter')) return false;
   return isCoverallAORByName(rawAorKey(r));
+}
+
+/**
+ * First active covered month for a qualified EDE row, given the batch's
+ * sorted covered months. Used to anchor `expected_ede_effective_month` to
+ * the earliest month in scope where the enrollment was active (rather than
+ * the raw effective_date, which may predate the batch window).
+ */
+function firstActiveCoveredMonth(r: NormalizedRecord, coveredMonths: readonly string[]): string {
+  if (!r.effective_date) return '';
+  const effMonth = r.effective_date.substring(0, 7);
+  const termMonth = r.policy_term_date ? r.policy_term_date.substring(0, 7) : '';
+  for (const m of coveredMonths) {
+    if (m < effMonth) continue;
+    if (termMonth && m >= termMonth) continue;
+    return m;
+  }
+  return effMonth;
 }
 
 export interface ReconciledMember {
@@ -273,7 +309,10 @@ export function reconcile(
   // month = 2026-02) this is ['2026-01','2026-02'] — the prior month plus
   // the statement month. See src/lib/dateRange.ts and §8 of ARCHITECTURE_PLAN.
   const coveredMonths = getCoveredMonths(reconcileMonth);
-  const expectedEffectiveDates: ReadonlySet<string> = new Set(getCoveredEffectiveDates(reconcileMonth));
+  // SPAN SEMANTIC (2026-04-26): EDE universe is now scope-checked against the
+  // batch's covered-month *window*, not a discrete set of effective dates.
+  // See isExpectedEDERow() for the span rule.
+  const sortedCoveredMonths: readonly string[] = coveredMonths.slice().sort();
 
   // Step 1: Re-clean all IDs
   for (const r of records) {
@@ -436,7 +475,7 @@ export function reconcile(
       }
       if (!r.effective_date) {
         debug.edeInvalidDateCount++;
-      } else if (isExpectedEDERow(r, expectedEffectiveDates)) {
+      } else if (isExpectedEDERow(r, sortedCoveredMonths)) {
         debug.edeAfterFilter++;
       }
     } else if (r.source_type === 'BACK_OFFICE') {
@@ -719,7 +758,7 @@ export function reconcile(
     let groupCovered = 0;
     let groupMonth = '';
     for (const r of recs) {
-      if (!isExpectedEDERow(r, expectedEffectiveDates)) continue;
+      if (!isExpectedEDERow(r, sortedCoveredMonths)) continue;
       edeQualifiedKeys.add(key);
       // Use the first qualified row's covered count + month for the group
       // (one EDE row per member per month is the norm)
@@ -869,12 +908,22 @@ export function reconcile(
       source_count: recs.length,
       commission_record_count: comm.length,
       has_mixed_sources: new Set(recs.map(r => r.source_type)).size > 1,
-      ede_qualified: ede.some(e => isExpectedEDERow(e, expectedEffectiveDates)),
-      is_in_expected_ede_universe: ede.some(e => isExpectedEDERow(e, expectedEffectiveDates)),
+      ede_qualified: ede.some(e => isExpectedEDERow(e, sortedCoveredMonths)),
+      is_in_expected_ede_universe: ede.some(e => isExpectedEDERow(e, sortedCoveredMonths)),
       expected_ede_effective_month: (() => {
-        const qualified = ede.find(e => isExpectedEDERow(e, expectedEffectiveDates));
-        if (!qualified || !qualified.effective_date) return '';
-        return qualified.effective_date.substring(0, 7); // 'YYYY-MM'
+        // First-active-month-in-scope across all qualified EDE rows for this
+        // member. Replaces the old "first qualified row's effective_date
+        // month" semantic, which under span semantics undercounted later
+        // months (a member effective 1/1 still active in March was anchored
+        // to 1/1, never 2/1 or 3/1). The dashboard's per-month breakdown
+        // now uses filteredEde.byMonth which is span-aware.
+        let earliest = '';
+        for (const e of ede) {
+          if (!isExpectedEDERow(e, sortedCoveredMonths)) continue;
+          const m = firstActiveCoveredMonth(e, sortedCoveredMonths);
+          if (m && (!earliest || m < earliest)) earliest = m;
+        }
+        return earliest;
       })(),
     });
   }
