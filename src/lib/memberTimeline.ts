@@ -224,10 +224,30 @@ export function buildMemberTimeline(
     for (const r of recs) {
       const eligibleForDue = isDueEligibleRecord ? isDueEligibleRecord(r) : true;
       if (r.source_type === 'EDE') {
-        const ym = ymOf(r.effective_date);
-        if (ym && monthSet.has(ym)) {
-          cells[ym].in_ede = true;
-          if (eligibleForDue && isEDEQualified(r)) cells[ym].due = true;
+        // AUDIT FIX (2026-04): An Effectuated EDE record represents an ongoing
+        // enrollment, not a single-month event. Previously we only marked
+        // in_ede / due for the effective_date month, which caused widespread
+        // false "missing from EDE" flags on Feb/Mar cells for members who
+        // appeared in every monthly EDE batch. Now we span [effective_date,
+        // expiration_date or open] to mirror backOfficeActiveRange. Multiple
+        // EDE records for the same member naturally union via the per-cell
+        // boolean. Cancelled rows are still excluded from `due` via
+        // isEDEQualified.
+        const start = ymOf(r.effective_date);
+        if (!start) continue;
+        let end: string | null = null;
+        if (r.policy_term_date) {
+          const termYM = ymOf(r.policy_term_date);
+          // Same exclusivity convention as BO: term date is exclusive,
+          // active through the prior month.
+          if (termYM) end = addMonths(termYM, -1);
+        }
+        const edeQualified = isEDEQualified(r);
+        for (const m of monthList) {
+          if (m < start) continue;
+          if (end && m > end) continue;
+          cells[m].in_ede = true;
+          if (eligibleForDue && edeQualified) cells[m].due = true;
         }
       } else if (r.source_type === 'BACK_OFFICE') {
         const { start, end } = backOfficeActiveRange(r);
