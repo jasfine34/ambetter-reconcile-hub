@@ -81,9 +81,16 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
   // 3 + 4. Delete reconciled + CURRENT normalized records.
   // Superseded normalized_records (from prior snapshot uploads) are preserved
   // as history — rebuild only regenerates the current working set.
-  await supabase.from('reconciled_members').delete().eq('batch_id', batchId);
-  await supabase.from('commission_estimates').delete().eq('batch_id', batchId);
-  await supabase.from('normalized_records').delete().eq('batch_id', batchId).is('superseded_at', null);
+  //
+  // CHUNKED DELETES: A single unbounded DELETE on the Feb batch (~7.3k
+  // normalized_records rows) was exceeding the Supabase PostgREST statement
+  // timeout ("canceling statement due to statement timeout"). We now page
+  // through ids in 500-row chunks so each individual DELETE is small enough
+  // to finish well under the timeout. Smaller batches (Jan/Mar) just take a
+  // few extra round-trips; correctness is unchanged.
+  await deleteReconciledForBatch(batchId);
+  await deleteCommissionEstimatesForBatch(batchId);
+  await deleteCurrentNormalizedForBatch(batchId);
 
   // 2 + 5. Re-download + re-normalize each file
   let totalNormalized = 0;
