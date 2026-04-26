@@ -322,12 +322,13 @@ export default function DashboardPage() {
 
   const metrics = useMemo(() => {
     const expected = filtered.filter(r => r.is_in_expected_ede_universe).length;
-    const expectedPriorMonth = priorMonth
-      ? filtered.filter(r => r.is_in_expected_ede_universe && r.expected_ede_effective_month === priorMonth).length
-      : 0;
-    const expectedStatementMonth = statementMonth
-      ? filtered.filter(r => r.is_in_expected_ede_universe && r.expected_ede_effective_month === statementMonth).length
-      : 0;
+    // SPAN SEMANTIC (2026-04-26): per-month Expected Enrollments now counts
+    // unique members ACTIVE in each covered month (effective_date ≤ month
+    // AND term_date null/after), not just members anchored to that month
+    // by their effective_date. Sourced from filteredEde.byMonth which
+    // applies the same span rule from raw normalized records.
+    const expectedPriorMonth = priorMonth ? (filteredEde.byMonth[priorMonth] ?? 0) : 0;
+    const expectedStatementMonth = statementMonth ? (filteredEde.byMonth[statementMonth] ?? 0) : 0;
     const foundBO = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office).length;
     const eligible = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes').length;
     const shouldPay = eligible;
