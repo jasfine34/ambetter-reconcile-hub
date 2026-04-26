@@ -156,6 +156,7 @@ export default function DashboardPage() {
   const [edeRawRows, setEdeRawRows] = useState<Record<string, unknown>[]>([]);
   const [edeRawLoading, setEdeRawLoading] = useState(false);
   const [notInBoOpen, setNotInBoOpen] = useState(false);
+  const [clawbacksOpen, setClawbacksOpen] = useState(false);
   // Cached normalized records for this batch, used by the Source Funnel and
   // any other classifier-driven widget. Refreshes on batch change and after
   // a re-run.
@@ -427,6 +428,52 @@ export default function DashboardPage() {
     return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidOutsideEde, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, paidOutsideExpected, coverallDirectNet, downlineNet, netPaidTotal, splitDelta, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
   }, [filtered, normalizedRecords, payEntityFilter, filteredEde, priorMonth, statementMonth]);
 
+  // Clawback rows — every commission row with amount < 0 within the current
+  // pay-entity scope. Derived from RAW normalized commission records (same
+  // source as the totalClawbacks aggregate on the Net Paid card) so the rows
+  // sum exactly to the displayed total. Each row carries source_file_label
+  // and statement-date hints so the user can answer "why is a Mar 21 row in
+  // the Mar 2026 batch?" without leaving the dashboard.
+  const clawbackRows = useMemo(() => {
+    const out: Array<{
+      applicant_name: string;
+      policy_number: string;
+      pay_code: string;
+      amount: number;
+      pay_entity: string;
+      source_file_label: string;
+      statement_date: string;
+      member_key: string;
+    }> = [];
+    for (const rec of normalizedRecords) {
+      if (rec.source_type !== 'COMMISSION') continue;
+      const amt = Number(rec.commission_amount) || 0;
+      if (amt >= 0) continue;
+      if (payEntityFilter === 'Coverall' && rec.pay_entity !== 'Coverall') continue;
+      if (payEntityFilter === 'Vix' && rec.pay_entity !== 'Vix') continue;
+      const raw = rec.raw_json || {};
+      out.push({
+        applicant_name: rec.applicant_name || '',
+        policy_number: rec.policy_number || '',
+        pay_code:
+          String(raw['Pay Code'] ?? raw['PayCode'] ?? raw['Pay Type'] ?? '').trim() || '—',
+        amount: amt,
+        pay_entity: rec.pay_entity || '',
+        source_file_label: rec.source_file_label || '',
+        statement_date: String(
+          raw['Statement Date'] ??
+            raw['Statement Period'] ??
+            raw['Period End Date'] ??
+            raw['Pay Period'] ??
+            '',
+        ).trim(),
+        member_key: rec.member_key || '',
+      });
+    }
+    out.sort((a, b) => a.amount - b.amount); // most negative first
+    return out;
+  }, [normalizedRecords, payEntityFilter]);
+
   const unpaidSample = useMemo(() => {
     return filtered
       .filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission)
@@ -506,6 +553,34 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Fail-safe: per-batch silent-rebuild detection. If the selected batch
+          has normalized records but ZERO reconciled members, the rebuild
+          orchestrator's assertion missed (or the batch hasn't been rebuilt
+          since the assertion shipped). Surface a red banner so we can recover
+          with a single click. */}
+      {currentBatchId &&
+        counts.normalizedRecords > 0 &&
+        counts.reconciledMembers === 0 && (
+          <Card className="border-destructive bg-destructive/10">
+            <CardContent className="px-4 py-3">
+              <div className="flex items-start gap-3 text-sm">
+                <ShieldAlert className="h-4 w-4 mt-0.5 shrink-0 text-destructive" />
+                <div className="flex-1">
+                  <div className="font-semibold text-destructive">
+                    This batch has {counts.normalizedRecords.toLocaleString()} normalized records
+                    but 0 reconciled members.
+                  </div>
+                  <div className="text-muted-foreground text-xs mt-1">
+                    A previous rebuild appears to have silently dropped the reconciled set.
+                    Click <strong>Rebuild Entire Batch</strong> to fix.
+                  </div>
+                </div>
+                <RebuildBatchButton />
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
       {/* Rebuild status / stale logic warning */}
       {currentBatchId && (logicChanged || neverRebuilt) && (
@@ -711,6 +786,93 @@ export default function DashboardPage() {
         </CollapsibleDebugCard>
       )}
 
+      {/* Clawbacks Detail — every negative-amount commission row in scope.
+          Sourced from raw normalized commission records so it ties exactly to
+          the Net Paid card's "Clawbacks $X" line. Each row carries its source
+          file label + statement date so we can answer "why is a Mar 21 row in
+          the Mar 2026 batch?" without leaving the dashboard. */}
+      {clawbackRows.length > 0 && (
+        <CollapsibleDebugCard
+          title="Clawbacks Detail"
+          icon={<TrendingDown className="h-4 w-4 text-destructive" />}
+          summary={`${clawbackRows.length} rows · −$${Math.abs(metrics.totalClawbacks).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+        >
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>
+              All commission rows where amount &lt; 0 within the current{' '}
+              <strong>{payEntityFilter}</strong> scope, sorted most-negative first.
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => {
+                const header = ['applicant_name','policy_number','pay_code','amount','pay_entity','source_file_label','statement_date','member_key'];
+                const csv = [header.join(',')]
+                  .concat(
+                    clawbackRows.map((r) =>
+                      header
+                        .map((k) => {
+                          const v = String((r as any)[k] ?? '');
+                          return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+                        })
+                        .join(','),
+                    ),
+                  )
+                  .join('\n');
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `clawbacks-${payEntityFilter.toLowerCase()}-${currentBatchId ?? 'batch'}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+            >
+              Export CSV
+            </Button>
+          </div>
+          <div className="border rounded-md max-h-[420px] overflow-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/40 sticky top-0">
+                <tr className="text-left">
+                  <th className="px-2 py-1.5 font-medium">Member</th>
+                  <th className="px-2 py-1.5 font-medium">Policy #</th>
+                  <th className="px-2 py-1.5 font-medium">Pay Code</th>
+                  <th className="px-2 py-1.5 font-medium text-right">Amount</th>
+                  <th className="px-2 py-1.5 font-medium">Pay Entity</th>
+                  <th className="px-2 py-1.5 font-medium">Source File</th>
+                  <th className="px-2 py-1.5 font-medium">Statement Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clawbackRows.slice(0, 500).map((r, i) => (
+                  <tr key={i} className="border-t">
+                    <td className="px-2 py-1 truncate max-w-[160px]" title={r.applicant_name}>{r.applicant_name || '—'}</td>
+                    <td className="px-2 py-1 font-mono">{r.policy_number || '—'}</td>
+                    <td className="px-2 py-1 font-mono">{r.pay_code}</td>
+                    <td className="px-2 py-1 text-right font-mono text-destructive">
+                      ${r.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-2 py-1">{r.pay_entity || '—'}</td>
+                    <td className="px-2 py-1 truncate max-w-[200px]" title={r.source_file_label}>{r.source_file_label || '—'}</td>
+                    <td className="px-2 py-1">{r.statement_date || '—'}</td>
+                  </tr>
+                ))}
+                {clawbackRows.length > 500 && (
+                  <tr>
+                    <td colSpan={7} className="px-2 py-2 text-center text-muted-foreground italic">
+                      Showing first 500 of {clawbackRows.length}. Export CSV for the full list.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CollapsibleDebugCard>
+      )}
+
       {/* Source Funnel — Phase 2b introduction of the classifier (§4.5 of
           ARCHITECTURE_PLAN). Observational for now; Phase 3 wires dispute /
           attribution workflows off the gap counts. */}
@@ -789,9 +951,16 @@ export default function DashboardPage() {
                           <Info className="h-3.5 w-3.5" />
                         </span>
                       </TooltipTrigger>
-                      <TooltipContent side="top" className="max-w-[300px] text-xs leading-relaxed">
+                      <TooltipContent side="top" className="max-w-[320px] text-xs leading-relaxed">
                         <div className="space-y-1.5">
                           <p>Positive commission received minus clawbacks/adjustments.</p>
+                          <p>
+                            <strong>Clawbacks</strong> are commission reversals — they appear when a
+                            previously-paid policy is unwound, refunded, or charged back.
+                            They're identified as commission rows where{' '}
+                            <code>amount &lt; 0</code> OR <code>pay_code</code> indicates a reversal
+                            (e.g. <code>CB</code>, <code>RV</code>).
+                          </p>
                           <p className="text-primary/80 font-medium">Why this matters: This is your true take-home revenue after all reversals are applied.</p>
                         </div>
                       </TooltipContent>
@@ -804,7 +973,23 @@ export default function DashboardPage() {
                 ${metrics.netPaidTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </div>
               <div className="text-xs text-muted-foreground mt-1">
-                Gross ${metrics.totalComm.toLocaleString(undefined, { minimumFractionDigits: 2 })} − Clawbacks ${Math.abs(metrics.totalClawbacks).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                Gross ${metrics.totalComm.toLocaleString(undefined, { minimumFractionDigits: 2 })} −{' '}
+                <button
+                  type="button"
+                  onClick={() => setClawbacksOpen(true)}
+                  disabled={clawbackRows.length === 0}
+                  className="underline decoration-dotted underline-offset-2 hover:text-destructive transition-colors disabled:no-underline disabled:cursor-default"
+                  title={
+                    clawbackRows.length === 0
+                      ? 'No clawback rows in scope'
+                      : `Click to see all ${clawbackRows.length} clawback rows`
+                  }
+                >
+                  Clawbacks ${Math.abs(metrics.totalClawbacks).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </button>
+                {clawbackRows.length > 0 && (
+                  <span className="ml-1 text-muted-foreground/70">({clawbackRows.length} rows)</span>
+                )}
               </div>
               {payEntityFilter === 'Vix' ? (
                 <div className="mt-3 pt-3 border-t border-success/30 text-[11px] text-muted-foreground italic">
@@ -989,6 +1174,65 @@ export default function DashboardPage() {
           )}
         </>
       )}
+
+      {/* Clawbacks drilldown — opened from the Net Paid Commission card. */}
+      <Dialog open={clawbacksOpen} onOpenChange={setClawbacksOpen}>
+        <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <TrendingDown className="h-5 w-5 text-destructive" />
+              Clawbacks ({clawbackRows.length} rows · −${Math.abs(metrics.totalClawbacks).toLocaleString(undefined, { minimumFractionDigits: 2 })})
+            </DialogTitle>
+            <DialogDescription>
+              All commission rows where amount &lt; 0 within the current{' '}
+              <strong>{payEntityFilter}</strong> scope. These are the exact rows that produce the
+              Clawbacks total on the Net Paid Commission card. Source File and Statement Date columns
+              show which statement each row originated from — useful for spotting prior-month statements
+              that landed in this batch.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="border rounded-md overflow-auto max-h-[60vh]">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/40 sticky top-0">
+                <tr className="text-left">
+                  <th className="px-2 py-1.5 font-medium">Member</th>
+                  <th className="px-2 py-1.5 font-medium">Policy #</th>
+                  <th className="px-2 py-1.5 font-medium">Pay Code</th>
+                  <th className="px-2 py-1.5 font-medium text-right">Amount</th>
+                  <th className="px-2 py-1.5 font-medium">Pay Entity</th>
+                  <th className="px-2 py-1.5 font-medium">Source File</th>
+                  <th className="px-2 py-1.5 font-medium">Statement Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clawbackRows.map((r, i) => (
+                  <tr key={i} className="border-t">
+                    <td className="px-2 py-1 truncate max-w-[180px]" title={r.applicant_name}>{r.applicant_name || '—'}</td>
+                    <td className="px-2 py-1 font-mono">{r.policy_number || '—'}</td>
+                    <td className="px-2 py-1 font-mono">{r.pay_code}</td>
+                    <td className="px-2 py-1 text-right font-mono text-destructive">
+                      ${r.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-2 py-1">{r.pay_entity || '—'}</td>
+                    <td className="px-2 py-1 truncate max-w-[220px]" title={r.source_file_label}>{r.source_file_label || '—'}</td>
+                    <td className="px-2 py-1">{r.statement_date || '—'}</td>
+                  </tr>
+                ))}
+                {clawbackRows.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-2 py-3 text-center text-muted-foreground italic">
+                      No clawback rows in scope.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClawbacksOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Not in Back Office drilldown */}
       <Dialog open={notInBoOpen} onOpenChange={setNotInBoOpen}>

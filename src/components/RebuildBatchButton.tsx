@@ -33,11 +33,14 @@ export function RebuildBatchButton() {
 
   const phaseLabel = (() => {
     if (!progress) return 'Working...';
+    const attemptSuffix = progress.attempt && progress.attempt > 1 ? ` (attempt ${progress.attempt})` : '';
     switch (progress.phase) {
       case 'fetching-files': return 'Fetching files...';
       case 'normalizing': return `Normalizing ${progress.currentFile} (${progress.filesProcessed + 1}/${progress.totalFiles})`;
       case 'reconciling': return 'Reconciling members...';
-      case 'saving': return 'Saving results...';
+      case 'saving': return `Saving results${attemptSuffix}...`;
+      case 'verifying': return `Verifying write${attemptSuffix}...`;
+      case 'retrying': return `Retrying save (attempt ${progress.attempt ?? '?'})...`;
       case 'done': return 'Done';
       default: return 'Working...';
     }
