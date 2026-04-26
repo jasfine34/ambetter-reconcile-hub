@@ -176,7 +176,9 @@ export function computeFilteredEde(
     return { key: ownKey || `unmatched:${r.id ?? Math.random()}`, inBO: false };
   }
 
-  const monthSet = new Set(coveredMonths.filter(Boolean));
+  const sortedCovered = coveredMonths.filter(Boolean).slice().sort();
+  const earliestCovered = sortedCovered[0] ?? '';
+  const latestCovered = sortedCovered[sortedCovered.length - 1] ?? '';
 
   // Pass 1: collect qualified EDE rows, deduped by *resolved* member_key.
   const byKey = new Map<string, FilteredEdeRow>();
@@ -200,11 +202,34 @@ export function computeFilteredEde(
     const rawAor = String(raw.currentPolicyAOR ?? '').trim();
     if (!isAorInScope(rawAor, scope)) continue;
 
-    // Effective date must be in covered months
+    // Effective date required
     const effDate = r.effective_date as string | null;
     if (!effDate) continue;
     const effMonth = effDate.substring(0, 7);
-    if (monthSet.size > 0 && !monthSet.has(effMonth)) continue;
+
+    // SPAN SEMANTIC (2026-04-26): treat each Effectuated EDE row as active
+    // from effective_date through (term_date - 1 month) — same convention as
+    // memberTimeline.ts (term date is exclusive). Include the row if its
+    // active span overlaps the batch's covered months.
+    //   include if  effMonth ≤ latestCovered
+    //          AND  (termMonth is null OR termMonth > earliestCovered)
+    // where termMonth = policy_term_date's YYYY-MM (exclusive end).
+    const termRaw = String(raw.policyTermDate ?? raw.policy_term_date ?? r.policy_term_date ?? '').trim();
+    const termMonth = termRaw ? termRaw.substring(0, 7) : '';
+    if (sortedCovered.length > 0) {
+      if (effMonth > latestCovered) continue;
+      if (termMonth && termMonth <= earliestCovered) continue;
+    }
+
+    // Compute the set of active months WITHIN coveredMonths for this row.
+    // termMonth is exclusive (active through prior month).
+    const activeMonths: string[] = [];
+    for (const m of sortedCovered) {
+      if (m < effMonth) continue;
+      if (termMonth && m >= termMonth) continue;
+      activeMonths.push(m);
+    }
+    if (sortedCovered.length > 0 && activeMonths.length === 0) continue;
 
     // Cross-batch identity overlay: when this EDE row's own
     // issuer_subscriber_id is blank, try resolved_identities (keyed by
@@ -235,6 +260,9 @@ export function computeFilteredEde(
     const cmcParsed = cmcRaw != null && String(cmcRaw).trim() !== '' ? parseInt(String(cmcRaw), 10) : NaN;
     const coveredMembers = Number.isFinite(cmcParsed) && cmcParsed > 0 ? cmcParsed : 1;
 
+    // First-active-month-in-scope is the displayed/anchor month.
+    const firstActive = activeMonths[0] ?? effMonth;
+
     const row: FilteredEdeRow = {
       member_key: resolvedKey,
       applicant_name: r.applicant_name ?? '',
@@ -245,7 +273,8 @@ export function computeFilteredEde(
       effective_date: String(raw.effectiveDate ?? effDate),
       policy_status: String(raw.policyStatus ?? r.status ?? ''),
       covered_member_count: coveredMembers,
-      effective_month: effMonth,
+      effective_month: firstActive,
+      active_months: activeMonths,
       in_back_office: inBO,
       issuer_subscriber_id_resolved: isidResolvedMeta,
     };
@@ -254,18 +283,30 @@ export function computeFilteredEde(
     if (!existing) {
       byKey.set(resolvedKey, row);
     } else {
-      // Prefer the row whose effective_month appears LATER in coveredMonths.
-      const idxNew = coveredMonths.indexOf(effMonth);
-      const idxOld = coveredMonths.indexOf(existing.effective_month);
-      if (idxNew > idxOld) byKey.set(resolvedKey, row);
+      // Merge: union active months and prefer row anchored to the EARLIEST
+      // active covered month (so the displayed effective_month reflects the
+      // member's first appearance in scope).
+      const merged = new Set<string>([...existing.active_months, ...activeMonths]);
+      const mergedSorted = Array.from(merged).sort();
+      const winner: FilteredEdeRow =
+        (firstActive < existing.effective_month) ? row : existing;
+      byKey.set(resolvedKey, {
+        ...winner,
+        active_months: mergedSorted,
+        effective_month: mergedSorted[0] ?? winner.effective_month,
+      });
     }
   }
 
   const uniqueMembers = Array.from(byKey.values());
+  // byMonth counts unique members ACTIVE in each covered month (span semantic),
+  // not just members whose effective_date anchors that month.
   const byMonth: Record<string, number> = {};
-  for (const m of coveredMonths) byMonth[m] = 0;
+  for (const m of sortedCovered) byMonth[m] = 0;
   for (const r of uniqueMembers) {
-    byMonth[r.effective_month] = (byMonth[r.effective_month] ?? 0) + 1;
+    for (const m of r.active_months) {
+      if (m in byMonth) byMonth[m] += 1;
+    }
   }
 
   const missingFromBO = uniqueMembers.filter(r => !r.in_back_office);
