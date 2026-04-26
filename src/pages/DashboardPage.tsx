@@ -156,6 +156,7 @@ export default function DashboardPage() {
   const [edeRawRows, setEdeRawRows] = useState<Record<string, unknown>[]>([]);
   const [edeRawLoading, setEdeRawLoading] = useState(false);
   const [notInBoOpen, setNotInBoOpen] = useState(false);
+  const [clawbacksOpen, setClawbacksOpen] = useState(false);
   // Cached normalized records for this batch, used by the Source Funnel and
   // any other classifier-driven widget. Refreshes on batch change and after
   // a re-run.
