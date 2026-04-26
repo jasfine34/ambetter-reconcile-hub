@@ -80,13 +80,17 @@ export function RebuildAllBatchesButton({ variant = 'outline', label = 'Rebuild 
         prev.map((p, idx) => (idx === i ? { ...p, status: 'running' } : p))
       );
       try {
-        await rebuildBatch(b.id, (inner) => {
+        const result = await rebuildBatch(b.id, (inner) => {
           setProgressList((prev) =>
             prev.map((p, idx) => (idx === i ? { ...p, inner } : p))
           );
         });
         setProgressList((prev) =>
-          prev.map((p, idx) => (idx === i ? { ...p, status: 'done', inner: undefined } : p))
+          prev.map((p, idx) =>
+            idx === i
+              ? { ...p, status: 'done', inner: undefined, membersReconciled: result.membersReconciled }
+              : p
+          )
         );
         successCount++;
       } catch (err: any) {
