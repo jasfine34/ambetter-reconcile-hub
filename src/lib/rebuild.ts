@@ -8,6 +8,9 @@ import {
   saveReconciledMembers,
   getNormalizedRecords,
   getOrCreateSnapshotForFile,
+  deleteReconciledForBatch,
+  deleteCommissionEstimatesForBatch,
+  deleteCurrentNormalizedForBatch,
 } from './persistence';
 import { fallbackReconcileMonth } from './dateRange';
 import { loadResolverIndex } from './resolvedIdentities';
