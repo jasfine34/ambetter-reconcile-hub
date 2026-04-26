@@ -2,7 +2,7 @@ import { NPN_MAP, DEFAULT_COMMISSION_ESTIMATE } from './constants';
 import { cleanId, normalizePolicyStatus } from './normalize';
 import type { NormalizedRecord } from './normalize';
 import { isCoverallAORByName } from './agents';
-import { getCoveredMonths, getCoveredEffectiveDates, fallbackReconcileMonth } from './dateRange';
+import { getCoveredMonths, fallbackReconcileMonth } from './dateRange';
 import { lookupResolved, type ResolverIndex } from './resolvedIdentities';
 
 // Qualified EDE rows must match user's exact filter, applied to the RAW source
