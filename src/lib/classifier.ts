@@ -551,13 +551,23 @@ export function computeFunnelForMonth(
   for (const [, records] of recordsByMember) {
     if (!memberBelongsToUs(records)) continue;
 
-    const edeMatch = records.some(r =>
-      r.source_type === 'EDE' &&
-      isEdeRecordOurs(r) &&
-      isQualifiedEdeStatus(r) &&
-      recordMatchesCarrier(r, canonicalCarrierKey) &&
-      dateToMonthKey(r.effective_date) === month
-    );
+    // SPAN SEMANTIC (2026-04-26): an Effectuated EDE row is active from its
+    // effective_date through (policy_term_date - 1 month) — same convention
+    // as memberTimeline.ts and BO. Previously this matched only on
+    // effective_date === month, which under-reported later months in the
+    // funnel (e.g. Mar 2026 EDE eligible was 371 instead of ~1,597).
+    const edeMatch = records.some(r => {
+      if (r.source_type !== 'EDE') return false;
+      if (!isEdeRecordOurs(r)) return false;
+      if (!isQualifiedEdeStatus(r)) return false;
+      if (!recordMatchesCarrier(r, canonicalCarrierKey)) return false;
+      const effMonth = dateToMonthKey(r.effective_date);
+      if (!effMonth || effMonth > month) return false;
+      const termMonth = r.policy_term_date ? dateToMonthKey(r.policy_term_date) : '';
+      // term_date is exclusive — active through the prior month
+      if (termMonth && termMonth <= month) return false;
+      return true;
+    });
     const boMatch = records
       .filter(r => isBoRecordOurs(r) && recordMatchesCarrier(r, canonicalCarrierKey))
       .some(r => {
