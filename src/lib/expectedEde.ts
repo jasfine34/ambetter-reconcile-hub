@@ -260,8 +260,11 @@ export function computeFilteredEde(
     const cmcParsed = cmcRaw != null && String(cmcRaw).trim() !== '' ? parseInt(String(cmcRaw), 10) : NaN;
     const coveredMembers = Number.isFinite(cmcParsed) && cmcParsed > 0 ? cmcParsed : 1;
 
-    // First-active-month-in-scope is the displayed/anchor month.
-    const firstActive = activeMonths[0] ?? effMonth;
+    // effective_month is the row's ACTUAL effective_date month (not span-
+    // anchored). This drives the per-month newly-effective breakdown so the
+    // per-month numbers SUM to the card total. Carryover members from before
+    // the visible window naturally appear under their real effective month.
+    const actualEffMonth = effMonth;
 
     const row: FilteredEdeRow = {
       member_key: resolvedKey,
@@ -273,7 +276,7 @@ export function computeFilteredEde(
       effective_date: String(raw.effectiveDate ?? effDate),
       policy_status: String(raw.policyStatus ?? r.status ?? ''),
       covered_member_count: coveredMembers,
-      effective_month: firstActive,
+      effective_month: actualEffMonth,
       active_months: activeMonths,
       in_back_office: inBO,
       issuer_subscriber_id_resolved: isidResolvedMeta,
@@ -283,34 +286,35 @@ export function computeFilteredEde(
     if (!existing) {
       byKey.set(resolvedKey, row);
     } else {
-      // Merge: union active months and prefer row anchored to the EARLIEST
-      // active covered month (so the displayed effective_month reflects the
-      // member's first appearance in scope).
+      // Merge: union active months and pick the EARLIEST actual effective
+      // month across the duplicates (member's true first effectuation).
       const merged = new Set<string>([...existing.active_months, ...activeMonths]);
       const mergedSorted = Array.from(merged).sort();
+      const earliestEff =
+        actualEffMonth && existing.effective_month
+          ? (actualEffMonth < existing.effective_month ? actualEffMonth : existing.effective_month)
+          : (actualEffMonth || existing.effective_month);
       const winner: FilteredEdeRow =
-        (firstActive < existing.effective_month) ? row : existing;
+        (actualEffMonth && actualEffMonth < existing.effective_month) ? row : existing;
       byKey.set(resolvedKey, {
         ...winner,
         active_months: mergedSorted,
-        effective_month: mergedSorted[0] ?? winner.effective_month,
+        effective_month: earliestEff,
       });
     }
   }
 
   const uniqueMembers = Array.from(byKey.values());
-  // byMonth counts NEWLY-EFFECTIVE members per covered month: each unique
-  // member is counted exactly once, in their first active covered month
-  // (`effective_month`). This guarantees the per-month breakdown SUMS to the
-  // card total (uniqueKeys), instead of double-counting carryover members
-  // who remain active across multiple covered months.
-  // Card total = uniqueKeys (unique members active anywhere in scope).
-  // Per-month = how many of those members became newly effective that month.
+  // byMonth counts NEWLY-EFFECTIVE members per actual effective month: each
+  // unique member is counted exactly once, at their actual effective_date
+  // month (NOT at a covered-window-anchored month). This guarantees the
+  // per-month breakdown SUMS to the card total (uniqueKeys), and surfaces
+  // carryover months from before the visible covered window naturally.
   const byMonth: Record<string, number> = {};
-  for (const m of sortedCovered) byMonth[m] = 0;
   for (const r of uniqueMembers) {
-    const firstActive = r.effective_month;
-    if (firstActive in byMonth) byMonth[firstActive] += 1;
+    const m = r.effective_month;
+    if (!m) continue;
+    byMonth[m] = (byMonth[m] ?? 0) + 1;
   }
 
   const missingFromBO = uniqueMembers.filter(r => !r.in_back_office);
