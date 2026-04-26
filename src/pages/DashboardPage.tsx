@@ -622,23 +622,19 @@ export default function DashboardPage() {
               <span className="text-muted-foreground">Invalid date rows: <strong className="text-foreground">{debugStats.edeInvalidDateCount}</strong></span>
             </div>
             <div className="flex flex-wrap gap-6 text-sm border-t pt-2 items-center">
-              <span className="text-muted-foreground font-medium">Expected by month:</span>
-              {priorMonth && (
-                <button
-                  onClick={() => loadEdeRawDrilldown(priorMonth)}
-                  className="text-muted-foreground hover:text-primary underline-offset-4 hover:underline"
-                >
-                  {formatMonthStart(priorMonth)}: <strong className="text-foreground">{metrics.expectedPriorMonth}</strong>
-                </button>
-              )}
-              {statementMonth && (
-                <button
-                  onClick={() => loadEdeRawDrilldown(statementMonth)}
-                  className="text-muted-foreground hover:text-primary underline-offset-4 hover:underline"
-                >
-                  {formatMonthStart(statementMonth)}: <strong className="text-foreground">{metrics.expectedStatementMonth}</strong>
-                </button>
-              )}
+              <span className="text-muted-foreground font-medium">Expected by month (newly effective):</span>
+              {Object.entries(filteredEde.byMonth)
+                .filter(([m, c]) => m && (c ?? 0) > 0)
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([m, c]) => (
+                  <button
+                    key={m}
+                    onClick={() => loadEdeRawDrilldown(m)}
+                    className="text-muted-foreground hover:text-primary underline-offset-4 hover:underline"
+                  >
+                    {formatMonthStart(m)}: <strong className="text-foreground">{c.toLocaleString()}</strong>
+                  </button>
+                ))}
               <span className="text-xs text-muted-foreground italic">(click a count to drilldown into raw EDE rows)</span>
             </div>
             <div className="flex flex-wrap gap-4 text-sm border-t pt-2">
