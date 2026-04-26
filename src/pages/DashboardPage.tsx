@@ -611,7 +611,7 @@ export default function DashboardPage() {
         <CollapsibleDebugCard
           title="EDE Expected Enrollment Debug"
           icon={<Users className="h-4 w-4" />}
-          summary={`${debugStats.edeAfterFilter} qualified · ${formatMonthStart(priorMonth)}: ${metrics.expectedPriorMonth} · ${formatMonthStart(statementMonth)}: ${metrics.expectedStatementMonth}`}
+          summary={`${debugStats.edeAfterFilter} qualified · ${formatMonthBreakdown(filteredEde.byMonth) || 'no months'}`}
         >
             <div className="flex flex-wrap gap-6 text-sm">
               <span className="text-muted-foreground">Total Raw EDE rows: <strong className="text-foreground">{debugStats.edeRawTotal}</strong></span>
