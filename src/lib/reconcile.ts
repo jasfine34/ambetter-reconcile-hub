@@ -28,12 +28,48 @@ function rawIssuerKey(r: NormalizedRecord): string {
   return String(raw).toLowerCase();
 }
 
-function isExpectedEDERow(r: NormalizedRecord, expectedDates: ReadonlySet<string>): boolean {
+/**
+ * SPAN SEMANTIC (2026-04-26): an Effectuated EDE row is an ongoing enrollment,
+ * not a single-month event. A row qualifies for the "expected EDE universe"
+ * for a batch if its active span overlaps the batch's covered months:
+ *   include if  effectiveMonth ≤ latestCoveredMonth
+ *          AND  (policyTermMonth is null OR policyTermMonth > earliestCoveredMonth)
+ * (term date is exclusive — same convention as memberTimeline.ts and BO.)
+ *
+ * `coveredMonths` is sorted YYYY-MM strings (e.g. ['2026-02','2026-03']).
+ */
+function isExpectedEDERow(r: NormalizedRecord, coveredMonths: readonly string[]): boolean {
   if (r.source_type !== 'EDE') return false;
-  if (!r.effective_date || !expectedDates.has(r.effective_date)) return false;
+  if (!r.effective_date) return false;
+  if (coveredMonths.length > 0) {
+    const effMonth = r.effective_date.substring(0, 7);
+    const earliest = coveredMonths[0];
+    const latest = coveredMonths[coveredMonths.length - 1];
+    if (effMonth > latest) return false;
+    const termMonth = r.policy_term_date ? r.policy_term_date.substring(0, 7) : '';
+    if (termMonth && termMonth <= earliest) return false;
+  }
   if (!QUALIFIED_RAW_STATUSES.has(rawStatusKey(r))) return false;
   if (!rawIssuerKey(r).includes('ambetter')) return false;
   return isCoverallAORByName(rawAorKey(r));
+}
+
+/**
+ * First active covered month for a qualified EDE row, given the batch's
+ * sorted covered months. Used to anchor `expected_ede_effective_month` to
+ * the earliest month in scope where the enrollment was active (rather than
+ * the raw effective_date, which may predate the batch window).
+ */
+function firstActiveCoveredMonth(r: NormalizedRecord, coveredMonths: readonly string[]): string {
+  if (!r.effective_date) return '';
+  const effMonth = r.effective_date.substring(0, 7);
+  const termMonth = r.policy_term_date ? r.policy_term_date.substring(0, 7) : '';
+  for (const m of coveredMonths) {
+    if (m < effMonth) continue;
+    if (termMonth && m >= termMonth) continue;
+    return m;
+  }
+  return effMonth;
 }
 
 export interface ReconciledMember {
