@@ -29,6 +29,7 @@ interface BatchProgress {
   status: 'pending' | 'running' | 'done' | 'error';
   error?: string;
   inner?: RebuildProgress;
+  membersReconciled?: number;
 }
 
 function batchLabel(b: any): string {
