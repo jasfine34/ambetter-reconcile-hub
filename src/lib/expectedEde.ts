@@ -299,14 +299,18 @@ export function computeFilteredEde(
   }
 
   const uniqueMembers = Array.from(byKey.values());
-  // byMonth counts unique members ACTIVE in each covered month (span semantic),
-  // not just members whose effective_date anchors that month.
+  // byMonth counts NEWLY-EFFECTIVE members per covered month: each unique
+  // member is counted exactly once, in their first active covered month
+  // (`effective_month`). This guarantees the per-month breakdown SUMS to the
+  // card total (uniqueKeys), instead of double-counting carryover members
+  // who remain active across multiple covered months.
+  // Card total = uniqueKeys (unique members active anywhere in scope).
+  // Per-month = how many of those members became newly effective that month.
   const byMonth: Record<string, number> = {};
   for (const m of sortedCovered) byMonth[m] = 0;
   for (const r of uniqueMembers) {
-    for (const m of r.active_months) {
-      if (m in byMonth) byMonth[m] += 1;
-    }
+    const firstActive = r.effective_month;
+    if (firstActive in byMonth) byMonth[firstActive] += 1;
   }
 
   const missingFromBO = uniqueMembers.filter(r => !r.in_back_office);
