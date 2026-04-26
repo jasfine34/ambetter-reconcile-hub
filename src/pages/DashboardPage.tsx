@@ -864,9 +864,16 @@ export default function DashboardPage() {
                           <Info className="h-3.5 w-3.5" />
                         </span>
                       </TooltipTrigger>
-                      <TooltipContent side="top" className="max-w-[300px] text-xs leading-relaxed">
+                      <TooltipContent side="top" className="max-w-[320px] text-xs leading-relaxed">
                         <div className="space-y-1.5">
                           <p>Positive commission received minus clawbacks/adjustments.</p>
+                          <p>
+                            <strong>Clawbacks</strong> are commission reversals — they appear when a
+                            previously-paid policy is unwound, refunded, or charged back.
+                            They're identified as commission rows where{' '}
+                            <code>amount &lt; 0</code> OR <code>pay_code</code> indicates a reversal
+                            (e.g. <code>CB</code>, <code>RV</code>).
+                          </p>
                           <p className="text-primary/80 font-medium">Why this matters: This is your true take-home revenue after all reversals are applied.</p>
                         </div>
                       </TooltipContent>
@@ -879,7 +886,23 @@ export default function DashboardPage() {
                 ${metrics.netPaidTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </div>
               <div className="text-xs text-muted-foreground mt-1">
-                Gross ${metrics.totalComm.toLocaleString(undefined, { minimumFractionDigits: 2 })} − Clawbacks ${Math.abs(metrics.totalClawbacks).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                Gross ${metrics.totalComm.toLocaleString(undefined, { minimumFractionDigits: 2 })} −{' '}
+                <button
+                  type="button"
+                  onClick={() => setClawbacksOpen(true)}
+                  disabled={clawbackRows.length === 0}
+                  className="underline decoration-dotted underline-offset-2 hover:text-destructive transition-colors disabled:no-underline disabled:cursor-default"
+                  title={
+                    clawbackRows.length === 0
+                      ? 'No clawback rows in scope'
+                      : `Click to see all ${clawbackRows.length} clawback rows`
+                  }
+                >
+                  Clawbacks ${Math.abs(metrics.totalClawbacks).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </button>
+                {clawbackRows.length > 0 && (
+                  <span className="ml-1 text-muted-foreground/70">({clawbackRows.length} rows)</span>
+                )}
               </div>
               {payEntityFilter === 'Vix' ? (
                 <div className="mt-3 pt-3 border-t border-success/30 text-[11px] text-muted-foreground italic">
