@@ -362,9 +362,68 @@ export async function getNormalizedRecordsAllSnapshots(batchId: string) {
   return allData;
 }
 
+/**
+ * Chunked DELETE helpers.
+ *
+ * Background: a single PostgREST `DELETE WHERE batch_id = X` against a large
+ * batch (e.g. Feb 2026 with ~7.3k normalized_records) exceeded the Supabase
+ * statement_timeout and crashed the rebuild. We now select the target ids in
+ * pages and issue per-chunk `DELETE WHERE id IN (...)` statements. Chunk size
+ * 500 keeps each statement comfortably under the API timeout while minimizing
+ * round-trips. Used by rebuildBatch() and saveReconciledMembers().
+ */
+const DELETE_CHUNK_SIZE = 500;
+
+async function chunkedDeleteByIds(table: string, ids: string[]) {
+  for (let i = 0; i < ids.length; i += DELETE_CHUNK_SIZE) {
+    const chunk = ids.slice(i, i + DELETE_CHUNK_SIZE);
+    const { error } = await (supabase as any).from(table).delete().in('id', chunk);
+    if (error) throw error;
+  }
+}
+
+async function fetchAllIds(
+  table: string,
+  filter: (q: any) => any,
+): Promise<string[]> {
+  const ids: string[] = [];
+  let from = 0;
+  const pageSize = 1000;
+  while (true) {
+    let q = (supabase as any).from(table).select('id').order('id', { ascending: true }).range(from, from + pageSize - 1);
+    q = filter(q);
+    const { data, error } = await q;
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    ids.push(...data.map((r: any) => r.id));
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return ids;
+}
+
+export async function deleteReconciledForBatch(batchId: string) {
+  const ids = await fetchAllIds('reconciled_members', (q) => q.eq('batch_id', batchId));
+  await chunkedDeleteByIds('reconciled_members', ids);
+}
+
+export async function deleteCommissionEstimatesForBatch(batchId: string) {
+  const ids = await fetchAllIds('commission_estimates', (q) => q.eq('batch_id', batchId));
+  await chunkedDeleteByIds('commission_estimates', ids);
+}
+
+export async function deleteCurrentNormalizedForBatch(batchId: string) {
+  const ids = await fetchAllIds('normalized_records', (q) =>
+    q.eq('batch_id', batchId).is('superseded_at', null),
+  );
+  await chunkedDeleteByIds('normalized_records', ids);
+}
+
 export async function saveReconciledMembers(batchId: string, members: ReconciledMember[]) {
-  await supabase.from('reconciled_members').delete().eq('batch_id', batchId);
-  await supabase.from('commission_estimates').delete().eq('batch_id', batchId);
+  // See chunked-delete comment above — single unbounded DELETE timed out on
+  // the largest batch.
+  await deleteReconciledForBatch(batchId);
+  await deleteCommissionEstimatesForBatch(batchId);
 
   if (members.length === 0) return;
 
