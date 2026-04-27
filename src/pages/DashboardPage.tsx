@@ -159,6 +159,9 @@ export default function DashboardPage() {
   const [edeRawLoading, setEdeRawLoading] = useState(false);
   const [notInBoOpen, setNotInBoOpen] = useState(false);
   const [clawbacksOpen, setClawbacksOpen] = useState(false);
+  // Sort state for the Clawbacks Detail / Clawbacks dialog Statement Date
+  // column. null = default sort (most-negative amount first).
+  const [clawbackStatementSort, setClawbackStatementSort] = useState<'asc' | 'desc' | null>(null);
   // Cached normalized records for this batch, used by the Source Funnel and
   // any other classifier-driven widget. Refreshes on batch change and after
   // a re-run.
