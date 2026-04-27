@@ -973,6 +973,47 @@ export default function DashboardPage() {
         </CollapsibleDebugCard>
       )}
 
+      {/* EE Universe Audit — surfaces the gap between EE total and
+          (Found-in-BO + Not-in-BO). Read-only diagnostic panel; classifies
+          each gap row with a best-effort inferred reason so we can decide
+          the right downstream fix without designing a "not actionable"
+          bucket that hides bugs. */}
+      {reconciled.length > 0 && normalizedRecords.length > 0 && (
+        <CollapsibleDebugCard
+          title="EE Universe Audit"
+          icon={<ShieldAlert className="h-4 w-4" />}
+          summary={`${eeAuditRows.length} EE members fall outside Found and Not-in-BO buckets`}
+        >
+          <div className="text-xs text-muted-foreground">
+            Members in the Expected Enrollments universe (scope:{' '}
+            <strong>{payEntityFilter}</strong>) who are NOT in the Found-in-BO
+            bucket and NOT in the actionable Not-in-BO bucket. The
+            <em> Inferred Reason</em> column is a best-effort classification
+            computed at render time, not stored.
+          </div>
+          <DataTable
+            data={eeAuditRows}
+            columns={[
+              { key: 'applicant_name', label: 'Member Name' },
+              { key: 'policy_number', label: 'Policy #' },
+              { key: 'issuer_subscriber_id', label: 'Issuer Sub ID' },
+              { key: 'exchange_subscriber_id', label: 'Exchange Sub ID' },
+              { key: 'ede_status', label: 'EDE Status' },
+              { key: 'current_policy_aor', label: 'currentPolicyAOR' },
+              { key: 'writing_agent_npn', label: 'Writing Agent NPN' },
+              { key: 'bo_record_exists', label: 'BO Record Exists?' },
+              { key: 'bo_broker_npn', label: 'BO Broker NPN' },
+              { key: 'bo_eligible', label: 'BO Eligible' },
+              { key: 'bo_term_date', label: 'BO Term Date' },
+              { key: 'bo_state', label: 'BO State' },
+              { key: 'inferred_reason', label: 'Inferred Reason' },
+            ]}
+            exportFileName={`ee_universe_audit_${payEntityFilter.toLowerCase()}.csv`}
+            pageSize={25}
+          />
+        </CollapsibleDebugCard>
+      )}
+
       {/* Source Funnel — Phase 2b introduction of the classifier (§4.5 of
           ARCHITECTURE_PLAN). Observational for now; Phase 3 wires dispute /
           attribution workflows off the gap counts. */}
