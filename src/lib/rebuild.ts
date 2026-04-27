@@ -219,6 +219,19 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
     totalNormalized += normalized.length;
   }
 
+  // Post-loop assertion: if any source file produced normalized rows, the
+  // current (non-superseded) normalized_records count must be > 0. Catches
+  // the case where every per-file insert silently returned without writing.
+  if (totalNormalized > 0) {
+    const persistedAfterInsert = await countCurrentNormalizedForBatch(batchId);
+    if (persistedAfterInsert === 0) {
+      throw new Error(
+        `Post-INSERT verification failed for normalized_records: expected ≥${totalNormalized} ` +
+          `but found 0 current rows for batch ${batchId}.`,
+      );
+    }
+  }
+
   // 6. Re-run reconciliation from scratch — wrapped in a retry loop with a
   // post-save sanity assertion. The Jan 2026 bug was a silent SAVE-step
   // failure: reconcile() returned ~3,800 members, saveReconciledMembers()
