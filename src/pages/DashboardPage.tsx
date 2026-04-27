@@ -163,7 +163,11 @@ export default function DashboardPage() {
   // any other classifier-driven widget. Refreshes on batch change and after
   // a re-run.
   const [normalizedRecords, setNormalizedRecords] = useState<any[]>([]);
+  // Persistent weak-match overrides (table: weak_match_overrides). Loaded once
+  // per batch refresh. Used to upgrade/demote weak-match members.
+  const [weakOverrides, setWeakOverrides] = useState<Map<string, WeakMatchOverride>>(new Map());
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   // Covered months for this batch (prior month + statement month). Drives the
   // drilldown buttons, subtitle month breakdown, and the expected-EDE filter.
