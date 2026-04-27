@@ -160,6 +160,8 @@ export default function DashboardPage() {
   const [edeRawLoading, setEdeRawLoading] = useState(false);
   const [notInBoOpen, setNotInBoOpen] = useState(false);
   const [clawbacksOpen, setClawbacksOpen] = useState(false);
+  const [invariantsOpen, setInvariantsOpen] = useState(false);
+  const [invariantResults, setInvariantResults] = useState<InvariantResult[] | null>(null);
   // Sort state for the Clawbacks Detail / Clawbacks dialog Statement Date
   // column. null = default sort (most-negative amount first).
   const [clawbackStatementSort, setClawbackStatementSort] = useState<'asc' | 'desc' | null>(null);
