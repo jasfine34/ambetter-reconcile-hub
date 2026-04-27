@@ -346,6 +346,31 @@ export default function DashboardPage() {
     [normalizedRecords, reconciled, payEntityFilter, coveredMonths, resolverIndex]
   );
 
+  // Weak-match resolution (2026-04-27). For each EE-universe member that
+  // failed strict join to BO, check if a BO sibling exists by ≥2 fuzzy
+  // signals. Apply persistent overrides from `weak_match_overrides`:
+  //   confirmed → upgrade to Found-in-BO (added to confirmed set)
+  //   rejected  → demote to actionable Not-in-BO (kept in missingFromBO)
+  //   pending/deferred → surface in Manual Match queue (third sub-bucket)
+  //
+  // The math reconciles:
+  //   Found-in-BO + disputable + waiting + weak-match-pending = Expected
+  // Confirmed-match members move from missingFromBO into Found-in-BO.
+  // Rejected-match members stay in missingFromBO (disputable/waiting split).
+  const weakMatchResult = useMemo(() => {
+    if (!filteredEde.uniqueMembers.length || !normalizedRecords.length) {
+      return {
+        candidates: [],
+        confirmedKeys: new Set<string>(),
+        rejectedKeys: new Set<string>(),
+        pending: [] as ReturnType<typeof findWeakMatches>,
+      };
+    }
+    const candidates = findWeakMatches(filteredEde.uniqueMembers, normalizedRecords);
+    const { confirmedKeys, rejectedKeys, pending } = applyOverrides(candidates, weakOverrides);
+    return { candidates, confirmedKeys, rejectedKeys, pending };
+  }, [filteredEde, normalizedRecords, weakOverrides]);
+
   const dashboardTitle = useMemo(() => {
     switch (payEntityFilter) {
       case 'Coverall': return 'Coverall Commission Reconciliation';
