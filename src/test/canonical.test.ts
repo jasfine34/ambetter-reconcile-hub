@@ -48,7 +48,9 @@ function makeFixture() {
       current_policy_aor: 'Erica Fine (21277051)',
       expected_pay_entity: 'Vix',
       actual_pay_entity: 'Vix',
-      is_in_expected_ede_universe: true,
+      // Not in EE-universe fixture — kept out of Found/Eligible counts so the
+      // Coverall-scope invariant balances against the 2-member filteredEde.
+      is_in_expected_ede_universe: false,
       in_back_office: true,
       in_commission: true,
       eligible_for_commission: 'Yes',
