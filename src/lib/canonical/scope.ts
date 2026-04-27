@@ -52,11 +52,17 @@ export function aorBelongsToScope(rawAor: string, scope: CanonicalScope): boolea
  * by every metric helper. Mirrors the Dashboard's `filtered` derivation so
  * the numbers tie out exactly.
  *
- * Coverall scope = expected_pay_entity ∈ {Coverall, Coverall_or_Vix} OR
- *                  actual_pay_entity = Coverall.
- * Vix scope      = expected_pay_entity ∈ {Vix, Coverall_or_Vix} OR
- *                  actual_pay_entity = Vix.
- * All            = every reconciled member.
+ * CANONICAL DECISION (2026.04.27): scope membership is determined SOLELY by
+ * currentPolicyAOR (the AOR-of-record on the carrier's EDE export). NOT by
+ * writing-agent NPN, NOT by pay-entity. This is the only way "this member is
+ * ours" stays consistent when AOR is transferred mid-policy.
+ *
+ * Coverall scope = current_policy_aor matches a Coverall NPN/name (via
+ *                  aorBelongsToScope('Coverall', ...)).
+ * Vix scope      = current_policy_aor is Erica's AND member appears on a Vix
+ *                  commission row (actual_pay_entity = 'Vix').
+ * All (Combined) = current_policy_aor is any Coverall NPN OR
+ *                  actual_pay_entity = 'Vix'.
  */
 export function getMembersInScope(
   reconciled: ReconciledMember[] | any[],
@@ -64,24 +70,22 @@ export function getMembersInScope(
 ): Set<string> {
   const out = new Set<string>();
   for (const r of reconciled) {
+    const aor = String(r.current_policy_aor ?? '').trim();
     if (scope === 'All') {
-      out.add(r.member_key);
+      // Combined = AOR is any Coverall NPN/name OR member was paid via Vix.
+      if (aorBelongsToScope(aor, 'Coverall') || r.actual_pay_entity === 'Vix') {
+        out.add(r.member_key);
+      }
       continue;
     }
     if (scope === 'Coverall') {
-      if (
-        r.expected_pay_entity === 'Coverall' ||
-        r.expected_pay_entity === 'Coverall_or_Vix' ||
-        r.actual_pay_entity === 'Coverall'
-      ) out.add(r.member_key);
+      if (aorBelongsToScope(aor, 'Coverall')) out.add(r.member_key);
       continue;
     }
-    // Vix
-    if (
-      r.expected_pay_entity === 'Vix' ||
-      r.expected_pay_entity === 'Coverall_or_Vix' ||
-      r.actual_pay_entity === 'Vix'
-    ) out.add(r.member_key);
+    // Vix: AOR is Erica AND member appears on Vix commission statement.
+    if (aorBelongsToScope(aor, 'Vix') && r.actual_pay_entity === 'Vix') {
+      out.add(r.member_key);
+    }
   }
   return out;
 }
