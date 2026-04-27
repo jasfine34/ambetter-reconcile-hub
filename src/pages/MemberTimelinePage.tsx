@@ -508,6 +508,15 @@ export default function MemberTimelinePage() {
   return (
     <TooltipProvider delayDuration={150}>
       <div className="space-y-6">
+        {fromRecords && (
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ChevronLeft className="h-4 w-4" /> Back to All Records
+          </button>
+        )}
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
             <h2 className="text-2xl font-bold text-foreground">Member Timeline</h2>
