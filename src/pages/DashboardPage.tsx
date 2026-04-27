@@ -743,18 +743,7 @@ export default function DashboardPage() {
             variant="outline"
             size="sm"
             onClick={() => {
-              const results = runInvariants({
-                reconciled,
-                normalizedRecords,
-                filteredEde,
-                confirmedUpgradeMemberKeys,
-                confirmedWeakMatchOverrideKeys: weakMatchResult.confirmedKeys,
-                weakMatchPendingOverrideKeys: new Set(weakMatchResult.pending.map((c) => c.override_key)),
-                scope: payEntityFilter === 'All' ? 'All' : payEntityFilter,
-                pickStableKey,
-                isCoverallNpn: isCoverallAORByNPN,
-              });
-              setInvariantResults(results);
+              executeInvariants();
               setInvariantsOpen(true);
             }}
             disabled={!currentBatchId || reconciled.length === 0}
