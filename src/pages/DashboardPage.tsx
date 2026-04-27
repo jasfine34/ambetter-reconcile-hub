@@ -420,12 +420,12 @@ export default function DashboardPage() {
     // but are not double-counted across months.
     const expectedPriorMonth = priorMonth ? (filteredEde.byMonth[priorMonth] ?? 0) : 0;
     const expectedStatementMonth = statementMonth ? (filteredEde.byMonth[statementMonth] ?? 0) : 0;
-    const foundBO = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office).length;
-    const eligible = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes').length;
+    const foundBO = filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r)).length;
+    const eligible = filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r) && r.eligible_for_commission === 'Yes').length;
     const shouldPay = eligible;
     // Count distinct policies with positive payments
     const paidCommRecords = filtered.filter(r => r.in_commission).length;
-    const paidEligible = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes' && r.in_commission).length;
+    const paidEligible = filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r) && r.eligible_for_commission === 'Yes' && r.in_commission).length;
     const unpaid = shouldPay - paidEligible;
     // Gross / Clawbacks / Net Paid — computed from RAW commission records and
     // scoped by the dashboard's pay_entity filter, so they match exactly what
