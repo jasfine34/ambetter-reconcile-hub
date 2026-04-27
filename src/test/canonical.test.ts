@@ -85,15 +85,25 @@ function makeFixture() {
 }
 
 describe('canonical/scope', () => {
-  it('Coverall scope picks up Coverall + Coverall_or_Vix members', () => {
+  it('Coverall scope = AOR is any Coverall NPN (Jason/Erica/Becky)', () => {
     const { reconciled } = makeFixture();
     const keys = getMembersInScope(reconciled, 'Coverall');
+    // Per canonical rule (2026.04.27): Erica's NPN is a Coverall NPN, so a
+    // member with Erica AOR is in Coverall scope regardless of pay entity.
     expect(keys.has('m1')).toBe(true);
     expect(keys.has('m2')).toBe(true);
-    expect(keys.has('m3')).toBe(false);
+    expect(keys.has('m3')).toBe(true);
   });
 
-  it('All scope returns every member', () => {
+  it('Vix scope = AOR is Erica AND member appears on Vix commission', () => {
+    const { reconciled } = makeFixture();
+    const keys = getMembersInScope(reconciled, 'Vix');
+    expect(keys.has('m1')).toBe(false);
+    expect(keys.has('m2')).toBe(false);
+    expect(keys.has('m3')).toBe(true);
+  });
+
+  it('All scope = AOR is Coverall NPN OR pay-entity is Vix', () => {
     const { reconciled } = makeFixture();
     expect(getMembersInScope(reconciled, 'All').size).toBe(3);
   });
