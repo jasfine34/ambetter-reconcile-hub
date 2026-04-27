@@ -662,6 +662,45 @@ export type Database = {
           },
         ]
       }
+      weak_match_overrides: {
+        Row: {
+          candidate_bo_member_key: string | null
+          candidate_bo_stable_key: string | null
+          created_at: string
+          decided_at: string
+          decided_by: string | null
+          decision: string
+          id: string
+          notes: string | null
+          override_key: string
+          signals: Json | null
+        }
+        Insert: {
+          candidate_bo_member_key?: string | null
+          candidate_bo_stable_key?: string | null
+          created_at?: string
+          decided_at?: string
+          decided_by?: string | null
+          decision: string
+          id?: string
+          notes?: string | null
+          override_key: string
+          signals?: Json | null
+        }
+        Update: {
+          candidate_bo_member_key?: string | null
+          candidate_bo_stable_key?: string | null
+          created_at?: string
+          decided_at?: string
+          decided_by?: string | null
+          decision?: string
+          id?: string
+          notes?: string | null
+          override_key?: string
+          signals?: Json | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
