@@ -161,9 +161,26 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
   // through ids in 500-row chunks so each individual DELETE is small enough
   // to finish well under the timeout. Smaller batches (Jan/Mar) just take a
   // few extra round-trips; correctness is unchanged.
-  await deleteReconciledForBatch(batchId);
-  await deleteCommissionEstimatesForBatch(batchId);
-  await deleteCurrentNormalizedForBatch(batchId);
+  // DELETE-then-verify-zero discipline (see ARCHITECTURE_PLAN.md §
+  // Rebuild Discipline). The doubling incident on Apr 2026 happened when a
+  // partial prior insert left rows behind that the next rebuild stacked on
+  // top of. Each clear is now followed by a count assertion and a single
+  // retry before the rebuild aborts.
+  await deleteAndVerifyZero(
+    'reconciled_members',
+    () => deleteReconciledForBatch(batchId),
+    () => countReconciledForBatch(batchId),
+  );
+  await deleteAndVerifyZero(
+    'commission_estimates',
+    () => deleteCommissionEstimatesForBatch(batchId),
+    () => countCommissionEstimatesForBatch(batchId),
+  );
+  await deleteAndVerifyZero(
+    'normalized_records (current)',
+    () => deleteCurrentNormalizedForBatch(batchId),
+    () => countCurrentNormalizedForBatch(batchId),
+  );
 
   // 2 + 5. Re-download + re-normalize each file
   let totalNormalized = 0;
