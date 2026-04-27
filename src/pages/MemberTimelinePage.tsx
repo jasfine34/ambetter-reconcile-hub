@@ -430,6 +430,21 @@ export default function MemberTimelinePage() {
 
   useEffect(() => { setPage(0); }, [filter, search, startMonth, endMonth, carrier, aorBuckets, aorScope, payEntity, pageSizeOpt]);
 
+  /**
+   * Headline summary — sums per-member `total_paid` (which is paid commission
+   * for months the member was due, derived from `commissionServiceMonths` in
+   * memberTimeline.ts).
+   *
+   * NOTE re: canonical helpers: this number is intentionally NOT
+   * `getNetPaidCommission` from src/lib/canonical. Net Paid sums every
+   * commission row in scope; the timeline's "Total paid" sums only paid
+   * dollars attributable to a due month for visible members. The two answer
+   * different questions:
+   *   - Canonical Net Paid → "what did the carrier pay us this scope?"
+   *   - Timeline Total paid → "of paid dollars, how much serviced a due month
+   *     for the visible cohort?"
+   * The audit panel below cross-checks via `buildPaidDollarsAudit`.
+   */
   const summary = useMemo(() => {
     let totalPaid = 0, totalUnpaidMonths = 0, membersWithUnpaid = 0;
     for (const r of filteredRows) {
