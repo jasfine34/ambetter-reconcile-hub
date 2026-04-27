@@ -471,6 +471,7 @@ export async function saveReconciledMembers(batchId: string, members: Reconciled
     agent_name: m.agent_name,
     agent_npn: m.agent_npn,
     aor_bucket: m.aor_bucket,
+    current_policy_aor: m.current_policy_aor || null,
     expected_pay_entity: m.expected_pay_entity,
     actual_pay_entity: m.actual_pay_entity,
     in_ede: m.in_ede,
