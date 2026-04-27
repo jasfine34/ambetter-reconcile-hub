@@ -20,7 +20,7 @@ import { isCoverallAORByName, isCoverallAORByNPN, COVERALL_NPN_SET } from '@/lib
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { getCoveredMonths, monthKeyToFirstOfMonth, fallbackReconcileMonth } from '@/lib/dateRange';
 import { computeFilteredEde } from '@/lib/expectedEde';
-import { findWeakMatches, loadWeakMatchOverrides, applyOverrides, type WeakMatchOverride } from '@/lib/weakMatch';
+import { findWeakMatches, loadWeakMatchOverrides, applyOverrides, pickStableKey, type WeakMatchOverride } from '@/lib/weakMatch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { runIdentityResolution, invalidateResolverCache } from '@/lib/resolvedIdentities';
