@@ -739,6 +739,29 @@ export default function DashboardPage() {
             <RefreshCw className={`h-4 w-4 mr-1 ${rerunning ? 'animate-spin' : ''}`} />
             {rerunning ? 'Running...' : 'Re-run Reconciliation'}
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const results = runInvariants({
+                reconciled,
+                normalizedRecords,
+                filteredEde,
+                confirmedUpgradeMemberKeys,
+                confirmedWeakMatchOverrideKeys: weakMatchResult.confirmedKeys,
+                weakMatchPendingOverrideKeys: new Set(weakMatchResult.pending.map((c) => c.override_key)),
+                scope: payEntityFilter === 'All' ? 'All' : payEntityFilter,
+                pickStableKey,
+                isCoverallNpn: isCoverallAORByNPN,
+              });
+              setInvariantResults(results);
+              setInvariantsOpen(true);
+            }}
+            disabled={!currentBatchId || reconciled.length === 0}
+          >
+            <ShieldAlert className="h-4 w-4 mr-1" />
+            Run Invariants
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setResolveConfirmOpen(true)} disabled={resolving}>
             <Link2 className={`h-4 w-4 mr-1 ${resolving ? 'animate-pulse' : ''}`} />
             {resolving ? 'Resolving...' : 'Resolve Identities Across Batches'}
