@@ -371,6 +371,38 @@ export default function DashboardPage() {
     return { candidates, confirmedKeys, rejectedKeys, pending };
   }, [filteredEde, normalizedRecords, weakOverrides]);
 
+  // Confirmed weak-match upgrades: build a Set of reconciled-member member_keys
+  // whose stable identity key has a 'confirmed' override. These members'
+  // strict join to BO failed but the user has manually confirmed the BO
+  // sibling — we treat them as in_back_office for ALL downstream metrics
+  // (foundBO, eligible, shouldPay, drilldowns) so the card NUMBERS reflect
+  // confirmed matches, not just the Not-in-BO subtitle math.
+  //
+  // Stable key built via pickStableKey() (issuer_sub_id → exchange_sub_id →
+  // policy#) — same priority order as the weak-match override write path,
+  // so the lookup matches across rebuilds.
+  const confirmedUpgradeMemberKeys = useMemo(() => {
+    const out = new Set<string>();
+    if (!weakMatchResult.confirmedKeys.size) return out;
+    for (const r of filtered) {
+      if (r.in_back_office) continue; // already counted; nothing to upgrade
+      const key = pickStableKey({
+        issuer_subscriber_id: r.issuer_subscriber_id,
+        exchange_subscriber_id: r.exchange_subscriber_id,
+        policy_number: r.policy_number,
+      });
+      if (key && weakMatchResult.confirmedKeys.has(key)) out.add(r.member_key);
+    }
+    return out;
+  }, [filtered, weakMatchResult.confirmedKeys]);
+
+  /** Effective in_back_office: strict join OR confirmed weak-match upgrade. */
+  const effInBO = useCallback(
+    (r: { member_key: string; in_back_office: boolean }) =>
+      r.in_back_office || confirmedUpgradeMemberKeys.has(r.member_key),
+    [confirmedUpgradeMemberKeys],
+  );
+
   const dashboardTitle = useMemo(() => {
     switch (payEntityFilter) {
       case 'Coverall': return 'Coverall Commission Reconciliation';
