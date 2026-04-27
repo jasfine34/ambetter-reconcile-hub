@@ -490,16 +490,16 @@ export default function DashboardPage() {
     const totalEdeRaw = filtered.filter(r => r.in_ede).length;
     const hasAnyEde = filtered.filter(r => r.in_ede).length;
     const hasExpectedEde = filtered.filter(r => r.is_in_expected_ede_universe).length;
-    const expectedWithBO = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office).length;
-    const fullyMatched = filtered.filter(r => r.in_ede && r.in_back_office && r.in_commission).length;
-    const paidOutsideEde = filtered.filter(r => !r.in_ede && r.in_back_office && r.in_commission).length;
-    const commissionOnly = filtered.filter(r => !r.in_ede && !r.in_back_office && r.in_commission).length;
-    const backOfficeOnly = filtered.filter(r => !r.in_ede && r.in_back_office && !r.in_commission).length;
-    const unpaidExpected = filtered.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission).length;
+    const expectedWithBO = filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r)).length;
+    const fullyMatched = filtered.filter(r => r.in_ede && effInBO(r) && r.in_commission).length;
+    const paidOutsideEde = filtered.filter(r => !r.in_ede && effInBO(r) && r.in_commission).length;
+    const commissionOnly = filtered.filter(r => !r.in_ede && !effInBO(r) && r.in_commission).length;
+    const backOfficeOnly = filtered.filter(r => !r.in_ede && effInBO(r) && !r.in_commission).length;
+    const unpaidExpected = filtered.filter(r => r.in_ede && effInBO(r) && r.eligible_for_commission === 'Yes' && !r.in_commission).length;
     const totalPaidAll = filtered.filter(r => r.in_commission).length;
     const paidOutsideExpected = filtered.filter(r => !r.in_ede && r.in_commission).length;
     return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidOutsideEde, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, paidOutsideExpected, coverallDirectNet, downlineNet, netPaidTotal, splitDelta, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
-  }, [filtered, normalizedRecords, payEntityFilter, filteredEde, priorMonth, statementMonth]);
+  }, [filtered, normalizedRecords, payEntityFilter, filteredEde, priorMonth, statementMonth, effInBO]);
 
   // Clawback rows — every commission row with amount < 0 within the current
   // pay-entity scope. Derived from RAW normalized commission records (same
