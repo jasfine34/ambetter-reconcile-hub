@@ -1673,6 +1673,11 @@ export default function DashboardPage() {
             <Button onClick={handleResolveIdentities} disabled={resolving}>
               <Link2 className={`h-4 w-4 mr-1 ${resolving ? 'animate-pulse' : ''}`} />
               {resolving ? 'Resolving...' : 'Run Resolution'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Invariants results */}
       <Dialog open={invariantsOpen} onOpenChange={setInvariantsOpen}>
         <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
