@@ -4,6 +4,7 @@ import type { NormalizedRecord } from './normalize';
 import { isCoverallAORByName } from './agents';
 import { getCoveredMonths, fallbackReconcileMonth } from './dateRange';
 import { lookupResolved, type ResolverIndex } from './resolvedIdentities';
+import { pickCurrentPolicyAor, collectFfmAppIds } from './aorPicker';
 
 const SBA_STATE_SET: ReadonlySet<string> = new Set(SBA_STATES);
 
@@ -846,17 +847,12 @@ export function reconcile(
     const agentNpn = ede[0]?.agent_npn || bo[0]?.agent_npn || comm[0]?.agent_npn || '';
     const aorBucket = bo[0]?.aor_bucket || ede[0]?.aor_bucket || comm[0]?.aor_bucket || '';
     // currentPolicyAOR — canonical AOR string from the carrier's EDE export.
-    // Pull from the first qualified EDE row (same row that anchors
-    // expected_ede_effective_month). Members with no EDE row → empty string,
-    // which the UI renders as "—".
-    const currentPolicyAor: string = (() => {
-      const ordered = ede.length > 0 ? ede : [];
-      for (const e of ordered) {
-        const v = String(e.raw_json?.['currentPolicyAOR'] ?? '').trim();
-        if (v) return v;
-      }
-      return '';
-    })();
+    // Picker rules live in src/lib/aorPicker.ts (see pickCurrentPolicyAor for
+    // the full rule block). Both reconcile.ts and memberTimeline.ts use this
+    // shared helper so the two surfaces never disagree on whose AOR a member
+    // is on.
+    const currentPolicyAor: string = pickCurrentPolicyAor(recs);
+    const ffmAppIds: string[] = collectFfmAppIds(recs);
     const eligible = bo[0]?.eligible_for_commission || '';
     const premium = bo[0]?.premium || ede[0]?.premium || null;
     const netPremium = ede[0]?.net_premium || null;

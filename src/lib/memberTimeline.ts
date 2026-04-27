@@ -1,5 +1,6 @@
 import type { NormalizedRecord } from './normalize';
 import type { ClassificationState, RollupStatus } from './classifier';
+import { pickCurrentPolicyAor, collectFfmAppIds } from './aorPicker';
 
 export interface MonthCell {
   month: string;                   // 'YYYY-MM'
@@ -27,6 +28,8 @@ export interface MemberTimelineRow {
   agent_name: string;
   aor_bucket: string;
   current_policy_aor: string;
+  /** Distinct FFM application IDs across this member's normalized records. */
+  ffm_app_ids: string[];
   cells: Record<string, MonthCell>;  // keyed by 'YYYY-MM'
   total_paid: number;
   months_due: number;
@@ -206,14 +209,8 @@ export function buildMemberTimeline(
       issuer_subscriber_id: recs.find(r => r.issuer_subscriber_id)?.issuer_subscriber_id || '',
       agent_name: recs.find(r => r.agent_name)?.agent_name || '',
       aor_bucket: recs.find(r => r.aor_bucket)?.aor_bucket || '',
-      current_policy_aor: (() => {
-        for (const r of recs) {
-          if (r.source_type !== 'EDE') continue;
-          const raw = r.raw_json?.['currentPolicyAOR'];
-          if (typeof raw === 'string' && raw.trim()) return raw.trim();
-        }
-        return '';
-      })(),
+      current_policy_aor: pickCurrentPolicyAor(recs),
+      ffm_app_ids: collectFfmAppIds(recs),
       cells,
       total_paid: 0,
       months_due: 0,

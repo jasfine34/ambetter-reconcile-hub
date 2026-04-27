@@ -871,8 +871,21 @@ export default function MemberTimelinePage() {
                           return <span>{display}<ResolvedBadge sourceKind={hit.source_kind ?? undefined} batchMonth={hit.source_batch_month} /></span>;
                         })()}
                       </td>
-                      <td className="px-2 py-2 text-muted-foreground whitespace-nowrap truncate max-w-[160px]" title={row.current_policy_aor || row.aor_bucket}>
+                      <td
+                        className="px-2 py-2 text-muted-foreground whitespace-nowrap truncate max-w-[160px]"
+                        title={
+                          (row.current_policy_aor || row.aor_bucket || '—') +
+                          (row.ffm_app_ids && row.ffm_app_ids.length > 0
+                            ? `\nffmAppIds: ${row.ffm_app_ids.join(', ')}`
+                            : '')
+                        }
+                      >
                         {row.current_policy_aor || row.aor_bucket || '—'}
+                        {row.ffm_app_ids && row.ffm_app_ids.length > 1 && (
+                          <span className="ml-1 inline-block text-[10px] px-1 rounded bg-muted text-muted-foreground align-middle">
+                            {row.ffm_app_ids.length}× FFM
+                          </span>
+                        )}
                       </td>
                       <td className="px-2 py-2 text-right font-medium text-foreground whitespace-nowrap">
                         ${row.total_paid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
