@@ -15,7 +15,7 @@ import { RebuildAllBatchesButton } from '@/components/RebuildAllBatchesButton';
 import { RECONCILE_LOGIC_VERSION } from '@/lib/rebuild';
 import { CollapsibleDebugCard } from '@/components/CollapsibleDebugCard';
 import { SourceFunnelCard } from '@/components/SourceFunnelCard';
-import { isCoverallAORByName, isCoverallAORByNPN } from '@/lib/agents';
+import { isCoverallAORByName, isCoverallAORByNPN, COVERALL_NPN_SET } from '@/lib/agents';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { getCoveredMonths, monthKeyToFirstOfMonth, fallbackReconcileMonth } from '@/lib/dateRange';
 import { computeFilteredEde } from '@/lib/expectedEde';
