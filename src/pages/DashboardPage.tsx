@@ -475,6 +475,105 @@ export default function DashboardPage() {
     return out;
   }, [normalizedRecords, payEntityFilter]);
 
+  /**
+   * EE Universe Audit (2026-04-26) — surfaces members in the Expected
+   * Enrollments universe who fall in NEITHER the Found-in-BO bucket
+   * (`is_in_expected_ede_universe && in_back_office`) NOR the actionable
+   * Not-in-BO bucket (`filteredEde.missingFromBO`). These are the "gap"
+   * members where ID-candidate matching found a BO sibling but the reconciled
+   * member's flags don't classify them as Found-in-BO. We classify each row
+   * with a best-effort INFERRED reason so we can decide the right downstream
+   * fix without designing a "not actionable" bucket that hides bugs.
+   *
+   * Read-only — does not affect any totals, no DB writes.
+   */
+  const eeAuditRows = useMemo(() => {
+    if (!filteredEde.uniqueMembers.length) return [] as Array<Record<string, unknown>>;
+
+    const reconByMemberKey = new Map<string, any>();
+    for (const m of reconciled) reconByMemberKey.set(m.member_key, m);
+
+    // Index BO normalized records by every ID candidate so we can detect
+    // "BO row exists but join failed" cases.
+    const boByExchangeSub = new Map<string, any>();
+    const boByIssuerSub = new Map<string, any>();
+    const boByPolicy = new Map<string, any>();
+    for (const r of normalizedRecords) {
+      if (r.source_type !== 'BACK_OFFICE') continue;
+      if (r.exchange_subscriber_id && !boByExchangeSub.has(r.exchange_subscriber_id)) {
+        boByExchangeSub.set(r.exchange_subscriber_id, r);
+      }
+      if (r.issuer_subscriber_id && !boByIssuerSub.has(r.issuer_subscriber_id)) {
+        boByIssuerSub.set(r.issuer_subscriber_id, r);
+      }
+      if (r.policy_number && !boByPolicy.has(r.policy_number)) {
+        boByPolicy.set(r.policy_number, r);
+      }
+    }
+
+    const sortedCovered = (coveredMonths || []).filter(Boolean).slice().sort();
+    const earliestCovered = sortedCovered[0] ?? '';
+    const latestCovered = sortedCovered[sortedCovered.length - 1] ?? '';
+
+    const rows: Array<Record<string, unknown>> = [];
+    for (const fe of filteredEde.uniqueMembers) {
+      // Skip rows already in the actionable Not-in-BO bucket.
+      if (!fe.in_back_office) continue;
+      const recon = reconByMemberKey.get(fe.member_key);
+      // Found-in-BO bucket = reconciled & EE universe & in BO.
+      const isFoundInBo = !!(recon && recon.is_in_expected_ede_universe && recon.in_back_office);
+      if (isFoundInBo) continue;
+
+      const boByExch = fe.exchange_subscriber_id ? boByExchangeSub.get(fe.exchange_subscriber_id) : null;
+      const boByIssuer = fe.issuer_subscriber_id ? boByIssuerSub.get(fe.issuer_subscriber_id) : null;
+      const boByPol = fe.policy_number ? boByPolicy.get(fe.policy_number) : null;
+      const boRecord: any = boByExch || boByIssuer || boByPol || null;
+
+      const boBrokerNpn: string = boRecord?.agent_npn || '';
+      const boEligibleRaw: string = boRecord?.eligible_for_commission || '';
+      const boEligible = boEligibleRaw === 'Yes';
+      const boTermDate: string = boRecord?.policy_term_date || boRecord?.broker_term_date || '';
+      const boState = String(((boRecord?.raw_json || {}) as Record<string, any>)['State'] ?? '').trim().toUpperCase();
+
+      // Inferred reason — priority order per spec.
+      let inferredReason = '';
+      if (boRecord && (!recon || recon.member_key !== boRecord.member_key)) {
+        inferredReason = 'matching failure (BO row exists but join failed)';
+      } else if (boRecord && boBrokerNpn && !COVERALL_NPN_SET.has(boBrokerNpn)) {
+        inferredReason = 'AOR drift (BO broker is non-Coverall)';
+      } else if (boRecord && !boEligible) {
+        inferredReason = 'ineligible BO record';
+      } else if (sortedCovered.length > 0) {
+        const effMonth = (fe.effective_date || '').substring(0, 7);
+        const termMonth = boRecord?.policy_term_date ? String(boRecord.policy_term_date).substring(0, 7) : '';
+        const fullyCovers = effMonth && effMonth <= earliestCovered && (!termMonth || termMonth > latestCovered);
+        if (!fullyCovers) inferredReason = 'span edge case';
+      }
+      if (!inferredReason) inferredReason = 'unknown — no BO record found anywhere';
+
+      const edeStatus = fe.policy_status || '';
+      const aorMatch = (fe.current_policy_aor || '').match(/\((\d{5,15})\)/);
+      const writingAgentNpn = aorMatch ? aorMatch[1] : '';
+
+      rows.push({
+        applicant_name: fe.applicant_name || '',
+        policy_number: fe.policy_number || '',
+        issuer_subscriber_id: fe.issuer_subscriber_id || '',
+        exchange_subscriber_id: fe.exchange_subscriber_id || '',
+        ede_status: edeStatus,
+        current_policy_aor: fe.current_policy_aor || '',
+        writing_agent_npn: writingAgentNpn,
+        bo_record_exists: boRecord ? 'yes' : 'no',
+        bo_broker_npn: boBrokerNpn,
+        bo_eligible: boRecord ? (boEligible ? 'yes' : 'no') : '',
+        bo_term_date: boTermDate || '',
+        bo_state: boState,
+        inferred_reason: inferredReason,
+      });
+    }
+    return rows;
+  }, [filteredEde, reconciled, normalizedRecords, coveredMonths]);
+
   const unpaidSample = useMemo(() => {
     return filtered
       .filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission)
