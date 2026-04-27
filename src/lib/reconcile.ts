@@ -939,6 +939,7 @@ export function reconcile(
       agent_name: agentName,
       agent_npn: agentNpn,
       aor_bucket: aorBucket,
+      current_policy_aor: currentPolicyAor,
       expected_pay_entity: expectedPayEntity,
       actual_pay_entity: actualPayEntity,
       in_ede: inEde,
