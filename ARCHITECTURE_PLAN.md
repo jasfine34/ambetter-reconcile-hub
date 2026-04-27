@@ -104,3 +104,26 @@ Tables under this discipline today:
 
 A new batch-scoped table must opt into the same pattern or be documented here
 with a reason it doesn't.
+
+## § Canonical Helpers — Consumer Adoption Status
+
+As of the canonical adoption pass:
+
+| Page                    | Status | Notes |
+|-------------------------|--------|-------|
+| DashboardPage           | ✅ canonical | source of truth; runs invariants |
+| EntitySummaryPage       | ✅ canonical | uses `getNetPaidCommission` per scope |
+| AgentSummaryPage        | ✅ canonical | per-agent commission $ from `filterCommissionRowsByScope`; AOR predicate matches `aorBelongsToScope` |
+| MemberTimelinePage      | ⚠ intentionally separate | "Total paid" = paid-for-due-month, NOT canonical Net Paid; documented in-page |
+| ExceptionsPage          | ✅ canonical | filters via `ISSUE_TYPES`; no scope arithmetic of its own |
+
+**Rules going forward**:
+- New pages MUST import from `@/lib/canonical` for any scope-filtered metric.
+  No page-local `reconciled.filter(r => r.expected_pay_entity === ...)`.
+- Adding a new carrier means dropping a new adapter under
+  `src/lib/carriers/<name>/` and extending `NPN_MAP`. The canonical helpers
+  Just Work — no consumer page should need to change.
+- The Run Invariants button on the Dashboard is the smoke test; if it goes
+  red after a refactor, that's the signal to investigate (not to ignore).
+- AOR-canonical convention is documented inline at the top of
+  `src/lib/normalize.ts` — follow it for new carriers.
