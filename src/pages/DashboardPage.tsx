@@ -1055,11 +1055,17 @@ export default function DashboardPage() {
                   <th className="px-2 py-1.5 font-medium text-right">Amount</th>
                   <th className="px-2 py-1.5 font-medium">Pay Entity</th>
                   <th className="px-2 py-1.5 font-medium">Source File</th>
-                  <th className="px-2 py-1.5 font-medium">Statement Date</th>
+                  <th
+                    className="px-2 py-1.5 font-medium cursor-pointer select-none hover:text-foreground"
+                    onClick={toggleClawbackStatementSort}
+                    title="Click to sort by Statement Date"
+                  >
+                    Statement Date{clawbackStatementSortIndicator}
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {clawbackRows.slice(0, 500).map((r, i) => (
+                {sortedClawbackRows.slice(0, 500).map((r, i) => (
                   <tr key={i} className="border-t">
                     <td className="px-2 py-1 truncate max-w-[160px]" title={r.applicant_name}>{r.applicant_name || '—'}</td>
                     <td className="px-2 py-1 font-mono">{r.policy_number || '—'}</td>
@@ -1072,10 +1078,10 @@ export default function DashboardPage() {
                     <td className="px-2 py-1">{r.statement_date || '—'}</td>
                   </tr>
                 ))}
-                {clawbackRows.length > 500 && (
+                {sortedClawbackRows.length > 500 && (
                   <tr>
                     <td colSpan={7} className="px-2 py-2 text-center text-muted-foreground italic">
-                      Showing first 500 of {clawbackRows.length}. Export CSV for the full list.
+                      Showing first 500 of {sortedClawbackRows.length}. Export CSV for the full list.
                     </td>
                   </tr>
                 )}
