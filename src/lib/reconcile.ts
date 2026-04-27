@@ -1,9 +1,22 @@
-import { NPN_MAP, DEFAULT_COMMISSION_ESTIMATE } from './constants';
+import { NPN_MAP, DEFAULT_COMMISSION_ESTIMATE, SBA_STATES } from './constants';
 import { cleanId, normalizePolicyStatus } from './normalize';
 import type { NormalizedRecord } from './normalize';
 import { isCoverallAORByName } from './agents';
 import { getCoveredMonths, fallbackReconcileMonth } from './dateRange';
 import { lookupResolved, type ResolverIndex } from './resolvedIdentities';
+
+const SBA_STATE_SET: ReadonlySet<string> = new Set(SBA_STATES);
+
+/** True if any BO record in the group has a State column in the SBA list. */
+function groupHasSbaStateBo(recs: NormalizedRecord[]): boolean {
+  for (const r of recs) {
+    if (r.source_type !== 'BACK_OFFICE') continue;
+    const raw = (r.raw_json || {}) as Record<string, any>;
+    const st = String(raw['State'] ?? raw['state'] ?? '').trim().toUpperCase();
+    if (st && SBA_STATE_SET.has(st)) return true;
+  }
+  return false;
+}
 
 // Qualified EDE rows must match user's exact filter, applied to the RAW source
 // fields (raw_json) so we replicate the export they validated against.
@@ -840,7 +853,16 @@ export function reconcile(
     let issueNotes = '';
 
     if (!inEde && inComm) {
-      issueType = 'Paid but Missing from EDE';
+      // SBA-state reclassification (2026-04-26): Coverall enrolls members in
+      // GA/IL/NJ/PA via state-based-exchange platforms whose EDE files are
+      // intentionally NOT uploaded to this app. Those rows have no FFM EDE
+      // record by design; surface them as a separate, expected bucket so the
+      // 'Paid but Missing from EDE' queue stays focused on real exceptions.
+      if (groupHasSbaStateBo(recs)) {
+        issueType = 'SBA Enrollment (no FFM EDE expected)';
+      } else {
+        issueType = 'Paid but Missing from EDE';
+      }
     } else if (!inEde && inBo) {
       issueType = 'Back Office but Missing from EDE';
     } else if (inEde && !inBo) {
