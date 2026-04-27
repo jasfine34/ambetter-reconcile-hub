@@ -1516,11 +1516,17 @@ export default function DashboardPage() {
                   <th className="px-2 py-1.5 font-medium text-right">Amount</th>
                   <th className="px-2 py-1.5 font-medium">Pay Entity</th>
                   <th className="px-2 py-1.5 font-medium">Source File</th>
-                  <th className="px-2 py-1.5 font-medium">Statement Date</th>
+                  <th
+                    className="px-2 py-1.5 font-medium cursor-pointer select-none hover:text-foreground"
+                    onClick={toggleClawbackStatementSort}
+                    title="Click to sort by Statement Date"
+                  >
+                    Statement Date{clawbackStatementSortIndicator}
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {clawbackRows.map((r, i) => (
+                {sortedClawbackRows.map((r, i) => (
                   <tr key={i} className="border-t">
                     <td className="px-2 py-1 truncate max-w-[180px]" title={r.applicant_name}>{r.applicant_name || '—'}</td>
                     <td className="px-2 py-1 font-mono">{r.policy_number || '—'}</td>
@@ -1533,7 +1539,7 @@ export default function DashboardPage() {
                     <td className="px-2 py-1">{r.statement_date || '—'}</td>
                   </tr>
                 ))}
-                {clawbackRows.length === 0 && (
+                {sortedClawbackRows.length === 0 && (
                   <tr>
                     <td colSpan={7} className="px-2 py-3 text-center text-muted-foreground italic">
                       No clawback rows in scope.
