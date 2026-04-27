@@ -1,23 +1,23 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useBatch } from '@/contexts/BatchContext';
 import { BatchSelector } from '@/components/BatchSelector';
 import { DataTable } from '@/components/DataTable';
 import { MetricCard } from '@/components/MetricCard';
 import { NPN_MAP } from '@/lib/constants';
 import { extractNpnFromAorString } from '@/lib/agents';
+import { getNormalizedRecords } from '@/lib/persistence';
+import { filterCommissionRowsByScope } from '@/lib/canonical';
 
 const AGENTS = Object.entries(NPN_MAP).map(([npn, info]) => ({ npn, ...info }));
 
 /**
- * Returns true if the canonical AOR string on a reconciled member belongs to
- * this agent. Matching is in two passes:
- *   1. If the AOR string has an embedded NPN like "Jason Fine (21055210)",
+ * Canonical "Expected (AOR)" predicate — see ARCHITECTURE_PLAN.md §
+ * Canonical Definitions. Matches the convention used by `aorBelongsToScope`
+ * in src/lib/canonical/scope.ts:
+ *   1. If the AOR string carries an embedded NPN like "Jason Fine (21055210)",
  *      that NPN must equal the agent's NPN.
  *   2. Otherwise, the lowercased AOR string must start with the agent's
  *      lowercased name.
- *
- * This is the canonical "Expected" definition — see ARCHITECTURE_PLAN.md
- * § Canonical Definitions and the comment block at the top of normalize.ts.
  */
 function aorMatchesAgent(currentPolicyAor: string | null | undefined, agent: { npn: string; name: string }): boolean {
   if (!currentPolicyAor) return false;
@@ -28,19 +28,61 @@ function aorMatchesAgent(currentPolicyAor: string | null | undefined, agent: { n
   return s.toLowerCase().startsWith(agent.name.toLowerCase());
 }
 
+/**
+ * Agent Summary — per-agent breakdown.
+ *
+ * Two distinct attributions per agent (see ARCHITECTURE_PLAN.md):
+ *   - **Expected (AOR)**: members whose canonical `current_policy_aor` matches
+ *     this agent. This is the EE-universe ownership count.
+ *   - **Written by**: reconciled members where this agent's NPN appears as the
+ *     writing agent. Drives the historical paid / unpaid / commission columns
+ *     (commission flows through writing-agent NPN on Ambetter statements).
+ *
+ * Commission dollar totals are sourced from RAW commission rows via the
+ * canonical `filterCommissionRowsByScope` helper, then grouped by writing-agent
+ * NPN. This guarantees the per-agent "Total Commission" column ties out to
+ * the Dashboard's Net Paid Commission card and to Entity Summary at the same
+ * scope (within $0.01) — no roll-up drift from per-member aggregates.
+ */
 export default function AgentSummaryPage() {
-  const { reconciled } = useBatch();
+  const { reconciled, currentBatchId } = useBatch();
+  const [normalizedRecords, setNormalizedRecords] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!currentBatchId) { setNormalizedRecords([]); return; }
+    let cancelled = false;
+    getNormalizedRecords(currentBatchId)
+      .then((recs) => { if (!cancelled) setNormalizedRecords(recs as any[]); })
+      .catch(() => { if (!cancelled) setNormalizedRecords([]); });
+    return () => { cancelled = true; };
+  }, [currentBatchId]);
+
+  /**
+   * Per-agent commission totals from raw commission rows (canonical scope =
+   * 'All' so we count every dollar this writing agent earned across both pay
+   * entities — Coverall and Vix — which matches the page's historical column
+   * semantics).
+   */
+  const commissionByNpn = useMemo(() => {
+    const map = new Map<string, number>();
+    const rows = filterCommissionRowsByScope(normalizedRecords, 'All');
+    for (const r of rows) {
+      const npn = String((r as any).agent_npn || '').trim();
+      if (!npn) continue;
+      const amt = Number((r as any).commission_amount) || 0;
+      map.set(npn, (map.get(npn) || 0) + amt);
+    }
+    return map;
+  }, [normalizedRecords]);
 
   const agentData = useMemo(() =>
     AGENTS.map(agent => {
-      // Writing-agent scoped: anything where this agent's NPN appears as the
-      // writing agent on a reconciled record. Used for "Written by" + the
-      // historical eligible / paid / commission totals (commission flows
-      // through writing agent NPN, not AOR, on Ambetter statements).
+      // Writing-agent scoped reconciled rows (drives BO / eligible / paid /
+      // unpaid / est-missing). Commission $ comes from raw rows above.
       const writingRecs = reconciled.filter(r => r.agent_npn === agent.npn);
 
-      // Canonical "Expected" — count by current_policy_aor (AOR-of-record).
-      // This is the policyholder's chosen agent on EDE, not the writing agent.
+      // Canonical "Expected (AOR)" — count by current_policy_aor matching
+      // this agent (NPN-embedded or name-prefix), within the EE universe.
       const expected = reconciled.filter(r =>
         r.is_in_expected_ede_universe && aorMatchesAgent(r.current_policy_aor, agent),
       ).length;
@@ -49,8 +91,11 @@ export default function AgentSummaryPage() {
       const bo = writingRecs.filter(r => r.in_back_office).length;
       const eligible = writingRecs.filter(r => r.eligible_for_commission === 'Yes').length;
       const paid = writingRecs.filter(r => r.in_commission).length;
-      const unpaid = writingRecs.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission).length;
-      const totalComm = writingRecs.reduce((s, r) => s + (r.actual_commission || 0), 0);
+      const unpaid = writingRecs.filter(r =>
+        r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission,
+      ).length;
+      // CANONICAL: from raw commission rows (NOT sum of actual_commission).
+      const totalComm = commissionByNpn.get(agent.npn) || 0;
       const estMissing = writingRecs.reduce((s, r) => s + (r.estimated_missing_commission || 0), 0);
       return {
         agent_name: agent.name,
@@ -65,7 +110,7 @@ export default function AgentSummaryPage() {
         estimated_missing_commission: estMissing,
       };
     }),
-  [reconciled]);
+  [reconciled, commissionByNpn]);
 
   const columns = [
     { key: 'agent_name', label: 'Agent' },
@@ -90,7 +135,8 @@ export default function AgentSummaryPage() {
         <strong className="text-foreground">Expected (AOR)</strong> counts members whose <code>currentPolicyAOR</code> on EDE
         matches this agent — the canonical "ownership" definition.{' '}
         <strong className="text-foreground">Written by</strong> counts members whose writing-agent NPN matches this agent.
-        These are intentionally separate: an agent can write a policy whose AOR is held by someone else, and vice versa.
+        Commission dollar totals come from the canonical{' '}
+        <code className="font-mono">filterCommissionRowsByScope</code> helper and tie to the Dashboard's Net Paid card.
       </div>
       <div className="grid grid-cols-3 gap-4">
         {agentData.map(a => (
