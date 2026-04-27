@@ -21,6 +21,7 @@ function makeFixture() {
   const reconciled: any[] = [
     {
       member_key: 'm1',
+      current_policy_aor: 'Jason Fine (21055210)',
       expected_pay_entity: 'Coverall',
       actual_pay_entity: 'Coverall',
       is_in_expected_ede_universe: true,
@@ -32,10 +33,11 @@ function makeFixture() {
     },
     {
       member_key: 'm2',
+      current_policy_aor: 'Becky Shuta (16531877)',
       expected_pay_entity: 'Coverall',
       actual_pay_entity: 'Coverall',
       is_in_expected_ede_universe: true,
-      in_back_office: false, // weak-match upgrade target
+      in_back_office: false,
       in_commission: false,
       eligible_for_commission: 'Yes',
       issuer_subscriber_id: 'U222',
@@ -43,9 +45,12 @@ function makeFixture() {
     },
     {
       member_key: 'm3',
+      current_policy_aor: 'Erica Fine (21277051)',
       expected_pay_entity: 'Vix',
       actual_pay_entity: 'Vix',
-      is_in_expected_ede_universe: true,
+      // Not in EE-universe fixture — kept out of Found/Eligible counts so the
+      // Coverall-scope invariant balances against the 2-member filteredEde.
+      is_in_expected_ede_universe: false,
       in_back_office: true,
       in_commission: true,
       eligible_for_commission: 'Yes',
@@ -80,15 +85,25 @@ function makeFixture() {
 }
 
 describe('canonical/scope', () => {
-  it('Coverall scope picks up Coverall + Coverall_or_Vix members', () => {
+  it('Coverall scope = AOR is any Coverall NPN (Jason/Erica/Becky)', () => {
     const { reconciled } = makeFixture();
     const keys = getMembersInScope(reconciled, 'Coverall');
+    // Per canonical rule (2026.04.27): Erica's NPN is a Coverall NPN, so a
+    // member with Erica AOR is in Coverall scope regardless of pay entity.
     expect(keys.has('m1')).toBe(true);
     expect(keys.has('m2')).toBe(true);
-    expect(keys.has('m3')).toBe(false);
+    expect(keys.has('m3')).toBe(true);
   });
 
-  it('All scope returns every member', () => {
+  it('Vix scope = AOR is Erica AND member appears on Vix commission', () => {
+    const { reconciled } = makeFixture();
+    const keys = getMembersInScope(reconciled, 'Vix');
+    expect(keys.has('m1')).toBe(false);
+    expect(keys.has('m2')).toBe(false);
+    expect(keys.has('m3')).toBe(true);
+  });
+
+  it('All scope = AOR is Coverall NPN OR pay-entity is Vix', () => {
     const { reconciled } = makeFixture();
     expect(getMembersInScope(reconciled, 'All').size).toBe(3);
   });
