@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useBatch } from '@/contexts/BatchContext';
 import { BatchSelector } from '@/components/BatchSelector';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Search, Download, ChevronDown, Info, Bug } from 'lucide-react';
+import { Search, Download, ChevronDown, ChevronLeft, Info, Bug } from 'lucide-react';
 import { getNormalizedRecords, getAllNormalizedRecords } from '@/lib/persistence';
 import { buildMemberTimeline, buildMonthList, formatMonthLabel, type MemberTimelineRow } from '@/lib/memberTimeline';
 import { assignMergedMemberKeys } from '@/lib/memberMerge';
@@ -95,6 +96,9 @@ function defaultRange(statementMonth: string | null | undefined): { start: strin
 
 export default function MemberTimelinePage() {
   const { currentBatchId, batches, resolverIndex } = useBatch();
+  const navigate = useNavigate();
+  const [tlSearchParams] = useSearchParams();
+  const fromRecords = tlSearchParams.get('from') === 'records';
   const currentBatch = batches.find((b: any) => b.id === currentBatchId);
   const initial = defaultRange(currentBatch?.statement_month);
 
@@ -504,6 +508,15 @@ export default function MemberTimelinePage() {
   return (
     <TooltipProvider delayDuration={150}>
       <div className="space-y-6">
+        {fromRecords && (
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ChevronLeft className="h-4 w-4" /> Back to All Records
+          </button>
+        )}
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
             <h2 className="text-2xl font-bold text-foreground">Member Timeline</h2>

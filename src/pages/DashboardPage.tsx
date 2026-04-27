@@ -533,13 +533,27 @@ export default function DashboardPage() {
         amount: amt,
         pay_entity: rec.pay_entity || '',
         source_file_label: rec.source_file_label || '',
-        statement_date: String(
-          raw['Statement Date'] ??
-            raw['Statement Period'] ??
-            raw['Period End Date'] ??
-            raw['Pay Period'] ??
-            '',
-        ).trim(),
+        statement_date: (() => {
+          // Canonical: 'Accounting Cycle' on Ambetter statements. Try variants.
+          const raw = String(
+            rec.raw_json?.['Accounting Cycle'] ??
+              rec.raw_json?.['Accounting_Cycle'] ??
+              rec.raw_json?.['accounting_cycle'] ??
+              rec.raw_json?.['accounting cycle'] ??
+              rec.raw_json?.['Statement Date'] ??
+              rec.raw_json?.['Statement Period'] ??
+              rec.raw_json?.['Period End Date'] ??
+              rec.raw_json?.['Pay Period'] ??
+              '',
+          ).trim();
+          if (!raw) return '';
+          // Format MMM DD, YYYY when parseable; otherwise pass through.
+          const d = new Date(raw);
+          if (!isNaN(d.getTime())) {
+            return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+          }
+          return raw;
+        })(),
         member_key: rec.member_key || '',
       });
     }

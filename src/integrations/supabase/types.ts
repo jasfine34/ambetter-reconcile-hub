@@ -421,6 +421,7 @@ export type Database = {
           carrier: string | null
           clawback_amount: number | null
           created_at: string
+          current_policy_aor: string | null
           dob: string | null
           eligible_for_commission: string | null
           estimated_missing_commission: number | null
@@ -454,6 +455,7 @@ export type Database = {
           carrier?: string | null
           clawback_amount?: number | null
           created_at?: string
+          current_policy_aor?: string | null
           dob?: string | null
           eligible_for_commission?: string | null
           estimated_missing_commission?: number | null
@@ -487,6 +489,7 @@ export type Database = {
           carrier?: string | null
           clawback_amount?: number | null
           created_at?: string
+          current_policy_aor?: string | null
           dob?: string | null
           eligible_for_commission?: string | null
           estimated_missing_commission?: number | null

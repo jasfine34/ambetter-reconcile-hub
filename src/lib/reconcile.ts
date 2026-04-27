@@ -98,6 +98,17 @@ export interface ReconciledMember {
   agent_name: string;
   agent_npn: string;
   aor_bucket: string;
+  /**
+   * Canonical "AOR-of-record" — the value of `currentPolicyAOR` on the
+   * member's qualified EDE row (winner among multiple EDE rows is the same
+   * one whose effective_date / policy_term anchors the member). Distinct
+   * from `aor_bucket` (writing-agent-derived from agent_npn). NULL/empty
+   * when the member has no EDE row.
+   *
+   * Used by the All Records "AOR" column and Agent Summary "Expected by AOR"
+   * count. See ARCHITECTURE_PLAN.md §3.2 (AOR-canonical convention).
+   */
+  current_policy_aor: string;
   expected_pay_entity: string;
   actual_pay_entity: string;
   in_ede: boolean;
@@ -834,6 +845,18 @@ export function reconcile(
     const agentName = ede[0]?.agent_name || bo[0]?.agent_name || comm[0]?.agent_name || '';
     const agentNpn = ede[0]?.agent_npn || bo[0]?.agent_npn || comm[0]?.agent_npn || '';
     const aorBucket = bo[0]?.aor_bucket || ede[0]?.aor_bucket || comm[0]?.aor_bucket || '';
+    // currentPolicyAOR — canonical AOR string from the carrier's EDE export.
+    // Pull from the first qualified EDE row (same row that anchors
+    // expected_ede_effective_month). Members with no EDE row → empty string,
+    // which the UI renders as "—".
+    const currentPolicyAor: string = (() => {
+      const ordered = ede.length > 0 ? ede : [];
+      for (const e of ordered) {
+        const v = String(e.raw_json?.['currentPolicyAOR'] ?? '').trim();
+        if (v) return v;
+      }
+      return '';
+    })();
     const eligible = bo[0]?.eligible_for_commission || '';
     const premium = bo[0]?.premium || ede[0]?.premium || null;
     const netPremium = ede[0]?.net_premium || null;
@@ -916,6 +939,7 @@ export function reconcile(
       agent_name: agentName,
       agent_npn: agentNpn,
       aor_bucket: aorBucket,
+      current_policy_aor: currentPolicyAor,
       expected_pay_entity: expectedPayEntity,
       actual_pay_entity: actualPayEntity,
       in_ede: inEde,
