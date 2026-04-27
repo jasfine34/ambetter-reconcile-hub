@@ -98,6 +98,17 @@ export interface ReconciledMember {
   agent_name: string;
   agent_npn: string;
   aor_bucket: string;
+  /**
+   * Canonical "AOR-of-record" — the value of `currentPolicyAOR` on the
+   * member's qualified EDE row (winner among multiple EDE rows is the same
+   * one whose effective_date / policy_term anchors the member). Distinct
+   * from `aor_bucket` (writing-agent-derived from agent_npn). NULL/empty
+   * when the member has no EDE row.
+   *
+   * Used by the All Records "AOR" column and Agent Summary "Expected by AOR"
+   * count. See ARCHITECTURE_PLAN.md §3.2 (AOR-canonical convention).
+   */
+  current_policy_aor: string;
   expected_pay_entity: string;
   actual_pay_entity: string;
   in_ede: boolean;
