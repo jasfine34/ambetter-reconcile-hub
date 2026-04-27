@@ -409,6 +409,26 @@ export default function DashboardPage() {
     [confirmedUpgradeMemberKeys],
   );
 
+  /**
+   * Run the canonical invariant suite against the currently-loaded data and
+   * stash results into modal state. Extracted as a callback so the modal's
+   * "Re-run" button can re-invoke it without duplicating the input wiring.
+   */
+  const executeInvariants = useCallback(() => {
+    const results = runInvariants({
+      reconciled,
+      normalizedRecords,
+      filteredEde,
+      confirmedUpgradeMemberKeys,
+      confirmedWeakMatchOverrideKeys: weakMatchResult.confirmedKeys,
+      weakMatchPendingOverrideKeys: new Set(weakMatchResult.pending.map((c) => c.override_key)),
+      scope: payEntityFilter === 'All' ? 'All' : payEntityFilter,
+      pickStableKey,
+      isCoverallNpn: isCoverallAORByNPN,
+    });
+    setInvariantResults(results);
+  }, [reconciled, normalizedRecords, filteredEde, confirmedUpgradeMemberKeys, weakMatchResult, payEntityFilter]);
+
   const dashboardTitle = useMemo(() => {
     switch (payEntityFilter) {
       case 'Coverall': return 'Coverall Commission Reconciliation';
