@@ -87,40 +87,6 @@ async function deleteAndVerifyZero(
   );
 }
 
-/**
- * Post-INSERT sanity assertion: when we expected to write rows, verify they
- * landed. Retries the supplied insert callback once before throwing.
- */
-async function insertAndVerifyNonZero(
-  tableLabel: string,
-  expectedAtLeast: number,
-  doInsert: () => Promise<void>,
-  countRows: () => Promise<number>,
-): Promise<number> {
-  if (expectedAtLeast <= 0) {
-    await doInsert();
-    return countRows();
-  }
-  const MAX = 2;
-  let lastCount = 0;
-  let lastError: Error | null = null;
-  for (let attempt = 1; attempt <= MAX; attempt++) {
-    try {
-      await doInsert();
-    } catch (err) {
-      lastError = err instanceof Error ? err : new Error(String(err));
-      if (attempt < MAX) await new Promise((r) => setTimeout(r, 1000));
-      continue;
-    }
-    lastCount = await countRows();
-    if (lastCount > 0) return lastCount;
-    if (attempt < MAX) await new Promise((r) => setTimeout(r, 1000));
-  }
-  throw new Error(
-    `Post-INSERT verification failed for ${tableLabel}: expected ≥1 row but got ${lastCount} ` +
-      `after ${MAX} attempts. Last error: ${lastError?.message ?? 'none'}`,
-  );
-}
 
 export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Promise<{
   filesProcessed: number;
