@@ -59,6 +59,69 @@ async function downloadFileFromStorage(storagePath: string): Promise<File> {
   return new File([data], fileName, { type: 'text/csv' });
 }
 
+/**
+ * DELETE-then-verify-zero discipline. Run the supplied delete, count remaining
+ * rows for the batch, retry once on non-zero with a short backoff, then throw.
+ * This is what prevents the "doubling" failure mode where a partial prior
+ * insert leaves rows behind that the next rebuild stacks on top of (the
+ * commission_estimates incident, Apr 2026).
+ *
+ * See ARCHITECTURE_PLAN.md § Rebuild Discipline.
+ */
+async function deleteAndVerifyZero(
+  tableLabel: string,
+  doDelete: () => Promise<void>,
+  countRemaining: () => Promise<number>,
+): Promise<void> {
+  const MAX = 2;
+  let lastCount = -1;
+  for (let attempt = 1; attempt <= MAX; attempt++) {
+    await doDelete();
+    lastCount = await countRemaining();
+    if (lastCount === 0) return;
+    if (attempt < MAX) await new Promise((r) => setTimeout(r, 750));
+  }
+  throw new Error(
+    `Pre-INSERT clear failed for ${tableLabel}: ${lastCount} rows remained after ` +
+      `${MAX} delete attempts. Refusing to INSERT on top of stale rows.`,
+  );
+}
+
+/**
+ * Post-INSERT sanity assertion: when we expected to write rows, verify they
+ * landed. Retries the supplied insert callback once before throwing.
+ */
+async function insertAndVerifyNonZero(
+  tableLabel: string,
+  expectedAtLeast: number,
+  doInsert: () => Promise<void>,
+  countRows: () => Promise<number>,
+): Promise<number> {
+  if (expectedAtLeast <= 0) {
+    await doInsert();
+    return countRows();
+  }
+  const MAX = 2;
+  let lastCount = 0;
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= MAX; attempt++) {
+    try {
+      await doInsert();
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (attempt < MAX) await new Promise((r) => setTimeout(r, 1000));
+      continue;
+    }
+    lastCount = await countRows();
+    if (lastCount > 0) return lastCount;
+    if (attempt < MAX) await new Promise((r) => setTimeout(r, 1000));
+  }
+  throw new Error(
+    `Post-INSERT verification failed for ${tableLabel}: expected ≥1 row but got ${lastCount} ` +
+      `after ${MAX} attempts. Last error: ${lastError?.message ?? 'none'}`,
+  );
+}
+
 export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Promise<{
   filesProcessed: number;
   recordsNormalized: number;
