@@ -159,6 +159,9 @@ export default function DashboardPage() {
   const [edeRawLoading, setEdeRawLoading] = useState(false);
   const [notInBoOpen, setNotInBoOpen] = useState(false);
   const [clawbacksOpen, setClawbacksOpen] = useState(false);
+  // Sort state for the Clawbacks Detail / Clawbacks dialog Statement Date
+  // column. null = default sort (most-negative amount first).
+  const [clawbackStatementSort, setClawbackStatementSort] = useState<'asc' | 'desc' | null>(null);
   // Cached normalized records for this batch, used by the Source Funnel and
   // any other classifier-driven widget. Refreshes on batch change and after
   // a re-run.
@@ -516,6 +519,8 @@ export default function DashboardPage() {
       pay_entity: string;
       source_file_label: string;
       statement_date: string;
+      /** Epoch ms parsed from statement_date for sorting; NaN if unparseable. */
+      _statement_sort: number;
       member_key: string;
     }> = [];
     for (const rec of normalizedRecords) {
@@ -525,6 +530,21 @@ export default function DashboardPage() {
       if (payEntityFilter === 'Coverall' && rec.pay_entity !== 'Coverall') continue;
       if (payEntityFilter === 'Vix' && rec.pay_entity !== 'Vix') continue;
       const raw = rec.raw_json || {};
+      const stmtRaw = String(
+        rec.raw_json?.['Accounting Cycle'] ??
+          rec.raw_json?.['Accounting_Cycle'] ??
+          rec.raw_json?.['accounting_cycle'] ??
+          rec.raw_json?.['accounting cycle'] ??
+          rec.raw_json?.['Statement Date'] ??
+          rec.raw_json?.['Statement Period'] ??
+          rec.raw_json?.['Period End Date'] ??
+          rec.raw_json?.['Pay Period'] ??
+          '',
+      ).trim();
+      const parsed = stmtRaw ? new Date(stmtRaw) : null;
+      const formatted = parsed && !isNaN(parsed.getTime())
+        ? parsed.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })
+        : stmtRaw;
       out.push({
         applicant_name: rec.applicant_name || '',
         policy_number: rec.policy_number || '',
@@ -533,33 +553,39 @@ export default function DashboardPage() {
         amount: amt,
         pay_entity: rec.pay_entity || '',
         source_file_label: rec.source_file_label || '',
-        statement_date: (() => {
-          // Canonical: 'Accounting Cycle' on Ambetter statements. Try variants.
-          const raw = String(
-            rec.raw_json?.['Accounting Cycle'] ??
-              rec.raw_json?.['Accounting_Cycle'] ??
-              rec.raw_json?.['accounting_cycle'] ??
-              rec.raw_json?.['accounting cycle'] ??
-              rec.raw_json?.['Statement Date'] ??
-              rec.raw_json?.['Statement Period'] ??
-              rec.raw_json?.['Period End Date'] ??
-              rec.raw_json?.['Pay Period'] ??
-              '',
-          ).trim();
-          if (!raw) return '';
-          // Format MMM DD, YYYY when parseable; otherwise pass through.
-          const d = new Date(raw);
-          if (!isNaN(d.getTime())) {
-            return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
-          }
-          return raw;
-        })(),
+        statement_date: formatted,
+        _statement_sort: parsed ? parsed.getTime() : NaN,
         member_key: rec.member_key || '',
       });
     }
     out.sort((a, b) => a.amount - b.amount); // most negative first
     return out;
   }, [normalizedRecords, payEntityFilter]);
+
+  /**
+   * Clawback rows ordered per the Statement Date sort selection. When no
+   * explicit sort is active, returns the default amount-sorted list. NaN sort
+   * keys (unparseable dates) are pushed to the end in both directions.
+   */
+  const sortedClawbackRows = useMemo(() => {
+    if (!clawbackStatementSort) return clawbackRows;
+    const dir = clawbackStatementSort === 'asc' ? 1 : -1;
+    return [...clawbackRows].sort((a, b) => {
+      const aBad = isNaN(a._statement_sort);
+      const bBad = isNaN(b._statement_sort);
+      if (aBad && bBad) return 0;
+      if (aBad) return 1;
+      if (bBad) return -1;
+      return dir * (a._statement_sort - b._statement_sort);
+    });
+  }, [clawbackRows, clawbackStatementSort]);
+
+  const toggleClawbackStatementSort = useCallback(() => {
+    setClawbackStatementSort((cur) => (cur === 'asc' ? 'desc' : cur === 'desc' ? null : 'asc'));
+  }, []);
+
+  const clawbackStatementSortIndicator =
+    clawbackStatementSort === 'asc' ? ' ↑' : clawbackStatementSort === 'desc' ? ' ↓' : '';
 
   /**
    * EE Universe Audit (2026-04-26) — surfaces members in the Expected
@@ -1029,11 +1055,17 @@ export default function DashboardPage() {
                   <th className="px-2 py-1.5 font-medium text-right">Amount</th>
                   <th className="px-2 py-1.5 font-medium">Pay Entity</th>
                   <th className="px-2 py-1.5 font-medium">Source File</th>
-                  <th className="px-2 py-1.5 font-medium">Statement Date</th>
+                  <th
+                    className="px-2 py-1.5 font-medium cursor-pointer select-none hover:text-foreground"
+                    onClick={toggleClawbackStatementSort}
+                    title="Click to sort by Statement Date"
+                  >
+                    Statement Date{clawbackStatementSortIndicator}
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {clawbackRows.slice(0, 500).map((r, i) => (
+                {sortedClawbackRows.slice(0, 500).map((r, i) => (
                   <tr key={i} className="border-t">
                     <td className="px-2 py-1 truncate max-w-[160px]" title={r.applicant_name}>{r.applicant_name || '—'}</td>
                     <td className="px-2 py-1 font-mono">{r.policy_number || '—'}</td>
@@ -1046,10 +1078,10 @@ export default function DashboardPage() {
                     <td className="px-2 py-1">{r.statement_date || '—'}</td>
                   </tr>
                 ))}
-                {clawbackRows.length > 500 && (
+                {sortedClawbackRows.length > 500 && (
                   <tr>
                     <td colSpan={7} className="px-2 py-2 text-center text-muted-foreground italic">
-                      Showing first 500 of {clawbackRows.length}. Export CSV for the full list.
+                      Showing first 500 of {sortedClawbackRows.length}. Export CSV for the full list.
                     </td>
                   </tr>
                 )}
@@ -1484,11 +1516,17 @@ export default function DashboardPage() {
                   <th className="px-2 py-1.5 font-medium text-right">Amount</th>
                   <th className="px-2 py-1.5 font-medium">Pay Entity</th>
                   <th className="px-2 py-1.5 font-medium">Source File</th>
-                  <th className="px-2 py-1.5 font-medium">Statement Date</th>
+                  <th
+                    className="px-2 py-1.5 font-medium cursor-pointer select-none hover:text-foreground"
+                    onClick={toggleClawbackStatementSort}
+                    title="Click to sort by Statement Date"
+                  >
+                    Statement Date{clawbackStatementSortIndicator}
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {clawbackRows.map((r, i) => (
+                {sortedClawbackRows.map((r, i) => (
                   <tr key={i} className="border-t">
                     <td className="px-2 py-1 truncate max-w-[180px]" title={r.applicant_name}>{r.applicant_name || '—'}</td>
                     <td className="px-2 py-1 font-mono">{r.policy_number || '—'}</td>
@@ -1501,7 +1539,7 @@ export default function DashboardPage() {
                     <td className="px-2 py-1">{r.statement_date || '—'}</td>
                   </tr>
                 ))}
-                {clawbackRows.length === 0 && (
+                {sortedClawbackRows.length === 0 && (
                   <tr>
                     <td colSpan={7} className="px-2 py-3 text-center text-muted-foreground italic">
                       No clawback rows in scope.

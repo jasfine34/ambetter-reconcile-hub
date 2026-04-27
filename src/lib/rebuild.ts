@@ -13,6 +13,7 @@ import {
   deleteCurrentNormalizedForBatch,
   countReconciledForBatch,
   countCurrentNormalizedForBatch,
+  countCommissionEstimatesForBatch,
 } from './persistence';
 import { fallbackReconcileMonth } from './dateRange';
 import { loadResolverIndex } from './resolvedIdentities';
@@ -23,7 +24,7 @@ import { loadResolverIndex } from './resolvedIdentities';
  * compares this to `upload_batches.last_rebuild_logic_version` and shows a
  * warning banner when the stored value is older than the current code.
  */
-export const RECONCILE_LOGIC_VERSION = '2026.04.27-canonical-display';
+export const RECONCILE_LOGIC_VERSION = '2026.04.27-cleanup-final';
 
 /**
  * Alias kept for the cross-batch staleness banner / "Rebuild All" feature.
@@ -57,6 +58,35 @@ async function downloadFileFromStorage(storagePath: string): Promise<File> {
   const fileName = storagePath.split('/').pop() ?? 'file.csv';
   return new File([data], fileName, { type: 'text/csv' });
 }
+
+/**
+ * DELETE-then-verify-zero discipline. Run the supplied delete, count remaining
+ * rows for the batch, retry once on non-zero with a short backoff, then throw.
+ * This is what prevents the "doubling" failure mode where a partial prior
+ * insert leaves rows behind that the next rebuild stacks on top of (the
+ * commission_estimates incident, Apr 2026).
+ *
+ * See ARCHITECTURE_PLAN.md § Rebuild Discipline.
+ */
+async function deleteAndVerifyZero(
+  tableLabel: string,
+  doDelete: () => Promise<void>,
+  countRemaining: () => Promise<number>,
+): Promise<void> {
+  const MAX = 2;
+  let lastCount = -1;
+  for (let attempt = 1; attempt <= MAX; attempt++) {
+    await doDelete();
+    lastCount = await countRemaining();
+    if (lastCount === 0) return;
+    if (attempt < MAX) await new Promise((r) => setTimeout(r, 750));
+  }
+  throw new Error(
+    `Pre-INSERT clear failed for ${tableLabel}: ${lastCount} rows remained after ` +
+      `${MAX} delete attempts. Refusing to INSERT on top of stale rows.`,
+  );
+}
+
 
 export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Promise<{
   filesProcessed: number;
@@ -97,9 +127,26 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
   // through ids in 500-row chunks so each individual DELETE is small enough
   // to finish well under the timeout. Smaller batches (Jan/Mar) just take a
   // few extra round-trips; correctness is unchanged.
-  await deleteReconciledForBatch(batchId);
-  await deleteCommissionEstimatesForBatch(batchId);
-  await deleteCurrentNormalizedForBatch(batchId);
+  // DELETE-then-verify-zero discipline (see ARCHITECTURE_PLAN.md §
+  // Rebuild Discipline). The doubling incident on Apr 2026 happened when a
+  // partial prior insert left rows behind that the next rebuild stacked on
+  // top of. Each clear is now followed by a count assertion and a single
+  // retry before the rebuild aborts.
+  await deleteAndVerifyZero(
+    'reconciled_members',
+    () => deleteReconciledForBatch(batchId),
+    () => countReconciledForBatch(batchId),
+  );
+  await deleteAndVerifyZero(
+    'commission_estimates',
+    () => deleteCommissionEstimatesForBatch(batchId),
+    () => countCommissionEstimatesForBatch(batchId),
+  );
+  await deleteAndVerifyZero(
+    'normalized_records (current)',
+    () => deleteCurrentNormalizedForBatch(batchId),
+    () => countCurrentNormalizedForBatch(batchId),
+  );
 
   // 2 + 5. Re-download + re-normalize each file
   let totalNormalized = 0;
@@ -136,6 +183,19 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
     });
     await insertNormalizedRecords(batchId, f.id, normalized, snapshot);
     totalNormalized += normalized.length;
+  }
+
+  // Post-loop assertion: if any source file produced normalized rows, the
+  // current (non-superseded) normalized_records count must be > 0. Catches
+  // the case where every per-file insert silently returned without writing.
+  if (totalNormalized > 0) {
+    const persistedAfterInsert = await countCurrentNormalizedForBatch(batchId);
+    if (persistedAfterInsert === 0) {
+      throw new Error(
+        `Post-INSERT verification failed for normalized_records: expected ≥${totalNormalized} ` +
+          `but found 0 current rows for batch ${batchId}.`,
+      );
+    }
   }
 
   // 6. Re-run reconciliation from scratch — wrapped in a retry loop with a

@@ -442,6 +442,20 @@ export async function deleteCommissionEstimatesForBatch(batchId: string) {
   await chunkedDeleteByIds('commission_estimates', ids);
 }
 
+/**
+ * Counts commission_estimates rows for a batch — pairs with the
+ * delete-then-verify discipline in rebuild.ts (see ARCHITECTURE_PLAN.md
+ * § Rebuild Discipline).
+ */
+export async function countCommissionEstimatesForBatch(batchId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from('commission_estimates')
+    .select('id', { count: 'exact', head: true })
+    .eq('batch_id', batchId);
+  if (error) throw error;
+  return count ?? 0;
+}
+
 export async function deleteCurrentNormalizedForBatch(batchId: string) {
   const ids = await fetchAllIds('normalized_records', (q) =>
     q.eq('batch_id', batchId).is('superseded_at', null),
