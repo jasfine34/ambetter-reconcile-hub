@@ -1135,34 +1135,25 @@ export default function DashboardPage() {
               // their own sub-bucket.
               const confirmed = weakMatchResult.confirmedKeys;
               const pendingKeys = new Set(weakMatchResult.pending.map((c) => c.override_key));
-              const filteredMissing = filteredEde.missingFromBO.filter((r) => {
-                const key = String(r.issuer_subscriber_id ?? '').trim()
-                  ? `issub:${String(r.issuer_subscriber_id).trim().toLowerCase().replace(/[^a-z0-9]/g,'').split('-')[0]}`
-                  : (String(r.exchange_subscriber_id ?? '').trim()
-                      ? `sub:${String(r.exchange_subscriber_id).trim().toLowerCase().replace(/[^a-z0-9]/g,'')}`
-                      : (String(r.policy_number ?? '').trim()
-                          ? `policy:${String(r.policy_number).trim().toLowerCase().replace(/[^a-z0-9]/g,'').split('-')[0]}`
-                          : ''));
-                return !confirmed.has(key);
-              });
-              const weakPending = filteredMissing.filter((r) => {
-                const key = String(r.issuer_subscriber_id ?? '').trim()
-                  ? `issub:${String(r.issuer_subscriber_id).trim().toLowerCase().replace(/[^a-z0-9]/g,'').split('-')[0]}`
-                  : (String(r.exchange_subscriber_id ?? '').trim()
-                      ? `sub:${String(r.exchange_subscriber_id).trim().toLowerCase().replace(/[^a-z0-9]/g,'')}`
-                      : '');
-                return pendingKeys.has(key);
-              }).length;
+              // Stable identity key for an EE-side row — same priority as the
+              // weak-match override write path (issuer sub ID → exchange sub ID
+              // → policy #), so lookups against confirmed/pending sets match
+              // across rebuilds.
+              const keyFor = (r: typeof filteredEde.missingFromBO[number]) =>
+                pickStableKey({
+                  issuer_subscriber_id: r.issuer_subscriber_id,
+                  exchange_subscriber_id: r.exchange_subscriber_id,
+                  policy_number: r.policy_number,
+                });
+              const filteredMissing = filteredEde.missingFromBO.filter(
+                (r) => !confirmed.has(keyFor(r)),
+              );
+              const weakPending = filteredMissing.filter((r) =>
+                pendingKeys.has(keyFor(r)),
+              ).length;
               const actionable = filteredMissing.length - weakPending;
               const hasIssuer = filteredMissing
-                .filter((r) => {
-                  const key = String(r.issuer_subscriber_id ?? '').trim()
-                    ? `issub:${String(r.issuer_subscriber_id).trim().toLowerCase().replace(/[^a-z0-9]/g,'').split('-')[0]}`
-                    : (String(r.exchange_subscriber_id ?? '').trim()
-                        ? `sub:${String(r.exchange_subscriber_id).trim().toLowerCase().replace(/[^a-z0-9]/g,'')}`
-                        : '');
-                  return !pendingKeys.has(key);
-                })
+                .filter((r) => !pendingKeys.has(keyFor(r)))
                 .filter((r) => String(r.issuer_subscriber_id ?? '').trim() !== '').length;
               const missingIssuer = actionable - hasIssuer;
               const notInBo = filteredMissing.length;
