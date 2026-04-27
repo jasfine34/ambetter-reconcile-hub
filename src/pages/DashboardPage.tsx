@@ -196,6 +196,16 @@ export default function DashboardPage() {
     return () => { cancelled = true; };
   }, [currentBatchId, reconciled.length]);
 
+  // Load persistent weak-match overrides. Re-load on batch change so a user
+  // who confirms a match elsewhere sees the upgrade after returning.
+  useEffect(() => {
+    let cancelled = false;
+    loadWeakMatchOverrides()
+      .then((map) => { if (!cancelled) setWeakOverrides(map); })
+      .catch(() => { if (!cancelled) setWeakOverrides(new Map()); });
+    return () => { cancelled = true; };
+  }, [currentBatchId]);
+
   useEffect(() => {
     localStorage.setItem(PAY_ENTITY_STORAGE_KEY, payEntityFilter);
   }, [payEntityFilter]);
