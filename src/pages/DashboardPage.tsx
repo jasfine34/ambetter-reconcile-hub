@@ -20,7 +20,7 @@ import { isCoverallAORByName, isCoverallAORByNPN, COVERALL_NPN_SET } from '@/lib
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { getCoveredMonths, monthKeyToFirstOfMonth, fallbackReconcileMonth } from '@/lib/dateRange';
 import { computeFilteredEde } from '@/lib/expectedEde';
-import { findWeakMatches, loadWeakMatchOverrides, applyOverrides, type WeakMatchOverride } from '@/lib/weakMatch';
+import { findWeakMatches, loadWeakMatchOverrides, applyOverrides, pickStableKey, type WeakMatchOverride } from '@/lib/weakMatch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { runIdentityResolution, invalidateResolverCache } from '@/lib/resolvedIdentities';
@@ -371,6 +371,38 @@ export default function DashboardPage() {
     return { candidates, confirmedKeys, rejectedKeys, pending };
   }, [filteredEde, normalizedRecords, weakOverrides]);
 
+  // Confirmed weak-match upgrades: build a Set of reconciled-member member_keys
+  // whose stable identity key has a 'confirmed' override. These members'
+  // strict join to BO failed but the user has manually confirmed the BO
+  // sibling — we treat them as in_back_office for ALL downstream metrics
+  // (foundBO, eligible, shouldPay, drilldowns) so the card NUMBERS reflect
+  // confirmed matches, not just the Not-in-BO subtitle math.
+  //
+  // Stable key built via pickStableKey() (issuer_sub_id → exchange_sub_id →
+  // policy#) — same priority order as the weak-match override write path,
+  // so the lookup matches across rebuilds.
+  const confirmedUpgradeMemberKeys = useMemo(() => {
+    const out = new Set<string>();
+    if (!weakMatchResult.confirmedKeys.size) return out;
+    for (const r of filtered) {
+      if (r.in_back_office) continue; // already counted; nothing to upgrade
+      const key = pickStableKey({
+        issuer_subscriber_id: r.issuer_subscriber_id,
+        exchange_subscriber_id: r.exchange_subscriber_id,
+        policy_number: r.policy_number,
+      });
+      if (key && weakMatchResult.confirmedKeys.has(key)) out.add(r.member_key);
+    }
+    return out;
+  }, [filtered, weakMatchResult.confirmedKeys]);
+
+  /** Effective in_back_office: strict join OR confirmed weak-match upgrade. */
+  const effInBO = useCallback(
+    (r: { member_key: string; in_back_office: boolean }) =>
+      r.in_back_office || confirmedUpgradeMemberKeys.has(r.member_key),
+    [confirmedUpgradeMemberKeys],
+  );
+
   const dashboardTitle = useMemo(() => {
     switch (payEntityFilter) {
       case 'Coverall': return 'Coverall Commission Reconciliation';
@@ -388,12 +420,12 @@ export default function DashboardPage() {
     // but are not double-counted across months.
     const expectedPriorMonth = priorMonth ? (filteredEde.byMonth[priorMonth] ?? 0) : 0;
     const expectedStatementMonth = statementMonth ? (filteredEde.byMonth[statementMonth] ?? 0) : 0;
-    const foundBO = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office).length;
-    const eligible = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes').length;
+    const foundBO = filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r)).length;
+    const eligible = filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r) && r.eligible_for_commission === 'Yes').length;
     const shouldPay = eligible;
     // Count distinct policies with positive payments
     const paidCommRecords = filtered.filter(r => r.in_commission).length;
-    const paidEligible = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes' && r.in_commission).length;
+    const paidEligible = filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r) && r.eligible_for_commission === 'Yes' && r.in_commission).length;
     const unpaid = shouldPay - paidEligible;
     // Gross / Clawbacks / Net Paid — computed from RAW commission records and
     // scoped by the dashboard's pay_entity filter, so they match exactly what
@@ -458,16 +490,16 @@ export default function DashboardPage() {
     const totalEdeRaw = filtered.filter(r => r.in_ede).length;
     const hasAnyEde = filtered.filter(r => r.in_ede).length;
     const hasExpectedEde = filtered.filter(r => r.is_in_expected_ede_universe).length;
-    const expectedWithBO = filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office).length;
-    const fullyMatched = filtered.filter(r => r.in_ede && r.in_back_office && r.in_commission).length;
-    const paidOutsideEde = filtered.filter(r => !r.in_ede && r.in_back_office && r.in_commission).length;
-    const commissionOnly = filtered.filter(r => !r.in_ede && !r.in_back_office && r.in_commission).length;
-    const backOfficeOnly = filtered.filter(r => !r.in_ede && r.in_back_office && !r.in_commission).length;
-    const unpaidExpected = filtered.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission).length;
+    const expectedWithBO = filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r)).length;
+    const fullyMatched = filtered.filter(r => r.in_ede && effInBO(r) && r.in_commission).length;
+    const paidOutsideEde = filtered.filter(r => !r.in_ede && effInBO(r) && r.in_commission).length;
+    const commissionOnly = filtered.filter(r => !r.in_ede && !effInBO(r) && r.in_commission).length;
+    const backOfficeOnly = filtered.filter(r => !r.in_ede && effInBO(r) && !r.in_commission).length;
+    const unpaidExpected = filtered.filter(r => r.in_ede && effInBO(r) && r.eligible_for_commission === 'Yes' && !r.in_commission).length;
     const totalPaidAll = filtered.filter(r => r.in_commission).length;
     const paidOutsideExpected = filtered.filter(r => !r.in_ede && r.in_commission).length;
     return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidOutsideEde, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, paidOutsideExpected, coverallDirectNet, downlineNet, netPaidTotal, splitDelta, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
-  }, [filtered, normalizedRecords, payEntityFilter, filteredEde, priorMonth, statementMonth]);
+  }, [filtered, normalizedRecords, payEntityFilter, filteredEde, priorMonth, statementMonth, effInBO]);
 
   // Clawback rows — every commission row with amount < 0 within the current
   // pay-entity scope. Derived from RAW normalized commission records (same
@@ -616,29 +648,29 @@ export default function DashboardPage() {
 
   const unpaidSample = useMemo(() => {
     return filtered
-      .filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission)
+      .filter(r => r.is_in_expected_ede_universe && effInBO(r) && r.eligible_for_commission === 'Yes' && !r.in_commission)
       .slice(0, 50);
-  }, [filtered]);
+  }, [filtered, effInBO]);
 
   const drilldownData = useMemo(() => {
     if (!drilldown) return null;
     switch (drilldown) {
       case 'expected': return filtered.filter(r => r.is_in_expected_ede_universe);
-      case 'foundBO': return filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office);
-      case 'eligible': return filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes');
+      case 'foundBO': return filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r));
+      case 'eligible': return filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r) && r.eligible_for_commission === 'Yes');
       case 'paidComm': return filtered.filter(r => r.in_commission);
-      case 'paidEligible': return filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes' && r.in_commission);
-      case 'unpaid': return filtered.filter(r => r.is_in_expected_ede_universe && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission);
-      case 'fullyMatched': return filtered.filter(r => r.in_ede && r.in_back_office && r.in_commission);
-      case 'paidOutsideEde': return filtered.filter(r => !r.in_ede && r.in_back_office && r.in_commission);
-      case 'commissionOnly': return filtered.filter(r => !r.in_ede && !r.in_back_office && r.in_commission);
-      case 'backOfficeOnly': return filtered.filter(r => !r.in_ede && r.in_back_office && !r.in_commission);
-      case 'unpaidExpected': return filtered.filter(r => r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission);
+      case 'paidEligible': return filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r) && r.eligible_for_commission === 'Yes' && r.in_commission);
+      case 'unpaid': return filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r) && r.eligible_for_commission === 'Yes' && !r.in_commission);
+      case 'fullyMatched': return filtered.filter(r => r.in_ede && effInBO(r) && r.in_commission);
+      case 'paidOutsideEde': return filtered.filter(r => !r.in_ede && effInBO(r) && r.in_commission);
+      case 'commissionOnly': return filtered.filter(r => !r.in_ede && !effInBO(r) && r.in_commission);
+      case 'backOfficeOnly': return filtered.filter(r => !r.in_ede && effInBO(r) && !r.in_commission);
+      case 'unpaidExpected': return filtered.filter(r => r.in_ede && effInBO(r) && r.eligible_for_commission === 'Yes' && !r.in_commission);
       case 'totalPaidAll': return filtered.filter(r => r.in_commission);
       case 'paidOutsideExpected': return filtered.filter(r => !r.in_ede && r.in_commission);
       default: return filtered;
     }
-  }, [drilldown, filtered]);
+  }, [drilldown, filtered, effInBO]);
 
   const isCoverageDrilldown = ['fullyMatched', 'paidOutsideEde', 'commissionOnly', 'backOfficeOnly', 'unpaidExpected', 'totalPaidAll', 'paidOutsideExpected'].includes(drilldown || '');
 
@@ -1103,34 +1135,25 @@ export default function DashboardPage() {
               // their own sub-bucket.
               const confirmed = weakMatchResult.confirmedKeys;
               const pendingKeys = new Set(weakMatchResult.pending.map((c) => c.override_key));
-              const filteredMissing = filteredEde.missingFromBO.filter((r) => {
-                const key = String(r.issuer_subscriber_id ?? '').trim()
-                  ? `issub:${String(r.issuer_subscriber_id).trim().toLowerCase().replace(/[^a-z0-9]/g,'').split('-')[0]}`
-                  : (String(r.exchange_subscriber_id ?? '').trim()
-                      ? `sub:${String(r.exchange_subscriber_id).trim().toLowerCase().replace(/[^a-z0-9]/g,'')}`
-                      : (String(r.policy_number ?? '').trim()
-                          ? `policy:${String(r.policy_number).trim().toLowerCase().replace(/[^a-z0-9]/g,'').split('-')[0]}`
-                          : ''));
-                return !confirmed.has(key);
-              });
-              const weakPending = filteredMissing.filter((r) => {
-                const key = String(r.issuer_subscriber_id ?? '').trim()
-                  ? `issub:${String(r.issuer_subscriber_id).trim().toLowerCase().replace(/[^a-z0-9]/g,'').split('-')[0]}`
-                  : (String(r.exchange_subscriber_id ?? '').trim()
-                      ? `sub:${String(r.exchange_subscriber_id).trim().toLowerCase().replace(/[^a-z0-9]/g,'')}`
-                      : '');
-                return pendingKeys.has(key);
-              }).length;
+              // Stable identity key for an EE-side row — same priority as the
+              // weak-match override write path (issuer sub ID → exchange sub ID
+              // → policy #), so lookups against confirmed/pending sets match
+              // across rebuilds.
+              const keyFor = (r: typeof filteredEde.missingFromBO[number]) =>
+                pickStableKey({
+                  issuer_subscriber_id: r.issuer_subscriber_id,
+                  exchange_subscriber_id: r.exchange_subscriber_id,
+                  policy_number: r.policy_number,
+                });
+              const filteredMissing = filteredEde.missingFromBO.filter(
+                (r) => !confirmed.has(keyFor(r)),
+              );
+              const weakPending = filteredMissing.filter((r) =>
+                pendingKeys.has(keyFor(r)),
+              ).length;
               const actionable = filteredMissing.length - weakPending;
               const hasIssuer = filteredMissing
-                .filter((r) => {
-                  const key = String(r.issuer_subscriber_id ?? '').trim()
-                    ? `issub:${String(r.issuer_subscriber_id).trim().toLowerCase().replace(/[^a-z0-9]/g,'').split('-')[0]}`
-                    : (String(r.exchange_subscriber_id ?? '').trim()
-                        ? `sub:${String(r.exchange_subscriber_id).trim().toLowerCase().replace(/[^a-z0-9]/g,'')}`
-                        : '');
-                  return !pendingKeys.has(key);
-                })
+                .filter((r) => !pendingKeys.has(keyFor(r)))
                 .filter((r) => String(r.issuer_subscriber_id ?? '').trim() !== '').length;
               const missingIssuer = actionable - hasIssuer;
               const notInBo = filteredMissing.length;
