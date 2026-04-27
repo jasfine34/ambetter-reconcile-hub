@@ -1,4 +1,5 @@
 import { useMemo, useState, useCallback, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useBatch } from '@/contexts/BatchContext';
 import { MetricCard } from '@/components/MetricCard';
 import { DataTable } from '@/components/DataTable';
@@ -19,6 +20,7 @@ import { isCoverallAORByName, isCoverallAORByNPN, COVERALL_NPN_SET } from '@/lib
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { getCoveredMonths, monthKeyToFirstOfMonth, fallbackReconcileMonth } from '@/lib/dateRange';
 import { computeFilteredEde } from '@/lib/expectedEde';
+import { findWeakMatches, loadWeakMatchOverrides, applyOverrides, type WeakMatchOverride } from '@/lib/weakMatch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { runIdentityResolution, invalidateResolverCache } from '@/lib/resolvedIdentities';
@@ -161,7 +163,11 @@ export default function DashboardPage() {
   // any other classifier-driven widget. Refreshes on batch change and after
   // a re-run.
   const [normalizedRecords, setNormalizedRecords] = useState<any[]>([]);
+  // Persistent weak-match overrides (table: weak_match_overrides). Loaded once
+  // per batch refresh. Used to upgrade/demote weak-match members.
+  const [weakOverrides, setWeakOverrides] = useState<Map<string, WeakMatchOverride>>(new Map());
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   // Covered months for this batch (prior month + statement month). Drives the
   // drilldown buttons, subtitle month breakdown, and the expected-EDE filter.
@@ -189,6 +195,16 @@ export default function DashboardPage() {
     })();
     return () => { cancelled = true; };
   }, [currentBatchId, reconciled.length]);
+
+  // Load persistent weak-match overrides. Re-load on batch change so a user
+  // who confirms a match elsewhere sees the upgrade after returning.
+  useEffect(() => {
+    let cancelled = false;
+    loadWeakMatchOverrides()
+      .then((map) => { if (!cancelled) setWeakOverrides(map); })
+      .catch(() => { if (!cancelled) setWeakOverrides(new Map()); });
+    return () => { cancelled = true; };
+  }, [currentBatchId]);
 
   useEffect(() => {
     localStorage.setItem(PAY_ENTITY_STORAGE_KEY, payEntityFilter);
@@ -329,6 +345,31 @@ export default function DashboardPage() {
     () => computeFilteredEde(normalizedRecords, reconciled, payEntityFilter, coveredMonths, resolverIndex),
     [normalizedRecords, reconciled, payEntityFilter, coveredMonths, resolverIndex]
   );
+
+  // Weak-match resolution (2026-04-27). For each EE-universe member that
+  // failed strict join to BO, check if a BO sibling exists by ≥2 fuzzy
+  // signals. Apply persistent overrides from `weak_match_overrides`:
+  //   confirmed → upgrade to Found-in-BO (added to confirmed set)
+  //   rejected  → demote to actionable Not-in-BO (kept in missingFromBO)
+  //   pending/deferred → surface in Manual Match queue (third sub-bucket)
+  //
+  // The math reconciles:
+  //   Found-in-BO + disputable + waiting + weak-match-pending = Expected
+  // Confirmed-match members move from missingFromBO into Found-in-BO.
+  // Rejected-match members stay in missingFromBO (disputable/waiting split).
+  const weakMatchResult = useMemo(() => {
+    if (!filteredEde.uniqueMembers.length || !normalizedRecords.length) {
+      return {
+        candidates: [],
+        confirmedKeys: new Set<string>(),
+        rejectedKeys: new Set<string>(),
+        pending: [] as ReturnType<typeof findWeakMatches>,
+      };
+    }
+    const candidates = findWeakMatches(filteredEde.uniqueMembers, normalizedRecords);
+    const { confirmedKeys, rejectedKeys, pending } = applyOverrides(candidates, weakOverrides);
+    return { candidates, confirmedKeys, rejectedKeys, pending };
+  }, [filteredEde, normalizedRecords, weakOverrides]);
 
   const dashboardTitle = useMemo(() => {
     switch (payEntityFilter) {
@@ -1055,9 +1096,44 @@ export default function DashboardPage() {
               );
             })()}
             {(() => {
-              const notInBo = filteredEde.notInBOCount;
-              const hasIssuer = filteredEde.missingFromBO.filter(r => String(r.issuer_subscriber_id ?? '').trim() !== '').length;
-              const missingIssuer = notInBo - hasIssuer;
+              // Weak-match split: among the EE rows missing strict BO,
+              // pull out members where a fuzzy BO sibling exists. Confirmed
+              // overrides upgrade to Found-in-BO (subtracted from this card);
+              // rejected stay in disputable/waiting; pending stay here as
+              // their own sub-bucket.
+              const confirmed = weakMatchResult.confirmedKeys;
+              const pendingKeys = new Set(weakMatchResult.pending.map((c) => c.override_key));
+              const filteredMissing = filteredEde.missingFromBO.filter((r) => {
+                const key = String(r.issuer_subscriber_id ?? '').trim()
+                  ? `issub:${String(r.issuer_subscriber_id).trim().toLowerCase().replace(/[^a-z0-9]/g,'').split('-')[0]}`
+                  : (String(r.exchange_subscriber_id ?? '').trim()
+                      ? `sub:${String(r.exchange_subscriber_id).trim().toLowerCase().replace(/[^a-z0-9]/g,'')}`
+                      : (String(r.policy_number ?? '').trim()
+                          ? `policy:${String(r.policy_number).trim().toLowerCase().replace(/[^a-z0-9]/g,'').split('-')[0]}`
+                          : ''));
+                return !confirmed.has(key);
+              });
+              const weakPending = filteredMissing.filter((r) => {
+                const key = String(r.issuer_subscriber_id ?? '').trim()
+                  ? `issub:${String(r.issuer_subscriber_id).trim().toLowerCase().replace(/[^a-z0-9]/g,'').split('-')[0]}`
+                  : (String(r.exchange_subscriber_id ?? '').trim()
+                      ? `sub:${String(r.exchange_subscriber_id).trim().toLowerCase().replace(/[^a-z0-9]/g,'')}`
+                      : '');
+                return pendingKeys.has(key);
+              }).length;
+              const actionable = filteredMissing.length - weakPending;
+              const hasIssuer = filteredMissing
+                .filter((r) => {
+                  const key = String(r.issuer_subscriber_id ?? '').trim()
+                    ? `issub:${String(r.issuer_subscriber_id).trim().toLowerCase().replace(/[^a-z0-9]/g,'').split('-')[0]}`
+                    : (String(r.exchange_subscriber_id ?? '').trim()
+                        ? `sub:${String(r.exchange_subscriber_id).trim().toLowerCase().replace(/[^a-z0-9]/g,'')}`
+                        : '');
+                  return !pendingKeys.has(key);
+                })
+                .filter((r) => String(r.issuer_subscriber_id ?? '').trim() !== '').length;
+              const missingIssuer = actionable - hasIssuer;
+              const notInBo = filteredMissing.length;
               return (
                 <MetricCard
                   title="Not in Back Office"
@@ -1065,14 +1141,44 @@ export default function DashboardPage() {
                   icon={<AlertTriangle className="h-4 w-4" />}
                   variant={notInBo > 0 ? 'destructive' : 'success'}
                   onClick={() => setNotInBoOpen(true)}
-                  subtitle={`${hasIssuer} disputable (has issuer ID) · ${missingIssuer} waiting (missing issuer ID)`}
+                  subtitle={
+                    `${hasIssuer} disputable · ${missingIssuer} waiting` +
+                    (weakPending > 0 ? ` · ${weakPending} weak BO match` : '')
+                  }
                   tooltip={{
-                    text: `Members that pass the Expected Enrollments filter but have no matching Back Office record (matched via the same Union-Find used by reconciliation: issuer_subscriber_id, exchange_subscriber_id, policy_number, name). Click to view the list and export to CSV.`,
-                    why: "These are the policies to chase down with Ambetter so commissions will flow. Expected Enrollments = In Back Office (" + filteredEde.inBOCount + ") + Not in Back Office (" + notInBo + ").",
+                    text:
+                      `Members that pass the Expected Enrollments filter but lack a strict Back Office match. ` +
+                      `Disputable = has issuer ID, BO should add them. Waiting = no issuer ID yet, usually self-resolves. ` +
+                      `Weak BO match = a BO record likely matches but the join is ambiguous — review in Manual Match. ` +
+                      `Confirmed overrides (${confirmed.size}) have already been upgraded to Found-in-BO.`,
+                    why:
+                      `Tie-out: Found-in-BO (${filteredEde.inBOCount + confirmed.size}) + Disputable (${hasIssuer}) + Waiting (${missingIssuer}) + Weak (${weakPending}) = ${filteredEde.inBOCount + confirmed.size + hasIssuer + missingIssuer + weakPending} (Expected ${filteredEde.uniqueKeys}).`,
                   }}
                 />
               );
             })()}
+            {weakMatchResult.pending.length > 0 && (
+              <button
+                type="button"
+                onClick={() => navigate('/manual-match?filter=weak')}
+                className="relative rounded-xl border p-5 text-left transition-all hover:shadow-md cursor-pointer hover:scale-[1.02] bg-muted/40 border-border"
+                title="Open Manual Match queue filtered to weak matches"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Weak BO Match Queue
+                  </span>
+                  <Link2 className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <div className="text-3xl font-bold text-muted-foreground">
+                  {weakMatchResult.pending.length.toLocaleString()}
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  Review in Manual Match · {weakMatchResult.confirmedKeys.size} confirmed,{' '}
+                  {weakMatchResult.rejectedKeys.size} rejected so far
+                </div>
+              </button>
+            )}
             <MetricCard title="Total Covered Lives" value={debugStats?.totalCoveredLives ?? 0} icon={<Users className="h-4 w-4" />} variant="info" subtitle={debugStats ? (formatMonthBreakdown(debugStats.totalCoveredLivesByMonth, { yearless: true }) || undefined) : undefined} tooltip={{ text: "Sum of coveredMemberCount across all qualified EDE records — counts the subscriber plus every dependent on each policy. Per-month breakdown is by actual effective month (newly effective lives) so per-month numbers SUM to the total.", why: "Reflects the actual number of insured lives, not just policy holders. Use this when reporting total members served or comparing to per-life carrier metrics." }} />
             <MetricCard title="Found in Back Office" value={metrics.foundBO} icon={<Building2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('foundBO')} tooltip={{ text: "Out of the expected members, these are the ones Ambetter recognizes in their system.", why: "If members are missing here, Ambetter may not have the policy correctly recorded, which can prevent payment." }} />
             <MetricCard title="Eligible for Commission" value={metrics.eligible} icon={<CheckCircle2 className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('eligible')} tooltip={{ text: "These are members that exist in Ambetter's system and are marked as eligible for commission.", why: "Only members in this group can generate commission. If eligibility is wrong, payments will not occur." }} />
