@@ -853,7 +853,16 @@ export function reconcile(
     let issueNotes = '';
 
     if (!inEde && inComm) {
-      issueType = 'Paid but Missing from EDE';
+      // SBA-state reclassification (2026-04-26): Coverall enrolls members in
+      // GA/IL/NJ/PA via state-based-exchange platforms whose EDE files are
+      // intentionally NOT uploaded to this app. Those rows have no FFM EDE
+      // record by design; surface them as a separate, expected bucket so the
+      // 'Paid but Missing from EDE' queue stays focused on real exceptions.
+      if (groupHasSbaStateBo(recs)) {
+        issueType = 'SBA Enrollment (no FFM EDE expected)';
+      } else {
+        issueType = 'Paid but Missing from EDE';
+      }
     } else if (!inEde && inBo) {
       issueType = 'Back Office but Missing from EDE';
     } else if (inEde && !inBo) {
