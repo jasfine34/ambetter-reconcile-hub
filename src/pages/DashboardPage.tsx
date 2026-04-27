@@ -25,6 +25,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { runIdentityResolution, invalidateResolverCache } from '@/lib/resolvedIdentities';
 import { ResolvedBadge } from '@/components/ResolvedBadge';
+import { runInvariants, type InvariantResult } from '@/lib/canonical';
 
 /** Format '2026-01' as '1/1/2026' for display. */
 function formatMonthStart(monthKey: string): string {
@@ -159,6 +160,8 @@ export default function DashboardPage() {
   const [edeRawLoading, setEdeRawLoading] = useState(false);
   const [notInBoOpen, setNotInBoOpen] = useState(false);
   const [clawbacksOpen, setClawbacksOpen] = useState(false);
+  const [invariantsOpen, setInvariantsOpen] = useState(false);
+  const [invariantResults, setInvariantResults] = useState<InvariantResult[] | null>(null);
   // Sort state for the Clawbacks Detail / Clawbacks dialog Statement Date
   // column. null = default sort (most-negative amount first).
   const [clawbackStatementSort, setClawbackStatementSort] = useState<'asc' | 'desc' | null>(null);
@@ -735,6 +738,29 @@ export default function DashboardPage() {
           <Button variant="outline" size="sm" onClick={handleRerun} disabled={rerunning || !currentBatchId}>
             <RefreshCw className={`h-4 w-4 mr-1 ${rerunning ? 'animate-spin' : ''}`} />
             {rerunning ? 'Running...' : 'Re-run Reconciliation'}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const results = runInvariants({
+                reconciled,
+                normalizedRecords,
+                filteredEde,
+                confirmedUpgradeMemberKeys,
+                confirmedWeakMatchOverrideKeys: weakMatchResult.confirmedKeys,
+                weakMatchPendingOverrideKeys: new Set(weakMatchResult.pending.map((c) => c.override_key)),
+                scope: payEntityFilter === 'All' ? 'All' : payEntityFilter,
+                pickStableKey,
+                isCoverallNpn: isCoverallAORByNPN,
+              });
+              setInvariantResults(results);
+              setInvariantsOpen(true);
+            }}
+            disabled={!currentBatchId || reconciled.length === 0}
+          >
+            <ShieldAlert className="h-4 w-4 mr-1" />
+            Run Invariants
           </Button>
           <Button variant="outline" size="sm" onClick={() => setResolveConfirmOpen(true)} disabled={resolving}>
             <Link2 className={`h-4 w-4 mr-1 ${resolving ? 'animate-pulse' : ''}`} />
@@ -1647,7 +1673,51 @@ export default function DashboardPage() {
             <Button onClick={handleResolveIdentities} disabled={resolving}>
               <Link2 className={`h-4 w-4 mr-1 ${resolving ? 'animate-pulse' : ''}`} />
               {resolving ? 'Resolving...' : 'Run Resolution'}
-            </Button>
+      {/* Invariants results */}
+      <Dialog open={invariantsOpen} onOpenChange={setInvariantsOpen}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldAlert className="h-5 w-5 text-primary" />
+              Canonical Invariants — {payEntityFilter} scope
+            </DialogTitle>
+            <DialogDescription>
+              Cross-page checks that catch definitional drift. Failures mean a page is computing a metric
+              outside the canonical helpers in <code className="font-mono">src/lib/canonical/</code>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            {(invariantResults ?? []).map((r) => (
+              <div
+                key={r.id}
+                className={`rounded-md border px-3 py-2 text-sm ${
+                  r.status === 'pass'
+                    ? 'bg-success/10 border-success/30'
+                    : 'bg-destructive/10 border-destructive/30'
+                }`}
+              >
+                <div className="flex items-start gap-2">
+                  {r.status === 'pass' ? (
+                    <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-success" />
+                  ) : (
+                    <XCircle className="h-4 w-4 mt-0.5 shrink-0 text-destructive" />
+                  )}
+                  <div className="flex-1">
+                    <div className="font-medium text-foreground">{r.label}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">{r.detail}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {invariantResults && invariantResults.length > 0 && (
+              <div className="text-xs text-muted-foreground pt-2 border-t">
+                {invariantResults.filter((r) => r.status === 'pass').length} passed ·{' '}
+                {invariantResults.filter((r) => r.status === 'fail').length} failed
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setInvariantsOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -1,0 +1,199 @@
+/**
+ * Canonical metric helpers — the ONLY functions consumer pages are allowed
+ * to call to compute scope-level totals. See ARCHITECTURE_PLAN.md
+ * § Canonical Definitions.
+ *
+ * Design contract:
+ *   - Helpers are PURE functions over already-loaded data (reconciled[],
+ *     normalizedRecords[], filteredEde, confirmedWeakMatchKeys). The
+ *     Dashboard hydrates these once and passes them in; other pages do the
+ *     same so every page sees identical inputs.
+ *   - Numbers produced here MUST equal the verified-clean Dashboard values
+ *     for Mar 2026 Coverall scope: NetPaid $36,640.50 · EE 1,731 · TCL 1,839 ·
+ *     Found-in-BO 1,580 (+ confirmedWeakMatches.size).
+ *   - Net Paid Commission is computed from RAW commission records (not
+ *     per-member aggregates), matching the Dashboard's Net Paid card. Summing
+ *     reconciled_members.actual_commission produces a slightly different
+ *     number ($36,727.50 on Mar 2026) because of inter-member roll-ups —
+ *     that's the historical drift this refactor eliminates.
+ */
+import type { FilteredEdeResult } from '../expectedEde';
+import {
+  type CanonicalScope,
+  filterReconciledByScope,
+  filterCommissionRowsByScope,
+} from './scope';
+
+export interface NetPaidBreakdown {
+  net: number;
+  gross: number;
+  clawbacks: number;
+  /** Number of commission rows that contributed to the net (positive + negative). */
+  rowCount: number;
+}
+
+/**
+ * Net Paid Commission for the scope. Sum of commission_amount on every
+ * COMMISSION row in scope. Matches the Net Paid Commission card on Dashboard
+ * EXACTLY (Mar 2026 Coverall = $36,640.50).
+ *
+ * Note on `confirmedWeakMatchKeys`: weak-match overrides upgrade members from
+ * "not in BO" to "effectively in BO" but they do NOT change which commission
+ * rows exist — they only change the BO-attribution count. So the override
+ * set is accepted here for API symmetry but does not alter Net Paid output.
+ */
+export function getNetPaidCommission(
+  normalizedRecords: any[],
+  scope: CanonicalScope,
+  _confirmedWeakMatchKeys?: Set<string>,
+): NetPaidBreakdown {
+  const rows = filterCommissionRowsByScope(normalizedRecords, scope);
+  let gross = 0;
+  let clawbacks = 0;
+  let rowCount = 0;
+  for (const r of rows) {
+    const amt = Number(r.commission_amount) || 0;
+    if (amt === 0) continue;
+    rowCount += 1;
+    if (amt > 0) gross += amt;
+    else clawbacks += amt;
+  }
+  return { net: gross + clawbacks, gross, clawbacks, rowCount };
+}
+
+/**
+ * Expected Enrollments — count of unique members in the EE universe for the
+ * scope. Sourced from `computeFilteredEde` (the canonical EE filter).
+ */
+export function getExpectedEnrollments(filteredEde: FilteredEdeResult): number {
+  return filteredEde.uniqueKeys;
+}
+
+/**
+ * Found in Back Office — members in the EE universe who have a strict join
+ * to BO OR a confirmed weak-match override. Matches the Dashboard's Found
+ * in BO card after weak-match upgrades are applied.
+ */
+export function getFoundInBackOffice(
+  reconciled: any[],
+  scope: CanonicalScope,
+  filteredEde: FilteredEdeResult,
+  confirmedUpgradeMemberKeys: Set<string>,
+): number {
+  const inScope = filterReconciledByScope(reconciled, scope);
+  return inScope.filter(
+    (r) =>
+      r.is_in_expected_ede_universe &&
+      (r.in_back_office || confirmedUpgradeMemberKeys.has(r.member_key)),
+  ).length;
+}
+
+/**
+ * Not in Back Office — members in the EE universe with no strict BO join and
+ * no confirmed weak-match override. Subtracts confirmed upgrades from the
+ * raw missingFromBO list so the breakdown ties to Expected Enrollments.
+ */
+export function getNotInBackOffice(
+  filteredEde: FilteredEdeResult,
+  confirmedWeakMatchOverrideKeys: Set<string>,
+  pickStableKey: (r: { issuer_subscriber_id?: string | null; exchange_subscriber_id?: string | null; policy_number?: string | null }) => string,
+): number {
+  return filteredEde.missingFromBO.filter(
+    (r) => !confirmedWeakMatchOverrideKeys.has(
+      pickStableKey({
+        issuer_subscriber_id: r.issuer_subscriber_id,
+        exchange_subscriber_id: r.exchange_subscriber_id,
+        policy_number: r.policy_number,
+      }),
+    ),
+  ).length;
+}
+
+/**
+ * Eligible Cohort — members in the EE universe, in BO (or confirmed weak
+ * match), AND eligible_for_commission='Yes'. This is the "should be paid"
+ * population.
+ */
+export function getEligibleCohort(
+  reconciled: any[],
+  scope: CanonicalScope,
+  confirmedUpgradeMemberKeys: Set<string>,
+): any[] {
+  const inScope = filterReconciledByScope(reconciled, scope);
+  return inScope.filter(
+    (r) =>
+      r.is_in_expected_ede_universe &&
+      (r.in_back_office || confirmedUpgradeMemberKeys.has(r.member_key)) &&
+      r.eligible_for_commission === 'Yes',
+  );
+}
+
+/** Total Covered Lives — sum of coveredMemberCount across the EE universe. */
+export function getTotalCoveredLives(filteredEde: FilteredEdeResult): number {
+  let total = 0;
+  for (const r of filteredEde.uniqueMembers) total += r.covered_member_count || 0;
+  return total;
+}
+
+/**
+ * Per-month breakdown for a metric. Currently supports 'expectedEnrollments'
+ * and 'totalCoveredLives'. Returns a map of YYYY-MM → count, sourced from
+ * filteredEde.byMonth (newly-effective per actual effective month, so the
+ * numbers SUM to the metric total).
+ */
+export function getMonthlyBreakdown(
+  metric: 'expectedEnrollments' | 'totalCoveredLives',
+  filteredEde: FilteredEdeResult,
+): Record<string, number> {
+  if (metric === 'expectedEnrollments') return { ...filteredEde.byMonth };
+  // totalCoveredLives — sum coveredMemberCount per actual effective month.
+  const out: Record<string, number> = {};
+  for (const r of filteredEde.uniqueMembers) {
+    const m = r.effective_month;
+    if (!m) continue;
+    out[m] = (out[m] ?? 0) + (r.covered_member_count || 0);
+  }
+  return out;
+}
+
+/**
+ * Direct-vs-downline split of Net Paid Commission. Direct = writing-agent NPN
+ * is one of the Coverall NPNs. Downline = pay_entity='Coverall' but writing
+ * agent is non-Coverall NPN (overrides). Used by the Dashboard's Net Paid
+ * card to break out where the dollars came from.
+ */
+export function getDirectVsDownlineSplit(
+  normalizedRecords: any[],
+  scope: CanonicalScope,
+  isCoverallNpn: (npn: string | null | undefined) => boolean,
+): {
+  coverallDirectNet: number;
+  downlineNet: number;
+  coverallDirectRows: number;
+  downlineRows: number;
+  unclassifiedRows: number;
+  unclassifiedNet: number;
+} {
+  const rows = filterCommissionRowsByScope(normalizedRecords, scope);
+  let coverallDirectNet = 0;
+  let downlineNet = 0;
+  let coverallDirectRows = 0;
+  let downlineRows = 0;
+  let unclassifiedRows = 0;
+  let unclassifiedNet = 0;
+  for (const rec of rows) {
+    const amt = Number(rec.commission_amount) || 0;
+    if (amt === 0) continue;
+    if (isCoverallNpn(rec.agent_npn)) {
+      coverallDirectNet += amt;
+      coverallDirectRows += 1;
+    } else if (rec.pay_entity === 'Coverall') {
+      downlineNet += amt;
+      downlineRows += 1;
+    } else {
+      unclassifiedRows += 1;
+      unclassifiedNet += amt;
+    }
+  }
+  return { coverallDirectNet, downlineNet, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
+}

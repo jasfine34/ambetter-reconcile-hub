@@ -58,6 +58,37 @@ policy_number) so they survive rebuilds. Confirmed overrides upgrade a member
 to "effectively in BO" without re-running reconciliation. See
 `src/lib/weakMatch.ts` and the `effInBO()` helper in `DashboardPage.tsx`.
 
+### Canonical helpers — single source of truth for metrics
+
+Every page that displays a scope-filtered metric (Net Paid Commission,
+Expected Enrollments, Found in Back Office, Eligible Cohort, Total Covered
+Lives, Direct vs Downline split, etc.) **must** derive that number from a
+helper in `src/lib/canonical/` — never from page-local filter logic.
+
+The three modules:
+
+- **`scope.ts`** — defines the three canonical scopes (`Coverall`, `Vix`,
+  `All`) and exposes `getMembersInScope`, `filterReconciledByScope`,
+  `filterCommissionRowsByScope`, `aorBelongsToScope`. This is the ONLY place
+  scope semantics live. New carriers extend NPN_MAP and (if needed) the
+  scope set — no changes in consumer pages.
+- **`metrics.ts`** — exposes `getNetPaidCommission`, `getExpectedEnrollments`,
+  `getFoundInBackOffice`, `getNotInBackOffice`, `getEligibleCohort`,
+  `getTotalCoveredLives`, `getMonthlyBreakdown`, `getDirectVsDownlineSplit`.
+  Every dollar total comes from raw COMMISSION normalized rows (NOT from
+  `reconciled_members.actual_commission`); summing the per-member field
+  introduces inter-member roll-up drift (the historical $36,727.50 vs
+  $36,640.50 incident on Mar 2026 Coverall scope).
+- **`invariants.ts`** — `runInvariants(InvariantInputs)` returns pass/fail
+  per cross-page check. Run on demand via the **Run Invariants** button on
+  the Dashboard. Failures are real signals — they mean a page is computing
+  a metric outside the canonical helpers.
+
+**Rule for new pages**: import from `@/lib/canonical`. Do not write a new
+`reconciled.filter(r => r.expected_pay_entity === ...)` in a component.
+**Rule for new carriers**: extend `NPN_MAP` and (if a new pay entity exists)
+add it to the scope helper. Consumer pages should not need to change.
+
 ## § Rebuild Discipline
 
 Every batch-scoped table that participates in rebuild **must** follow the
