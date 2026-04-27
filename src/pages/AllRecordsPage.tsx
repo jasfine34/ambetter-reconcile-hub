@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useBatch } from '@/contexts/BatchContext';
 import { BatchSelector } from '@/components/BatchSelector';
 import { ResolvedBadge } from '@/components/ResolvedBadge';
@@ -8,9 +9,23 @@ import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Search, Download, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Search, Download, ChevronLeft, ChevronRight, Loader2, ChevronRight as RowArrow } from 'lucide-react';
 import { exportToCSV } from '@/lib/csvParser';
 
+/**
+ * Column model for All Records.
+ *
+ * AOR-canonical convention (2026-04-27):
+ *   - "Writing Agent" (key: aor_bucket)  → derived from agent_npn via NPN_MAP.
+ *     Tells you WHO wrote the policy. Useful for compensation tracking.
+ *   - "AOR" (key: current_policy_aor)    → from EDE's currentPolicyAOR field
+ *     (the canonical "Agent of Record" the carrier currently honors). Tells
+ *     you WHO OWNS the policy today. This is the canonical "is this member
+ *     ours?" signal going forward; AOR transfers update this without
+ *     touching the writing agent.
+ *
+ * See ARCHITECTURE_PLAN.md §3.2 and src/lib/normalize.ts header comment.
+ */
 const COLUMNS = [
   { key: 'applicant_name', label: 'Name' },
   { key: 'policy_number', label: 'Policy #' },
@@ -20,7 +35,8 @@ const COLUMNS = [
   { key: 'issuer_subscriber_id', label: 'Issuer Sub ID' },
   { key: 'agent_name', label: 'Agent' },
   { key: 'agent_npn', label: 'NPN' },
-  { key: 'aor_bucket', label: 'AOR' },
+  { key: 'aor_bucket', label: 'Writing Agent' },
+  { key: 'current_policy_aor', label: 'AOR' },
   { key: 'in_ede', label: 'EDE' },
   { key: 'in_back_office', label: 'Back Office' },
   { key: 'in_commission', label: 'Commission' },
@@ -44,7 +60,7 @@ const PAGE_SIZE = 50;
  * dollar formatting for commission/premium, ✓/✗ for booleans, "—" for null.
  */
 function defaultRenderCell(key: string, value: unknown): ReactNode {
-  if (value == null) return '—';
+  if (value == null || value === '') return '—';
   if (typeof value === 'boolean') return value ? '✓' : '✗';
   if (typeof value === 'number') {
     if (key.includes('commission') || key.includes('premium')) {
@@ -55,34 +71,90 @@ function defaultRenderCell(key: string, value: unknown): ReactNode {
   return String(value);
 }
 
+/**
+ * Session-storage key used to remember the scroll offset of the table
+ * container so router.back() from Member Timeline lands on the same row,
+ * not at the top of the list. Per-batch so different batches don't collide.
+ */
+const SCROLL_KEY_PREFIX = 'all-records-scroll:';
+
 export default function AllRecordsPage() {
   const { currentBatchId, resolverIndex } = useBatch();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [page, setPage] = useState(0);
-  const [searchInput, setSearchInput] = useState('');
-  const [sortKey, setSortKey] = useState<string>('');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  // --- URL-backed view state (FIX B3) ---------------------------------------
+  // search/page/sort live in the query string so:
+  //   1. /records?search=Sanders&page=3&sort=applicant_name renders the same view
+  //   2. browser back/forward restores prior filtered state
+  //   3. URLs are shareable
+  const urlSearch = searchParams.get('search') ?? '';
+  const urlPage = Math.max(0, parseInt(searchParams.get('page') ?? '0', 10) || 0);
+  const urlSortKey = searchParams.get('sort') ?? '';
+  const urlSortDir = (searchParams.get('dir') === 'desc' ? 'desc' : 'asc') as 'asc' | 'desc';
+
+  const [searchInput, setSearchInput] = useState(urlSearch);
   const debouncedSearch = useDebouncedValue(searchInput, 250);
 
+  // Sync debounced search back to the URL (replace, not push, so each keystroke
+  // doesn't pollute history — only the *latest* search lands in history when
+  // the user navigates away).
+  useEffect(() => {
+    if (debouncedSearch === urlSearch) return;
+    const next = new URLSearchParams(searchParams);
+    if (debouncedSearch) next.set('search', debouncedSearch);
+    else next.delete('search');
+    // Reset to page 0 whenever the search query changes — otherwise the user
+    // typing on page 5 could end up on an empty trailing page.
+    next.delete('page');
+    setSearchParams(next, { replace: true });
+  }, [debouncedSearch]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reset to page 0 whenever the batch changes (different result set entirely).
+  useEffect(() => {
+    if (urlPage === 0) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('page');
+    setSearchParams(next, { replace: true });
+  }, [currentBatchId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const setPage = (p: number) => {
+    const next = new URLSearchParams(searchParams);
+    if (p === 0) next.delete('page');
+    else next.set('page', String(p));
+    // Page changes are PUSHed so back-button steps through prior pages.
+    setSearchParams(next);
+  };
+
+  const toggleSort = (key: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (urlSortKey === key) {
+      next.set('sort', key);
+      next.set('dir', urlSortDir === 'asc' ? 'desc' : 'asc');
+    } else {
+      next.set('sort', key);
+      next.set('dir', 'asc');
+    }
+    next.delete('page'); // sort changes drop you back to page 0
+    setSearchParams(next, { replace: true });
+  };
+
+  // --- Fetch ---------------------------------------------------------------
   const [rows, setRows] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
-
-  // Reset to first page whenever search or batch changes — otherwise a user
-  // typing on page 5 could end up looking at an empty trailing page.
-  useEffect(() => { setPage(0); }, [debouncedSearch, currentBatchId, sortKey, sortDir]);
 
   useEffect(() => {
     if (!currentBatchId) { setRows([]); setTotal(0); return; }
     let cancelled = false;
     setLoading(true);
     getReconciledMembersPage(currentBatchId, {
-      page,
+      page: urlPage,
       pageSize: PAGE_SIZE,
       search: debouncedSearch,
-      sortKey: sortKey || undefined,
-      sortDir,
+      sortKey: urlSortKey || undefined,
+      sortDir: urlSortDir,
     })
       .then(({ rows, total }) => {
         if (cancelled) return;
@@ -96,13 +168,35 @@ export default function AllRecordsPage() {
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [currentBatchId, page, debouncedSearch, sortKey, sortDir]);
+  }, [currentBatchId, urlPage, debouncedSearch, urlSortKey, urlSortDir]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const toggleSort = (key: string) => {
-    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setSortKey(key); setSortDir('asc'); }
+  // --- Scroll restoration (FIX B4) -----------------------------------------
+  // Save the table container's scrollTop on every scroll event AND save once
+  // more right before navigating away (row-click handler). On mount, restore
+  // from sessionStorage if present. Per-batch key so navigating between
+  // batches doesn't bleed offsets.
+  const tableContainerRef = useRef<HTMLDivElement | null>(null);
+  const scrollStorageKey = currentBatchId ? `${SCROLL_KEY_PREFIX}${currentBatchId}` : null;
+
+  // Restore once data is loaded (so the container actually has scrollable
+  // content). Wait one paint via requestAnimationFrame for the table to lay out.
+  useEffect(() => {
+    if (loading || !scrollStorageKey || rows.length === 0) return;
+    const saved = sessionStorage.getItem(scrollStorageKey);
+    if (!saved) return;
+    const offset = parseInt(saved, 10);
+    if (!Number.isFinite(offset)) return;
+    const raf = requestAnimationFrame(() => {
+      if (tableContainerRef.current) tableContainerRef.current.scrollTop = offset;
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [loading, scrollStorageKey, rows.length, urlPage, urlSortKey, urlSortDir]);
+
+  const saveScroll = () => {
+    if (!scrollStorageKey || !tableContainerRef.current) return;
+    sessionStorage.setItem(scrollStorageKey, String(tableContainerRef.current.scrollTop));
   };
 
   // Export pulls the FULL filtered set in one shot. Held off the render path
@@ -120,8 +214,8 @@ export default function AllRecordsPage() {
           page: p,
           pageSize: chunk,
           search: debouncedSearch,
-          sortKey: sortKey || undefined,
-          sortDir,
+          sortKey: urlSortKey || undefined,
+          sortDir: urlSortDir,
         });
         all.push(...rows);
         if (rows.length < chunk) break;
@@ -143,6 +237,14 @@ export default function AllRecordsPage() {
     const winning = (hit as any)[resolvedKey];
     if (!winning || String(winning) !== String(v)) return undefined;
     return <span>{String(v)}<ResolvedBadge sourceKind={hit.source_kind ?? undefined} batchMonth={hit.source_batch_month} /></span>;
+  };
+
+  // Row-click handler (FIX B1): save scroll, then navigate to Member Timeline
+  // with `from=records` so the timeline page can render the back-breadcrumb.
+  const handleRowClick = (row: any) => {
+    if (!row?.member_key) return;
+    saveScroll();
+    navigate(`/member-timeline?member=${encodeURIComponent(row.member_key)}&from=records`);
   };
 
   return (
@@ -172,7 +274,11 @@ export default function AllRecordsPage() {
               : <><Download className="h-4 w-4 mr-1" /> Export</>}
           </Button>
         </div>
-        <div className="rounded-lg border overflow-auto">
+        <div
+          ref={tableContainerRef}
+          onScroll={saveScroll}
+          className="rounded-lg border overflow-auto max-h-[70vh]"
+        >
           <Table>
             <TableHeader>
               <TableRow>
@@ -182,26 +288,33 @@ export default function AllRecordsPage() {
                     className="cursor-pointer select-none whitespace-nowrap"
                     onClick={() => toggleSort(col.key)}
                   >
-                    {col.label} {sortKey === col.key ? (sortDir === 'asc' ? '↑' : '↓') : ''}
+                    {col.label} {urlSortKey === col.key ? (urlSortDir === 'asc' ? '↑' : '↓') : ''}
                   </TableHead>
                 ))}
+                {/* Row-arrow affordance */}
+                <TableHead className="w-8" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={COLUMNS.length} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={COLUMNS.length + 1} className="text-center text-muted-foreground py-8">
                     <Loader2 className="h-4 w-4 mr-2 inline animate-spin" /> Loading…
                   </TableCell>
                 </TableRow>
               ) : rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={COLUMNS.length} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={COLUMNS.length + 1} className="text-center text-muted-foreground py-8">
                     No records found
                   </TableCell>
                 </TableRow>
               ) : rows.map((row, i) => (
-                <TableRow key={row.id ?? i}>
+                <TableRow
+                  key={row.id ?? i}
+                  onClick={() => handleRowClick(row)}
+                  className="cursor-pointer group hover:bg-muted/40 transition-colors"
+                  title="Open member timeline"
+                >
                   {COLUMNS.map(col => {
                     const override = renderResolvedCell(col.key, row);
                     return (
@@ -210,6 +323,9 @@ export default function AllRecordsPage() {
                       </TableCell>
                     );
                   })}
+                  <TableCell className="w-8 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors">
+                    <RowArrow className="h-4 w-4" />
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -218,11 +334,11 @@ export default function AllRecordsPage() {
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span>{total.toLocaleString()} records{debouncedSearch ? ` matching "${debouncedSearch}"` : ''}</span>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" disabled={page === 0 || loading} onClick={() => setPage(p => Math.max(0, p - 1))}>
+            <Button variant="ghost" size="sm" disabled={urlPage === 0 || loading} onClick={() => setPage(Math.max(0, urlPage - 1))}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <span>Page {page + 1} of {totalPages}</span>
-            <Button variant="ghost" size="sm" disabled={page >= totalPages - 1 || loading} onClick={() => setPage(p => p + 1)}>
+            <span>Page {urlPage + 1} of {totalPages}</span>
+            <Button variant="ghost" size="sm" disabled={urlPage >= totalPages - 1 || loading} onClick={() => setPage(urlPage + 1)}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
