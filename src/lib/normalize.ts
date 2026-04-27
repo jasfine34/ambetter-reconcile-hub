@@ -1,3 +1,33 @@
+/**
+ * ============================================================================
+ * AOR semantics in this system (canonical — read before adding a new carrier)
+ * ============================================================================
+ *
+ * `currentPolicyAOR` (sourced from EDE) is the **canonical** Agent-of-Record
+ * field. It represents the policyholder's chosen agent on the exchange and is
+ * the single source of truth for "is this our member?" scope filtering.
+ *
+ * `aor_bucket` is **derived from agent_npn** (the writing agent on the
+ * back-office / commission feed). It is preserved on every reconciled member
+ * for visibility and routing of commission dollars, but it does NOT define
+ * ownership. An agent can write a policy whose AOR belongs to someone else,
+ * and an agent can hold the AOR on a policy that someone else wrote.
+ *
+ * Rules for future carrier adapters:
+ *   1. Expose the carrier's equivalent of `currentPolicyAOR` (or its closest
+ *      analogue, e.g. "Agent of Record" string on the back-office feed) as
+ *      the canonical AOR on the normalized record. Use the existing
+ *      `current_policy_aor` column on `reconciled_members`.
+ *   2. Expose the writing-agent NPN as a separate field (`agent_npn`) and
+ *      let the classifier derive `aor_bucket` from it.
+ *   3. Never collapse the two into one column — downstream pages
+ *      (Agent Summary, Dashboard "Found in BO", Commission Inquiry export)
+ *      depend on the distinction.
+ *
+ * See ARCHITECTURE_PLAN.md § Canonical Definitions for the cross-page
+ * contract.
+ * ============================================================================
+ */
 import { NPN_MAP } from './constants';
 import { getBackOfficeAdapter } from './carriers';
 
