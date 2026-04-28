@@ -45,6 +45,67 @@ export interface RebuildProgress {
 
 type ProgressCb = (p: RebuildProgress) => void;
 
+export function isTransientRebuildError(err: unknown): boolean {
+  const anyErr = err as any;
+  const text = [
+    anyErr?.message,
+    anyErr?.details,
+    anyErr?.hint,
+    anyErr?.code,
+    typeof err === 'string' ? err : undefined,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return anyErr?.code === '57014' || [
+    'canceling statement due to statement timeout',
+    'statement timeout',
+    'timeout',
+    'timed out',
+    'fetch failed',
+    'failed to fetch',
+    'networkerror',
+    'temporarily unavailable',
+    'gateway timeout',
+  ].some((pattern) => text.includes(pattern));
+}
+
+export async function rebuildBatchWithRetry(
+  batchId: string,
+  onProgress?: ProgressCb,
+  maxAttempts = 3,
+): Promise<{
+  filesProcessed: number;
+  recordsNormalized: number;
+  membersReconciled: number;
+}> {
+  let lastError: unknown;
+  const backoffsMs = [0, 1500, 4000];
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (attempt > 1) {
+      await new Promise((r) => setTimeout(r, backoffsMs[attempt - 1] ?? 4000));
+      onProgress?.({
+        phase: 'retrying',
+        filesProcessed: 0,
+        totalFiles: 0,
+        recordsNormalized: 0,
+        attempt,
+      });
+    }
+
+    try {
+      return await rebuildBatch(batchId, onProgress);
+    } catch (err) {
+      lastError = err;
+      if (attempt >= maxAttempts || !isTransientRebuildError(err)) throw err;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
 async function downloadFileFromStorage(storagePath: string): Promise<File> {
   const { data, error } = await supabase.storage
     .from('commission-files')
