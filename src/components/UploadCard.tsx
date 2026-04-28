@@ -22,12 +22,16 @@ export function UploadCard({ label, uploadedFileName, onUpload, isUploading }: U
     }
   };
 
-  // Card-level styling: highlight dragover, mark as uploaded, pulse during processing.
+  // Card-level styling: highlight dragover, mark as uploaded, pulse during
+  // processing. Empty slots get a dashed muted border so they are visually
+  // distinct from the green "filled" state (FINDING #62 — masking #68).
+  const isEmpty = !isUploading && !uploadedFileName;
   const cardClass = [
     'transition-all',
     dragOver ? 'ring-2 ring-primary border-primary' : '',
     isUploading ? 'ring-2 ring-primary/60 border-primary/60 animate-pulse' : '',
     !isUploading && uploadedFileName ? 'border-success/40 bg-success/5' : '',
+    isEmpty ? 'border-dashed border-muted-foreground/30 bg-muted/20' : '',
   ].filter(Boolean).join(' ');
 
   return (
