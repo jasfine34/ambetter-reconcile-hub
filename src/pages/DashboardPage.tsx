@@ -20,6 +20,7 @@ import { isCoverallAORByName, isCoverallAORByNPN, COVERALL_NPN_SET } from '@/lib
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { getCoveredMonths, monthKeyToFirstOfMonth, fallbackReconcileMonth } from '@/lib/dateRange';
 import { computeFilteredEde } from '@/lib/expectedEde';
+import { usePayEntityScope, PAY_ENTITY_STORAGE_KEY as SHARED_PAY_ENTITY_STORAGE_KEY } from '@/hooks/usePayEntityScope';
 import { findWeakMatches, loadWeakMatchOverrides, applyOverrides, pickStableKey, type WeakMatchOverride } from '@/lib/weakMatch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -124,19 +125,15 @@ const NOT_IN_BO_COLUMNS = [
   { key: 'covered_member_count', label: 'Covered Members' },
 ];
 
-const PAY_ENTITY_STORAGE_KEY = 'dashboard_pay_entity_filter';
+// NOTE: Pay-entity scope state moved to the shared `usePayEntityScope` hook
+// (src/hooks/usePayEntityScope.ts) so other pages (Agent Summary, etc.) react
+// to the same dropdown selection. The localStorage key is re-exported from
+// the hook for backwards-compat with anything reading it directly.
+const PAY_ENTITY_STORAGE_KEY = SHARED_PAY_ENTITY_STORAGE_KEY;
 
 const ERICA_NPN = '21277051';
 
 type PayEntityFilter = 'Coverall' | 'Vix' | 'All';
-
-function getStoredPayEntity(): PayEntityFilter {
-  try {
-    const stored = localStorage.getItem(PAY_ENTITY_STORAGE_KEY);
-    if (stored === 'Coverall' || stored === 'Vix' || stored === 'All') return stored;
-  } catch {}
-  return 'Coverall';
-}
 
 export default function DashboardPage() {
   const { reconciled, loading, counts, debugStats, currentBatchId, refreshAll, batches, resolverIndex, refreshResolverIndex } = useBatch();
@@ -160,7 +157,7 @@ export default function DashboardPage() {
   const [rerunning, setRerunning] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [resolveConfirmOpen, setResolveConfirmOpen] = useState(false);
-  const [payEntityFilter, setPayEntityFilter] = useState<PayEntityFilter>(getStoredPayEntity);
+  const [payEntityFilter, setPayEntityFilter] = usePayEntityScope();
   const [edeRawDrilldown, setEdeRawDrilldown] = useState<string | null>(null);
   const [edeRawRows, setEdeRawRows] = useState<Record<string, unknown>[]>([]);
   const [edeRawLoading, setEdeRawLoading] = useState(false);
@@ -218,9 +215,7 @@ export default function DashboardPage() {
     return () => { cancelled = true; };
   }, [currentBatchId]);
 
-  useEffect(() => {
-    localStorage.setItem(PAY_ENTITY_STORAGE_KEY, payEntityFilter);
-  }, [payEntityFilter]);
+  // (Persisting the scope to localStorage is now handled by usePayEntityScope.)
 
   const loadEdeRawDrilldown = useCallback(async (month: string) => {
     if (!currentBatchId) return;

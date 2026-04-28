@@ -3,10 +3,12 @@ import { useBatch } from '@/contexts/BatchContext';
 import { BatchSelector } from '@/components/BatchSelector';
 import { DataTable } from '@/components/DataTable';
 import { MetricCard } from '@/components/MetricCard';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { NPN_MAP } from '@/lib/constants';
 import { extractNpnFromAorString } from '@/lib/agents';
 import { getNormalizedRecords } from '@/lib/persistence';
 import { filterCommissionRowsByScope } from '@/lib/canonical';
+import { usePayEntityScope, type PayEntityScope } from '@/hooks/usePayEntityScope';
 
 const AGENTS = Object.entries(NPN_MAP).map(([npn, info]) => ({ npn, ...info }));
 
@@ -31,6 +33,13 @@ function aorMatchesAgent(currentPolicyAor: string | null | undefined, agent: { n
 /**
  * Agent Summary — per-agent breakdown.
  *
+ * SCOPE-AWARE (#65 fix, 2026-04-28): the per-agent commission $ column was
+ * previously aggregated with hard-coded scope='All', which silently leaked
+ * Vix dollars into a Coverall view (+$463.50 over-count on Mar 2026
+ * Coverall). The page now reads the SAME `usePayEntityScope` hook the
+ * Dashboard writes to, so the scope dropdown is shared across both pages and
+ * the per-agent sum ties to the canonical Coverall (Direct) total exactly.
+ *
  * Two distinct attributions per agent (see ARCHITECTURE_PLAN.md):
  *   - **Expected (AOR)**: members whose canonical `current_policy_aor` matches
  *     this agent. This is the EE-universe ownership count.
@@ -41,12 +50,12 @@ function aorMatchesAgent(currentPolicyAor: string | null | undefined, agent: { n
  * Commission dollar totals are sourced from RAW commission rows via the
  * canonical `filterCommissionRowsByScope` helper, then grouped by writing-agent
  * NPN. This guarantees the per-agent "Total Commission" column ties out to
- * the Dashboard's Net Paid Commission card and to Entity Summary at the same
- * scope (within $0.01) — no roll-up drift from per-member aggregates.
+ * the Dashboard's Coverall (Direct) total at the same scope (within $0.01).
  */
 export default function AgentSummaryPage() {
   const { reconciled, currentBatchId } = useBatch();
   const [normalizedRecords, setNormalizedRecords] = useState<any[]>([]);
+  const [scope, setScope] = usePayEntityScope();
 
   useEffect(() => {
     if (!currentBatchId) { setNormalizedRecords([]); return; }
@@ -72,14 +81,14 @@ export default function AgentSummaryPage() {
   }, [currentBatchId, reconciled.length]);
 
   /**
-   * Per-agent commission totals from raw commission rows (canonical scope =
-   * 'All' so we count every dollar this writing agent earned across both pay
-   * entities — Coverall and Vix — which matches the page's historical column
-   * semantics).
+   * Per-agent commission totals from raw commission rows, scoped by the
+   * active pay-entity dropdown (Coverall / Vix / All). The scope arg MUST
+   * mirror the Dashboard's selection — failing to pass it was the root
+   * cause of #65.
    */
   const commissionByNpn = useMemo(() => {
     const map = new Map<string, number>();
-    const rows = filterCommissionRowsByScope(normalizedRecords, 'All');
+    const rows = filterCommissionRowsByScope(normalizedRecords, scope);
     for (const r of rows) {
       const npn = String((r as any).agent_npn || '').trim();
       if (!npn) continue;
@@ -87,7 +96,7 @@ export default function AgentSummaryPage() {
       map.set(npn, (map.get(npn) || 0) + amt);
     }
     return map;
-  }, [normalizedRecords]);
+  }, [normalizedRecords, scope]);
 
   const agentData = useMemo(() =>
     AGENTS.map(agent => {
@@ -108,7 +117,7 @@ export default function AgentSummaryPage() {
       const unpaid = writingRecs.filter(r =>
         r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission,
       ).length;
-      // CANONICAL: from raw commission rows (NOT sum of actual_commission).
+      // CANONICAL: from raw commission rows, scoped by active pay-entity.
       const totalComm = commissionByNpn.get(agent.npn) || 0;
       const estMissing = writingRecs.reduce((s, r) => s + (r.estimated_missing_commission || 0), 0);
       return {
@@ -143,14 +152,27 @@ export default function AgentSummaryPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-foreground">Agent Summary</h2>
-        <BatchSelector />
+        <div className="flex items-center gap-3">
+          <Select value={scope} onValueChange={(v) => setScope(v as PayEntityScope)}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Pay entity scope" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Coverall">Coverall</SelectItem>
+              <SelectItem value="Vix">Vix</SelectItem>
+              <SelectItem value="All">All (Combined)</SelectItem>
+            </SelectContent>
+          </Select>
+          <BatchSelector />
+        </div>
       </div>
       <div className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
         <strong className="text-foreground">Expected (AOR)</strong> counts members whose <code>currentPolicyAOR</code> on EDE
         matches this agent — the canonical "ownership" definition.{' '}
         <strong className="text-foreground">Written by</strong> counts members whose writing-agent NPN matches this agent.
-        Commission dollar totals come from the canonical{' '}
-        <code className="font-mono">filterCommissionRowsByScope</code> helper and tie to the Dashboard's Net Paid card.
+        Commission dollar totals come from <code className="font-mono">filterCommissionRowsByScope</code> at the active{' '}
+        <strong className="text-foreground">{scope}</strong> scope and tie to the Dashboard's Coverall (Direct) total at
+        the same scope.
       </div>
       <div className="grid grid-cols-3 gap-4">
         {agentData.map(a => (
