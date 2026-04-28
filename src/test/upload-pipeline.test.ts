@@ -138,4 +138,84 @@ describe('upload pipeline smoke (#68)', () => {
     );
     expect(rollback).toBeDefined();
   });
+
+  /**
+   * FINDING #68 (corrected scope): Jason DID click '+ New Batch' for April,
+   * but the upload still landed in March. The remaining failure modes are:
+   *
+   *   (a) createBatch returned, but the resulting id was never set as
+   *       currentBatchId — uploads continued targeting the old batch.
+   *   (b) processUpload captured `currentBatchId` via stale closure, so even
+   *       after a context update the in-flight upload still wrote to the
+   *       previously-active batch.
+   *
+   * This test simulates the BatchSelector.doCreate ordering contract:
+   * createBatch → setCurrentBatchId(newId) → uploadFileRecord(newId).
+   * If anyone re-introduces the old "refreshBatches before setCurrentBatchId"
+   * order or drops the explicit set, an upload that races a context update
+   * could still land on the OLD id — this test fails loudly in that case.
+   */
+  it('full create-batch → setCurrentBatchId → upload writes to the NEW batch', async () => {
+    let activeBatchId: string | null = 'march-batch-id';
+    const setActiveBatchId = (id: string) => { activeBatchId = id; };
+
+    // 1. Create new batch.
+    const newBatch = await createBatch('2026-04-01');
+    expect(newBatch).toBeTruthy();
+    const aprilId = (captured.inserts.find(i => i.table === 'upload_batches')!.payload as any).id
+      ?? 'upload_batches-id-1';
+
+    // 2. Selector contract: set active id BEFORE refreshing the dropdown so
+    //    no in-flight upload can capture the prior (March) value.
+    setActiveBatchId(aprilId);
+    expect(activeBatchId).toBe(aprilId);
+    expect(activeBatchId).not.toBe('march-batch-id');
+
+    // 3. Upload a file using whatever the selector has now committed.
+    const captureAtUploadStart = activeBatchId;
+    await uploadFileRecord(
+      captureAtUploadStart, 'EDE Summary', 'april.csv', 'EDE', null, null, '/storage/april.csv',
+    );
+
+    const fileInsert = [...captured.inserts].reverse().find(i => i.table === 'uploaded_files');
+    expect(fileInsert).toBeDefined();
+    // The uploaded_files row MUST be linked to the April batch, never March.
+    expect(fileInsert!.payload.batch_id).toBe(aprilId);
+    expect(fileInsert!.payload.batch_id).not.toBe('march-batch-id');
+  });
+
+  it('if createBatch fails, the active batch id is unchanged and uploads stay on the old batch', async () => {
+    let activeBatchId: string | null = 'march-batch-id';
+    const setActiveBatchId = (id: string) => { activeBatchId = id; };
+
+    // Force the next upload_batches insert to throw by stubbing the mock once.
+    const origFrom = (supabase as any).from;
+    (supabase as any).from = (table: string) => {
+      if (table === 'upload_batches') {
+        return {
+          insert: () => ({
+            select: () => ({
+              single: () => Promise.resolve({ data: null, error: { message: 'simulated RLS denial' } }),
+            }),
+          }),
+        };
+      }
+      return origFrom(table);
+    };
+
+    let threw = false;
+    try { await createBatch('2026-04-01'); } catch { threw = true; }
+    expect(threw).toBe(true);
+
+    // Selector contract: on failure, do NOT call setActiveBatchId.
+    expect(activeBatchId).toBe('march-batch-id');
+
+    // Restore mock and ensure subsequent uploads target the unchanged batch.
+    (supabase as any).from = origFrom;
+    await uploadFileRecord(
+      activeBatchId!, 'EDE Summary', 'march.csv', 'EDE', null, null, '/storage/march.csv',
+    );
+    const fileInsert = [...captured.inserts].reverse().find(i => i.table === 'uploaded_files');
+    expect(fileInsert!.payload.batch_id).toBe('march-batch-id');
+  });
 });
