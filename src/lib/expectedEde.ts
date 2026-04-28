@@ -198,10 +198,6 @@ export function computeFilteredEde(
   }
   const groups = new Map<string, { ctxs: PerRowCtx[]; inBO: boolean }>();
 
-  const sortedCovered = coveredMonths.filter(Boolean).slice().sort();
-  const earliestCovered = sortedCovered[0] ?? '';
-  const latestCovered = sortedCovered[sortedCovered.length - 1] ?? '';
-
   for (const r of normalizedRecords) {
     if (r.source_type !== 'EDE') continue;
 
