@@ -25,10 +25,27 @@ export default function EntitySummaryPage() {
     if (!currentBatchId) { setNormalizedRecords([]); return; }
     let cancelled = false;
     getNormalizedRecords(currentBatchId)
-      .then((recs) => { if (!cancelled) setNormalizedRecords(recs as any[]); })
+      .then((recs) => {
+        if (cancelled) return;
+        setNormalizedRecords(recs as any[]);
+        // Diagnostic for #64 — confirm commission rows are being loaded with
+        // expected pay_entity values. If this logs 0 commission rows or
+        // unexpected pay_entity strings, getNetPaidCommission will return $0.
+        if (typeof console !== 'undefined') {
+          const comm = (recs as any[]).filter((r) => r.source_type === 'COMMISSION');
+          const peSamples = Array.from(new Set(comm.slice(0, 50).map((r) => r.pay_entity)));
+          // eslint-disable-next-line no-console
+          console.debug('[EntitySummary] normalizedRecords loaded', {
+            batchId: currentBatchId,
+            total: (recs as any[]).length,
+            commissionRows: comm.length,
+            payEntitySamples: peSamples,
+          });
+        }
+      })
       .catch(() => { if (!cancelled) setNormalizedRecords([]); });
     return () => { cancelled = true; };
-  }, [currentBatchId]);
+  }, [currentBatchId, reconciled.length]);
 
   const entityData = useMemo(() => {
     const coverallPaidCount = reconciled.filter(

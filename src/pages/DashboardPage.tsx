@@ -25,7 +25,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { runIdentityResolution, invalidateResolverCache } from '@/lib/resolvedIdentities';
 import { ResolvedBadge } from '@/components/ResolvedBadge';
-import { runInvariants, type InvariantResult } from '@/lib/canonical';
+import {
+  runInvariants,
+  type InvariantResult,
+  getFoundInBackOffice,
+  getEligibleCohort,
+  getNotInBackOffice,
+} from '@/lib/canonical';
 
 /** Format '2026-01' as '1/1/2026' for display. */
 function formatMonthStart(monthKey: string): string {
@@ -446,12 +452,20 @@ export default function DashboardPage() {
     // but are not double-counted across months.
     const expectedPriorMonth = priorMonth ? (filteredEde.byMonth[priorMonth] ?? 0) : 0;
     const expectedStatementMonth = statementMonth ? (filteredEde.byMonth[statementMonth] ?? 0) : 0;
-    const foundBO = filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r)).length;
-    const eligible = filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r) && r.eligible_for_commission === 'Yes').length;
+    // CANONICAL CARD WIRING (2026-04-28 pass-2): Found / Eligible / Should Pay
+    // / Paid Within Eligible / Unpaid all flow through the canonical helpers
+    // so the cards EXACTLY match Run Invariants for the same scope. Prior
+    // wiring used `r.is_in_expected_ede_universe && effInBO(r)` (the
+    // persistent column), which drifted from the canonical filteredEde-based
+    // EE universe (Mar Coverall: 1,297 vs 1,309 invariant).
+    const scopeForCanonical = payEntityFilter === 'All' ? 'All' : payEntityFilter;
+    const foundBO = getFoundInBackOffice(reconciled, scopeForCanonical, filteredEde, confirmedUpgradeMemberKeys);
+    const eligibleCohort = getEligibleCohort(reconciled, scopeForCanonical, confirmedUpgradeMemberKeys);
+    const eligible = eligibleCohort.length;
     const shouldPay = eligible;
     // Count distinct policies with positive payments
     const paidCommRecords = filtered.filter(r => r.in_commission).length;
-    const paidEligible = filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r) && r.eligible_for_commission === 'Yes' && r.in_commission).length;
+    const paidEligible = eligibleCohort.filter(r => r.in_commission).length;
     const unpaid = shouldPay - paidEligible;
     // Gross / Clawbacks / Net Paid — computed from RAW commission records and
     // scoped by the dashboard's pay_entity filter, so they match exactly what
@@ -525,7 +539,7 @@ export default function DashboardPage() {
     const totalPaidAll = filtered.filter(r => r.in_commission).length;
     const paidOutsideExpected = filtered.filter(r => !r.in_ede && r.in_commission).length;
     return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidOutsideEde, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, paidOutsideExpected, coverallDirectNet, downlineNet, netPaidTotal, splitDelta, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
-  }, [filtered, normalizedRecords, payEntityFilter, filteredEde, priorMonth, statementMonth, effInBO]);
+  }, [filtered, reconciled, normalizedRecords, payEntityFilter, filteredEde, priorMonth, statementMonth, effInBO, confirmedUpgradeMemberKeys]);
 
   // Clawback rows — every commission row with amount < 0 within the current
   // pay-entity scope. Derived from RAW normalized commission records (same
