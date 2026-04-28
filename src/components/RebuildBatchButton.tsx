@@ -24,7 +24,13 @@ export function RebuildBatchButton() {
         description: `${result.filesProcessed} files · ${result.recordsNormalized} records · ${result.membersReconciled} members`,
       });
     } catch (err: any) {
-      toast({ title: 'Rebuild Failed', description: err.message, variant: 'destructive' });
+      // Surface the full error to the console so we can diagnose the
+      // commission-less / chunked-insert / verify-after-save failure modes.
+      // Toast description is bounded; the console has the full stack.
+      // eslint-disable-next-line no-console
+      console.error('[RebuildBatchButton] rebuild failed', { batchId: currentBatchId, err });
+      const description = (err && (err.message || String(err))) || 'Unknown error';
+      toast({ title: 'Rebuild Failed', description, variant: 'destructive' });
     } finally {
       setRunning(false);
       setProgress(null);
