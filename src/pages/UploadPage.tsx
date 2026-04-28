@@ -67,6 +67,16 @@ export default function UploadPage() {
    *     upload.
    */
   const processUpload = useCallback(async (p: Omit<PendingUpload, 'detected'>) => {
+    // Capture the active batch id at the START of the upload so a later
+    // batch-switch (or async setState) can never redirect this upload to a
+    // different batch (FINDING #68 corrected — race-condition guard).
+    const targetBatchId = currentBatchId;
+    if (!targetBatchId) {
+      toast({ title: 'No batch selected', description: 'Create or select a batch first.', variant: 'destructive' });
+      return;
+    }
+    console.debug('[upload] start', { fileLabel: p.fileLabel, targetBatchId });
+
     setSlotUploading(p.fileLabel, true);
     let storagePath: string | null = null;
     let createdFileId: string | null = null;
@@ -82,9 +92,23 @@ export default function UploadPage() {
     };
 
     try {
+      // Sanity check: the captured batch id must still exist in the DB.
+      // Guards against the case where create-batch silently failed earlier
+      // and the dropdown is pointing at a phantom id.
+      try {
+        const { data: batchRow, error: batchErr } = await supabase
+          .from('upload_batches').select('id, statement_month').eq('id', targetBatchId).maybeSingle();
+        if (batchErr) throw batchErr;
+        if (!batchRow) {
+          fail('Verify target batch', new Error(`Batch ${targetBatchId} no longer exists. Create a new batch and retry.`));
+          return;
+        }
+        console.debug('[upload] verified batch', batchRow);
+      } catch (err) { fail('Verify target batch', err); return; }
+
       // Step 1: Upload raw file to storage.
       try {
-        storagePath = await uploadFileToStorage(currentBatchId!, p.fileLabel, p.file);
+        storagePath = await uploadFileToStorage(targetBatchId, p.fileLabel, p.file);
       } catch (err) { fail('Storage upload', err); return; }
 
       // Step 2: Parse CSV.
