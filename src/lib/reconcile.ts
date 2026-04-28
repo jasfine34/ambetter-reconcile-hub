@@ -809,17 +809,33 @@ export function reconcile(
   debug.edeUniqueKeysAfterFilter = edeQualifiedKeys.size;
   debug.edeQualifiedCount = edeQualifiedKeys.size;
 
-  // Step 5: Calculate avg commission by agent for estimates
+  // Step 5: Calculate avg commission by agent for estimates.
+  //
+  // COMMISSION-LESS BATCH (2026.04.28-no-commission-graceful): Early-month
+  // onboarding flow uploads EDE+BO before the carrier sends the commission
+  // statement (~3 weeks later). When ZERO commission rows exist for the
+  // batch, we deliberately suppress per-member `estimated_missing_commission`
+  // — those members aren't "missing pay we expected", the statement simply
+  // hasn't arrived yet. Marking them with $18 (DEFAULT_COMMISSION_ESTIMATE)
+  // would inflate the Unpaid bucket dollar total and trigger phantom
+  // dispute candidates. We still classify them as 'Missing from Commission'
+  // so the bucket count is right; only the dollar estimate is suppressed.
+  // When the commission file is uploaded later and rebuild reruns, this
+  // guard turns off and estimates populate normally.
   const commByAgent = new Map<string, number[]>();
   const allComm: number[] = [];
+  let totalCommissionRows = 0;
   for (const r of records) {
-    if (r.source_type === 'COMMISSION' && r.commission_amount != null && r.commission_amount > 0) {
+    if (r.source_type !== 'COMMISSION') continue;
+    totalCommissionRows++;
+    if (r.commission_amount != null && r.commission_amount > 0) {
       allComm.push(r.commission_amount);
       const arr = commByAgent.get(r.agent_npn) || [];
       arr.push(r.commission_amount);
       commByAgent.set(r.agent_npn, arr);
     }
   }
+  const batchHasCommissionFile = totalCommissionRows > 0;
   const avgAll = allComm.length > 0 ? allComm.reduce((a, b) => a + b, 0) / allComm.length : DEFAULT_COMMISSION_ESTIMATE;
 
   // Step 6: Consolidate each group into ONE reconciled member
