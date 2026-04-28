@@ -25,7 +25,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { runIdentityResolution, invalidateResolverCache } from '@/lib/resolvedIdentities';
 import { ResolvedBadge } from '@/components/ResolvedBadge';
-import { runInvariants, type InvariantResult } from '@/lib/canonical';
+import {
+  runInvariants,
+  type InvariantResult,
+  getFoundInBackOffice,
+  getEligibleCohort,
+  getNotInBackOffice,
+} from '@/lib/canonical';
 
 /** Format '2026-01' as '1/1/2026' for display. */
 function formatMonthStart(monthKey: string): string {
