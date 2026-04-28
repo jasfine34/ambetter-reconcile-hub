@@ -163,10 +163,26 @@ export function BatchSelector() {
       </Select>
 
       {creating ? (
-        <div className="flex items-center gap-2">
-          <Input type="month" value={month} onChange={e => setMonth(e.target.value)} className="w-[180px]" />
-          <Button size="sm" onClick={attemptCreate}>Create</Button>
-          <Button size="sm" variant="ghost" onClick={() => setCreating(false)}>Cancel</Button>
+        <div className="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/5 px-2 py-1">
+          <span className="text-xs font-medium text-warning-foreground">
+            Pending — click Create to save
+          </span>
+          <Input
+            type="month"
+            value={month}
+            onChange={e => setMonth(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && month) attemptCreate(); }}
+            className="w-[160px]"
+            autoFocus
+          />
+          <Button size="sm" onClick={attemptCreate} disabled={!month}>Create</Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => { setCreating(false); setMonth(''); }}
+          >
+            Cancel
+          </Button>
         </div>
       ) : (
         <>
