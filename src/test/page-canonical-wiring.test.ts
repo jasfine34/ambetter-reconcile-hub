@@ -217,3 +217,32 @@ describe('page wiring — ManualMatch queue parity with Dashboard weak-pending',
     expect(manualMatchPending[0].signals.matched).toContain('issuer_subscriber_id');
   });
 });
+
+/**
+ * Page wiring guard for Option A (2026-04-28): the EE universe used by the
+ * Dashboard's Expected card and the reconciled.current_policy_aor written by
+ * reconcile.ts MUST agree on which EDE row represents each member. Asserts
+ * the structural property: for any member in the EE universe,
+ * computeFilteredEde surfaces the SAME AOR string aorPicker would pick over
+ * the member's full EDE row set. Prevents AOR-drift residuals from coming
+ * back (April 2026 Found+NotInBO=Expected went −2 before this fix).
+ */
+describe('page wiring — EE universe AOR ≡ aorPicker AOR (Option A)', () => {
+  it('every EE-universe member surfaces the picker-canonical AOR', async () => {
+    const { computeFilteredEde } = await import('@/lib/expectedEde');
+    const { pickCurrentPolicyAor } = await import('@/lib/aorPicker');
+
+    const normalized: any[] = [
+      { id: '1', source_type: 'EDE', source_file_label: 'EDE Summary', carrier: 'Ambetter', applicant_name: 'X', effective_date: '2026-02-01', status: 'Effectuated', member_key: 'mk:X', raw_json: { issuer: 'Ambetter', policyStatus: 'Effectuated', effectiveDate: '2026-02-01', currentPolicyAOR: 'Jason Fine (21055210)', exchangeSubscriberId: 'EXX' } },
+      { id: '2', source_type: 'EDE', source_file_label: 'EDE Summary', carrier: 'Ambetter', applicant_name: 'X', effective_date: '2026-04-01', status: 'PendingEffectuation', member_key: 'mk:X', raw_json: { issuer: 'Ambetter', policyStatus: 'PendingEffectuation', effectiveDate: '2026-04-01', currentPolicyAOR: 'Erica Fine (21277051)', exchangeSubscriberId: 'EXX' } },
+    ];
+    const reconciled = [
+      { member_key: 'mk:X', applicant_name: 'X', exchange_subscriber_id: 'EXX', issuer_subscriber_id: '', policy_number: '', in_back_office: true },
+    ];
+    const ede = computeFilteredEde(normalized, reconciled as any, 'Coverall', ['2026-04']);
+    expect(ede.uniqueKeys).toBe(1);
+    const pickerAor = pickCurrentPolicyAor(normalized as any);
+    expect(ede.uniqueMembers[0].current_policy_aor).toBe(pickerAor);
+    expect(pickerAor).toBe('Jason Fine (21055210)');
+  });
+});
