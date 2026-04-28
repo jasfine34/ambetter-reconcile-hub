@@ -94,9 +94,9 @@ describe('page wiring — DashboardPage Found-in-BO card', () => {
 });
 
 describe('page wiring — AgentSummary per-agent commission column', () => {
-  it('sum of per-agent Total Commission MUST equal getNetPaidCommission gross + clawbacks', () => {
+  it('sum of per-agent Total Commission MUST equal getNetPaidCommission gross + clawbacks (scope=All)', () => {
     const { normalizedRecords } = makeFixture();
-    // Replicate AgentSummary's commissionByNpn computation (scope='All').
+    // Replicate AgentSummary's commissionByNpn computation at scope='All'.
     const map = new Map<string, number>();
     for (const r of filterCommissionRowsByScope(normalizedRecords, 'All')) {
       const npn = String((r as any).agent_npn || '').trim();
@@ -106,6 +106,45 @@ describe('page wiring — AgentSummary per-agent commission column', () => {
     const perAgentSumAll = Array.from(map.values()).reduce((s, n) => s + n, 0);
     const canonical = getNetPaidCommission(normalizedRecords, 'All');
     expect(perAgentSumAll).toBeCloseTo(canonical.gross + canonical.clawbacks, 2);
+  });
+
+  /**
+   * Regression guard for #65 (2026-04-28): AgentSummary previously called
+   * `filterCommissionRowsByScope(rows, 'All')` regardless of the active
+   * dropdown, leaking Vix dollars into Coverall. This asserts the per-agent
+   * sum at scope='Coverall' equals the Coverall canonical total ONLY (no
+   * Vix). If a future edit re-hardcodes scope='All', this test fails.
+   */
+  it('sum of per-agent Total Commission at scope=Coverall MUST equal canonical Coverall (no Vix leak)', () => {
+    const { normalizedRecords } = makeFixture();
+    const map = new Map<string, number>();
+    for (const r of filterCommissionRowsByScope(normalizedRecords, 'Coverall')) {
+      const npn = String((r as any).agent_npn || '').trim();
+      if (!npn) continue;
+      map.set(npn, (map.get(npn) || 0) + (Number((r as any).commission_amount) || 0));
+    }
+    const perAgentSumCoverall = Array.from(map.values()).reduce((s, n) => s + n, 0);
+    const canonicalCoverall = getNetPaidCommission(normalizedRecords, 'Coverall');
+    expect(perAgentSumCoverall).toBeCloseTo(
+      canonicalCoverall.gross + canonicalCoverall.clawbacks,
+      2,
+    );
+    // And it must NOT match the 'All' total (which would indicate a leak).
+    const canonicalAll = getNetPaidCommission(normalizedRecords, 'All');
+    expect(perAgentSumCoverall).not.toBeCloseTo(canonicalAll.gross + canonicalAll.clawbacks, 2);
+  });
+
+  it('sum of per-agent Total Commission at scope=Vix MUST equal canonical Vix only', () => {
+    const { normalizedRecords } = makeFixture();
+    const map = new Map<string, number>();
+    for (const r of filterCommissionRowsByScope(normalizedRecords, 'Vix')) {
+      const npn = String((r as any).agent_npn || '').trim();
+      if (!npn) continue;
+      map.set(npn, (map.get(npn) || 0) + (Number((r as any).commission_amount) || 0));
+    }
+    const perAgentSumVix = Array.from(map.values()).reduce((s, n) => s + n, 0);
+    const canonicalVix = getNetPaidCommission(normalizedRecords, 'Vix');
+    expect(perAgentSumVix).toBeCloseTo(canonicalVix.gross + canonicalVix.clawbacks, 2);
   });
 
   it('Coverall-direct per-agent sum equals canonical Coverall scope total minus downline', () => {
