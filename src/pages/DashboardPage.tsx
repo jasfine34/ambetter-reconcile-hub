@@ -215,9 +215,7 @@ export default function DashboardPage() {
     return () => { cancelled = true; };
   }, [currentBatchId]);
 
-  useEffect(() => {
-    localStorage.setItem(PAY_ENTITY_STORAGE_KEY, payEntityFilter);
-  }, [payEntityFilter]);
+  // (Persisting the scope to localStorage is now handled by usePayEntityScope.)
 
   const loadEdeRawDrilldown = useCallback(async (month: string) => {
     if (!currentBatchId) return;
