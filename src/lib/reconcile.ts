@@ -916,7 +916,10 @@ export function reconcile(
     }
 
     let estMissing: number | null = null;
-    if (shouldBePaid && !inComm) {
+    // Suppress estimates entirely for commission-less batches — see comment
+    // at Step 5. Only compute estimates when there's actually a statement
+    // to reason about.
+    if (batchHasCommissionFile && shouldBePaid && !inComm) {
       const agentComms = commByAgent.get(agentNpn);
       if (agentComms && agentComms.length > 0) {
         estMissing = agentComms.reduce((a, b) => a + b, 0) / agentComms.length;
