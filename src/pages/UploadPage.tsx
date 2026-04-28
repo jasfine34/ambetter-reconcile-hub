@@ -135,7 +135,7 @@ export default function UploadPage() {
       let snapshot: any;
       try {
         const result = await uploadFileRecord(
-          currentBatchId!, p.fileLabel, p.file.name, p.sourceType,
+          targetBatchId, p.fileLabel, p.file.name, p.sourceType,
           p.payEntity, p.aorBucket, storagePath,
         );
         fileRecord = result.file;
@@ -145,7 +145,7 @@ export default function UploadPage() {
 
       // Step 5: Insert normalized_records.
       try {
-        await insertNormalizedRecords(currentBatchId!, fileRecord.id, normalized, snapshot);
+        await insertNormalizedRecords(targetBatchId, fileRecord.id, normalized, snapshot);
       } catch (err) {
         // Rollback: mark the just-inserted uploaded_files row as superseded
         // so the slot returns to its prior state instead of silently showing
@@ -166,14 +166,14 @@ export default function UploadPage() {
 
       // Step 6: Re-reconcile the batch with the new file included.
       try {
-        const allRecords = await getNormalizedRecords(currentBatchId!);
-        const currentBatch = batches.find((b: any) => b.id === currentBatchId);
+        const allRecords = await getNormalizedRecords(targetBatchId);
+        const currentBatch = batches.find((b: any) => b.id === targetBatchId);
         const reconcileMonth = currentBatch?.statement_month
           ? String(currentBatch.statement_month).substring(0, 7)
           : fallbackReconcileMonth();
         const resolverIndex = await loadResolverIndex(true);
         const { members: reconciledData } = reconcile(allRecords as any[], reconcileMonth, resolverIndex);
-        await saveReconciledMembers(currentBatchId!, reconciledData);
+        await saveReconciledMembers(targetBatchId, reconciledData);
       } catch (err) {
         // Reconcile failure is non-fatal for the upload itself; warn the
         // user but keep the file attached — they can re-run reconcile via
