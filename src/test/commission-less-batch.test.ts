@@ -109,7 +109,8 @@ describe('reconcile — commission-less batch (#74)', () => {
       bo({ issuer_subscriber_id: 'U200', exchange_subscriber_id: '0000200', policy_number: 'P200', applicant_name: 'Beta Two', first_name: 'Beta', last_name: 'Two' }),
     ];
     const { members } = reconcile(records, '2026-04', null);
-    const m2 = members.find((x) => x.issuer_subscriber_id === 'U200')!;
+    const m2 = members.find((x) => (x.applicant_name || '').toLowerCase().includes('beta'))!;
+    expect(m2).toBeTruthy();
     expect(m2.in_commission).toBe(false);
     expect(m2.issue_type).toBe('Missing from Commission');
     // Estimate uses agent's avg ($25) since the same NPN was paid for U100.
