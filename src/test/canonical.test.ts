@@ -212,3 +212,102 @@ describe('canonical/invariants', () => {
     expect(failures, JSON.stringify(failures, null, 2)).toEqual([]);
   });
 });
+
+/**
+ * Option A alignment regression (2026-04-28): computeFilteredEde must use
+ * aorPicker.pickCurrentPolicyAor as the single source of truth for "which
+ * EDE row represents this member" — same sort order reconcile.ts uses to
+ * write reconciled.current_policy_aor.
+ *
+ * Fixture mirrors the Marjorie McCoy / Anselmo Fishburne shape on April 2026:
+ *   - Row A: Effectuated, past-month effective_date, NON-Coverall AOR.
+ *   - Row B: PendingEffectuation, current-month effective_date, Coverall AOR.
+ * The picker prefers Row A (Effectuated > PendingEffectuation), so the
+ * canonical AOR is non-Coverall ⇒ member is OUT of EE universe under
+ * Coverall scope. Pre-fix, the per-row scope filter would let Row B in and
+ * the member would appear in EE universe but get a non-Coverall AOR in
+ * reconciled (the AOR-drift residual that produced the −2 invariant on April).
+ */
+describe('expectedEde — Option A alignment with aorPicker', () => {
+  it('multi-EDE Marjorie/Anselmo shape: member excluded from Coverall EE universe', async () => {
+    const { computeFilteredEde } = await import('@/lib/expectedEde');
+    const normalized: any[] = [
+      {
+        id: 'r1', source_type: 'EDE', source_file_label: 'EDE Summary',
+        carrier: 'Ambetter', applicant_name: 'Marjorie McCoy',
+        effective_date: '2026-02-01', status: 'Effectuated',
+        member_key: 'mk:marjorie',
+        raw_json: { issuer: 'Ambetter', policyStatus: 'Effectuated', effectiveDate: '2026-02-01', currentPolicyAOR: 'Some Other Agent (99999999)', exchangeSubscriberId: 'EX-1' },
+      },
+      {
+        id: 'r2', source_type: 'EDE', source_file_label: 'EDE Summary',
+        carrier: 'Ambetter', applicant_name: 'Marjorie McCoy',
+        effective_date: '2026-04-01', status: 'PendingEffectuation',
+        member_key: 'mk:marjorie',
+        raw_json: { issuer: 'Ambetter', policyStatus: 'PendingEffectuation', effectiveDate: '2026-04-01', currentPolicyAOR: 'Jason Fine (21055210)', exchangeSubscriberId: 'EX-1' },
+      },
+    ];
+    const reconciled = [
+      { member_key: 'mk:marjorie', applicant_name: 'Marjorie McCoy', exchange_subscriber_id: 'EX-1', issuer_subscriber_id: '', policy_number: '', in_back_office: false },
+    ];
+    const result = computeFilteredEde(normalized, reconciled as any, 'Coverall', ['2026-04']);
+    // Picker selects the Effectuated row → AOR is non-Coverall → member OUT.
+    // Pre-fix this would be 1 (per-row scope filter let the Pending row in).
+    expect(result.uniqueKeys).toBe(0);
+  });
+
+  it('multi-EDE member with Effectuated Coverall row IS in Coverall EE universe', async () => {
+    const { computeFilteredEde } = await import('@/lib/expectedEde');
+    const normalized: any[] = [
+      {
+        id: 'r1', source_type: 'EDE', source_file_label: 'EDE Summary',
+        carrier: 'Ambetter', applicant_name: 'Test Member',
+        effective_date: '2026-02-01', status: 'Effectuated',
+        member_key: 'mk:t',
+        raw_json: { issuer: 'Ambetter', policyStatus: 'Effectuated', effectiveDate: '2026-02-01', currentPolicyAOR: 'Jason Fine (21055210)', exchangeSubscriberId: 'EX-2' },
+      },
+      {
+        id: 'r2', source_type: 'EDE', source_file_label: 'EDE Summary',
+        carrier: 'Ambetter', applicant_name: 'Test Member',
+        effective_date: '2026-04-01', status: 'PendingEffectuation',
+        member_key: 'mk:t',
+        raw_json: { issuer: 'Ambetter', policyStatus: 'PendingEffectuation', effectiveDate: '2026-04-01', currentPolicyAOR: 'Some Other Agent (99999999)', exchangeSubscriberId: 'EX-2' },
+      },
+    ];
+    const reconciled = [
+      { member_key: 'mk:t', applicant_name: 'Test Member', exchange_subscriber_id: 'EX-2', issuer_subscriber_id: '', policy_number: '', in_back_office: true },
+    ];
+    const result = computeFilteredEde(normalized, reconciled as any, 'Coverall', ['2026-04']);
+    expect(result.uniqueKeys).toBe(1);
+    // Surfaced AOR == picker's choice (the Effectuated/Coverall row).
+    expect(result.uniqueMembers[0].current_policy_aor).toBe('Jason Fine (21055210)');
+  });
+
+  it('alignment guarantee: EE universe AOR == aorPicker AOR for every member', async () => {
+    const { computeFilteredEde } = await import('@/lib/expectedEde');
+    const { pickCurrentPolicyAor } = await import('@/lib/aorPicker');
+
+    const normalized: any[] = [
+      // Member A: Marjorie shape (out of Coverall scope)
+      { id: 'a1', source_type: 'EDE', source_file_label: 'EDE Summary', carrier: 'Ambetter', applicant_name: 'A', effective_date: '2026-02-01', status: 'Effectuated', member_key: 'mk:A', raw_json: { issuer: 'Ambetter', policyStatus: 'Effectuated', effectiveDate: '2026-02-01', currentPolicyAOR: 'Other Agent (99999999)', exchangeSubscriberId: 'EXA' } },
+      { id: 'a2', source_type: 'EDE', source_file_label: 'EDE Summary', carrier: 'Ambetter', applicant_name: 'A', effective_date: '2026-04-01', status: 'PendingEffectuation', member_key: 'mk:A', raw_json: { issuer: 'Ambetter', policyStatus: 'PendingEffectuation', effectiveDate: '2026-04-01', currentPolicyAOR: 'Jason Fine (21055210)', exchangeSubscriberId: 'EXA' } },
+      // Member B: single-row Coverall (in scope)
+      { id: 'b1', source_type: 'EDE', source_file_label: 'EDE Summary', carrier: 'Ambetter', applicant_name: 'B', effective_date: '2026-04-01', status: 'Effectuated', member_key: 'mk:B', raw_json: { issuer: 'Ambetter', policyStatus: 'Effectuated', effectiveDate: '2026-04-01', currentPolicyAOR: 'Becky Shuta (16531877)', exchangeSubscriberId: 'EXB' } },
+    ];
+    const reconciled = [
+      { member_key: 'mk:A', applicant_name: 'A', exchange_subscriber_id: 'EXA', issuer_subscriber_id: '', policy_number: '', in_back_office: false },
+      { member_key: 'mk:B', applicant_name: 'B', exchange_subscriber_id: 'EXB', issuer_subscriber_id: '', policy_number: '', in_back_office: true },
+    ];
+    const ede = computeFilteredEde(normalized, reconciled as any, 'Coverall', ['2026-04']);
+
+    // Structural alignment: every surfaced AOR must equal the picker's AOR
+    // computed over the member's full EDE row set.
+    for (const m of ede.uniqueMembers) {
+      const memberRows = normalized.filter((r) => r.member_key === m.member_key);
+      const pickerAor = pickCurrentPolicyAor(memberRows as any);
+      expect(m.current_policy_aor).toBe(pickerAor);
+    }
+    expect(ede.uniqueKeys).toBe(1);
+    expect(ede.uniqueMembers[0].member_key).toBe('mk:B');
+  });
+});
