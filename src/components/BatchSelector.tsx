@@ -59,17 +59,60 @@ export function BatchSelector() {
   };
 
   const doCreate = async (targetMonth: string) => {
+    // FINDING #68 (corrected): Trace each step. Previously, if createBatch
+    // silently no-op'd or the post-refresh setCurrentBatchId lost the race
+    // with BatchContext's auto-select, uploads could land in the prior batch
+    // (e.g. April files written to the March batch).
+    console.debug('[batch-create] start', { targetMonth });
+    let batch: any = null;
     try {
-      const batch = await createBatch(targetMonth + '-01');
-      await refreshBatches();
-      setCurrentBatchId(batch.id);
-      setCreating(false);
-      setMonth('');
-      setDuplicateWarning(null);
-      toast({ title: 'Batch created', description: `Batch for ${targetMonth}` });
+      batch = await createBatch(targetMonth + '-01');
     } catch (err: any) {
-      toast({ title: 'Error creating batch', description: err.message, variant: 'destructive' });
+      console.error('[batch-create] createBatch threw', err);
+      toast({
+        title: 'Could not create batch',
+        description: err?.message || 'Database insert failed. The batch was NOT created — your existing batch is still selected.',
+        variant: 'destructive',
+      });
+      return;
     }
+
+    if (!batch?.id) {
+      console.error('[batch-create] createBatch returned no id', batch);
+      toast({
+        title: 'Could not create batch',
+        description: 'No batch id returned. The batch was NOT created — your existing batch is still selected.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    console.debug('[batch-create] persisted', { id: batch.id, statement_month: batch.statement_month });
+
+    // CRITICAL ORDER: set currentBatchId FIRST, then refresh.
+    // If we refresh first, BatchContext.refreshBatches sees a stale
+    // currentBatchId and may not auto-select the new batch; the subsequent
+    // setCurrentBatchId works but a render can flash the OLD selection,
+    // and any upload triggered in that window targets the wrong batch.
+    setCurrentBatchId(batch.id);
+    console.debug('[batch-create] setCurrentBatchId called', { newId: batch.id });
+
+    try {
+      await refreshBatches();
+    } catch (err: any) {
+      // Refresh failure does not undo the create — the batch IS in the DB,
+      // selection IS pointed at it. We just couldn't reload the dropdown.
+      console.error('[batch-create] refreshBatches failed', err);
+      toast({
+        title: 'Batch created but list failed to refresh',
+        description: 'Reload the page to see the full batch list. Your new batch is selected.',
+        variant: 'destructive',
+      });
+    }
+
+    setCreating(false);
+    setMonth('');
+    setDuplicateWarning(null);
+    toast({ title: 'Batch created', description: `Batch for ${targetMonth} is now selected.` });
   };
 
   const handleDelete = async () => {
