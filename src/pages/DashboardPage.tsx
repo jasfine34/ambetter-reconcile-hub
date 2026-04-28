@@ -125,19 +125,15 @@ const NOT_IN_BO_COLUMNS = [
   { key: 'covered_member_count', label: 'Covered Members' },
 ];
 
-const PAY_ENTITY_STORAGE_KEY = 'dashboard_pay_entity_filter';
+// NOTE: Pay-entity scope state moved to the shared `usePayEntityScope` hook
+// (src/hooks/usePayEntityScope.ts) so other pages (Agent Summary, etc.) react
+// to the same dropdown selection. The localStorage key is re-exported from
+// the hook for backwards-compat with anything reading it directly.
+const PAY_ENTITY_STORAGE_KEY = SHARED_PAY_ENTITY_STORAGE_KEY;
 
 const ERICA_NPN = '21277051';
 
 type PayEntityFilter = 'Coverall' | 'Vix' | 'All';
-
-function getStoredPayEntity(): PayEntityFilter {
-  try {
-    const stored = localStorage.getItem(PAY_ENTITY_STORAGE_KEY);
-    if (stored === 'Coverall' || stored === 'Vix' || stored === 'All') return stored;
-  } catch {}
-  return 'Coverall';
-}
 
 export default function DashboardPage() {
   const { reconciled, loading, counts, debugStats, currentBatchId, refreshAll, batches, resolverIndex, refreshResolverIndex } = useBatch();
