@@ -539,7 +539,7 @@ export default function DashboardPage() {
     const totalPaidAll = filtered.filter(r => r.in_commission).length;
     const paidOutsideExpected = filtered.filter(r => !r.in_ede && r.in_commission).length;
     return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidOutsideEde, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, paidOutsideExpected, coverallDirectNet, downlineNet, netPaidTotal, splitDelta, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
-  }, [filtered, normalizedRecords, payEntityFilter, filteredEde, priorMonth, statementMonth, effInBO]);
+  }, [filtered, reconciled, normalizedRecords, payEntityFilter, filteredEde, priorMonth, statementMonth, effInBO, confirmedUpgradeMemberKeys]);
 
   // Clawback rows — every commission row with amount < 0 within the current
   // pay-entity scope. Derived from RAW normalized commission records (same
