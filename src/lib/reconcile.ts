@@ -905,7 +905,14 @@ export function reconcile(
     } else if (inEde && inBo && eligible !== 'Yes') {
       issueType = 'Not Eligible for Commission';
     } else if (shouldBePaid && !inComm) {
-      issueType = 'Missing from Commission';
+      // When the batch has no commission file at all (early-month onboarding
+      // before the carrier sends the statement), label these as 'Pending
+      // Commission Statement' so the dashboard's exception queues don't fill
+      // with phantom disputes. The bucket flips to 'Missing from Commission'
+      // automatically once the commission file is uploaded and rebuild runs.
+      issueType = batchHasCommissionFile
+        ? 'Missing from Commission'
+        : 'Pending Commission Statement';
     } else if (inComm && (agentNpn === '21055210' || agentNpn === '16531877') && actualPayEntity === 'Vix') {
       issueType = 'Wrong Pay Entity';
       issueNotes = `${npnInfo?.name} paid under Vix instead of Coverall`;
