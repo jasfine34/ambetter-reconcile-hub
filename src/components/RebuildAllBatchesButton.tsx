@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useBatch } from '@/contexts/BatchContext';
-import { rebuildBatch, type RebuildProgress } from '@/lib/rebuild';
+import { rebuildBatchWithRetry, type RebuildProgress } from '@/lib/rebuild';
 import { Hammer, Loader2 } from 'lucide-react';
 
 interface BatchProgress {
@@ -80,7 +80,7 @@ export function RebuildAllBatchesButton({ variant = 'outline', label = 'Rebuild 
         prev.map((p, idx) => (idx === i ? { ...p, status: 'running' } : p))
       );
       try {
-        const result = await rebuildBatch(b.id, (inner) => {
+        const result = await rebuildBatchWithRetry(b.id, (inner) => {
           setProgressList((prev) =>
             prev.map((p, idx) => (idx === i ? { ...p, inner } : p))
           );

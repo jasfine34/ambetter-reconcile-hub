@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useBatch } from '@/contexts/BatchContext';
-import { rebuildBatch, type RebuildProgress } from '@/lib/rebuild';
+import { rebuildBatchWithRetry, type RebuildProgress } from '@/lib/rebuild';
 import { Hammer, Loader2 } from 'lucide-react';
 
 export function RebuildBatchButton() {
@@ -17,7 +17,7 @@ export function RebuildBatchButton() {
     setRunning(true);
     setProgress(null);
     try {
-      const result = await rebuildBatch(currentBatchId, (p) => setProgress(p));
+      const result = await rebuildBatchWithRetry(currentBatchId, (p) => setProgress(p));
       await Promise.all([refreshAll(), refreshBatches()]);
       toast({
         title: 'Rebuild Complete',

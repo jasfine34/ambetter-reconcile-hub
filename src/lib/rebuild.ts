@@ -8,12 +8,9 @@ import {
   saveReconciledMembers,
   getNormalizedRecords,
   getOrCreateSnapshotForFile,
-  deleteReconciledForBatch,
-  deleteCommissionEstimatesForBatch,
   deleteCurrentNormalizedForBatch,
   countReconciledForBatch,
   countCurrentNormalizedForBatch,
-  countCommissionEstimatesForBatch,
 } from './persistence';
 import { fallbackReconcileMonth } from './dateRange';
 import { loadResolverIndex } from './resolvedIdentities';
@@ -47,6 +44,67 @@ export interface RebuildProgress {
 }
 
 type ProgressCb = (p: RebuildProgress) => void;
+
+export function isTransientRebuildError(err: unknown): boolean {
+  const anyErr = err as any;
+  const text = [
+    anyErr?.message,
+    anyErr?.details,
+    anyErr?.hint,
+    anyErr?.code,
+    typeof err === 'string' ? err : undefined,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return anyErr?.code === '57014' || [
+    'canceling statement due to statement timeout',
+    'statement timeout',
+    'timeout',
+    'timed out',
+    'fetch failed',
+    'failed to fetch',
+    'networkerror',
+    'temporarily unavailable',
+    'gateway timeout',
+  ].some((pattern) => text.includes(pattern));
+}
+
+export async function rebuildBatchWithRetry(
+  batchId: string,
+  onProgress?: ProgressCb,
+  maxAttempts = 3,
+): Promise<{
+  filesProcessed: number;
+  recordsNormalized: number;
+  membersReconciled: number;
+}> {
+  let lastError: unknown;
+  const backoffsMs = [0, 1500, 4000];
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (attempt > 1) {
+      await new Promise((r) => setTimeout(r, backoffsMs[attempt - 1] ?? 4000));
+      onProgress?.({
+        phase: 'retrying',
+        filesProcessed: 0,
+        totalFiles: 0,
+        recordsNormalized: 0,
+        attempt,
+      });
+    }
+
+    try {
+      return await rebuildBatch(batchId, onProgress);
+    } catch (err) {
+      lastError = err;
+      if (attempt >= maxAttempts || !isTransientRebuildError(err)) throw err;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
 
 async function downloadFileFromStorage(storagePath: string): Promise<File> {
   const { data, error } = await supabase.storage
@@ -117,7 +175,7 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
     );
   }
 
-  // 3 + 4. Delete reconciled + CURRENT normalized records.
+  // 3 + 4. Delete CURRENT normalized records only.
   // Superseded normalized_records (from prior snapshot uploads) are preserved
   // as history — rebuild only regenerates the current working set.
   //
@@ -127,21 +185,10 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
   // through ids in 500-row chunks so each individual DELETE is small enough
   // to finish well under the timeout. Smaller batches (Jan/Mar) just take a
   // few extra round-trips; correctness is unchanged.
-  // DELETE-then-verify-zero discipline (see ARCHITECTURE_PLAN.md §
-  // Rebuild Discipline). The doubling incident on Apr 2026 happened when a
-  // partial prior insert left rows behind that the next rebuild stacked on
-  // top of. Each clear is now followed by a count assertion and a single
-  // retry before the rebuild aborts.
-  await deleteAndVerifyZero(
-    'reconciled_members',
-    () => deleteReconciledForBatch(batchId),
-    () => countReconciledForBatch(batchId),
-  );
-  await deleteAndVerifyZero(
-    'commission_estimates',
-    () => deleteCommissionEstimatesForBatch(batchId),
-    () => countCommissionEstimatesForBatch(batchId),
-  );
+  // Reconciled rows and commission estimates are intentionally NOT cleared
+  // here. saveReconciledMembers() performs the final replacement atomically,
+  // so a save timeout rolls back to the prior state instead of leaving a
+  // half-broken batch with 0 reconciled members.
   await deleteAndVerifyZero(
     'normalized_records (current)',
     () => deleteCurrentNormalizedForBatch(batchId),
