@@ -452,12 +452,20 @@ export default function DashboardPage() {
     // but are not double-counted across months.
     const expectedPriorMonth = priorMonth ? (filteredEde.byMonth[priorMonth] ?? 0) : 0;
     const expectedStatementMonth = statementMonth ? (filteredEde.byMonth[statementMonth] ?? 0) : 0;
-    const foundBO = filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r)).length;
-    const eligible = filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r) && r.eligible_for_commission === 'Yes').length;
+    // CANONICAL CARD WIRING (2026-04-28 pass-2): Found / Eligible / Should Pay
+    // / Paid Within Eligible / Unpaid all flow through the canonical helpers
+    // so the cards EXACTLY match Run Invariants for the same scope. Prior
+    // wiring used `r.is_in_expected_ede_universe && effInBO(r)` (the
+    // persistent column), which drifted from the canonical filteredEde-based
+    // EE universe (Mar Coverall: 1,297 vs 1,309 invariant).
+    const scopeForCanonical = payEntityFilter === 'All' ? 'All' : payEntityFilter;
+    const foundBO = getFoundInBackOffice(reconciled, scopeForCanonical, filteredEde, confirmedUpgradeMemberKeys);
+    const eligibleCohort = getEligibleCohort(reconciled, scopeForCanonical, confirmedUpgradeMemberKeys);
+    const eligible = eligibleCohort.length;
     const shouldPay = eligible;
     // Count distinct policies with positive payments
     const paidCommRecords = filtered.filter(r => r.in_commission).length;
-    const paidEligible = filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r) && r.eligible_for_commission === 'Yes' && r.in_commission).length;
+    const paidEligible = eligibleCohort.filter(r => r.in_commission).length;
     const unpaid = shouldPay - paidEligible;
     // Gross / Clawbacks / Net Paid — computed from RAW commission records and
     // scoped by the dashboard's pay_entity filter, so they match exactly what
