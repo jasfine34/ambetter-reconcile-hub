@@ -5,6 +5,7 @@ import { BatchSelector } from '@/components/BatchSelector';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { getNormalizedRecords } from '@/lib/persistence';
 import { computeFilteredEde } from '@/lib/expectedEde';
 import {
@@ -17,10 +18,8 @@ import {
 } from '@/lib/weakMatch';
 import { useToast } from '@/hooks/use-toast';
 import { CheckCircle2, XCircle, Clock, Link2 } from 'lucide-react';
-import { fallbackReconcileMonth } from '@/lib/dateRange';
 import { getCoveredMonths } from '@/lib/dateRange';
-
-type PayEntityFilter = 'Coverall' | 'Vix' | 'All';
+import { usePayEntityScope } from '@/hooks/usePayEntityScope';
 
 export default function ManualMatchPage() {
   const { currentBatchId, reconciled, batches, resolverIndex } = useBatch();
@@ -41,9 +40,16 @@ export default function ManualMatchPage() {
     [currentBatch?.statement_month]
   );
 
-  // Default scope to Coverall (matches the Dashboard's default).
-  const [scope] = useState<PayEntityFilter>('Coverall');
+  // Use the SHARED pay-entity scope so this page mirrors the Dashboard's
+  // current selection (and vice versa). Previously this page hardcoded
+  // 'Coverall' which made the queue invisible whenever the user was
+  // looking at Vix or All on the Dashboard. (#66, 2026-04-28.)
+  const [scope, setScope] = usePayEntityScope();
 
+  // Refetch normalized records on batch change AND when reconciled data
+  // updates (rebuild / re-run / upload completion all bump reconciled.length
+  // without changing currentBatchId). Mirrors the same fix applied to
+  // EntitySummaryPage / AgentSummaryPage in #64.
   useEffect(() => {
     if (!currentBatchId) { setNormalizedRecords([]); return; }
     let cancelled = false;
@@ -51,7 +57,7 @@ export default function ManualMatchPage() {
       .then((recs) => { if (!cancelled) setNormalizedRecords(recs as any[]); })
       .catch(() => { if (!cancelled) setNormalizedRecords([]); });
     return () => { cancelled = true; };
-  }, [currentBatchId]);
+  }, [currentBatchId, reconciled.length]);
 
   const refreshOverrides = async () => {
     try {
@@ -66,8 +72,14 @@ export default function ManualMatchPage() {
   const candidates: WeakMatchCandidate[] = useMemo(() => {
     if (!normalizedRecords.length || !reconciled.length) return [];
     const fe = computeFilteredEde(normalizedRecords, reconciled, scope, coveredMonths, resolverIndex);
-    return findWeakMatches(fe.uniqueMembers, normalizedRecords);
-  }, [normalizedRecords, reconciled, scope, coveredMonths, resolverIndex]);
+    const cands = findWeakMatches(fe.uniqueMembers, normalizedRecords);
+    // Diagnostic: log so a future scope/dep mismatch is visible in console
+    // immediately rather than presenting as an empty queue.
+    // eslint-disable-next-line no-console
+    console.debug('[ManualMatch] batch=%s scope=%s ee=%d candidates=%d',
+      currentBatchId, scope, fe.uniqueMembers.length, cands.length);
+    return cands;
+  }, [normalizedRecords, reconciled, scope, coveredMonths, resolverIndex, currentBatchId]);
 
   const { pending, confirmedKeys, rejectedKeys } = useMemo(
     () => applyOverrides(candidates, overrides),
@@ -119,6 +131,7 @@ export default function ManualMatchPage() {
             <span className="text-success">{confirmedKeys.size} confirmed</span>
             {' · '}
             <span className="text-destructive">{rejectedKeys.size} rejected</span>
+            {' · scope: '}<span className="font-medium">{scope}</span>
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -128,6 +141,16 @@ export default function ManualMatchPage() {
               {sessionDecisions} override{sessionDecisions === 1 ? '' : 's'} this session
             </Badge>
           )}
+          <Select value={scope} onValueChange={(v) => setScope(v as any)}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue placeholder="Pay entity" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Coverall">Coverall</SelectItem>
+              <SelectItem value="Vix">Vix</SelectItem>
+              <SelectItem value="All">All Combined</SelectItem>
+            </SelectContent>
+          </Select>
           <BatchSelector />
         </div>
       </div>

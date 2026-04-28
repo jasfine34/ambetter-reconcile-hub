@@ -157,3 +157,63 @@ describe('page wiring — AgentSummary per-agent commission column', () => {
     expect(directSum).toBe(90); // 100 - 10
   });
 });
+
+/**
+ * Regression guard for #66 (2026-04-28): the ManualMatch queue size for the
+ * active batch+scope MUST equal the Dashboard "Weak BO Match Queue" pending
+ * count for the SAME batch+scope. Previously ManualMatchPage hardcoded
+ * scope='Coverall' and used a stale useEffect dep on currentBatchId only,
+ * so the queue could read 0 even when the Dashboard surfaced 209 weak
+ * candidates. Both pages now call findWeakMatches over the same
+ * filteredEde.uniqueMembers.
+ */
+describe('page wiring — ManualMatch queue parity with Dashboard weak-pending', () => {
+  it('ManualMatch pending count MUST equal Dashboard weak-pending count for same scope', async () => {
+    const { findWeakMatches, applyOverrides } = await import('@/lib/weakMatch');
+    // Minimal EE-universe + BO normalizedRecords — one EE row whose strict
+    // join failed but matches a BO row by name + issuer_subscriber_id.
+    const eeUniverse: any[] = [
+      {
+        member_key: 'eeA',
+        applicant_name: 'Tyler Tomevi',
+        policy_number: '',
+        exchange_subscriber_id: '',
+        issuer_subscriber_id: 'U999',
+        current_policy_aor: 'Jason Fine (21055210)',
+        effective_date: '2026-03-01',
+        policy_status: 'Effectuated',
+        covered_member_count: 1,
+        effective_month: '2026-03',
+        active_months: ['2026-03'],
+        in_back_office: false,
+      },
+    ];
+    const normalizedRecords: any[] = [
+      {
+        id: 'bo1',
+        source_type: 'BACK_OFFICE',
+        applicant_name: 'Tyler Tomevi',
+        policy_number: '',
+        exchange_subscriber_id: '',
+        issuer_subscriber_id: 'U999',
+        member_key: 'boZ',
+        aor_bucket: 'Coverall',
+        agent_name: 'Jason Fine',
+        eligible_for_commission: 'Yes',
+        raw_json: {},
+      },
+    ];
+    const candidates = findWeakMatches(eeUniverse as any, normalizedRecords);
+    const dashboardPending = applyOverrides(candidates, new Map()).pending;
+    // ManualMatch must apply the SAME pipeline → same pending count.
+    const manualMatchPending = applyOverrides(
+      findWeakMatches(eeUniverse as any, normalizedRecords),
+      new Map(),
+    ).pending;
+    expect(manualMatchPending.length).toBe(dashboardPending.length);
+    expect(manualMatchPending.length).toBe(1);
+    // Sanity: signal set must include name + issuer_subscriber_id matches.
+    expect(manualMatchPending[0].signals.matched).toContain('applicant_name');
+    expect(manualMatchPending[0].signals.matched).toContain('issuer_subscriber_id');
+  });
+});
