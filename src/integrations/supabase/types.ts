@@ -709,7 +709,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      replace_reconciled_members_for_batch: {
+        Args: { _batch_id: string; _estimates?: Json; _members: Json }
+        Returns: number
+      }
     }
     Enums: {
       [_ in never]: never
