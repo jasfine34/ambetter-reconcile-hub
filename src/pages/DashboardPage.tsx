@@ -20,6 +20,7 @@ import { isCoverallAORByName, isCoverallAORByNPN, COVERALL_NPN_SET } from '@/lib
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { getCoveredMonths, monthKeyToFirstOfMonth, fallbackReconcileMonth } from '@/lib/dateRange';
 import { computeFilteredEde } from '@/lib/expectedEde';
+import { usePayEntityScope, PAY_ENTITY_STORAGE_KEY as SHARED_PAY_ENTITY_STORAGE_KEY } from '@/hooks/usePayEntityScope';
 import { findWeakMatches, loadWeakMatchOverrides, applyOverrides, pickStableKey, type WeakMatchOverride } from '@/lib/weakMatch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
