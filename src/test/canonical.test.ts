@@ -155,6 +155,43 @@ describe('canonical/metrics', () => {
     const after = getFoundInBackOffice(reconciled, 'Coverall', filteredEde, new Set(['m2']));
     expect(after - before).toBe(1);
   });
+
+  it('Found in BO uses filteredEde universe, NOT persistent is_in_expected_ede_universe flag', () => {
+    // Regression for 2026.04.28-ee-universe-align: a member flagged
+    // is_in_expected_ede_universe=true from a prior batch but absent from
+    // THIS batch's filteredEde.uniqueMembers must be EXCLUDED from Found.
+    const reconciled: any[] = [
+      // m1: in filteredEde + in BO -> counted.
+      {
+        member_key: 'm1',
+        current_policy_aor: 'Jason Fine (21055210)',
+        is_in_expected_ede_universe: true,
+        in_back_office: true,
+        eligible_for_commission: 'Yes',
+      },
+      // mGhost: persistent flag=true (carryover from prior batch), in BO,
+      // but NOT in filteredEde for THIS batch. Must be excluded.
+      {
+        member_key: 'mGhost',
+        current_policy_aor: 'Jason Fine (21055210)',
+        is_in_expected_ede_universe: true,
+        in_back_office: true,
+        eligible_for_commission: 'Yes',
+      },
+    ];
+    const filteredEde: FilteredEdeResult = {
+      uniqueMembers: [
+        { member_key: 'm1', applicant_name: 'Alpha', policy_number: 'P1', exchange_subscriber_id: '', issuer_subscriber_id: 'U111', current_policy_aor: '', effective_date: '2026-03-01', policy_status: 'Effectuated', covered_member_count: 1, effective_month: '2026-03', active_months: ['2026-03'], in_back_office: true },
+      ],
+      uniqueKeys: 1,
+      byMonth: { '2026-03': 1 },
+      inBOCount: 1,
+      notInBOCount: 0,
+      missingFromBO: [],
+    };
+    const found = getFoundInBackOffice(reconciled, 'Coverall', filteredEde, new Set());
+    expect(found).toBe(1); // only m1, NOT mGhost
+  });
 });
 
 describe('canonical/invariants', () => {

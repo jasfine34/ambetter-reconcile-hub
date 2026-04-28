@@ -73,6 +73,15 @@ export function getExpectedEnrollments(filteredEde: FilteredEdeResult): number {
  * Found in Back Office — members in the EE universe who have a strict join
  * to BO OR a confirmed weak-match override. Matches the Dashboard's Found
  * in BO card after weak-match upgrades are applied.
+ *
+ * CANONICAL DECISION (2026.04.28-ee-universe-align): the EE-universe
+ * predicate is membership in `filteredEde.uniqueMembers` for the CURRENT
+ * batch (span semantic, rebuilt fresh per batch), NOT the persistent
+ * `reconciled_members.is_in_expected_ede_universe` flag (which can carry
+ * over across batches once flipped on, causing Feb-style over-counts where
+ * 302 members were flagged from prior batches but had no EDE row in this
+ * batch). The persistent column is retained for backward-compat drilldowns
+ * but no longer drives this metric.
  */
 export function getFoundInBackOffice(
   reconciled: any[],
@@ -81,9 +90,10 @@ export function getFoundInBackOffice(
   confirmedUpgradeMemberKeys: Set<string>,
 ): number {
   const inScope = filterReconciledByScope(reconciled, scope);
+  const eeUniverse = new Set(filteredEde.uniqueMembers.map((m) => m.member_key));
   return inScope.filter(
     (r) =>
-      r.is_in_expected_ede_universe &&
+      eeUniverse.has(r.member_key) &&
       (r.in_back_office || confirmedUpgradeMemberKeys.has(r.member_key)),
   ).length;
 }
