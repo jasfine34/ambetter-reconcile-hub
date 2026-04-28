@@ -52,10 +52,24 @@ export default function AgentSummaryPage() {
     if (!currentBatchId) { setNormalizedRecords([]); return; }
     let cancelled = false;
     getNormalizedRecords(currentBatchId)
-      .then((recs) => { if (!cancelled) setNormalizedRecords(recs as any[]); })
+      .then((recs) => {
+        if (cancelled) return;
+        setNormalizedRecords(recs as any[]);
+        if (typeof console !== 'undefined') {
+          const comm = (recs as any[]).filter((r) => r.source_type === 'COMMISSION');
+          const peSamples = Array.from(new Set(comm.slice(0, 50).map((r) => r.pay_entity)));
+          // eslint-disable-next-line no-console
+          console.debug('[AgentSummary] normalizedRecords loaded', {
+            batchId: currentBatchId,
+            total: (recs as any[]).length,
+            commissionRows: comm.length,
+            payEntitySamples: peSamples,
+          });
+        }
+      })
       .catch(() => { if (!cancelled) setNormalizedRecords([]); });
     return () => { cancelled = true; };
-  }, [currentBatchId]);
+  }, [currentBatchId, reconciled.length]);
 
   /**
    * Per-agent commission totals from raw commission rows (canonical scope =
