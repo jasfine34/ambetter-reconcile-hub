@@ -464,15 +464,7 @@ export async function deleteCurrentNormalizedForBatch(batchId: string) {
 }
 
 export async function saveReconciledMembers(batchId: string, members: ReconciledMember[]) {
-  // See chunked-delete comment above — single unbounded DELETE timed out on
-  // the largest batch.
-  await deleteReconciledForBatch(batchId);
-  await deleteCommissionEstimatesForBatch(batchId);
-
-  if (members.length === 0) return;
-
   const rows = members.map(m => ({
-    batch_id: batchId,
     member_key: m.member_key,
     carrier: m.carrier,
     applicant_name: m.applicant_name,
@@ -504,27 +496,23 @@ export async function saveReconciledMembers(batchId: string, members: Reconciled
     expected_ede_effective_month: m.expected_ede_effective_month || null,
   }));
 
-  for (let i = 0; i < rows.length; i += 500) {
-    const chunk = rows.slice(i, i + 500);
-    const { error } = await supabase.from('reconciled_members').insert(chunk);
-    if (error) throw error;
-  }
-
   const estimates = members
     .filter(m => m.estimated_missing_commission != null)
     .map(m => ({
-      batch_id: batchId,
       member_key: m.member_key,
       basis: 'avg_agent_commission',
       estimated_commission: m.estimated_missing_commission!,
     }));
-  if (estimates.length > 0) {
-    for (let i = 0; i < estimates.length; i += 500) {
-      const chunk = estimates.slice(i, i + 500);
-      const { error } = await supabase.from('commission_estimates').insert(chunk);
-      if (error) throw error;
-    }
-  }
+
+  // Atomic replace: the backend function runs DELETE + INSERT in one database
+  // transaction, so a timeout/error rolls back to the prior reconciled state
+  // instead of leaving the batch with 0 rows.
+  const { error } = await (supabase as any).rpc('replace_reconciled_members_for_batch', {
+    _batch_id: batchId,
+    _members: rows,
+    _estimates: estimates,
+  });
+  if (error) throw error;
 }
 
 export async function getReconciledMembers(batchId: string) {
