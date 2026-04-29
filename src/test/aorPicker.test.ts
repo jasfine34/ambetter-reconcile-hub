@@ -37,7 +37,7 @@ function ede(overrides: {
   } as unknown as NormalizedRecord;
 }
 
-describe('aorPicker.pickCurrentPolicyAor — current #75 contract', () => {
+describe('aorPicker.pickCurrentPolicyAor — picker contract (post-#76)', () => {
   it('A: same effective_date — status priority wins (Effectuated > PendingEffectuation)', () => {
     const rowA = ede({
       status: 'Effectuated',
