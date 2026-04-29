@@ -229,7 +229,7 @@ describe('canonical/invariants', () => {
  * reconciled (the AOR-drift residual that produced the −2 invariant on April).
  */
 describe('expectedEde — Option A alignment with aorPicker', () => {
-  it('multi-EDE Marjorie/Anselmo shape: member excluded from Coverall EE universe', async () => {
+  it('multi-EDE Marjorie/Anselmo shape: member INCLUDED in Coverall EE universe (post-#76)', async () => {
     const { computeFilteredEde } = await import('@/lib/expectedEde');
     const normalized: any[] = [
       {
@@ -251,12 +251,13 @@ describe('expectedEde — Option A alignment with aorPicker', () => {
       { member_key: 'mk:marjorie', applicant_name: 'Marjorie McCoy', exchange_subscriber_id: 'EX-1', issuer_subscriber_id: '', policy_number: '', in_back_office: false },
     ];
     const result = computeFilteredEde(normalized, reconciled as any, 'Coverall', ['2026-04']);
-    // Picker selects the Effectuated row → AOR is non-Coverall → member OUT.
-    // Pre-fix this would be 1 (per-row scope filter let the Pending row in).
-    expect(result.uniqueKeys).toBe(0);
+    // Post-#76: eff_date desc beats status priority, so the newer
+    // PendingEffectuation Coverall row (Jason Fine) wins → member IN Coverall scope.
+    expect(result.uniqueKeys).toBe(1);
+    expect(result.uniqueMembers[0].current_policy_aor).toBe('Jason Fine (21055210)');
   });
 
-  it('multi-EDE member with Effectuated Coverall row IS in Coverall EE universe', async () => {
+  it('multi-EDE member EXCLUDED from Coverall EE universe under #76 (newer Pending non-Coverall wins, models AOR transfer OUT)', async () => {
     const { computeFilteredEde } = await import('@/lib/expectedEde');
     const normalized: any[] = [
       {
@@ -278,17 +279,17 @@ describe('expectedEde — Option A alignment with aorPicker', () => {
       { member_key: 'mk:t', applicant_name: 'Test Member', exchange_subscriber_id: 'EX-2', issuer_subscriber_id: '', policy_number: '', in_back_office: true },
     ];
     const result = computeFilteredEde(normalized, reconciled as any, 'Coverall', ['2026-04']);
-    expect(result.uniqueKeys).toBe(1);
-    // Surfaced AOR == picker's choice (the Effectuated/Coverall row).
-    expect(result.uniqueMembers[0].current_policy_aor).toBe('Jason Fine (21055210)');
+    // Post-#76: eff_date desc rule causes the newer PendingEffectuation
+    // non-Coverall row to win → AOR transferred OUT → member excluded.
+    expect(result.uniqueKeys).toBe(0);
   });
 
-  it('alignment guarantee: EE universe AOR == aorPicker AOR for every member', async () => {
+  it('alignment guarantee (post-#76): EE universe AOR == aorPicker AOR for every member', async () => {
     const { computeFilteredEde } = await import('@/lib/expectedEde');
     const { pickCurrentPolicyAor } = await import('@/lib/aorPicker');
 
     const normalized: any[] = [
-      // Member A: Marjorie shape (out of Coverall scope)
+      // Member A: Marjorie shape — under #76, newer Pending Coverall wins → IN scope
       { id: 'a1', source_type: 'EDE', source_file_label: 'EDE Summary', carrier: 'Ambetter', applicant_name: 'A', effective_date: '2026-02-01', status: 'Effectuated', member_key: 'mk:A', raw_json: { issuer: 'Ambetter', policyStatus: 'Effectuated', effectiveDate: '2026-02-01', currentPolicyAOR: 'Other Agent (99999999)', exchangeSubscriberId: 'EXA' } },
       { id: 'a2', source_type: 'EDE', source_file_label: 'EDE Summary', carrier: 'Ambetter', applicant_name: 'A', effective_date: '2026-04-01', status: 'PendingEffectuation', member_key: 'mk:A', raw_json: { issuer: 'Ambetter', policyStatus: 'PendingEffectuation', effectiveDate: '2026-04-01', currentPolicyAOR: 'Jason Fine (21055210)', exchangeSubscriberId: 'EXA' } },
       // Member B: single-row Coverall (in scope)
@@ -307,7 +308,9 @@ describe('expectedEde — Option A alignment with aorPicker', () => {
       const pickerAor = pickCurrentPolicyAor(memberRows as any);
       expect(m.current_policy_aor).toBe(pickerAor);
     }
-    expect(ede.uniqueKeys).toBe(1);
-    expect(ede.uniqueMembers[0].member_key).toBe('mk:B');
+    // Post-#76: BOTH members are in Coverall scope.
+    expect(ede.uniqueKeys).toBe(2);
+    const keys = ede.uniqueMembers.map((m) => m.member_key).sort();
+    expect(keys).toEqual(['mk:A', 'mk:B']);
   });
 });

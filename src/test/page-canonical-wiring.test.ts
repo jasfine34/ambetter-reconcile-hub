@@ -243,6 +243,6 @@ describe('page wiring — EE universe AOR ≡ aorPicker AOR (Option A)', () => {
     expect(ede.uniqueKeys).toBe(1);
     const pickerAor = pickCurrentPolicyAor(normalized as any);
     expect(ede.uniqueMembers[0].current_policy_aor).toBe(pickerAor);
-    expect(pickerAor).toBe('Jason Fine (21055210)');
+    expect(pickerAor).toBe('Erica Fine (21277051)');
   });
 });
