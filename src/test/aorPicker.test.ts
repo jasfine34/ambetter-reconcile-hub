@@ -109,7 +109,7 @@ describe('aorPicker.pickCurrentPolicyAor — expected post-#76 contract', () => 
   });
 
   // Enable when #76 adds lastEDESync as final tiebreaker.
-  it.skip('E: same eff_date and status — lastEDESync desc wins', () => {
+  it('E: same eff_date and status — lastEDESync desc wins', () => {
     const rowA = ede({
       status: 'Effectuated',
       effective_date: '2026-04-01',
