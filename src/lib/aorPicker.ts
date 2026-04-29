@@ -15,12 +15,14 @@ import type { NormalizedRecord } from './normalize';
  *
  *   (1) If ANY EDE row exists for the member, pick from EDE only — never
  *       fall back to BO.
- *   (2) Sort EDE rows by:
- *         (a) status priority (case-insensitive on rawStatusKey):
+ *   (2) Sort EDE rows by (#76 precedence, 2026-04-29):
+ *         (a) effective_date desc — most recent eff_date wins
+ *             (null/unparseable last)
+ *         (b) status priority (case-insensitive on rawStatusKey):
  *             Effectuated > PendingEffectuation > PendingTermination > Cancelled
- *         (b) effective_date desc (newest first; null/unparseable last)
  *         (c) file label priority:
  *             'EDE Summary' > 'EDE Archived Enrolled' > 'EDE Archived Not Enrolled'
+ *         (d) lastEDESync desc — final tiebreaker
  *   (3) Pick the first row's currentPolicyAOR (raw_json['currentPolicyAOR']),
  *       trimmed.
  *   (4) Only if NO EDE row exists for that member, fall back to BO records'
@@ -62,13 +64,31 @@ function effDateMs(r: NormalizedRecord): number {
   return Number.isFinite(t) ? t : -Infinity;
 }
 
-/** Sort comparator implementing the rules above. Lower is better. */
+function lastEDESyncMs(r: NormalizedRecord): number {
+  const s = r.raw_json?.['lastEDESync'];
+  if (!s) return -Infinity;
+  const t = Date.parse(String(s));
+  return Number.isFinite(t) ? t : -Infinity;
+}
+
+/**
+ * Sort comparator (lower is better) — #76 precedence:
+ *   (1) effective_date desc — most recent eff_date wins
+ *   (2) status priority within same eff_date
+ *       (Effectuated > PendingEffectuation > PendingTermination > Cancelled)
+ *   (3) file label priority (Summary > Archived Enrolled > Archived Not Enrolled)
+ *   (4) lastEDESync desc — final tiebreaker
+ */
 export function compareEDEForAor(a: NormalizedRecord, b: NormalizedRecord): number {
+  const da = effDateMs(a), db = effDateMs(b);
+  if (da !== db) return db - da; // newer eff_date first
   const sa = statusRank(a), sb = statusRank(b);
   if (sa !== sb) return sa - sb;
-  const da = effDateMs(a), db = effDateMs(b);
-  if (da !== db) return db - da; // newer first; -Infinity (null) sorts last
-  return fileLabelRank(a) - fileLabelRank(b);
+  const fa = fileLabelRank(a), fb = fileLabelRank(b);
+  if (fa !== fb) return fa - fb;
+  const la = lastEDESyncMs(a), lb = lastEDESyncMs(b);
+  if (la !== lb) return lb - la; // newer lastEDESync first
+  return 0;
 }
 
 /**
