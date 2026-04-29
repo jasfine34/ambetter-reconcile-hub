@@ -54,9 +54,9 @@ describe('aorPicker.pickCurrentPolicyAor — current #75 contract', () => {
     expect(pickCurrentPolicyAor([rowB, rowA])).toBe('Jason Fine (21055210)');
   });
 
-  it('B: multi-FFM snapshot of current behavior (Effectuated outranks newer PendingEffectuation)', () => {
-    // Under #76 this snapshot will flip to Jason Fine because eff_date desc
-    // will beat status priority.
+  it('B: multi-FFM — newer eff_date wins over older Effectuated (post-#76)', () => {
+    // Post-#76: eff_date desc is the primary tiebreaker, so the newer
+    // PendingEffectuation row beats the older Effectuated row.
     const rowA = ede({
       ffmAppId: '7885566780',
       status: 'Effectuated',
@@ -71,7 +71,8 @@ describe('aorPicker.pickCurrentPolicyAor — current #75 contract', () => {
       aor: 'Jason Fine (21055210)',
       lastEDESync: '2026-04-27',
     });
-    expect(pickCurrentPolicyAor([rowA, rowB])).toBe('Camden Brech (21648873)');
+    expect(pickCurrentPolicyAor([rowA, rowB])).toBe('Jason Fine (21055210)');
+    expect(pickCurrentPolicyAor([rowB, rowA])).toBe('Jason Fine (21055210)');
   });
 
   it('C: drift-OUT case — picker is scope-agnostic; scope filtering happens AFTER picking', () => {
