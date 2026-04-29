@@ -15,12 +15,14 @@ import type { NormalizedRecord } from './normalize';
  *
  *   (1) If ANY EDE row exists for the member, pick from EDE only — never
  *       fall back to BO.
- *   (2) Sort EDE rows by:
- *         (a) status priority (case-insensitive on rawStatusKey):
+ *   (2) Sort EDE rows by (#76 precedence, 2026-04-29):
+ *         (a) effective_date desc — most recent eff_date wins
+ *             (null/unparseable last)
+ *         (b) status priority (case-insensitive on rawStatusKey):
  *             Effectuated > PendingEffectuation > PendingTermination > Cancelled
- *         (b) effective_date desc (newest first; null/unparseable last)
  *         (c) file label priority:
  *             'EDE Summary' > 'EDE Archived Enrolled' > 'EDE Archived Not Enrolled'
+ *         (d) lastEDESync desc — final tiebreaker
  *   (3) Pick the first row's currentPolicyAOR (raw_json['currentPolicyAOR']),
  *       trimmed.
  *   (4) Only if NO EDE row exists for that member, fall back to BO records'
