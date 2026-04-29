@@ -87,9 +87,7 @@ describe('aorPicker.pickCurrentPolicyAor — current #75 contract', () => {
   });
 });
 
-describe('aorPicker.pickCurrentPolicyAor — expected post-#76 contract', () => {
-  // Enable when #76 ships eff_date desc as primary tiebreaker.
-  // Currently fails because picker prioritizes status.
+describe('aorPicker.pickCurrentPolicyAor — post-#76 contract (eff_date desc + lastEDESync tiebreak)', () => {
   it('D: newer PendingEffectuation beats older Effectuated (Marjorie/Aiselmo case)', () => {
     const rowA = ede({
       ffmAppId: '7885566780',
