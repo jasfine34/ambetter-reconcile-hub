@@ -3,6 +3,7 @@ import { getBatches, getReconciledMembers, getUploadedFiles, getBatchCounts, get
 import { reconcile, type MatchDebugStats } from '@/lib/reconcile';
 import { fallbackReconcileMonth } from '@/lib/dateRange';
 import { loadResolverIndex, type ResolverIndex } from '@/lib/resolvedIdentities';
+import { useBatchDataVersion } from '@/hooks/useBatchDataVersion';
 
 interface BatchCounts {
   uploadedFiles: number;
