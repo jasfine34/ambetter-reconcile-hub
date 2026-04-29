@@ -106,7 +106,6 @@ describe('aorPicker.pickCurrentPolicyAor — post-#76 contract (eff_date desc + 
     expect(pickCurrentPolicyAor([rowA, rowB])).toBe('Jason Fine (21055210)');
   });
 
-  // Enable when #76 adds lastEDESync as final tiebreaker.
   it('E: same eff_date and status — lastEDESync desc wins', () => {
     const rowA = ede({
       status: 'Effectuated',
