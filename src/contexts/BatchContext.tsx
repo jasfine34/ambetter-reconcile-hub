@@ -115,6 +115,16 @@ export function BatchProvider({ children }: { children: ReactNode }) {
   useEffect(() => { refreshBatches(); refreshResolverIndex(); }, []);
   useEffect(() => { refreshAll(); }, [currentBatchId]);
 
+  // Auto-refresh when the active batch is rebuilt (logic version or
+  // last_full_rebuild_at changes in upload_batches). Polls every 2s; fires
+  // only on transitions, so the initial load does NOT cause a double-fetch.
+  // This makes Dashboard cards, header stamp, and the staleness banner
+  // auto-update post-rebuild without F5 (resolves #71/#72).
+  useBatchDataVersion(currentBatchId, () => {
+    refreshBatches();
+    refreshAll();
+  });
+
   return (
     <BatchContext.Provider value={{
       batches, currentBatchId, setCurrentBatchId,
