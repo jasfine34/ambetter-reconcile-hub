@@ -6,6 +6,7 @@ import {
   getUploadedFiles,
   insertNormalizedRecords,
   saveReconciledMembers,
+  saveAndVerifyReconciled,
   getNormalizedRecords,
   getOrCreateSnapshotForFile,
   deleteCurrentNormalizedForBatch,
@@ -21,7 +22,7 @@ import { loadResolverIndex } from './resolvedIdentities';
  * compares this to `upload_batches.last_rebuild_logic_version` and shows a
  * warning banner when the stored value is older than the current code.
  */
-export const RECONCILE_LOGIC_VERSION = '2026.04.30-batch-target-fix';
+export const RECONCILE_LOGIC_VERSION = '2026.04.30-canonical-save-verify';
 
 /**
  * Alias kept for the cross-batch staleness banner / "Rebuild All" feature.
