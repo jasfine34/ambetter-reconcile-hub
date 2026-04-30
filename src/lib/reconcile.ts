@@ -5,6 +5,7 @@ import { isCoverallAORByName } from './agents';
 import { getCoveredMonths, fallbackReconcileMonth } from './dateRange';
 import { lookupResolved, type ResolverIndex } from './resolvedIdentities';
 import { pickCurrentPolicyAor, collectFfmAppIds } from './aorPicker';
+import { isActiveBackOfficeRecord as canonicalIsActiveBackOfficeRecord } from './canonical/isActiveBackOfficeRecord';
 
 const SBA_STATE_SET: ReadonlySet<string> = new Set(SBA_STATES);
 
