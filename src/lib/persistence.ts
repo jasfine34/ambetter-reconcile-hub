@@ -92,20 +92,34 @@ export async function uploadFileRecord(
 ): Promise<{ file: any; snapshot: SnapshotRef | null }> {
   const now = new Date().toISOString();
 
-  // Mark prior rows as superseded instead of deleting them.
-  await supabase
+  // Mark prior rows as superseded instead of deleting them. Each supersede
+  // MUST capture {error} and throw before we proceed to the INSERT below —
+  // otherwise a silent supersede failure (RLS, timeout, network blip) would
+  // leave the prior current rows live AND the new ones would land on top,
+  // producing duplicate-current data with a success toast (Codex Finding 1).
+  const { error: normSupersedeError } = await supabase
     .from('normalized_records')
     .update({ superseded_at: now })
     .eq('batch_id', batchId)
     .eq('source_file_label', fileLabel)
     .is('superseded_at', null);
+  if (normSupersedeError) {
+    throw new Error(
+      `Failed to supersede prior normalized_records for ${fileLabel}: ${unwrapPgError(normSupersedeError)}`,
+    );
+  }
 
-  await supabase
+  const { error: fileSupersedeError } = await supabase
     .from('uploaded_files')
     .update({ superseded_at: now })
     .eq('batch_id', batchId)
     .eq('file_label', fileLabel)
     .is('superseded_at', null);
+  if (fileSupersedeError) {
+    throw new Error(
+      `Failed to supersede prior uploaded_files row for ${fileLabel}: ${unwrapPgError(fileSupersedeError)}`,
+    );
+  }
 
   // Insert the new uploaded_files row.
   const { data: file, error: fileError } = await supabase
