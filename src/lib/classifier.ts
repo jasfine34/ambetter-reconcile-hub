@@ -12,6 +12,7 @@ import type { NormalizedRecord } from './normalize';
 import { addMonths, monthKeyToFirstOfMonth, type MonthKey } from './dateRange';
 import { isCoverallAORByName, isCoverallAORByNPN } from './agents';
 import { canonicalCarrier } from './carrierCanonical';
+import { isActiveBackOfficeRecord } from './canonical/isActiveBackOfficeRecord';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Types
@@ -574,9 +575,9 @@ export function computeFunnelForMonth(
         const firstOfMonth = monthKeyToFirstOfMonth(month);
         const eff = r.effective_date || '';
         if (eff && eff > firstOfMonth) return false;
-        const term = r.policy_term_date || '';
-        if (term && term <= firstOfMonth) return false;
-        return true;
+        // Canonical BO active predicate (#29 Phase 1) — checks policy term,
+        // broker term (with 9999-* sentinel), and eligible_for_commission.
+        return isActiveBackOfficeRecord(r, firstOfMonth);
       });
     const commissionMatch = records.some(r => {
       if (r.source_type !== 'COMMISSION') return false;

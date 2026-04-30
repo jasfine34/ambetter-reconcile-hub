@@ -32,6 +32,7 @@ import {
   getFoundInBackOffice,
   getEligibleCohort,
   getNotInBackOffice,
+  isActiveBackOfficeRecord,
 } from '@/lib/canonical';
 
 /** Format '2026-01' as '1/1/2026' for display. */
@@ -679,13 +680,24 @@ export default function DashboardPage() {
       const boTermDate: string = boRecord?.policy_term_date || boRecord?.broker_term_date || '';
       const boState = String(((boRecord?.raw_json || {}) as Record<string, any>)['State'] ?? '').trim().toUpperCase();
 
+      // Canonical BO active predicate (#29 Phase 1) — single source of truth
+      // for whether the matched BO record disqualifies on policy term, broker
+      // term (with 9999-* sentinel), or eligible_for_commission.
+      const periodStart = (sortedCovered[0] || (fe.effective_date || '').substring(0, 7)) + '-01';
+      const boIsActive = boRecord
+        ? isActiveBackOfficeRecord(
+            { source_type: 'BACK_OFFICE', ...boRecord },
+            periodStart,
+          )
+        : true;
+
       // Inferred reason — priority order per spec.
       let inferredReason = '';
       if (boRecord && (!recon || recon.member_key !== boRecord.member_key)) {
         inferredReason = 'matching failure (BO row exists but join failed)';
       } else if (boRecord && boBrokerNpn && !COVERALL_NPN_SET.has(boBrokerNpn)) {
         inferredReason = 'AOR drift (BO broker is non-Coverall)';
-      } else if (boRecord && !boEligible) {
+      } else if (boRecord && !boIsActive) {
         inferredReason = 'ineligible BO record';
       } else if (sortedCovered.length > 0) {
         const effMonth = (fe.effective_date || '').substring(0, 7);
