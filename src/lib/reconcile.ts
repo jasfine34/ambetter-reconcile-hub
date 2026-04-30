@@ -342,6 +342,10 @@ export function reconcile(
   // fallback). Originals on disk stay byte-for-byte intact; this just
   // mutates the in-memory copy reconcile is about to consume so blank
   // EDE rows can join the right Union-Find group.
+  //
+  // Routed through the canonical overlay helper so read-time pages
+  // (Member Timeline, Source Funnel, audit scripts) and reconcile share
+  // ONE implementation. See src/lib/canonical/memberKeyMerge.ts.
   if (resolverIndex && resolverIndex.totalRows > 0) {
     for (const r of records) {
       const hit = lookupResolved(r as any, resolverIndex);

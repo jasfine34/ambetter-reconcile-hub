@@ -33,7 +33,7 @@ function isDueEligible(r: any, payEntity = 'Coverall'): boolean {
     if (data.length < 1000) break;
     from += 1000;
   }
-  assignMergedMemberKeys(all as any);
+  assignMergedMemberKeys(all as any, null);
   const amanda = all.filter(r => r.applicant_name?.toLowerCase().includes('amanda richardson'));
   console.log('Amanda all records:', amanda.length);
   for (const r of amanda) {

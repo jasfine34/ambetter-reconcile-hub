@@ -86,9 +86,19 @@ class UnionFind {
  * person (matched via issuer_subscriber_id / exchange_subscriber_id /
  * policy_number / cross-source name) share a key.
  *
+ * NOTE: Prefer `mergeRecordsToMemberKeys` from `@/lib/canonical/memberKeyMerge`
+ * — it layers the resolved_identities sidecar overlay on top of this union.
+ * The `_resolverIndex` parameter here is REQUIRED (even if you pass `null`)
+ * so that any caller who forgets the sidecar fails the typechecker rather
+ * than silently producing per-page-divergent member_keys (Codex pass #2).
+ *
  * Returns the same array for chaining convenience.
  */
-export function assignMergedMemberKeys(records: NormalizedRecord[]): NormalizedRecord[] {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function assignMergedMemberKeys(
+  records: NormalizedRecord[],
+  _resolverIndex: import('./resolvedIdentities').ResolverIndex | null,
+): NormalizedRecord[] {
   if (records.length === 0) return records;
 
   // Re-clean IDs (records may have been stored with older normalization)
