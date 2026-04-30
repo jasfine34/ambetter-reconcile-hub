@@ -62,7 +62,7 @@ vi.mock('@/integrations/supabase/client', () => {
   return {
     supabase: {
       from: (t: string) => builder(t),
-      storage: { from: () => ({ download: () => Promise.resolve({ data: null, error: null }) }) },
+      storage: { from: () => ({ download: () => Promise.resolve({ data: new Blob(['']), error: null }) }) },
     },
   };
 });
