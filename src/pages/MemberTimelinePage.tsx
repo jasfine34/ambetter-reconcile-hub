@@ -13,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Search, Download, ChevronDown, ChevronLeft, Info, Bug } from 'lucide-react';
 import { getNormalizedRecords, getAllNormalizedRecords } from '@/lib/persistence';
 import { buildMemberTimeline, buildMonthList, formatMonthLabel, type MemberTimelineRow } from '@/lib/memberTimeline';
-import { assignMergedMemberKeys } from '@/lib/memberMerge';
+import { mergeRecordsToMemberKeys } from '@/lib/canonical/memberKeyMerge';
 import { exportToCSV } from '@/lib/csvParser';
 import { NPN_MAP } from '@/lib/constants';
 import { isCoverallAORByName } from '@/lib/agents';
@@ -148,17 +148,17 @@ export default function MemberTimelinePage() {
         : Promise.resolve([] as any[]);
     fetch
       .then(recs => {
-        // Re-key records using the same multi-strategy union-find that
-        // reconcile uses, so the same person across EDE / Back Office /
-        // Commission collapses into ONE timeline row (e.g. Aaron Barrett by
-        // U-sub-id + by Ambetter policy number). Also merges cross-batch
-        // records for the same member when batchScope is 'all'.
-        assignMergedMemberKeys(recs as any);
+        // Re-key records using the same canonical merge that reconcile uses
+        // (sidecar overlay + multi-strategy union-find), so the same person
+        // across EDE / Back Office / Commission collapses into ONE timeline
+        // row — and members the resolved_identities sidecar collapses across
+        // batches show as one row instead of N. (Codex finding pass #2.)
+        mergeRecordsToMemberKeys(recs as any, resolverIndex);
         setRecords(recs);
       })
       .catch(() => setRecords([]))
       .finally(() => setLoading(false));
-  }, [currentBatchId, batchScope]);
+  }, [currentBatchId, batchScope, resolverIndex]);
 
   // Reset start/end to sensible defaults on initial mount and when the batch
   // scope changes. Deliberately NOT dependent on currentBatchId — switching
