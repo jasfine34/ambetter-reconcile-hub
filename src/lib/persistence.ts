@@ -558,6 +558,61 @@ export async function saveReconciledMembers(batchId: string, members: Reconciled
   if (error) throw error;
 }
 
+/**
+ * Canonical "save reconciled members + verify they actually landed + (optionally)
+ * stamp the rebuild logic version" predicate.
+ *
+ * Why this exists (Codex Finding 2): three call sites — rebuildBatch (rebuild.ts),
+ * the upload pipeline (UploadPage.tsx), and the dashboard's manual Re-run
+ * Reconciliation button (DashboardPage.tsx) — all answer the same domain
+ * question: "did my members actually persist?" Previously only rebuildBatch
+ * verified the row count post-save; the other two trusted that
+ * saveReconciledMembers() not throwing meant success. That's the same
+ * silent-zero-write class of bug as #74. Routing all three through this
+ * helper guarantees identical guard behavior.
+ *
+ * Returns the verified row count (and the stamped version when requested) so
+ * callers can include it in success toasts.
+ */
+export async function saveAndVerifyReconciled(
+  batchId: string,
+  members: ReconciledMember[],
+  opts: { stampLogicVersion?: boolean; logicVersion?: string } = {},
+): Promise<{ rowCount: number; version?: string }> {
+  await saveReconciledMembers(batchId, members);
+
+  const rowCount = await countReconciledForBatch(batchId);
+  if (rowCount === 0 && members.length > 0) {
+    throw new Error(
+      `Save verification failed for batch ${batchId}: expected ${members.length} reconciled ` +
+        `members but found 0 rows after replace_reconciled_members_for_batch. ` +
+        `Treating as a silent write failure — refusing to report success.`,
+    );
+  }
+
+  let version: string | undefined;
+  if (opts.stampLogicVersion) {
+    if (!opts.logicVersion) {
+      throw new Error('saveAndVerifyReconciled: stampLogicVersion=true requires logicVersion');
+    }
+    const { error } = await supabase
+      .from('upload_batches')
+      .update({
+        last_full_rebuild_at: new Date().toISOString(),
+        last_rebuild_logic_version: opts.logicVersion,
+      })
+      .eq('id', batchId);
+    if (error) {
+      throw new Error(
+        `Failed to stamp last_rebuild_logic_version for batch ${batchId}: ${unwrapPgError(error)}`,
+      );
+    }
+    version = opts.logicVersion;
+  }
+
+  return { rowCount, version };
+}
+
 export async function getReconciledMembers(batchId: string) {
   const allData: any[] = [];
   let from = 0;
