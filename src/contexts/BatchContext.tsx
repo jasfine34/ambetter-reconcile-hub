@@ -113,7 +113,12 @@ export function BatchProvider({ children }: { children: ReactNode }) {
   }, [refreshFiles, refreshReconciled, refreshCounts]);
 
   useEffect(() => { refreshBatches(); refreshResolverIndex(); }, []);
-  useEffect(() => { refreshAll(); }, [currentBatchId]);
+  // On batch switch: refresh BOTH the per-batch data (files/reconciled/counts)
+  // AND the batches list itself so per-batch metadata (last_full_rebuild_at,
+  // last_rebuild_logic_version) reflects any background rebuilds that ran
+  // while this batch was inactive. Fixes stale-on-switch ($0/$0 cache shown
+  // for Mar after a Rebuild All landed while Apr was active).
+  useEffect(() => { refreshAll(); refreshBatches(); }, [currentBatchId]);
 
   // Auto-refresh when the active batch is rebuilt (logic version or
   // last_full_rebuild_at changes in upload_batches). Polls every 2s; fires
