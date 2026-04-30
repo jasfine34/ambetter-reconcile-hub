@@ -191,22 +191,12 @@ export interface MatchDebugStats {
 }
 
 /**
- * Determines if a Back Office record represents an active policy
- * during the reconciliation month.
- * Rules:
- * - If policy_term_date is null/blank → assume active → INCLUDE
- * - If policy_term_date > first day of reconcile month → INCLUDE
- * - If policy_term_date <= first day of reconcile month → EXCLUDE
- * - Falls back to paid_through_date if policy_term_date is absent
- * - Effective date is intentionally ignored — a policy effective 3/1/2023
- *   terminating 12/31/2026 is treated identically to one effective 1/1/2026
+ * Determines if a Back Office record represents an active policy during the
+ * reconciliation month. Delegates to the canonical predicate (#29 Phase 1) so
+ * reconcile / classifier / dashboard share one definition of "active BO".
  */
 function isActiveBackOfficeRecord(r: NormalizedRecord, reconcileMonth: string): boolean {
-  if (r.source_type !== 'BACK_OFFICE') return true;
-  const firstOfMonth = `${reconcileMonth}-01`;
-  const termDate = r.policy_term_date || r.paid_through_date;
-  if (!termDate) return true;
-  return termDate > firstOfMonth;
+  return canonicalIsActiveBackOfficeRecord(r, `${reconcileMonth}-01`);
 }
 
 /**
