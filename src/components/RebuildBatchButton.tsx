@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
@@ -6,36 +6,69 @@ import { useBatch } from '@/contexts/BatchContext';
 import { rebuildBatchWithRetry, type RebuildProgress } from '@/lib/rebuild';
 import { Hammer, Loader2 } from 'lucide-react';
 
+function formatBatchLabel(batch: any): string {
+  if (!batch) return 'batch';
+  const sm = batch.statement_month ? String(batch.statement_month).substring(0, 7) : null;
+  if (sm) {
+    const [y, m] = sm.split('-');
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const idx = parseInt(m, 10) - 1;
+    if (idx >= 0 && idx < 12) return `${monthNames[idx]} ${y}`;
+    return sm;
+  }
+  return batch.name || batch.id?.substring(0, 8) || 'batch';
+}
+
 export function RebuildBatchButton() {
-  const { currentBatchId, refreshAll, refreshBatches } = useBatch();
+  const { currentBatchId, batches, refreshAll, refreshBatches } = useBatch();
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<RebuildProgress | null>(null);
+  // Snapshot the targeted batch when the dialog opens, so polling-driven
+  // context shifts (useBatchDataVersion) cannot redirect the rebuild
+  // mid-flight to a different batch. See diagnostic notes for the
+  // wrong-batch race that caused March clicks to execute on January.
+  const [targetBatchId, setTargetBatchId] = useState<string | null>(null);
+  const [targetBatchLabel, setTargetBatchLabel] = useState<string>('batch');
   const { toast } = useToast();
 
+  const currentBatch = useMemo(
+    () => batches.find((b: any) => b.id === currentBatchId) ?? null,
+    [batches, currentBatchId]
+  );
+  const currentBatchLabel = useMemo(() => formatBatchLabel(currentBatch), [currentBatch]);
+
+  const handleOpenChange = useCallback((open: boolean) => {
+    if (open && currentBatchId) {
+      setTargetBatchId(currentBatchId);
+      setTargetBatchLabel(formatBatchLabel(currentBatch));
+    }
+  }, [currentBatchId, currentBatch]);
+
   const handleRebuild = useCallback(async () => {
-    if (!currentBatchId) return;
+    // Use the snapshotted target, NOT the live currentBatchId — prevents
+    // the polling hook from redirecting the rebuild to a different batch.
+    const batchId = targetBatchId;
+    const label = targetBatchLabel;
+    if (!batchId) return;
     setRunning(true);
     setProgress(null);
     try {
-      const result = await rebuildBatchWithRetry(currentBatchId, (p) => setProgress(p));
+      const result = await rebuildBatchWithRetry(batchId, (p) => setProgress(p));
       await Promise.all([refreshAll(), refreshBatches()]);
       toast({
-        title: 'Rebuild Complete',
+        title: `Rebuild Complete: ${label}`,
         description: `${result.filesProcessed} files · ${result.recordsNormalized} records · ${result.membersReconciled} members`,
       });
     } catch (err: any) {
-      // Surface the full error to the console so we can diagnose the
-      // commission-less / chunked-insert / verify-after-save failure modes.
-      // Toast description is bounded; the console has the full stack.
       // eslint-disable-next-line no-console
-      console.error('[RebuildBatchButton] rebuild failed', { batchId: currentBatchId, err });
+      console.error('[RebuildBatchButton] rebuild failed', { batchId, label, err });
       const description = (err && (err.message || String(err))) || 'Unknown error';
-      toast({ title: 'Rebuild Failed', description, variant: 'destructive' });
+      toast({ title: `Rebuild Failed: ${label}`, description, variant: 'destructive' });
     } finally {
       setRunning(false);
       setProgress(null);
     }
-  }, [currentBatchId, refreshAll, refreshBatches, toast]);
+  }, [targetBatchId, targetBatchLabel, refreshAll, refreshBatches, toast]);
 
   const phaseLabel = (() => {
     if (!progress) return 'Working...';
@@ -53,7 +86,7 @@ export function RebuildBatchButton() {
   })();
 
   return (
-    <AlertDialog>
+    <AlertDialog onOpenChange={handleOpenChange}>
       <AlertDialogTrigger asChild>
         <Button variant="outline" size="sm" disabled={!currentBatchId || running}>
           {running ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Hammer className="h-4 w-4 mr-1" />}
@@ -62,9 +95,9 @@ export function RebuildBatchButton() {
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Rebuild entire batch from source files?</AlertDialogTitle>
+          <AlertDialogTitle>Rebuild {currentBatchLabel} from source files?</AlertDialogTitle>
           <AlertDialogDescription>
-            This will <strong>delete all normalized records and reconciled members</strong> for this batch,
+            This will <strong>delete all normalized records and reconciled members</strong> for <strong>{currentBatchLabel}</strong>,
             re-download every uploaded CSV from storage, re-normalize each file using the current parser
             logic, and re-run reconciliation from scratch. Use this after parser/reconciliation logic changes
             to refresh stale data without re-uploading. This may take a minute for large batches.
