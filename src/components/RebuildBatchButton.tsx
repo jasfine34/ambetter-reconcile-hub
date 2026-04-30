@@ -55,9 +55,10 @@ export function RebuildBatchButton() {
     try {
       const result = await rebuildBatchWithRetry(batchId, (p) => setProgress(p));
       await Promise.all([refreshAll(), refreshBatches()]);
+      const fmt = (n: number) => n.toLocaleString('en-US');
       toast({
-        title: `Rebuild Complete: ${label}`,
-        description: `${result.filesProcessed} files · ${result.recordsNormalized} records · ${result.membersReconciled} members`,
+        title: `Rebuild Complete: ${label} — ${fmt(result.membersReconciled)} members`,
+        description: `${fmt(result.filesProcessed)} files · ${fmt(result.recordsNormalized)} records · ${fmt(result.membersReconciled)} members`,
       });
     } catch (err: any) {
       // eslint-disable-next-line no-console
