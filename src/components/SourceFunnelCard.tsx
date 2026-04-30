@@ -17,7 +17,8 @@ import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ArrowRight, Info, TrendingDown } from 'lucide-react';
-import { assignMergedMemberKeys } from '@/lib/memberMerge';
+import { mergeRecordsToMemberKeys } from '@/lib/canonical/memberKeyMerge';
+import { useBatch } from '@/contexts/BatchContext';
 import { computeFunnelForMonth, type FunnelCounts } from '@/lib/classifier';
 
 interface SourceFunnelCardProps {
@@ -42,12 +43,13 @@ function formatMonth(ym: string): string {
 }
 
 export function SourceFunnelCard({ normalizedRecords, coveredMonths, carrierKey = 'ambetter' }: SourceFunnelCardProps) {
+  const { resolverIndex } = useBatch();
   // Group records by merged member_key so classifier sees each person once.
   const recordsByMember = useMemo(() => {
     if (normalizedRecords.length === 0) return new Map<string, any[]>();
-    // Shallow clone so assignMergedMemberKeys can mutate member_key safely
+    // Shallow clone so the merge can mutate member_key safely
     const records = normalizedRecords.map(r => ({ ...r })) as any[];
-    assignMergedMemberKeys(records);
+    mergeRecordsToMemberKeys(records, resolverIndex);
     const map = new Map<string, any[]>();
     for (const r of records) {
       const key = r.member_key || 'unknown';
@@ -55,7 +57,7 @@ export function SourceFunnelCard({ normalizedRecords, coveredMonths, carrierKey 
       map.get(key)!.push(r);
     }
     return map;
-  }, [normalizedRecords]);
+  }, [normalizedRecords, resolverIndex]);
 
   const funnelsByMonth = useMemo(() => {
     return coveredMonths.map(m => ({
