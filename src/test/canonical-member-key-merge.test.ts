@@ -82,8 +82,8 @@ describe('mergeRecordsToMemberKeys (canonical sidecar parity)', () => {
     ];
 
     const resolverIndex = makeResolverIndex([
-      { match_key_type: 'ffmAppId', match_key_value: 'FFM-AAA', resolved_issuer_subscriber_id: 'U12345' },
-      { match_key_type: 'ffmAppId', match_key_value: 'FFM-BBB', resolved_issuer_subscriber_id: 'U12345' },
+      { match_key_type: 'ffmAppId', match_key_value: 'FFM-AAA', resolved_issuer_subscriber_id: 'U12345AAA' },
+      { match_key_type: 'ffmAppId', match_key_value: 'FFM-BBB', resolved_issuer_subscriber_id: 'U12345AAA' },
     ]);
 
     // Timeline path
@@ -122,8 +122,8 @@ describe('mergeRecordsToMemberKeys (canonical sidecar parity)', () => {
     expect(keys2.size).toBe(2); // without sidecar: two rows
     // Now with sidecar:
     const resolverIndex = makeResolverIndex([
-      { match_key_type: 'ffmAppId', match_key_value: 'FFM-AAA', resolved_issuer_subscriber_id: 'U99999' },
-      { match_key_type: 'ffmAppId', match_key_value: 'FFM-BBB', resolved_issuer_subscriber_id: 'U99999' },
+      { match_key_type: 'ffmAppId', match_key_value: 'FFM-AAA', resolved_issuer_subscriber_id: 'U99999BBB' },
+      { match_key_type: 'ffmAppId', match_key_value: 'FFM-BBB', resolved_issuer_subscriber_id: 'U99999BBB' },
     ]);
     const recs3: NormalizedRecord[] = [
       ede({ applicant_name: 'Aaron Barrett', ffmAppId: 'FFM-AAA', exchange_subscriber_id: 'ESID-A', first_name: 'Aaron', last_name: 'Barrett' }),
@@ -159,18 +159,18 @@ describe('mergeRecordsToMemberKeys (canonical sidecar parity)', () => {
       ede({ applicant_name: 'Person One', ffmAppId: 'FFM-1', exchange_subscriber_id: 'ESID-1', first_name: 'PersonA', last_name: 'One' }),
       ede({ applicant_name: 'Person Two', ffmAppId: 'FFM-2', exchange_subscriber_id: 'ESID-2', first_name: 'PersonB', last_name: 'Two' }),
       // This third member has its own issuer_subscriber_id — sidecar doesn't touch it
-      ede({ applicant_name: 'Person Three', issuer_subscriber_id: 'U-INDEPENDENT', exchange_subscriber_id: 'ESID-3', first_name: 'PersonC', last_name: 'Three' }),
+      ede({ applicant_name: 'Person Three', issuer_subscriber_id: 'UINDEPENDENT', exchange_subscriber_id: 'ESID-3', first_name: 'PersonC', last_name: 'Three' }),
     ];
 
     const resolverIndex = makeResolverIndex([
-      { match_key_type: 'ffmAppId', match_key_value: 'FFM-1', resolved_issuer_subscriber_id: 'U-MERGED' },
-      { match_key_type: 'ffmAppId', match_key_value: 'FFM-2', resolved_issuer_subscriber_id: 'U-MERGED' },
+      { match_key_type: 'ffmAppId', match_key_value: 'FFM-1', resolved_issuer_subscriber_id: 'UMERGED' },
+      { match_key_type: 'ffmAppId', match_key_value: 'FFM-2', resolved_issuer_subscriber_id: 'UMERGED' },
     ]);
 
     mergeRecordsToMemberKeys(recs, resolverIndex);
     const keys = new Set(recs.map(r => r.member_key));
     expect(keys.size).toBe(2); // [U-MERGED group, U-INDEPENDENT group]
-    expect(keys.has('issub:u-merged') || keys.has('issub:U-MERGED')).toBe(true);
+    expect(keys.has('issub:umerged') || keys.has('issub:UMERGED')).toBe(true);
     expect([...keys].some(k => k.toLowerCase().includes('independent'))).toBe(true);
   });
 
