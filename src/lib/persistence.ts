@@ -11,6 +11,35 @@ export interface SnapshotRef {
   kind: 'bo' | 'ede';
 }
 
+/**
+ * Unwrap a PostgrestError (or any thrown value) to a human-readable string.
+ * PostgrestError is NOT `instanceof Error`, so `String(err)` collapses to
+ * "[object Object]". We pull message/details/hint/code so the message we
+ * surface to the user/toast actually carries Postgres diagnostic text.
+ *
+ * Mirrors `extractErrorMessage` in src/lib/rebuild.ts; duplicated here so
+ * persistence.ts has no dependency on rebuild.ts (which imports from us).
+ */
+export function unwrapPgError(err: unknown): string {
+  if (err == null) return 'unknown error';
+  if (typeof err === 'string') return err;
+  if (err instanceof Error) return err.message || err.toString();
+  const anyErr = err as any;
+  const parts: string[] = [];
+  if (anyErr.message) parts.push(String(anyErr.message));
+  if (anyErr.details && anyErr.details !== anyErr.message) parts.push(`details: ${anyErr.details}`);
+  if (anyErr.hint) parts.push(`hint: ${anyErr.hint}`);
+  if (anyErr.code) parts.push(`code: ${anyErr.code}`);
+  if (parts.length > 0) return parts.join(' | ');
+  try {
+    const json = JSON.stringify(err);
+    if (json && json !== '{}') return json;
+  } catch {
+    /* fallthrough */
+  }
+  return String(err);
+}
+
 export async function createBatch(statementMonth: string, notes?: string) {
   const { data, error } = await supabase
     .from('upload_batches')
