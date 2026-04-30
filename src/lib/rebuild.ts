@@ -71,6 +71,36 @@ export function isTransientRebuildError(err: unknown): boolean {
   ].some((pattern) => text.includes(pattern));
 }
 
+/**
+ * Extract a human-readable message from an arbitrary thrown value.
+ *
+ * Background: PostgrestError objects from supabase-js are NOT `instanceof Error`
+ * — wrapping them with `new Error(String(err))` collapses to "[object Object]"
+ * and hides the actual Postgres failure (e.g. "canceling statement due to
+ * statement timeout"). We unwrap .message / .details / .hint / .code first,
+ * then fall back to JSON.stringify so the surfaced message always carries
+ * real diagnostic text.
+ */
+export function extractErrorMessage(err: unknown): string {
+  if (err == null) return 'unknown error';
+  if (typeof err === 'string') return err;
+  if (err instanceof Error) return err.message || err.toString();
+  const anyErr = err as any;
+  const parts: string[] = [];
+  if (anyErr.message) parts.push(String(anyErr.message));
+  if (anyErr.details && anyErr.details !== anyErr.message) parts.push(`details: ${anyErr.details}`);
+  if (anyErr.hint) parts.push(`hint: ${anyErr.hint}`);
+  if (anyErr.code) parts.push(`code: ${anyErr.code}`);
+  if (parts.length > 0) return parts.join(' | ');
+  try {
+    const json = JSON.stringify(err);
+    if (json && json !== '{}') return json;
+  } catch {
+    // fallthrough
+  }
+  return String(err);
+}
+
 export async function rebuildBatchWithRetry(
   batchId: string,
   onProgress?: ProgressCb,
