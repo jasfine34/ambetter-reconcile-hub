@@ -6,7 +6,8 @@ import { FILE_LABELS } from '@/lib/constants';
 import { parseCSV } from '@/lib/csvParser';
 import { normalizeEDERow, normalizeBackOfficeRow, normalizeCommissionRow } from '@/lib/normalize';
 import { reconcile } from '@/lib/reconcile';
-import { uploadFileToStorage, uploadFileRecord, insertNormalizedRecords, saveReconciledMembers, getNormalizedRecords } from '@/lib/persistence';
+import { uploadFileToStorage, uploadFileRecord, insertNormalizedRecords, saveAndVerifyReconciled, getNormalizedRecords } from '@/lib/persistence';
+import { RECONCILE_LOGIC_VERSION } from '@/lib/rebuild';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { detectSchema, readCSVHeaders, type DetectedSchema } from '@/lib/schemaDetect';
@@ -173,7 +174,13 @@ export default function UploadPage() {
           : fallbackReconcileMonth();
         const resolverIndex = await loadResolverIndex(true);
         const { members: reconciledData } = reconcile(allRecords as any[], reconcileMonth, resolverIndex);
-        await saveReconciledMembers(targetBatchId, reconciledData);
+        // Canonical save: verifies row count post-save AND stamps the rebuild
+        // logic version, so an upload-driven reconcile contributes to the
+        // staleness banner the same way a full rebuild does (Codex Finding 2).
+        await saveAndVerifyReconciled(targetBatchId, reconciledData, {
+          stampLogicVersion: true,
+          logicVersion: RECONCILE_LOGIC_VERSION,
+        });
       } catch (err) {
         // Reconcile failure is non-fatal for the upload itself; warn the
         // user but keep the file attached — they can re-run reconcile via
