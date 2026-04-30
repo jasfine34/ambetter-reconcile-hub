@@ -72,9 +72,11 @@ vi.mock('@/lib/persistence', () => ({
   saveAndVerifyReconciled: vi.fn(async () => ({ rowCount: state.reconciledCount, version: null })),
   getNormalizedRecords: vi.fn(async () => state.normalizedRecords),
   getOrCreateSnapshotForFile: vi.fn(async () => ({ id: 'snap-1' })),
-  deleteCurrentNormalizedForBatch: vi.fn(async () => {}),
+  deleteCurrentNormalizedForBatch: vi.fn(async () => { state.deletedCurrent = true; }),
   countReconciledForBatch: vi.fn(async () => state.reconciledCount),
-  countCurrentNormalizedForBatch: vi.fn(async () => state.normalizedRecords.length),
+  countCurrentNormalizedForBatch: vi.fn(async () =>
+    state.deletedCurrent ? state.normalizedRecords.length : 0,
+  ),
 }));
 
 vi.mock('@/lib/resolvedIdentities', () => ({
