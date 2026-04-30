@@ -22,12 +22,14 @@ const state: {
   reconciledCount: number;
   stampError: any | null;
   stampCalls: StampCall[];
+  deleteCount: number;
 } = {
   files: [],
   normalizedRecords: [],
   reconciledCount: 0,
   stampError: null,
   stampCalls: [],
+  deleteCount: 0,
 };
 
 vi.mock('@/integrations/supabase/client', () => {
@@ -72,10 +74,12 @@ vi.mock('@/lib/persistence', () => ({
   saveAndVerifyReconciled: vi.fn(async () => ({ rowCount: state.reconciledCount, version: null })),
   getNormalizedRecords: vi.fn(async () => state.normalizedRecords),
   getOrCreateSnapshotForFile: vi.fn(async () => ({ id: 'snap-1' })),
-  deleteCurrentNormalizedForBatch: vi.fn(async () => { state.deletedCurrent = true; }),
+  deleteCurrentNormalizedForBatch: vi.fn(async () => { state.deleteCount++; }),
   countReconciledForBatch: vi.fn(async () => state.reconciledCount),
+  // Returns 0 right after a delete (so deleteAndVerifyZero is satisfied),
+  // then >0 once inserts have run (so post-INSERT verification passes).
   countCurrentNormalizedForBatch: vi.fn(async () =>
-    state.deletedCurrent ? state.normalizedRecords.length : 0,
+    state.deleteCount > 0 ? state.normalizedRecords.length : 0,
   ),
 }));
 
