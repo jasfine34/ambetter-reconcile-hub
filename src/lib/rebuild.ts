@@ -22,7 +22,7 @@ import { loadResolverIndex } from './resolvedIdentities';
  * compares this to `upload_batches.last_rebuild_logic_version` and shows a
  * warning banner when the stored value is older than the current code.
  */
-export const RECONCILE_LOGIC_VERSION = '2026.04.30-canonical-merge-keys';
+export const RECONCILE_LOGIC_VERSION = '2026.04.30-stamp-error-capture';
 
 /**
  * Alias kept for the cross-batch staleness banner / "Rebuild All" feature.
@@ -371,16 +371,23 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
     );
   }
 
-  // Stamp the batch with rebuild metadata via the canonical helper. We re-call
-  // it here (with stampLogicVersion:true and an empty members array semantic)
-  // — actually we just stamp directly to avoid a redundant save round-trip.
-  await supabase
+  // Stamp the batch with rebuild metadata. CAPTURE the error from the
+  // UPDATE — a silent stamp failure would otherwise let rebuildBatch report
+  // success while leaving last_rebuild_logic_version stale and the
+  // staleness banner inaccurate (Codex pass #2, sibling of the supersede
+  // capture in persistence.ts:#89).
+  const { error: stampError } = await supabase
     .from('upload_batches')
     .update({
       last_full_rebuild_at: new Date().toISOString(),
       last_rebuild_logic_version: RECONCILE_LOGIC_VERSION,
     })
     .eq('id', batchId);
+  if (stampError) {
+    throw new Error(
+      `Failed to stamp rebuild metadata for batch ${batchId}: ${extractErrorMessage(stampError)}`,
+    );
+  }
 
   emit({
     phase: 'done',
