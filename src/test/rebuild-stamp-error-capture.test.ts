@@ -76,11 +76,11 @@ vi.mock('@/lib/persistence', () => ({
   getOrCreateSnapshotForFile: vi.fn(async () => ({ id: 'snap-1' })),
   deleteCurrentNormalizedForBatch: vi.fn(async () => { state.deleteCount++; }),
   countReconciledForBatch: vi.fn(async () => state.reconciledCount),
-  // Returns 0 right after a delete (so deleteAndVerifyZero is satisfied),
-  // then >0 once inserts have run (so post-INSERT verification passes).
-  countCurrentNormalizedForBatch: vi.fn(async () =>
-    state.deleteCount > 0 ? state.normalizedRecords.length : 0,
-  ),
+  // After a delete: 0 (verify-zero passes). The post-INSERT verification
+  // also calls this; we return 0 there too (no inserts actually happen in
+  // this mock — totalNormalized stays 0 since parseCSV→normalize returns
+  // empty arrays — so the post-INSERT branch is skipped).
+  countCurrentNormalizedForBatch: vi.fn(async () => 0),
 }));
 
 vi.mock('@/lib/resolvedIdentities', () => ({
