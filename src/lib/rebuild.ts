@@ -330,7 +330,7 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
     try {
       await saveReconciledMembers(batchId, members);
     } catch (err: any) {
-      lastError = err instanceof Error ? err : new Error(String(err));
+      lastError = err instanceof Error ? err : new Error(extractErrorMessage(err));
       continue; // retry
     }
 
