@@ -101,12 +101,13 @@ describe('RebuildBatchButton — wrong-batch race', () => {
       (c) => c[0]?.title && /Rebuild Complete/i.test(c[0].title)
     );
     expect(successCall).toBeTruthy();
-    // Title names the batch month
+    // Title names the batch month AND member count (spec format)
     expect(successCall![0].title).toMatch(/Mar 2026/);
-    // Description includes counts
+    expect(successCall![0].title).toMatch(/3,890 members/);
+    // Description includes formatted counts
     expect(successCall![0].description).toMatch(/5 files/);
-    expect(successCall![0].description).toMatch(/7247 records/);
-    expect(successCall![0].description).toMatch(/3890 members/);
+    expect(successCall![0].description).toMatch(/7,247 records/);
+    expect(successCall![0].description).toMatch(/3,890 members/);
   });
 
   it('failure toast also names the targeted batch', async () => {
