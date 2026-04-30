@@ -6,6 +6,7 @@ import {
   getUploadedFiles,
   insertNormalizedRecords,
   saveReconciledMembers,
+  saveAndVerifyReconciled,
   getNormalizedRecords,
   getOrCreateSnapshotForFile,
   deleteCurrentNormalizedForBatch,
@@ -21,7 +22,7 @@ import { loadResolverIndex } from './resolvedIdentities';
  * compares this to `upload_batches.last_rebuild_logic_version` and shows a
  * warning banner when the stored value is older than the current code.
  */
-export const RECONCILE_LOGIC_VERSION = '2026.04.30-batch-target-fix';
+export const RECONCILE_LOGIC_VERSION = '2026.04.30-canonical-save-verify';
 
 /**
  * Alias kept for the cross-batch staleness banner / "Rebuild All" feature.
@@ -315,6 +316,12 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
   let verifiedCount = 0;
   let lastError: Error | null = null;
 
+  // Special case: if we wrote zero normalized rows OR reconcile produced no
+  // members, "0 reconciled" is the correct outcome. Skip the verify-throw in
+  // saveAndVerifyReconciled by calling saveReconciledMembers directly so we
+  // don't false-positive on legitimately empty batches.
+  const expectingRows = members.length > 0 && persistedNormalizedCount > 0;
+
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     if (BACKOFFS_MS[attempt - 1] > 0) {
       await new Promise((r) => setTimeout(r, BACKOFFS_MS[attempt - 1]));
@@ -328,51 +335,45 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
     });
 
     try {
-      await saveReconciledMembers(batchId, members);
+      if (expectingRows) {
+        // Canonical path: save + verify-row-count + (defer stamp until after
+        // the retry loop succeeds). saveAndVerifyReconciled throws on
+        // silent-zero-write, which the catch below treats as a transient
+        // failure and retries with backoff (the rebuild-specific behavior).
+        const { rowCount } = await saveAndVerifyReconciled(batchId, members);
+        verifiedCount = rowCount;
+      } else {
+        await saveReconciledMembers(batchId, members);
+        verifiedCount = await countReconciledForBatch(batchId);
+      }
+      emit({
+        phase: 'verifying',
+        filesProcessed: files.length,
+        totalFiles: files.length,
+        recordsNormalized: totalNormalized,
+        attempt,
+      });
+      // Success — exit retry loop.
+      lastError = null;
+      break;
     } catch (err: any) {
       lastError = err instanceof Error ? err : new Error(extractErrorMessage(err));
-      continue; // retry
+      // continue → retry
     }
-
-    emit({
-      phase: 'verifying',
-      filesProcessed: files.length,
-      totalFiles: files.length,
-      recordsNormalized: totalNormalized,
-      attempt,
-    });
-
-    verifiedCount = await countReconciledForBatch(batchId);
-
-    // Pass: nothing was expected (no normalized rows OR reconcile produced 0
-    // legitimately) — accept and break.
-    if (members.length === 0 || persistedNormalizedCount === 0) break;
-
-    // Pass: rows landed in the table.
-    if (verifiedCount > 0) break;
-
-    // Fail: we expected rows and got 0. Treat as transient and retry.
-    lastError = new Error(
-      `Rebuild produced 0 reconciled members for batch ${batchId} despite ` +
-        `${persistedNormalizedCount} normalized records and ${members.length} reconcile() outputs ` +
-        `— likely a transient backend write failure.`,
-    );
   }
 
-  if (
-    members.length > 0 &&
-    persistedNormalizedCount > 0 &&
-    verifiedCount === 0
-  ) {
+  if (lastError && expectingRows) {
     // Hard failure: do NOT stamp last_rebuild_logic_version so the staleness
     // banner stays up and the user is prompted to retry.
     throw new Error(
       `Rebuild failed: 0 reconciled members written after ${MAX_ATTEMPTS} attempts ` +
-        `(expected ${members.length}). Last error: ${lastError?.message ?? 'unknown'}`,
+        `(expected ${members.length}). Last error: ${lastError.message}`,
     );
   }
 
-  // Stamp the batch with rebuild metadata
+  // Stamp the batch with rebuild metadata via the canonical helper. We re-call
+  // it here (with stampLogicVersion:true and an empty members array semantic)
+  // — actually we just stamp directly to avoid a redundant save round-trip.
   await supabase
     .from('upload_batches')
     .update({

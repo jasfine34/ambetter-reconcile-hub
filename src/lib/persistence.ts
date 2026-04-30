@@ -11,6 +11,35 @@ export interface SnapshotRef {
   kind: 'bo' | 'ede';
 }
 
+/**
+ * Unwrap a PostgrestError (or any thrown value) to a human-readable string.
+ * PostgrestError is NOT `instanceof Error`, so `String(err)` collapses to
+ * "[object Object]". We pull message/details/hint/code so the message we
+ * surface to the user/toast actually carries Postgres diagnostic text.
+ *
+ * Mirrors `extractErrorMessage` in src/lib/rebuild.ts; duplicated here so
+ * persistence.ts has no dependency on rebuild.ts (which imports from us).
+ */
+export function unwrapPgError(err: unknown): string {
+  if (err == null) return 'unknown error';
+  if (typeof err === 'string') return err;
+  if (err instanceof Error) return err.message || err.toString();
+  const anyErr = err as any;
+  const parts: string[] = [];
+  if (anyErr.message) parts.push(String(anyErr.message));
+  if (anyErr.details && anyErr.details !== anyErr.message) parts.push(`details: ${anyErr.details}`);
+  if (anyErr.hint) parts.push(`hint: ${anyErr.hint}`);
+  if (anyErr.code) parts.push(`code: ${anyErr.code}`);
+  if (parts.length > 0) return parts.join(' | ');
+  try {
+    const json = JSON.stringify(err);
+    if (json && json !== '{}') return json;
+  } catch {
+    /* fallthrough */
+  }
+  return String(err);
+}
+
 export async function createBatch(statementMonth: string, notes?: string) {
   const { data, error } = await supabase
     .from('upload_batches')
@@ -92,20 +121,34 @@ export async function uploadFileRecord(
 ): Promise<{ file: any; snapshot: SnapshotRef | null }> {
   const now = new Date().toISOString();
 
-  // Mark prior rows as superseded instead of deleting them.
-  await supabase
+  // Mark prior rows as superseded instead of deleting them. Each supersede
+  // MUST capture {error} and throw before we proceed to the INSERT below —
+  // otherwise a silent supersede failure (RLS, timeout, network blip) would
+  // leave the prior current rows live AND the new ones would land on top,
+  // producing duplicate-current data with a success toast (Codex Finding 1).
+  const { error: normSupersedeError } = await supabase
     .from('normalized_records')
     .update({ superseded_at: now })
     .eq('batch_id', batchId)
     .eq('source_file_label', fileLabel)
     .is('superseded_at', null);
+  if (normSupersedeError) {
+    throw new Error(
+      `Failed to supersede prior normalized_records for ${fileLabel}: ${unwrapPgError(normSupersedeError)}`,
+    );
+  }
 
-  await supabase
+  const { error: fileSupersedeError } = await supabase
     .from('uploaded_files')
     .update({ superseded_at: now })
     .eq('batch_id', batchId)
     .eq('file_label', fileLabel)
     .is('superseded_at', null);
+  if (fileSupersedeError) {
+    throw new Error(
+      `Failed to supersede prior uploaded_files row for ${fileLabel}: ${unwrapPgError(fileSupersedeError)}`,
+    );
+  }
 
   // Insert the new uploaded_files row.
   const { data: file, error: fileError } = await supabase
@@ -513,6 +556,61 @@ export async function saveReconciledMembers(batchId: string, members: Reconciled
     _estimates: estimates,
   });
   if (error) throw error;
+}
+
+/**
+ * Canonical "save reconciled members + verify they actually landed + (optionally)
+ * stamp the rebuild logic version" predicate.
+ *
+ * Why this exists (Codex Finding 2): three call sites — rebuildBatch (rebuild.ts),
+ * the upload pipeline (UploadPage.tsx), and the dashboard's manual Re-run
+ * Reconciliation button (DashboardPage.tsx) — all answer the same domain
+ * question: "did my members actually persist?" Previously only rebuildBatch
+ * verified the row count post-save; the other two trusted that
+ * saveReconciledMembers() not throwing meant success. That's the same
+ * silent-zero-write class of bug as #74. Routing all three through this
+ * helper guarantees identical guard behavior.
+ *
+ * Returns the verified row count (and the stamped version when requested) so
+ * callers can include it in success toasts.
+ */
+export async function saveAndVerifyReconciled(
+  batchId: string,
+  members: ReconciledMember[],
+  opts: { stampLogicVersion?: boolean; logicVersion?: string } = {},
+): Promise<{ rowCount: number; version?: string }> {
+  await saveReconciledMembers(batchId, members);
+
+  const rowCount = await countReconciledForBatch(batchId);
+  if (rowCount === 0 && members.length > 0) {
+    throw new Error(
+      `Save verification failed for batch ${batchId}: expected ${members.length} reconciled ` +
+        `members but found 0 rows after replace_reconciled_members_for_batch. ` +
+        `Treating as a silent write failure — refusing to report success.`,
+    );
+  }
+
+  let version: string | undefined;
+  if (opts.stampLogicVersion) {
+    if (!opts.logicVersion) {
+      throw new Error('saveAndVerifyReconciled: stampLogicVersion=true requires logicVersion');
+    }
+    const { error } = await supabase
+      .from('upload_batches')
+      .update({
+        last_full_rebuild_at: new Date().toISOString(),
+        last_rebuild_logic_version: opts.logicVersion,
+      })
+      .eq('id', batchId);
+    if (error) {
+      throw new Error(
+        `Failed to stamp last_rebuild_logic_version for batch ${batchId}: ${unwrapPgError(error)}`,
+      );
+    }
+    version = opts.logicVersion;
+  }
+
+  return { rowCount, version };
 }
 
 export async function getReconciledMembers(batchId: string) {

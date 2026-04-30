@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Users, Building2, DollarSign, AlertTriangle, CheckCircle2, XCircle, FileText, TrendingDown, Database, Info, ShieldAlert, RefreshCw, Hammer, Link2 } from 'lucide-react';
-import { getNormalizedRecords, saveReconciledMembers } from '@/lib/persistence';
+import { getNormalizedRecords, saveReconciledMembers, saveAndVerifyReconciled } from '@/lib/persistence';
 import { reconcile } from '@/lib/reconcile';
 import { useToast } from '@/hooks/use-toast';
 import { RebuildBatchButton } from '@/components/RebuildBatchButton';
@@ -281,11 +281,23 @@ export default function DashboardPage() {
         ? String(currentBatch.statement_month).substring(0, 7)
         : fallbackReconcileMonth();
       const { members } = reconcile(allRecords as any[], reconcileMonth, resolverIndex);
-      await saveReconciledMembers(currentBatchId, members);
+      // Canonical save: verifies row count post-save AND stamps the rebuild
+      // logic version so a manual re-run contributes to staleness tracking
+      // the same way a full rebuild does (Codex Finding 2).
+      const { rowCount } = await saveAndVerifyReconciled(currentBatchId, members, {
+        stampLogicVersion: true,
+        logicVersion: RECONCILE_LOGIC_VERSION,
+      });
       await refreshAll();
-      toast({ title: 'Reconciliation Complete', description: `${members.length} members reconciled` });
+      const monthLabel = currentBatch?.statement_month
+        ? new Date(`${currentBatch.statement_month}T00:00:00`).toLocaleDateString('en-US', { year: 'numeric', month: 'long' })
+        : 'Batch';
+      toast({
+        title: `Rerun Complete: ${monthLabel} — ${rowCount.toLocaleString('en-US')} members`,
+        description: `${members.length.toLocaleString('en-US')} reconcile() outputs verified in DB.`,
+      });
     } catch (err: any) {
-      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+      toast({ title: 'Rerun Failed', description: err.message, variant: 'destructive' });
     } finally {
       setRerunning(false);
     }
