@@ -82,6 +82,7 @@ describe('BatchContext — refresh on batch switch (#71/#72 stale-cache class)',
     const reconciledCallsBefore = getReconciledMembersMock.mock.calls.length;
     const filesCallsBefore = getUploadedFilesMock.mock.calls.length;
     const countsCallsBefore = getBatchCountsMock.mock.calls.length;
+    const batchesCallsBefore = getBatchesMock.mock.calls.length;
 
     // Switch to Mar
     await act(async () => {
@@ -97,5 +98,11 @@ describe('BatchContext — refresh on batch switch (#71/#72 stale-cache class)',
     expect(getReconciledMembersMock.mock.calls.length).toBeGreaterThan(reconciledCallsBefore);
     expect(getUploadedFilesMock.mock.calls.length).toBeGreaterThan(filesCallsBefore);
     expect(getBatchCountsMock.mock.calls.length).toBeGreaterThan(countsCallsBefore);
+    // refreshBatches must also fire on switch — picks up background-rebuild
+    // metadata (last_full_rebuild_at, last_rebuild_logic_version) for the
+    // newly active batch. This is the stale-on-switch fix from the spec.
+    await waitFor(() => {
+      expect(getBatchesMock.mock.calls.length).toBeGreaterThan(batchesCallsBefore);
+    });
   });
 });
