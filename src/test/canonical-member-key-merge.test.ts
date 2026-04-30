@@ -14,6 +14,7 @@ import { mergeRecordsToMemberKeys } from '@/lib/canonical/memberKeyMerge';
 import { reconcile } from '@/lib/reconcile';
 import type { NormalizedRecord } from '@/lib/normalize';
 import type { ResolverIndex, ResolvedIdentityRow } from '@/lib/resolvedIdentities';
+import { assignMergedMemberKeys } from '@/lib/memberMerge';
 
 function ede(opts: Partial<NormalizedRecord> & { ffmAppId?: string }): NormalizedRecord {
   const { ffmAppId, ...rest } = opts;
@@ -175,12 +176,9 @@ describe('mergeRecordsToMemberKeys (canonical sidecar parity)', () => {
   });
 
   it('signature guard — assignMergedMemberKeys requires the resolverIndex parameter (compile-time check)', () => {
-    // This test exists primarily as documentation: assignMergedMemberKeys's
-    // signature now REQUIRES a 2nd arg (ResolverIndex | null) so any future
-    // caller that omits it fails the typechecker rather than silently
-    // diverging from reconcile.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { assignMergedMemberKeys } = require('@/lib/memberMerge');
+    // Documentation test: assignMergedMemberKeys's signature now REQUIRES a
+    // 2nd arg (ResolverIndex | null) so any future caller that omits it fails
+    // the typechecker rather than silently diverging from reconcile.
     expect(assignMergedMemberKeys.length).toBe(2);
   });
 });
