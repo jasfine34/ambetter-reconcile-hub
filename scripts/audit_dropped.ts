@@ -54,7 +54,7 @@ function isDueEligible(r: any, payEntity = 'Coverall'): boolean {
   console.log('Fetching records…');
   const recs = await fetchAll();
   console.log('Fetched:', recs.length);
-  assignMergedMemberKeys(recs as any);
+  assignMergedMemberKeys(recs as any, null);
 
   const monthList = buildMonthList('2026-01', '2026-01');
   const rows = buildMemberTimeline(recs as any, monthList, isDueEligible);

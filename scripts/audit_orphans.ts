@@ -96,7 +96,7 @@ function commissionMonths(r: any): { months: string[]; per: number } {
   console.log('Fetching records…');
   const recs = await fetchAll();
   console.log('Fetched:', recs.length);
-  assignMergedMemberKeys(recs as any);
+  assignMergedMemberKeys(recs as any, null);
 
   for (const [label, start, end] of RANGES) {
     console.log(`\n========== ${label} (${PAY_ENTITY}) ==========`);
