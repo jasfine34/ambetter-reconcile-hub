@@ -73,12 +73,12 @@ describe('mergeRecordsToMemberKeys (canonical sidecar parity)', () => {
       ede({
         applicant_name: 'Aaron Barrett',
         ffmAppId: 'FFM-AAA',
-        exchange_subscriber_id: 'ESID-A',
+        exchange_subscriber_id: 'ESIDA',
       }),
       ede({
         applicant_name: 'Aaron Barrett',
         ffmAppId: 'FFM-BBB',
-        exchange_subscriber_id: 'ESID-B',
+        exchange_subscriber_id: 'ESIDB',
       }),
     ];
 
@@ -106,8 +106,8 @@ describe('mergeRecordsToMemberKeys (canonical sidecar parity)', () => {
 
   it('regression — without sidecar the same input produces TWO timeline rows (proves test would fail pre-fix)', () => {
     const recs: NormalizedRecord[] = [
-      ede({ applicant_name: 'Aaron Barrett', ffmAppId: 'FFM-AAA', exchange_subscriber_id: 'ESID-A' }),
-      ede({ applicant_name: 'Aaron Barrett', ffmAppId: 'FFM-BBB', exchange_subscriber_id: 'ESID-B' }),
+      ede({ applicant_name: 'Aaron Barrett', ffmAppId: 'FFM-AAA', exchange_subscriber_id: 'ESIDA' }),
+      ede({ applicant_name: 'Aaron Barrett', ffmAppId: 'FFM-BBB', exchange_subscriber_id: 'ESIDB' }),
     ];
     // Pass null resolver — simulates the OLD assignMergedMemberKeys() behavior.
     mergeRecordsToMemberKeys(recs, null);
@@ -115,8 +115,8 @@ describe('mergeRecordsToMemberKeys (canonical sidecar parity)', () => {
     // Same name "Aaron Barrett" still bridges via name strategy in our union-find,
     // so to truly demonstrate the divergence we need different names too:
     const recs2: NormalizedRecord[] = [
-      ede({ applicant_name: 'Aaron Barrett', ffmAppId: 'FFM-AAA', exchange_subscriber_id: 'ESID-A', first_name: 'Aaron', last_name: 'Barrett' }),
-      ede({ applicant_name: 'Aaron Q Barrett', ffmAppId: 'FFM-BBB', exchange_subscriber_id: 'ESID-B', first_name: 'AaronQ', last_name: 'Barrett' }),
+      ede({ applicant_name: 'Aaron Barrett', ffmAppId: 'FFM-AAA', exchange_subscriber_id: 'ESIDA', first_name: 'Aaron', last_name: 'Barrett' }),
+      ede({ applicant_name: 'Aaron Q Barrett', ffmAppId: 'FFM-BBB', exchange_subscriber_id: 'ESIDB', first_name: 'AaronQ', last_name: 'Barrett' }),
     ];
     mergeRecordsToMemberKeys(recs2, null);
     const keys2 = new Set(recs2.map(r => r.member_key));
@@ -127,8 +127,8 @@ describe('mergeRecordsToMemberKeys (canonical sidecar parity)', () => {
       { match_key_type: 'ffmAppId', match_key_value: 'FFM-BBB', resolved_issuer_subscriber_id: 'U99999BBB' },
     ]);
     const recs3: NormalizedRecord[] = [
-      ede({ applicant_name: 'Aaron Barrett', ffmAppId: 'FFM-AAA', exchange_subscriber_id: 'ESID-A', first_name: 'Aaron', last_name: 'Barrett' }),
-      ede({ applicant_name: 'Aaron Q Barrett', ffmAppId: 'FFM-BBB', exchange_subscriber_id: 'ESID-B', first_name: 'AaronQ', last_name: 'Barrett' }),
+      ede({ applicant_name: 'Aaron Barrett', ffmAppId: 'FFM-AAA', exchange_subscriber_id: 'ESIDA', first_name: 'Aaron', last_name: 'Barrett' }),
+      ede({ applicant_name: 'Aaron Q Barrett', ffmAppId: 'FFM-BBB', exchange_subscriber_id: 'ESIDB', first_name: 'AaronQ', last_name: 'Barrett' }),
     ];
     mergeRecordsToMemberKeys(recs3, resolverIndex);
     const keys3 = new Set(recs3.map(r => r.member_key));
@@ -157,10 +157,10 @@ describe('mergeRecordsToMemberKeys (canonical sidecar parity)', () => {
   it('(3) mixed resolver hits — three members, two collapsed by sidecar, one untouched', () => {
     const recs: NormalizedRecord[] = [
       // These two have different IDs but sidecar resolves both ffmAppIds to U-MERGED
-      ede({ applicant_name: 'Person One', ffmAppId: 'FFM-1', exchange_subscriber_id: 'ESID-1', first_name: 'PersonA', last_name: 'One' }),
-      ede({ applicant_name: 'Person Two', ffmAppId: 'FFM-2', exchange_subscriber_id: 'ESID-2', first_name: 'PersonB', last_name: 'Two' }),
+      ede({ applicant_name: 'Person One', ffmAppId: 'FFM-1', exchange_subscriber_id: 'ESID001', first_name: 'PersonA', last_name: 'One' }),
+      ede({ applicant_name: 'Person Two', ffmAppId: 'FFM-2', exchange_subscriber_id: 'ESID002', first_name: 'PersonB', last_name: 'Two' }),
       // This third member has its own issuer_subscriber_id — sidecar doesn't touch it
-      ede({ applicant_name: 'Person Three', issuer_subscriber_id: 'UINDEPENDENT', exchange_subscriber_id: 'ESID-3', first_name: 'PersonC', last_name: 'Three' }),
+      ede({ applicant_name: 'Person Three', issuer_subscriber_id: 'UINDEPENDENT', exchange_subscriber_id: 'ESID003', first_name: 'PersonC', last_name: 'Three' }),
     ];
 
     const resolverIndex = makeResolverIndex([
