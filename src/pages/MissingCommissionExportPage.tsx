@@ -255,10 +255,65 @@ export function buildWritingAgentCarrierIdLookup(opts: {
 }
 
 /**
- * Resolution ladder for the export's Writing Agent Carrier ID column:
- *   1. Direct: member has a commission row with `writing_agent_carrier_id` → use it.
- *   2. Historical: derived `(carrier, pay_entity, agent_npn)` lookup hit.
+ * #110 — Normalize a stored `expected_pay_entity` (which may be
+ * `'Coverall_or_Vix'` or blank) into the concrete pay-entity bucket that
+ * should be used as the lookup / Tier-1 filter key.
+ *
+ * Rules:
+ *   - If `actualPayEntity` is set ('Coverall' / 'Vix'), it always wins.
+ *   - Else if `expectedPayEntity` is a concrete bucket, use it.
+ *   - Else (blank or 'Coverall_or_Vix'):
+ *       * Coverall scope → 'Coverall'
+ *       * Vix scope      → 'Vix'
+ *       * All scope      → defer to `allScopeFallback`:
+ *           Jason Fine (21055210)  → 'Coverall'
+ *           Becky Shuta (16531877) → 'Coverall'
+ *           Erica Fine (21277051) → ambiguous → '' (caller leaves blank)
+ *           any other NPN → ''
+ *
+ * Returns '' when the target pay-entity is genuinely ambiguous; callers
+ * MUST treat '' as "leave Writing Agent Carrier ID blank".
+ */
+export function resolveTargetPayEntity(opts: {
+  expectedPayEntity: string | null | undefined;
+  actualPayEntity: string | null | undefined;
+  scope: CanonicalScope;
+  agentNpn: string | null | undefined;
+}): string {
+  const actual = String(opts.actualPayEntity ?? '').trim();
+  if (actual === 'Coverall' || actual === 'Vix') return actual;
+
+  const expected = String(opts.expectedPayEntity ?? '').trim();
+  if (expected === 'Coverall' || expected === 'Vix') return expected;
+
+  // Blank or 'Coverall_or_Vix' → use scope.
+  if (opts.scope === 'Coverall') return 'Coverall';
+  if (opts.scope === 'Vix') return 'Vix';
+
+  // All scope: defer to per-NPN default.
+  const npn = String(opts.agentNpn ?? '').trim();
+  if (npn === '21055210' || npn === '16531877') return 'Coverall';
+  // Erica Fine and any other NPN: ambiguous → blank.
+  return '';
+}
+
+/**
+ * Resolution ladder for the export's Writing Agent Carrier ID column.
+ *
+ * #110 — both tiers are now scope-aware. Tier-1 (Direct) requires the
+ * historical commission row to match the resolved target pay entity AND the
+ * resolved current AOR NPN; otherwise an AOR-transferred member could pull a
+ * stale prior-AOR / prior-pay-entity ID (e.g. a March Vix row leaking into a
+ * January Coverall export).
+ *
+ *   1. Direct: member has a commission row with `writing_agent_carrier_id`
+ *      AND that row's `pay_entity` === `payEntity`
+ *      AND that row's `agent_npn` === `agentNpn`
+ *   2. Historical: derived `(carrier, payEntity, agentNpn)` lookup hit.
  *   3. Blank.
+ *
+ * `payEntity === ''` (ambiguous in All scope) short-circuits to blank — we
+ * deliberately refuse to guess.
  */
 export function resolveWritingAgentCarrierId(opts: {
   records: any[];
@@ -267,17 +322,25 @@ export function resolveWritingAgentCarrierId(opts: {
   agentNpn: string;
   lookup: Map<string, WritingAgentIdEntry>;
 }): string {
-  // Direct
-  for (const r of opts.records) {
-    if (r.source_type === 'COMMISSION' && r.writing_agent_carrier_id) {
-      const v = String(r.writing_agent_carrier_id).trim();
-      if (v) return v;
-    }
-  }
-  // Historical
+  const targetPe = String(opts.payEntity || '').trim();
   const npn = String(opts.agentNpn || '').trim();
-  if (!npn) return '';
-  const hit = opts.lookup.get(carrierIdLookupKey(opts.carrier, opts.payEntity, npn));
+  // Refuse to guess when target is ambiguous or NPN unknown.
+  if (!targetPe || !npn) return '';
+
+  // Tier 1 — Direct, but scope+NPN aware.
+  for (const r of opts.records) {
+    if (r.source_type !== 'COMMISSION') continue;
+    const id = String(r.writing_agent_carrier_id ?? '').trim();
+    if (!id) continue;
+    const rowPe = String(r.pay_entity ?? '').trim();
+    const rowNpn = String(r.agent_npn ?? '').trim();
+    if (rowPe !== targetPe) continue;
+    if (rowNpn !== npn) continue;
+    return id;
+  }
+
+  // Tier 2 — Historical lookup (already keyed by carrier+pe+npn).
+  const hit = opts.lookup.get(carrierIdLookupKey(opts.carrier, targetPe, npn));
   return hit ? hit.id : '';
 }
 
