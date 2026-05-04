@@ -563,7 +563,7 @@ export default function MissingCommissionExportPage() {
       });
     }
     return out;
-  }, [missingMembers, recordsByMemberKey, currentBatchMonth, batchMonthByBatchId]);
+  }, [missingMembers, recordsByMemberKey, currentBatchMonth, batchMonthByBatchId, writingAgentIdLookup, scope]);
 
   const filteredExportRows = useMemo(() => {
     if (premiumBucket === 'all') return allExportRows;
