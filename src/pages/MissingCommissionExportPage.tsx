@@ -76,6 +76,8 @@ interface ExportRow {
   _estimatedMissingCommission: number | null;
   _profile: MemberProfile;
   _hasConflict: boolean;
+  _phone: EnrichedField<string>;
+  _email: EnrichedField<string>;
 }
 
 const MESSER_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
@@ -96,6 +98,8 @@ const MESSER_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
 const INTERNAL_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
   { key: '_memberKey', label: 'member_key' },
   { key: '_ffmId', label: 'FFM ID' },
+  { key: '_phone', label: 'Phone' },
+  { key: '_email', label: 'Email' },
   { key: '_exchangeSubscriberId', label: 'exchange_subscriber_id' },
   { key: '_issuerSubscriberId', label: 'issuer_subscriber_id' },
   { key: '_aor', label: 'AOR' },
