@@ -280,17 +280,22 @@ export function resolveTargetPayEntity(opts: {
   scope: CanonicalScope;
   agentNpn: string | null | undefined;
 }): string {
+  // #110 final — active scope is authoritative for concrete scopes.
+  // A Coverall-scope export must always emit a Coverall carrier ID, even when
+  // the member has actual_pay_entity = 'Vix' historically. Without this,
+  // members like Deanna Armstrong (Erica AOR, paid Vix) would emit VIX9696
+  // inside a Coverall-scope CSV — wrong for a Coverall inquiry form.
+  if (opts.scope === 'Coverall') return 'Coverall';
+  if (opts.scope === 'Vix') return 'Vix';
+
+  // All scope: existing rule — actual → concrete EPE → per-NPN default.
   const actual = String(opts.actualPayEntity ?? '').trim();
   if (actual === 'Coverall' || actual === 'Vix') return actual;
 
   const expected = String(opts.expectedPayEntity ?? '').trim();
   if (expected === 'Coverall' || expected === 'Vix') return expected;
 
-  // Blank or 'Coverall_or_Vix' → use scope.
-  if (opts.scope === 'Coverall') return 'Coverall';
-  if (opts.scope === 'Vix') return 'Vix';
-
-  // All scope: defer to per-NPN default.
+  // Blank or 'Coverall_or_Vix' under All scope: defer to per-NPN default.
   const npn = String(opts.agentNpn ?? '').trim();
   if (npn === '21055210' || npn === '16531877') return 'Coverall';
   // Erica Fine and any other NPN: ambiguous → blank.
