@@ -146,6 +146,12 @@ export default function AllRecordsPage() {
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
 
+  // Subscribe to rebuild-stamp transitions on the active batch so the table
+  // auto-refetches after Re-run Reconciliation / Rebuild All — no F5 needed.
+  // dataVersion is referentially stable until a real stamp change, so this
+  // does not cause spurious re-fetches on unrelated re-renders.
+  const dataVersion = useBatchDataVersion(currentBatchId);
+
   useEffect(() => {
     if (!currentBatchId) { setRows([]); setTotal(0); return; }
     let cancelled = false;
@@ -169,7 +175,7 @@ export default function AllRecordsPage() {
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [currentBatchId, urlPage, debouncedSearch, urlSortKey, urlSortDir]);
+  }, [currentBatchId, urlPage, debouncedSearch, urlSortKey, urlSortDir, dataVersion]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
