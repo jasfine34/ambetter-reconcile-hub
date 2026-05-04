@@ -273,19 +273,35 @@ describe('#109 stripExcelTextMarker — unit', () => {
 describe('#110 resolveTargetPayEntity — scope + EPE normalization', () => {
   const importExport = async () => await import('@/pages/MissingCommissionExportPage');
 
-  it('actual_pay_entity always wins when set', async () => {
+  it('Coverall scope is authoritative — overrides actual_pay_entity=Vix (Deanna pattern)', async () => {
     const { resolveTargetPayEntity } = await importExport();
     expect(resolveTargetPayEntity({
       expectedPayEntity: 'Coverall_or_Vix', actualPayEntity: 'Vix',
-      scope: 'Coverall', agentNpn: '21055210',
+      scope: 'Coverall', agentNpn: '21277051',
+    })).toBe('Coverall');
+  });
+
+  it('Vix scope is authoritative — overrides actual_pay_entity=Coverall', async () => {
+    const { resolveTargetPayEntity } = await importExport();
+    expect(resolveTargetPayEntity({
+      expectedPayEntity: 'Coverall', actualPayEntity: 'Coverall',
+      scope: 'Vix', agentNpn: '21055210',
     })).toBe('Vix');
   });
 
-  it('concrete expected_pay_entity wins over scope when actual is blank', async () => {
+  it('All scope: actual_pay_entity wins when set', async () => {
+    const { resolveTargetPayEntity } = await importExport();
+    expect(resolveTargetPayEntity({
+      expectedPayEntity: 'Coverall_or_Vix', actualPayEntity: 'Vix',
+      scope: 'All', agentNpn: '21277051',
+    })).toBe('Vix');
+  });
+
+  it('All scope: concrete expected_pay_entity wins when actual is blank', async () => {
     const { resolveTargetPayEntity } = await importExport();
     expect(resolveTargetPayEntity({
       expectedPayEntity: 'Coverall', actualPayEntity: '',
-      scope: 'Vix', agentNpn: '21055210',
+      scope: 'All', agentNpn: '21055210',
     })).toBe('Coverall');
   });
 
