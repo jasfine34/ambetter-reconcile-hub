@@ -395,50 +395,17 @@ export function lookupResolved(record: any, idx: ResolverIndex): ResolvedIdentit
   return null;
 }
 
-/**
- * Apply resolved values to a record's three ID fields IF the record's own
- * field is blank. Returns a NEW object — never mutates the input. Also
- * returns a `_resolved_fields` map indicating which fields were filled in
- * from the sidecar (drives the blue "resolved" badge in the UI).
- */
-export function applyResolvedToRecord<T extends Record<string, any>>(
-  record: T,
-  idx: ResolverIndex,
-): T & { _resolved_fields?: Record<string, ResolvedIdentityRow> } {
-  const hit = lookupResolved(record, idx);
-  if (!hit) return record;
-  const out: any = { ...record };
-  const resolvedFields: Record<string, ResolvedIdentityRow> = {};
-  if (!String(record.issuer_subscriber_id ?? '').trim() && hit.resolved_issuer_subscriber_id) {
-    out.issuer_subscriber_id = hit.resolved_issuer_subscriber_id;
-    resolvedFields.issuer_subscriber_id = hit;
-  }
-  if (!String(record.issuer_policy_id ?? '').trim() && hit.resolved_issuer_policy_id) {
-    out.issuer_policy_id = hit.resolved_issuer_policy_id;
-    resolvedFields.issuer_policy_id = hit;
-  }
-  if (!String(record.exchange_policy_id ?? '').trim() && hit.resolved_exchange_policy_id) {
-    out.exchange_policy_id = hit.resolved_exchange_policy_id;
-    resolvedFields.exchange_policy_id = hit;
-  }
-  if (Object.keys(resolvedFields).length > 0) {
-    out._resolved_fields = resolvedFields;
-  }
-  return out;
-}
-
-/**
- * Apply resolved values to an array of records. Cheap — same one-pass shape
- * as applyResolvedToRecord but spares callers the per-row hit overhead when
- * the sidecar is empty.
- */
-export function applyResolvedToRecords<T extends Record<string, any>>(
-  records: T[],
-  idx: ResolverIndex,
-): Array<T & { _resolved_fields?: Record<string, ResolvedIdentityRow> }> {
-  if (!idx || idx.totalRows === 0) return records as any;
-  return records.map(r => applyResolvedToRecord(r, idx));
-}
+// NOTE (#97 cleanup): The previous `applyResolvedToRecord` /
+// `applyResolvedToRecords` helpers used to clone records and overlay the
+// three sidecar ID fields, attaching a `_resolved_fields` map for the blue
+// "resolved" badge in the UI. After #94, the canonical overlay path is
+// `mergeRecordsToMemberKeys` (see src/lib/canonical/memberKeyMerge.ts) for
+// merging, and direct `lookupResolved` calls for badge/display callers
+// (AllRecordsPage, MemberTimelinePage, expectedEde, reconcile). A
+// repository-wide search confirmed zero remaining callers of the
+// `applyResolvedTo*` helpers, so they were removed to prevent future drift
+// (a third overlay code path would risk per-page divergence — same family
+// as the bug #94 fixed). Re-introduce only via mergeRecordsToMemberKeys.
 
 /** Fetch all conflict rows for the Exceptions page. */
 export async function getResolverConflicts(): Promise<ResolvedIdentityRow[]> {
