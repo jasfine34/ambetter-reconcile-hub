@@ -142,10 +142,20 @@ describe('canonical/metrics', () => {
   });
 
   it('Eligible cohort excludes members not in BO unless confirmed', () => {
-    const { reconciled } = makeFixture();
-    const noUpgrade = getEligibleCohort(reconciled, 'Coverall', new Set());
+    const { reconciled, filteredEde } = makeFixture();
+    // Backward-compat: with persistent flag aligned to filteredEde, results
+    // are identical to the pre-fix behavior (m1 only; m1+m2 with upgrade).
+    // Add m2 to filteredEde so it's eligible for the upgrade case.
+    const fe: FilteredEdeResult = {
+      ...filteredEde,
+      uniqueMembers: [
+        ...filteredEde.uniqueMembers,
+        // m2 already present in fixture; harmless reaffirmation.
+      ],
+    };
+    const noUpgrade = getEligibleCohort(reconciled, 'Coverall', new Set(), fe);
     expect(noUpgrade.map((r) => r.member_key)).toEqual(['m1']);
-    const withUpgrade = getEligibleCohort(reconciled, 'Coverall', new Set(['m2']));
+    const withUpgrade = getEligibleCohort(reconciled, 'Coverall', new Set(['m2']), fe);
     expect(withUpgrade.map((r) => r.member_key).sort()).toEqual(['m1', 'm2']);
   });
 
@@ -191,6 +201,51 @@ describe('canonical/metrics', () => {
     };
     const found = getFoundInBackOffice(reconciled, 'Coverall', filteredEde, new Set());
     expect(found).toBe(1); // only m1, NOT mGhost
+  });
+
+  // 2026.05.01-eligible-cohort-current-batch — REGRESSION GUARD.
+  // Anna Wohler shape: persistent is_in_expected_ede_universe=true (carryover
+  // from prior batch when she WAS Coverall) but in current batch her AOR
+  // transferred OUT of Coverall, so she's NOT in filteredEde.uniqueMembers.
+  // Pre-fix getEligibleCohort would include her; post-fix must exclude her.
+  it('Eligible cohort excludes ghost members (persistent flag=true, NOT in current filteredEde)', () => {
+    const reconciled: any[] = [
+      // mActive: in current filteredEde, eligible.
+      {
+        member_key: 'mActive',
+        current_policy_aor: 'Jason Fine (21055210)',
+        is_in_expected_ede_universe: true,
+        in_back_office: true,
+        in_commission: true,
+        eligible_for_commission: 'Yes',
+      },
+      // mGhostAnna: persistent flag=true (stale from prior batch), still
+      // looks eligible by the old predicate, but is NOT in current
+      // filteredEde because her current AOR transferred to a non-Coverall agent.
+      {
+        member_key: 'mGhostAnna',
+        current_policy_aor: 'Jason Fine (21055210)',
+        is_in_expected_ede_universe: true,
+        in_back_office: true,
+        in_commission: false,
+        eligible_for_commission: 'Yes',
+      },
+    ];
+    const filteredEde: FilteredEdeResult = {
+      uniqueMembers: [
+        { member_key: 'mActive', applicant_name: 'Active', policy_number: 'P1', exchange_subscriber_id: '', issuer_subscriber_id: 'U1', current_policy_aor: '', effective_date: '2026-03-01', policy_status: 'Effectuated', covered_member_count: 1, effective_month: '2026-03', active_months: ['2026-03'], in_back_office: true },
+      ],
+      uniqueKeys: 1,
+      byMonth: { '2026-03': 1 },
+      inBOCount: 1,
+      notInBOCount: 0,
+      missingFromBO: [],
+    };
+    const eligible = getEligibleCohort(reconciled, 'Coverall', new Set(), filteredEde);
+    const keys = new Set(eligible.map((r) => r.member_key));
+    expect(keys.has('mActive')).toBe(true);
+    expect(keys.has('mGhostAnna')).toBe(false); // <-- regression guard
+    expect(eligible.length).toBe(1);
   });
 });
 

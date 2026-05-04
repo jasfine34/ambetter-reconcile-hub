@@ -150,7 +150,7 @@ describe('rebuildBatch — upload_batches stamp error capture (Codex pass #2)', 
     expect(caught!.message).toContain('42P01');
   });
 
-  it('regression: logic version constant is the new stamp-error-capture token', () => {
-    expect(RECONCILE_LOGIC_VERSION).toBe('2026.04.30-stamp-error-capture');
+  it('regression: logic version constant is the new eligible-cohort-current-batch token', () => {
+    expect(RECONCILE_LOGIC_VERSION).toBe('2026.05.01-eligible-cohort-current-batch');
   });
 });

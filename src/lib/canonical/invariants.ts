@@ -136,7 +136,7 @@ function checkEeBucketCoverage(inp: InvariantInputs): InvariantResult {
  *      Eligible cohort decomposition: paidEligible + unpaidEligible == eligible.
  */
 function checkEligibleBreakdownSum(inp: InvariantInputs): InvariantResult {
-  const eligible = getEligibleCohort(inp.reconciled, inp.scope, inp.confirmedUpgradeMemberKeys);
+  const eligible = getEligibleCohort(inp.reconciled, inp.scope, inp.confirmedUpgradeMemberKeys, inp.filteredEde);
   const paidEligible = eligible.filter((r) => r.in_commission).length;
   const unpaidEligible = eligible.length - paidEligible;
   const total = paidEligible + unpaidEligible;
@@ -162,10 +162,11 @@ function checkEligibleBreakdownSum(inp: InvariantInputs): InvariantResult {
  *     filter of the same predicate.
  */
 function checkEligibleHelperConsistency(inp: InvariantInputs): InvariantResult {
-  const helper = getEligibleCohort(inp.reconciled, inp.scope, inp.confirmedUpgradeMemberKeys).length;
+  const helper = getEligibleCohort(inp.reconciled, inp.scope, inp.confirmedUpgradeMemberKeys, inp.filteredEde).length;
+  const eeUniverse = new Set(inp.filteredEde.uniqueMembers.map((m) => m.member_key));
   const direct = filterReconciledByScope(inp.reconciled, inp.scope).filter(
     (r) =>
-      r.is_in_expected_ede_universe &&
+      eeUniverse.has(r.member_key) &&
       (r.in_back_office || inp.confirmedUpgradeMemberKeys.has(r.member_key)) &&
       r.eligible_for_commission === 'Yes',
   ).length;

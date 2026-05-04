@@ -468,7 +468,7 @@ export default function DashboardPage() {
     // EE universe (Mar Coverall: 1,297 vs 1,309 invariant).
     const scopeForCanonical = payEntityFilter === 'All' ? 'All' : payEntityFilter;
     const foundBO = getFoundInBackOffice(reconciled, scopeForCanonical, filteredEde, confirmedUpgradeMemberKeys);
-    const eligibleCohort = getEligibleCohort(reconciled, scopeForCanonical, confirmedUpgradeMemberKeys);
+    const eligibleCohort = getEligibleCohort(reconciled, scopeForCanonical, confirmedUpgradeMemberKeys, filteredEde);
     const eligible = eligibleCohort.length;
     const shouldPay = eligible;
     // Count distinct policies with positive payments
