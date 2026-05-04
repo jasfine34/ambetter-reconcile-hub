@@ -154,3 +154,112 @@ describe('#109 writing_agent_carrier_id fallback', () => {
     expect(lookup.size).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// #109 finishing touch — strip leading Excel text-format apostrophe at the
+// CSV-render boundary (Writing Agent Carrier ID column only). Source data,
+// derived lookup, and in-memory preview must stay untouched.
+// ---------------------------------------------------------------------------
+
+describe('#109 stripExcelTextMarker — CSV export boundary', () => {
+  const importExport = async () => await import('@/pages/MissingCommissionExportPage');
+
+  function exportRow(overrides: Partial<any> = {}): any {
+    return {
+      carrierName: 'Ambetter',
+      npn: '21055210',
+      writingAgentCarrierId: '',
+      writingAgentName: 'Jason Fine',
+      policyEffectiveDate: '2026-01-01',
+      policyNumber: 'P1',
+      memberFirstName: 'Jane',
+      memberLastName: 'Doe',
+      dob: '1980-01-01',
+      ssn: '',
+      memberId: 'M1',
+      address: '1 Main St, Macon, GA 31201',
+      _memberKey: 'm1',
+      _ffmId: { value: null, source_type: null, source_month: null, source_file_label: null, conflict: false, conflict_values: [] },
+      _exchangeSubscriberId: '',
+      _issuerSubscriberId: '',
+      _aor: '',
+      _netPremiumBucket: 'zero_premium',
+      _missingReason: 'Missing from Commission',
+      _estimatedMissingCommission: 18,
+      _profile: {} as any,
+      _hasConflict: false,
+      ...overrides,
+    };
+  }
+
+  it('1. apostrophe stripped on export — value "\'CHG9852" → "CHG9852"', async () => {
+    const Papa = (await import('papaparse')).default;
+    const { buildMesserCsv } = await importExport();
+    const csv = buildMesserCsv([exportRow({ writingAgentCarrierId: "'CHG9852" })]);
+    const parsed = Papa.parse(csv, { header: true });
+    expect((parsed.data as any[])[0]['Writing Agent Carrier ID']).toBe('CHG9852');
+  });
+
+  it('2. no apostrophe = no change — "CHG9852" stays "CHG9852"', async () => {
+    const Papa = (await import('papaparse')).default;
+    const { buildMesserCsv } = await importExport();
+    const csv = buildMesserCsv([exportRow({ writingAgentCarrierId: 'CHG9852' })]);
+    const parsed = Papa.parse(csv, { header: true });
+    expect((parsed.data as any[])[0]['Writing Agent Carrier ID']).toBe('CHG9852');
+  });
+
+  it('3. empty value stays empty (no exception)', async () => {
+    const Papa = (await import('papaparse')).default;
+    const { buildMesserCsv } = await importExport();
+    const csv = buildMesserCsv([
+      exportRow({ writingAgentCarrierId: '' }),
+      exportRow({ writingAgentCarrierId: null as any }),
+    ]);
+    const parsed = Papa.parse(csv, { header: true });
+    expect((parsed.data as any[])[0]['Writing Agent Carrier ID']).toBe('');
+    expect((parsed.data as any[])[1]['Writing Agent Carrier ID']).toBe('');
+  });
+
+  it('4. only LEADING apostrophe stripped — "\'CHG\'9852" → "CHG\'9852"', async () => {
+    const Papa = (await import('papaparse')).default;
+    const { buildMesserCsv } = await importExport();
+    const csv = buildMesserCsv([exportRow({ writingAgentCarrierId: "'CHG'9852" })]);
+    const parsed = Papa.parse(csv, { header: true });
+    expect((parsed.data as any[])[0]['Writing Agent Carrier ID']).toBe("CHG'9852");
+  });
+
+  it('5. source values unchanged after export render', async () => {
+    const { buildMesserCsv } = await importExport();
+    const sourceRow = { writing_agent_carrier_id: "'CHG9852", agent_npn: '21055210' };
+    const before = sourceRow.writing_agent_carrier_id;
+    buildMesserCsv([exportRow({ writingAgentCarrierId: sourceRow.writing_agent_carrier_id })]);
+    expect(sourceRow.writing_agent_carrier_id).toBe(before);
+    expect(sourceRow.writing_agent_carrier_id).toBe("'CHG9852");
+  });
+
+  it('6. strip applies ONLY to Writing Agent Carrier ID column (sibling columns untouched)', async () => {
+    const Papa = (await import('papaparse')).default;
+    const { buildMesserCsv } = await importExport();
+    const csv = buildMesserCsv([exportRow({
+      writingAgentCarrierId: "'CHG9852",
+      memberId: "'U12345",
+      policyNumber: "'P98765",
+    })]);
+    const parsed = Papa.parse(csv, { header: true });
+    const row = (parsed.data as any[])[0];
+    expect(row['Writing Agent Carrier ID']).toBe('CHG9852');
+    expect(row['Member ID']).toBe("'U12345");
+    expect(row['Policy #']).toBe("'P98765");
+  });
+});
+
+describe('#109 stripExcelTextMarker — unit', () => {
+  it('handles null/undefined/empty/single-apostrophe', async () => {
+    const { stripExcelTextMarker } = await import('@/pages/MissingCommissionExportPage');
+    expect(stripExcelTextMarker(null)).toBe('');
+    expect(stripExcelTextMarker(undefined)).toBe('');
+    expect(stripExcelTextMarker('')).toBe('');
+    expect(stripExcelTextMarker("'")).toBe('');
+    expect(stripExcelTextMarker("''X")).toBe("'X"); // only ONE leading apostrophe stripped
+  });
+});
