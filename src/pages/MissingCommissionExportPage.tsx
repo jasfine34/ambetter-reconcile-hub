@@ -434,6 +434,30 @@ export default function MissingCommissionExportPage() {
     return eligible.filter((r) => !r.in_commission);
   }, [reconciled, scope, confirmedUpgradeMemberKeys, filteredEde]);
 
+  // #109 — derived (carrier, pay_entity, agent_npn) → writing_agent_carrier_id
+  // map. Memoized over allRecords (which is reloaded on mount, and via the
+  // page's data-version subscription on Re-run Reconciliation). When new
+  // commission rows arrive, the map recomputes and stale blanks fill in.
+  const writingAgentIdLookup = useMemo(
+    () => buildWritingAgentCarrierIdLookup({ records: allRecords, batchMonthByBatchId }),
+    [allRecords, batchMonthByBatchId],
+  );
+
+  // One-shot console warning when the lookup discovers conflicting IDs for the
+  // same (carrier, pay_entity, NPN) — surfaces forward-safety issues for review.
+  useEffect(() => {
+    const conflicts: Array<{ key: string; winner: string; losers: string[] }> = [];
+    for (const [key, entry] of writingAgentIdLookup) {
+      if (entry.conflicts.length) conflicts.push({ key, winner: entry.id, losers: entry.conflicts });
+    }
+    if (conflicts.length) {
+      console.warn(
+        `[#109] writing_agent_carrier_id lookup found ${conflicts.length} (carrier, pay_entity, NPN) pair(s) with multiple distinct IDs. Most-recent month wins; review:`,
+        conflicts,
+      );
+    }
+  }, [writingAgentIdLookup]);
+
   // Build export rows (with enriched profiles).
   const allExportRows = useMemo<ExportRow[]>(() => {
     const out: ExportRow[] = [];
