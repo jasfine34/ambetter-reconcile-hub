@@ -552,17 +552,24 @@ export default function MissingCommissionExportPage() {
       const aorNpn = extractNpnFromAorString(aor);
       const npn = aorNpn || String(m.agent_npn ?? '').trim();
 
-      // Writing Agent Carrier ID (#109): direct from this member's commission
-      // row when present; else fall back to the derived (carrier, pay_entity,
-      // NPN) → ID lookup built from all observed commission rows; else blank.
+      // Writing Agent Carrier ID (#109/#110): scope-aware, NPN-aware ladder.
+      // First resolve the target pay entity (handles 'Coverall_or_Vix' and
+      // blank EPE; falls back to scope or per-NPN default in All scope).
+      // Then Tier-1 (Direct) requires the commission row to match BOTH the
+      // target pay entity AND the resolved current AOR NPN, so an
+      // AOR-transferred member can't pull a stale prior-AOR / prior-pay-entity
+      // ID. Tier-2 (Historical) keys on the same (carrier, pe, npn).
       const commRec = records.find((r) => r.source_type === 'COMMISSION' && r.writing_agent_carrier_id);
+      const targetPayEntity = resolveTargetPayEntity({
+        expectedPayEntity: m.expected_pay_entity,
+        actualPayEntity: m.actual_pay_entity,
+        scope,
+        agentNpn: npn,
+      });
       const writingAgentCarrierId = resolveWritingAgentCarrierId({
         records,
         carrier: 'Ambetter',
-        // For missing-commission cohort members, expected_pay_entity reflects
-        // the AOR's pay-entity assignment; that's the right key to match
-        // against historical commission rows for the same agent.
-        payEntity: m.expected_pay_entity || (scope !== 'All' ? scope : ''),
+        payEntity: targetPayEntity,
         agentNpn: npn,
         lookup: writingAgentIdLookup,
       });
