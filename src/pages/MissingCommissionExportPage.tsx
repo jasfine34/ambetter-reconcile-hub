@@ -478,13 +478,20 @@ export default function MissingCommissionExportPage() {
       const aorNpn = extractNpnFromAorString(aor);
       const npn = aorNpn || String(m.agent_npn ?? '').trim();
 
-      // Writing Agent Carrier ID — sourced from the commission row via raw_json
-      // (stored on normalized_records.writing_agent_carrier_id by
-      // normalizeCommissionRow). For a missing-commission member there is no
-      // commission row, so we look across this member's records for any
-      // commission_writing_agent_id surfaced from prior batches.
+      // Writing Agent Carrier ID (#109): direct from this member's commission
+      // row when present; else fall back to the derived (carrier, pay_entity,
+      // NPN) → ID lookup built from all observed commission rows; else blank.
       const commRec = records.find((r) => r.source_type === 'COMMISSION' && r.writing_agent_carrier_id);
-      const writingAgentCarrierId = commRec ? String(commRec.writing_agent_carrier_id ?? '').trim() : '';
+      const writingAgentCarrierId = resolveWritingAgentCarrierId({
+        records,
+        carrier: 'Ambetter',
+        // For missing-commission cohort members, expected_pay_entity reflects
+        // the AOR's pay-entity assignment; that's the right key to match
+        // against historical commission rows for the same agent.
+        payEntity: m.expected_pay_entity || (scope !== 'All' ? scope : ''),
+        agentNpn: npn,
+        lookup: writingAgentIdLookup,
+      });
 
       // Writing Agent Name: AOR display → BO Broker Name → Commission Writing Agent Name → blank.
       const boRec = records.find((r) => r.source_type === 'BACK_OFFICE' && r.agent_name);
