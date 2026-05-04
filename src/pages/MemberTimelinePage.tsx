@@ -24,6 +24,7 @@ import { PaidDollarsAuditPanel } from '@/components/PaidDollarsAuditPanel';
 import { CellAttributionPopover } from '@/components/CellAttributionPopover';
 import { ResolvedBadge } from '@/components/ResolvedBadge';
 import { lookupResolved } from '@/lib/resolvedIdentities';
+import { useBatchDataVersion, useAllBatchesDataVersion } from '@/hooks/useBatchDataVersion';
 
 type PayEntityScope = 'Coverall' | 'Vix' | 'All';
 type AorScope = 'official' | 'all';
@@ -139,6 +140,15 @@ export default function MemberTimelinePage() {
     setEndMonth(draftEndMonth);
   };
 
+  // Subscribe to per-batch and cross-batch rebuild-stamp transitions so the
+  // timeline auto-refreshes after Re-run Reconciliation / Rebuild All — no F5.
+  // For batchScope='current' the single-batch token suffices; for 'all' we
+  // also need the fleet-wide token because a rebuild on a non-active batch
+  // still changes the aggregated dataset.
+  const singleBatchVersion = useBatchDataVersion(currentBatchId);
+  const allBatchesVersion = useAllBatchesDataVersion();
+  const dataVersion = batchScope === 'all' ? allBatchesVersion : singleBatchVersion;
+
   useEffect(() => {
     setLoading(true);
     const fetch = batchScope === 'all'
@@ -158,7 +168,7 @@ export default function MemberTimelinePage() {
       })
       .catch(() => setRecords([]))
       .finally(() => setLoading(false));
-  }, [currentBatchId, batchScope, resolverIndex]);
+  }, [currentBatchId, batchScope, resolverIndex, dataVersion]);
 
   // Reset start/end to sensible defaults on initial mount and when the batch
   // scope changes. Deliberately NOT dependent on currentBatchId — switching
