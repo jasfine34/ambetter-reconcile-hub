@@ -273,19 +273,35 @@ describe('#109 stripExcelTextMarker — unit', () => {
 describe('#110 resolveTargetPayEntity — scope + EPE normalization', () => {
   const importExport = async () => await import('@/pages/MissingCommissionExportPage');
 
-  it('actual_pay_entity always wins when set', async () => {
+  it('Coverall scope is authoritative — overrides actual_pay_entity=Vix (Deanna pattern)', async () => {
     const { resolveTargetPayEntity } = await importExport();
     expect(resolveTargetPayEntity({
       expectedPayEntity: 'Coverall_or_Vix', actualPayEntity: 'Vix',
-      scope: 'Coverall', agentNpn: '21055210',
+      scope: 'Coverall', agentNpn: '21277051',
+    })).toBe('Coverall');
+  });
+
+  it('Vix scope is authoritative — overrides actual_pay_entity=Coverall', async () => {
+    const { resolveTargetPayEntity } = await importExport();
+    expect(resolveTargetPayEntity({
+      expectedPayEntity: 'Coverall', actualPayEntity: 'Coverall',
+      scope: 'Vix', agentNpn: '21055210',
     })).toBe('Vix');
   });
 
-  it('concrete expected_pay_entity wins over scope when actual is blank', async () => {
+  it('All scope: actual_pay_entity wins when set', async () => {
+    const { resolveTargetPayEntity } = await importExport();
+    expect(resolveTargetPayEntity({
+      expectedPayEntity: 'Coverall_or_Vix', actualPayEntity: 'Vix',
+      scope: 'All', agentNpn: '21277051',
+    })).toBe('Vix');
+  });
+
+  it('All scope: concrete expected_pay_entity wins when actual is blank', async () => {
     const { resolveTargetPayEntity } = await importExport();
     expect(resolveTargetPayEntity({
       expectedPayEntity: 'Coverall', actualPayEntity: '',
-      scope: 'Vix', agentNpn: '21055210',
+      scope: 'All', agentNpn: '21055210',
     })).toBe('Coverall');
   });
 
@@ -450,5 +466,110 @@ describe('#110 resolveWritingAgentCarrierId — Tier-1 scope+NPN tightening', ()
       agentNpn: '21055210', lookup,
     });
     expect(out).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #110 final scope-priority fix — Deanna Armstrong pattern.
+// Coverall-scope export must NEVER emit VIX9696, even when the member has
+// actual_pay_entity = 'Vix' and a matching historical Vix commission row.
+// ---------------------------------------------------------------------------
+
+describe('#110 final — Deanna Armstrong scope-authority pattern', () => {
+  const importExport = async () => await import('@/pages/MissingCommissionExportPage');
+  const deannaCommissionRow = {
+    source_type: 'COMMISSION',
+    carrier: 'Ambetter',
+    pay_entity: 'Vix',
+    agent_npn: '21277051',
+    writing_agent_carrier_id: 'VIX9696',
+    batch_id: 'b-jan',
+    created_at: '2026-01-15T00:00:00Z',
+  };
+  const lookup = buildWritingAgentCarrierIdLookup({
+    records: [
+      deannaCommissionRow,
+      comm({ pay_entity: 'Coverall', agent_npn: '21277051', writing_agent_carrier_id: 'CHG9852' }),
+      comm({ pay_entity: 'Coverall', agent_npn: '21055210', writing_agent_carrier_id: 'CHG9852' }),
+    ],
+    batchMonthByBatchId: monthMap,
+  });
+
+  it('Coverall scope → Coverall target → CHG9852 (no Vix leak)', async () => {
+    const { resolveTargetPayEntity } = await importExport();
+    const target = resolveTargetPayEntity({
+      expectedPayEntity: 'Coverall_or_Vix',
+      actualPayEntity: 'Vix',
+      scope: 'Coverall',
+      agentNpn: '21277051',
+    });
+    expect(target).toBe('Coverall');
+    const out = resolveWritingAgentCarrierId({
+      records: [deannaCommissionRow],
+      carrier: 'Ambetter',
+      payEntity: target,
+      agentNpn: '21277051',
+      lookup,
+    });
+    expect(out).toBe('CHG9852');
+  });
+
+  it('Vix scope → Vix target → VIX9696 (Tier-1 direct hit)', async () => {
+    const { resolveTargetPayEntity } = await importExport();
+    const target = resolveTargetPayEntity({
+      expectedPayEntity: 'Coverall_or_Vix',
+      actualPayEntity: 'Vix',
+      scope: 'Vix',
+      agentNpn: '21277051',
+    });
+    expect(target).toBe('Vix');
+    const out = resolveWritingAgentCarrierId({
+      records: [deannaCommissionRow],
+      carrier: 'Ambetter',
+      payEntity: target,
+      agentNpn: '21277051',
+      lookup,
+    });
+    expect(out).toBe('VIX9696');
+  });
+
+  it('All scope → actual_pay_entity Vix wins → VIX9696', async () => {
+    const { resolveTargetPayEntity } = await importExport();
+    const target = resolveTargetPayEntity({
+      expectedPayEntity: 'Coverall_or_Vix',
+      actualPayEntity: 'Vix',
+      scope: 'All',
+      agentNpn: '21277051',
+    });
+    expect(target).toBe('Vix');
+    const out = resolveWritingAgentCarrierId({
+      records: [deannaCommissionRow],
+      carrier: 'Ambetter',
+      payEntity: target,
+      agentNpn: '21277051',
+      lookup,
+    });
+    expect(out).toBe('VIX9696');
+  });
+
+  it('Coverall-scope batch integration: zero VIX9696 IDs across mixed-actual rows', async () => {
+    const { resolveTargetPayEntity } = await importExport();
+    const members = [
+      { actual: 'Vix',      epe: 'Coverall_or_Vix', npn: '21277051' }, // Deanna
+      { actual: 'Coverall', epe: 'Coverall',        npn: '21055210' }, // Jason normal
+      { actual: '',         epe: '',                npn: '21277051' }, // blank/Erica
+    ];
+    const ids = members.map((m) => {
+      const target = resolveTargetPayEntity({
+        expectedPayEntity: m.epe, actualPayEntity: m.actual,
+        scope: 'Coverall', agentNpn: m.npn,
+      });
+      return resolveWritingAgentCarrierId({
+        records: [deannaCommissionRow],
+        carrier: 'Ambetter', payEntity: target, agentNpn: m.npn, lookup,
+      });
+    });
+    expect(ids.every((id) => id !== 'VIX9696')).toBe(true);
+    expect(ids.every((id) => id === 'CHG9852')).toBe(true);
   });
 });
