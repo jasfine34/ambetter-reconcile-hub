@@ -308,13 +308,24 @@ export function buildMesserCsvFilename(opts: {
   return `messer_missing_commission_ambetter_${scopeTok}_${batchTok}_${filterTok}_${yyyy}_${mm}_${dd}.csv`;
 }
 
+/**
+ * #109 finishing touch — strip a single leading apostrophe (Excel text-format
+ * marker) from a value at the CSV-render boundary only. Source data, the
+ * derived lookup, and the in-memory preview remain untouched.
+ */
+export const stripExcelTextMarker = (value: unknown): string =>
+  (value == null ? '' : String(value)).replace(/^'/, '');
+
 /** Convert ExportRow[] → CSV with EXACTLY the Messer column order (no internals). */
 export function buildMesserCsv(rows: ExportRow[]): string {
   const data = rows.map((r) => {
     const obj: Record<string, string> = {};
     for (const col of MESSER_COLUMNS) {
       const v = r[col.key];
-      obj[col.label] = v == null ? '' : String(v);
+      const raw = v == null ? '' : String(v);
+      // #109: strip leading Excel text-format apostrophe ONLY for the
+      // Writing Agent Carrier ID column, ONLY at the export boundary.
+      obj[col.label] = col.key === 'writingAgentCarrierId' ? stripExcelTextMarker(raw) : raw;
     }
     return obj;
   });
