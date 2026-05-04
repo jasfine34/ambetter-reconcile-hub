@@ -276,14 +276,14 @@ describe('buildMesserCsv + buildMesserCsvFilename', () => {
     expect(headers).toEqual([
       'Carrier Name', 'NPN', 'Writing Agent Carrier ID', 'Writing Agent Name',
       'Policy Effective Date', 'Policy #', 'Member First Name', 'Member Last Name',
-      'DOB', 'SSN', 'Member ID', 'Address',
+      'DOB', 'SSN', 'Member ID', 'Address (Street, City, State, Zip)',
     ]);
     // SSN present but blank (v1)
     const data = parsed.data as Record<string, string>[];
     expect(data[0]['SSN']).toBe('');
     expect(data[0]['Member First Name']).toBe('Jane Marie');
     expect(data[0]['Member Last Name']).toBe('Smith');
-    expect(data[0]['Address']).toBe('123 Main St, Macon, GA 31201');
+    expect(data[0]['Address (Street, City, State, Zip)']).toBe('123 Main St, Macon, GA 31201');
 
     // No internal columns leaked
     for (const h of headers) {

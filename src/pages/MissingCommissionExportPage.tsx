@@ -92,7 +92,7 @@ const MESSER_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
   { key: 'dob', label: 'DOB' },
   { key: 'ssn', label: 'SSN' },
   { key: 'memberId', label: 'Member ID' },
-  { key: 'address', label: 'Address' },
+  { key: 'address', label: 'Address (Street, City, State, Zip)' },
 ];
 
 const INTERNAL_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
