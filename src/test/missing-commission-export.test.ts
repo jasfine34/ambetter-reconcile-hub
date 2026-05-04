@@ -24,6 +24,7 @@ import {
   classifyNetPremium,
   buildMesserCsv,
   buildMesserCsvFilename,
+  resolvePolicyEffectiveDate,
 } from '@/pages/MissingCommissionExportPage';
 import type { NormalizedRecord } from '@/lib/normalize';
 
@@ -310,5 +311,127 @@ describe('buildMesserCsv + buildMesserCsvFilename', () => {
       downloadDate: new Date(2026, 0, 15),
     });
     expect(fn).toBe('messer_missing_commission_ambetter_vix_2026_02_zero_premium_2026_01_15.csv');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 9. Regression: Address / FFM ID / Policy Effective Date must NOT all-blank
+// (Codex review pass #2 finding — real Ambetter BO has no Address column,
+// so address/ffm_id/effective_date must come from EDE rows. These guards
+// also pin BO-as-Address-source for future carriers like Molina/Cigna.)
+// ---------------------------------------------------------------------------
+
+describe('non-blank guards: Address / FFM ID / Policy Effective Date', () => {
+  it('Address: BO has no Address column → EDE typed columns win', () => {
+    // Realistic Ambetter shape: BO row has phone/email but NO Address/City/etc.
+    // EDE row carries client_address_1 (typed).
+    const records = [
+      bo({
+        batch_id: 'b-feb',
+        raw_json: { 'Member Phone Number': '555-1212', 'Member Email': 'a@b.com' },
+        // intentionally no client_address_1 set on BO
+      }),
+      ede({
+        batch_id: 'b-feb',
+        client_address_1: '742 Evergreen Terrace',
+        client_city: 'Springfield',
+        client_state_full: 'IL',
+        client_zip: '62701',
+        raw_json: { ffmAppId: 'FFM-12345', effectiveDate: '2026-02-01' },
+      }),
+    ];
+    const p = buildMemberProfile('member-1', {
+      records, referenceMonth: '2026-02', batchMonthByBatchId: monthMap,
+    });
+    expect(p.address1.value).toBe('742 Evergreen Terrace');
+    expect(p.address1.source_type).toBe('ede');
+    expect(p.city.value).toBe('Springfield');
+    expect(p.state.value).toBe('IL');
+    expect(p.zip.value).toBe('62701');
+    const line = assembleAddressLine({
+      address1: p.address1.value, city: p.city.value, state: p.state.value, zip: p.zip.value,
+    });
+    expect(line).toBe('742 Evergreen Terrace, Springfield, IL 62701');
+  });
+
+  it('FFM ID: comes from EDE raw_json.ffmAppId (BO never has it)', () => {
+    const records = [
+      bo({ batch_id: 'b-feb', raw_json: { 'Member Phone Number': '555' } }),
+      ede({ batch_id: 'b-feb', raw_json: { ffmAppId: 'FFM-ABCDE' } }),
+    ];
+    const p = buildMemberProfile('member-1', {
+      records, referenceMonth: '2026-02', batchMonthByBatchId: monthMap,
+    });
+    expect(p.ffm_id.value).toBe('FFM-ABCDE');
+    expect(p.ffm_id.source_type).toBe('ede');
+  });
+
+  it('Policy Effective Date: prefers EDE typed effective_date over BO/reconciled', () => {
+    const records = [
+      ede({ batch_id: 'b-feb', effective_date: '2026-02-01' as any, raw_json: { effectiveDate: '2026-02-01' } }),
+      bo({ batch_id: 'b-feb', broker_effective_date: '2026-02-15' as any, raw_json: { 'Policy Effective Date': '2/15/2026' } }),
+    ];
+    const eff = resolvePolicyEffectiveDate({
+      records,
+      reconciledEffectiveDate: '2026-03-01', // should be ignored — EDE wins
+    });
+    expect(eff).toBe('2026-02-01');
+  });
+
+  it('Policy Effective Date: falls back to EDE raw effectiveDate when typed is null', () => {
+    const records = [
+      ede({ batch_id: 'b-feb', effective_date: null, raw_json: { effectiveDate: '2026-02-01' } }),
+    ];
+    const eff = resolvePolicyEffectiveDate({ records, reconciledEffectiveDate: null });
+    expect(eff).toBe('2026-02-01');
+  });
+
+  it('Policy Effective Date: falls back to BO when no EDE row exists', () => {
+    const records = [
+      bo({ batch_id: 'b-feb', broker_effective_date: '2026-02-15' as any, raw_json: { 'Policy Effective Date': '2/15/2026' } }),
+    ];
+    const eff = resolvePolicyEffectiveDate({ records, reconciledEffectiveDate: null });
+    expect(eff).toBe('2026-02-15');
+  });
+
+  it('Combined fixture: BO supplies phone, EDE supplies address+FFM+effective date', () => {
+    // Lock-in fixture: a single member where each Messer-critical field
+    // comes from a different source. Exercises the full pipeline shape
+    // identified in the #104 live verification.
+    const records = [
+      bo({
+        batch_id: 'b-feb',
+        raw_json: {
+          'Member Phone Number': '404-555-0100',
+          'Member Email': 'john@example.com',
+          // no street address — Ambetter BO does not carry it
+        },
+      }),
+      ede({
+        batch_id: 'b-feb',
+        client_address_1: '100 Peachtree St',
+        client_city: 'Atlanta',
+        client_state_full: 'GA',
+        client_zip: '30303',
+        effective_date: '2026-02-01' as any,
+        raw_json: { ffmAppId: 'FFM-XYZ', effectiveDate: '2026-02-01' },
+      }),
+    ];
+    const p = buildMemberProfile('member-1', {
+      records, referenceMonth: '2026-02', batchMonthByBatchId: monthMap,
+    });
+    // Address from EDE
+    expect(p.address1.value).toBe('100 Peachtree St');
+    expect(p.address1.source_type).toBe('ede');
+    // Phone from BO (BO-first when present)
+    expect(p.phone.value).toBe('404-555-0100');
+    expect(p.phone.source_type).toBe('back_office');
+    // Email from BO
+    expect(p.email.value).toBe('john@example.com');
+    expect(p.email.source_type).toBe('back_office');
+    // FFM ID from EDE
+    expect(p.ffm_id.value).toBe('FFM-XYZ');
+    // Effective date from EDE (row context, not enrichment)
+    expect(resolvePolicyEffectiveDate({ records, reconciledEffectiveDate: null })).toBe('2026-02-01');
   });
 });
