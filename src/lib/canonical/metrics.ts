@@ -120,19 +120,30 @@ export function getNotInBackOffice(
 }
 
 /**
- * Eligible Cohort — members in the EE universe, in BO (or confirmed weak
- * match), AND eligible_for_commission='Yes'. This is the "should be paid"
- * population.
+ * Eligible Cohort — members in the EE universe (per current-batch
+ * `filteredEde`, NOT the persistent `is_in_expected_ede_universe` flag),
+ * in BO (or confirmed weak match), AND eligible_for_commission='Yes'.
+ *
+ * CANONICAL DECISION (2026.05.01-eligible-cohort-current-batch): same
+ * rationale as `getFoundInBackOffice` — the persistent
+ * `reconciled_members.is_in_expected_ede_universe` flag carries across
+ * batches once flipped on, so members whose AOR transferred OUT of scope
+ * still match the persistent predicate even though they are no longer in
+ * the current batch's filteredEde universe (Anna Wohler / Clifton Slone /
+ * Jessica Salazar shape on Feb-Mar 2026). The `filteredEde` parameter is
+ * REQUIRED to make any caller forgetting it a compile error.
  */
 export function getEligibleCohort(
   reconciled: any[],
   scope: CanonicalScope,
   confirmedUpgradeMemberKeys: Set<string>,
+  filteredEde: FilteredEdeResult,
 ): any[] {
   const inScope = filterReconciledByScope(reconciled, scope);
+  const eeUniverse = new Set(filteredEde.uniqueMembers.map((m) => m.member_key));
   return inScope.filter(
     (r) =>
-      r.is_in_expected_ede_universe &&
+      eeUniverse.has(r.member_key) &&
       (r.in_back_office || confirmedUpgradeMemberKeys.has(r.member_key)) &&
       r.eligible_for_commission === 'Yes',
   );
