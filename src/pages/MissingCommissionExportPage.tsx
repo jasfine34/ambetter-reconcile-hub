@@ -189,6 +189,98 @@ export function resolvePolicyEffectiveDate(opts: {
   return '';
 }
 
+// ---------------------------------------------------------------------------
+// #109 — Writing Agent Carrier ID derived lookup.
+//
+// The carrier-specific writing-agent ID lives only on COMMISSION rows. For the
+// missing-commission cohort, by definition there is no current commission row
+// for that member, so direct lookup yields blank for ~85% of rows. We observed
+// (and the diagnostic confirmed) that `writing_agent_carrier_id` is uniform
+// per (carrier, pay_entity, agent_npn) across all loaded commission rows
+// (e.g. every Coverall row → CHG9852, Vix → VIX9696). Building a derived map
+// from observed COMMISSION rows lets us fall back to that ID when the member
+// has no current commission row but the AOR has historical commission activity.
+//
+// Pure (no React hooks) — caller memoizes against batch data-version stamps.
+// ---------------------------------------------------------------------------
+
+export interface WritingAgentIdEntry {
+  /** Most-recent winning ID (by batch month, then created_at). */
+  id: string;
+  /** Distinct losing values, if any, for conflict warnings. */
+  conflicts: string[];
+}
+
+/** Stable key for (carrier, pay_entity, agent_npn). */
+function carrierIdLookupKey(carrier: string, payEntity: string, npn: string): string {
+  return `${(carrier || '').trim().toLowerCase()}|${(payEntity || '').trim().toLowerCase()}|${(npn || '').trim()}`;
+}
+
+/**
+ * Build a lookup `(carrier, pay_entity, agent_npn) → writing_agent_carrier_id`
+ * from observed COMMISSION rows. Most-recent batch month wins on conflict; all
+ * losing values are surfaced in `conflicts` so callers can warn for review.
+ *
+ * Pure — pass already-loaded normalized records and a batch_id → 'YYYY-MM' map.
+ */
+export function buildWritingAgentCarrierIdLookup(opts: {
+  records: any[];
+  batchMonthByBatchId: Map<string, string>;
+}): Map<string, WritingAgentIdEntry> {
+  const groups = new Map<string, Array<{ id: string; month: string; createdAt: string }>>();
+  for (const r of opts.records) {
+    if (r.source_type !== 'COMMISSION') continue;
+    const id = String(r.writing_agent_carrier_id ?? '').trim();
+    if (!id) continue;
+    const npn = String(r.agent_npn ?? '').trim();
+    if (!npn) continue;
+    const key = carrierIdLookupKey(r.carrier ?? '', r.pay_entity ?? '', npn);
+    const month = opts.batchMonthByBatchId.get(r.batch_id) || '';
+    const arr = groups.get(key);
+    const entry = { id, month, createdAt: String(r.created_at ?? '') };
+    if (arr) arr.push(entry); else groups.set(key, [entry]);
+  }
+  const out = new Map<string, WritingAgentIdEntry>();
+  for (const [key, rows] of groups) {
+    // Sort: most-recent month first, then most-recent created_at first.
+    rows.sort((a, b) => {
+      if (a.month !== b.month) return a.month < b.month ? 1 : -1;
+      return a.createdAt < b.createdAt ? 1 : -1;
+    });
+    const winner = rows[0].id;
+    const losers = Array.from(new Set(rows.slice(1).map((r) => r.id).filter((v) => v !== winner)));
+    out.set(key, { id: winner, conflicts: losers });
+  }
+  return out;
+}
+
+/**
+ * Resolution ladder for the export's Writing Agent Carrier ID column:
+ *   1. Direct: member has a commission row with `writing_agent_carrier_id` → use it.
+ *   2. Historical: derived `(carrier, pay_entity, agent_npn)` lookup hit.
+ *   3. Blank.
+ */
+export function resolveWritingAgentCarrierId(opts: {
+  records: any[];
+  carrier: string;
+  payEntity: string;
+  agentNpn: string;
+  lookup: Map<string, WritingAgentIdEntry>;
+}): string {
+  // Direct
+  for (const r of opts.records) {
+    if (r.source_type === 'COMMISSION' && r.writing_agent_carrier_id) {
+      const v = String(r.writing_agent_carrier_id).trim();
+      if (v) return v;
+    }
+  }
+  // Historical
+  const npn = String(opts.agentNpn || '').trim();
+  if (!npn) return '';
+  const hit = opts.lookup.get(carrierIdLookupKey(opts.carrier, opts.payEntity, npn));
+  return hit ? hit.id : '';
+}
+
 /** Bucket a numeric net premium into the three-way premium filter buckets. */
 export function classifyNetPremium(net: number | null | undefined): PremiumBucket {
   const n = Number(net);
@@ -342,6 +434,30 @@ export default function MissingCommissionExportPage() {
     return eligible.filter((r) => !r.in_commission);
   }, [reconciled, scope, confirmedUpgradeMemberKeys, filteredEde]);
 
+  // #109 — derived (carrier, pay_entity, agent_npn) → writing_agent_carrier_id
+  // map. Memoized over allRecords (which is reloaded on mount, and via the
+  // page's data-version subscription on Re-run Reconciliation). When new
+  // commission rows arrive, the map recomputes and stale blanks fill in.
+  const writingAgentIdLookup = useMemo(
+    () => buildWritingAgentCarrierIdLookup({ records: allRecords, batchMonthByBatchId }),
+    [allRecords, batchMonthByBatchId],
+  );
+
+  // One-shot console warning when the lookup discovers conflicting IDs for the
+  // same (carrier, pay_entity, NPN) — surfaces forward-safety issues for review.
+  useEffect(() => {
+    const conflicts: Array<{ key: string; winner: string; losers: string[] }> = [];
+    for (const [key, entry] of writingAgentIdLookup) {
+      if (entry.conflicts.length) conflicts.push({ key, winner: entry.id, losers: entry.conflicts });
+    }
+    if (conflicts.length) {
+      console.warn(
+        `[#109] writing_agent_carrier_id lookup found ${conflicts.length} (carrier, pay_entity, NPN) pair(s) with multiple distinct IDs. Most-recent month wins; review:`,
+        conflicts,
+      );
+    }
+  }, [writingAgentIdLookup]);
+
   // Build export rows (with enriched profiles).
   const allExportRows = useMemo<ExportRow[]>(() => {
     const out: ExportRow[] = [];
@@ -362,13 +478,20 @@ export default function MissingCommissionExportPage() {
       const aorNpn = extractNpnFromAorString(aor);
       const npn = aorNpn || String(m.agent_npn ?? '').trim();
 
-      // Writing Agent Carrier ID — sourced from the commission row via raw_json
-      // (stored on normalized_records.writing_agent_carrier_id by
-      // normalizeCommissionRow). For a missing-commission member there is no
-      // commission row, so we look across this member's records for any
-      // commission_writing_agent_id surfaced from prior batches.
+      // Writing Agent Carrier ID (#109): direct from this member's commission
+      // row when present; else fall back to the derived (carrier, pay_entity,
+      // NPN) → ID lookup built from all observed commission rows; else blank.
       const commRec = records.find((r) => r.source_type === 'COMMISSION' && r.writing_agent_carrier_id);
-      const writingAgentCarrierId = commRec ? String(commRec.writing_agent_carrier_id ?? '').trim() : '';
+      const writingAgentCarrierId = resolveWritingAgentCarrierId({
+        records,
+        carrier: 'Ambetter',
+        // For missing-commission cohort members, expected_pay_entity reflects
+        // the AOR's pay-entity assignment; that's the right key to match
+        // against historical commission rows for the same agent.
+        payEntity: m.expected_pay_entity || (scope !== 'All' ? scope : ''),
+        agentNpn: npn,
+        lookup: writingAgentIdLookup,
+      });
 
       // Writing Agent Name: AOR display → BO Broker Name → Commission Writing Agent Name → blank.
       const boRec = records.find((r) => r.source_type === 'BACK_OFFICE' && r.agent_name);
@@ -440,7 +563,7 @@ export default function MissingCommissionExportPage() {
       });
     }
     return out;
-  }, [missingMembers, recordsByMemberKey, currentBatchMonth, batchMonthByBatchId]);
+  }, [missingMembers, recordsByMemberKey, currentBatchMonth, batchMonthByBatchId, writingAgentIdLookup, scope]);
 
   const filteredExportRows = useMemo(() => {
     if (premiumBucket === 'all') return allExportRows;
