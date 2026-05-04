@@ -26,7 +26,7 @@ async function fetchAll(table: string, where: string) {
   return all;
 }
 
-const recs = await fetchAll('normalized_records', `batch_id=eq.${FEB}`);
+const recs = await fetchAll('normalized_records', `batch_id=eq.${FEB}&superseded_at=is.null`);
 const reconciled = await fetchAll('reconciled_members', `batch_id=eq.${FEB}`);
 console.log('records:', recs.length, 'reconciled:', reconciled.length);
 const cm = getCoveredMonths('2026-02-01');
