@@ -70,3 +70,57 @@ export function useBatchDataVersion(
 
   return dataVersion;
 }
+
+/**
+ * useAllBatchesDataVersion
+ *
+ * Same idea as useBatchDataVersion, but watches the MAX(last_full_rebuild_at)
+ * + concatenated logic-version fingerprint across ALL upload_batches rows.
+ * Use this on screens that aggregate across batches (e.g. Member Timeline
+ * with batchScope='all') where a rebuild on ANY batch should invalidate the
+ * page's cached fetch — not just the currently selected one.
+ *
+ * Returned token is referentially stable until a real transition is detected,
+ * so it's safe to drop into a useEffect dependency array without causing
+ * re-fetch loops.
+ */
+export function useAllBatchesDataVersion(pollMs: number = 2000) {
+  const [dataVersion, setDataVersion] = useState<string | null>(null);
+  const lastSeenRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const tick = async () => {
+      const { data, error } = await supabase
+        .from('upload_batches')
+        .select('id,last_full_rebuild_at,last_rebuild_logic_version')
+        .order('id', { ascending: true });
+      if (cancelled || error || !data) return;
+      // Fingerprint the entire fleet — any per-batch stamp change shifts it.
+      const next = data
+        .map((r: any) => `${r.id}:${r.last_full_rebuild_at ?? ''}:${r.last_rebuild_logic_version ?? ''}`)
+        .join('|');
+      const prev = lastSeenRef.current;
+      if (prev === null) {
+        lastSeenRef.current = next;
+        setDataVersion(next);
+        return;
+      }
+      if (next !== prev) {
+        lastSeenRef.current = next;
+        setDataVersion(next);
+      }
+    };
+
+    tick();
+    const id = window.setInterval(tick, pollMs);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [pollMs]);
+
+  return dataVersion;
+}
+
