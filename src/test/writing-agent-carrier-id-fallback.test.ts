@@ -263,3 +263,192 @@ describe('#109 stripExcelTextMarker — unit', () => {
     expect(stripExcelTextMarker("''X")).toBe("'X"); // only ONE leading apostrophe stripped
   });
 });
+
+// ---------------------------------------------------------------------------
+// #110 — Tier-1 must be scope+NPN aware, AND Coverall_or_Vix / blank EPE must
+// resolve to the active scope (or per-NPN default in All scope).
+// Locks in the Anderson-Gregory AOR-transfer pattern fix.
+// ---------------------------------------------------------------------------
+
+describe('#110 resolveTargetPayEntity — scope + EPE normalization', () => {
+  const importExport = async () => await import('@/pages/MissingCommissionExportPage');
+
+  it('actual_pay_entity always wins when set', async () => {
+    const { resolveTargetPayEntity } = await importExport();
+    expect(resolveTargetPayEntity({
+      expectedPayEntity: 'Coverall_or_Vix', actualPayEntity: 'Vix',
+      scope: 'Coverall', agentNpn: '21055210',
+    })).toBe('Vix');
+  });
+
+  it('concrete expected_pay_entity wins over scope when actual is blank', async () => {
+    const { resolveTargetPayEntity } = await importExport();
+    expect(resolveTargetPayEntity({
+      expectedPayEntity: 'Coverall', actualPayEntity: '',
+      scope: 'Vix', agentNpn: '21055210',
+    })).toBe('Coverall');
+  });
+
+  it('Coverall_or_Vix + Coverall scope → Coverall', async () => {
+    const { resolveTargetPayEntity } = await importExport();
+    expect(resolveTargetPayEntity({
+      expectedPayEntity: 'Coverall_or_Vix', actualPayEntity: '',
+      scope: 'Coverall', agentNpn: '21277051',
+    })).toBe('Coverall');
+  });
+
+  it('blank EPE + Vix scope → Vix', async () => {
+    const { resolveTargetPayEntity } = await importExport();
+    expect(resolveTargetPayEntity({
+      expectedPayEntity: '', actualPayEntity: '',
+      scope: 'Vix', agentNpn: '21277051',
+    })).toBe('Vix');
+  });
+
+  it('All scope: Jason Fine NPN → Coverall', async () => {
+    const { resolveTargetPayEntity } = await importExport();
+    expect(resolveTargetPayEntity({
+      expectedPayEntity: '', actualPayEntity: '',
+      scope: 'All', agentNpn: '21055210',
+    })).toBe('Coverall');
+  });
+
+  it('All scope: Becky Shuta NPN → Coverall', async () => {
+    const { resolveTargetPayEntity } = await importExport();
+    expect(resolveTargetPayEntity({
+      expectedPayEntity: '', actualPayEntity: '',
+      scope: 'All', agentNpn: '16531877',
+    })).toBe('Coverall');
+  });
+
+  it('All scope: Erica Fine NPN → ambiguous (blank)', async () => {
+    const { resolveTargetPayEntity } = await importExport();
+    expect(resolveTargetPayEntity({
+      expectedPayEntity: '', actualPayEntity: '',
+      scope: 'All', agentNpn: '21277051',
+    })).toBe('');
+  });
+
+  it('All scope: unknown NPN → blank', async () => {
+    const { resolveTargetPayEntity } = await importExport();
+    expect(resolveTargetPayEntity({
+      expectedPayEntity: '', actualPayEntity: '',
+      scope: 'All', agentNpn: '99999999',
+    })).toBe('');
+  });
+});
+
+describe('#110 resolveWritingAgentCarrierId — Tier-1 scope+NPN tightening', () => {
+  it('Anderson Gregory shape: Coverall scope, member has only a Vix/Erica historical commission row → Tier-1 rejects, Tier-2 resolves Coverall+Jason ID', () => {
+    // Member current AOR = Jason Fine (Coverall, NPN 21055210).
+    // Member's only historical commission row is for Vix + Erica's NPN
+    // (this is the AOR-transfer leakage we're guarding against).
+    const memberRecords = [
+      {
+        source_type: 'COMMISSION',
+        carrier: 'Ambetter',
+        pay_entity: 'Vix',
+        agent_npn: '21277051',           // Erica
+        writing_agent_carrier_id: 'VIX9696',
+        batch_id: 'b-mar',
+        created_at: '2026-03-15T00:00:00Z',
+      },
+    ];
+    // Lookup is built from the broader population (Coverall+Jason history
+    // exists for OTHER members and feeds the (carrier, pe, npn) map).
+    const lookup = buildWritingAgentCarrierIdLookup({
+      records: [
+        ...memberRecords,
+        comm({ pay_entity: 'Coverall', agent_npn: '21055210', writing_agent_carrier_id: 'CHG9852' }),
+      ],
+      batchMonthByBatchId: monthMap,
+    });
+
+    const out = resolveWritingAgentCarrierId({
+      records: memberRecords,
+      carrier: 'Ambetter',
+      payEntity: 'Coverall',   // resolved target for Coverall-scope export
+      agentNpn: '21055210',    // resolved current AOR NPN (Jason)
+      lookup,
+    });
+    // Tier-1 must reject the Vix/Erica row (scope mismatch + NPN mismatch);
+    // Tier-2 hits the (ambetter|coverall|21055210) bucket → CHG9852.
+    expect(out).toBe('CHG9852');
+  });
+
+  it('Tier-1 accepts when commission row matches BOTH pay_entity AND agent_npn', () => {
+    const memberRecords = [
+      {
+        source_type: 'COMMISSION',
+        carrier: 'Ambetter',
+        pay_entity: 'Coverall',
+        agent_npn: '21055210',
+        writing_agent_carrier_id: 'DIRECT-WIN',
+        batch_id: 'b-feb',
+        created_at: '2026-02-01T00:00:00Z',
+      },
+    ];
+    const lookup = buildWritingAgentCarrierIdLookup({
+      records: [comm({ writing_agent_carrier_id: 'HISTORICAL-LOSE' })],
+      batchMonthByBatchId: monthMap,
+    });
+    const out = resolveWritingAgentCarrierId({
+      records: memberRecords, carrier: 'Ambetter', payEntity: 'Coverall',
+      agentNpn: '21055210', lookup,
+    });
+    expect(out).toBe('DIRECT-WIN');
+  });
+
+  it('Tier-1 rejects when only pay_entity matches but NPN differs', () => {
+    const memberRecords = [
+      {
+        source_type: 'COMMISSION', carrier: 'Ambetter',
+        pay_entity: 'Coverall', agent_npn: '99999999',  // wrong NPN
+        writing_agent_carrier_id: 'STALE-ID',
+        batch_id: 'b-feb', created_at: '2026-02-01T00:00:00Z',
+      },
+    ];
+    const lookup = buildWritingAgentCarrierIdLookup({
+      records: [comm({ writing_agent_carrier_id: 'CHG9852' })],
+      batchMonthByBatchId: monthMap,
+    });
+    const out = resolveWritingAgentCarrierId({
+      records: memberRecords, carrier: 'Ambetter', payEntity: 'Coverall',
+      agentNpn: '21055210', lookup,
+    });
+    // Tier-1 rejects (NPN mismatch); Tier-2 finds CHG9852.
+    expect(out).toBe('CHG9852');
+  });
+
+  it('Tier-1 rejects when only NPN matches but pay_entity differs (Vix→Coverall scope leak)', () => {
+    const memberRecords = [
+      {
+        source_type: 'COMMISSION', carrier: 'Ambetter',
+        pay_entity: 'Vix', agent_npn: '21055210',  // wrong PE
+        writing_agent_carrier_id: 'VIX-LEAK',
+        batch_id: 'b-feb', created_at: '2026-02-01T00:00:00Z',
+      },
+    ];
+    const lookup = buildWritingAgentCarrierIdLookup({
+      records: [comm({ writing_agent_carrier_id: 'CHG9852' })],
+      batchMonthByBatchId: monthMap,
+    });
+    const out = resolveWritingAgentCarrierId({
+      records: memberRecords, carrier: 'Ambetter', payEntity: 'Coverall',
+      agentNpn: '21055210', lookup,
+    });
+    expect(out).toBe('CHG9852');
+  });
+
+  it('Ambiguous target pay entity (blank) → blank, even if Tier-2 has data', () => {
+    const lookup = buildWritingAgentCarrierIdLookup({
+      records: [comm({ writing_agent_carrier_id: 'CHG9852' })],
+      batchMonthByBatchId: monthMap,
+    });
+    const out = resolveWritingAgentCarrierId({
+      records: [], carrier: 'Ambetter', payEntity: '',
+      agentNpn: '21055210', lookup,
+    });
+    expect(out).toBe('');
+  });
+});
