@@ -1,20 +1,24 @@
-import { createClient } from '@supabase/supabase-js';
-import { computeFilteredEde } from '/dev-server/src/lib/expectedEde.ts';
-import { getCoveredMonths } from '/dev-server/src/lib/dateRange.ts';
-import { getEligibleCohort } from '/dev-server/src/lib/canonical/metrics.ts';
+// @ts-nocheck
+import { computeFilteredEde } from '../src/lib/expectedEde.ts';
+import { getCoveredMonths } from '../src/lib/dateRange.ts';
+import { getEligibleCohort } from '../src/lib/canonical/metrics.ts';
 
-const url = process.env.VITE_SUPABASE_URL!;
-const key = process.env.VITE_SUPABASE_PUBLISHABLE_KEY!;
-const sb = createClient(url, key);
-
+const URL = process.env.VITE_SUPABASE_URL!;
+const KEY = process.env.VITE_SUPABASE_PUBLISHABLE_KEY!;
 const FEB = '1569468f-8962-41c7-bd05-10bc509fa31b';
-async function fetchAll(table: string, q: any) {
+
+async function fetchAll(table: string, where: string) {
   let all: any[] = [];
   let from = 0;
   const SIZE = 1000;
   while (true) {
-    const { data, error } = await q.range(from, from + SIZE - 1);
-    if (error) throw error;
+    const res = await fetch(`${URL}/rest/v1/${table}?select=*&${where}`, {
+      headers: {
+        apikey: KEY, Authorization: `Bearer ${KEY}`,
+        Range: `${from}-${from + SIZE - 1}`, 'Range-Unit': 'items', Prefer: 'count=exact',
+      },
+    });
+    const data = await res.json();
     all = all.concat(data || []);
     if (!data || data.length < SIZE) break;
     from += SIZE;
@@ -22,18 +26,23 @@ async function fetchAll(table: string, q: any) {
   return all;
 }
 
-const recs = await fetchAll('normalized_records', sb.from('normalized_records').select('*').eq('batch_id', FEB));
-const reconciled = await fetchAll('reconciled_members', sb.from('reconciled_members').select('*').eq('batch_id', FEB));
+const recs = await fetchAll('normalized_records', `batch_id=eq.${FEB}`);
+const reconciled = await fetchAll('reconciled_members', `batch_id=eq.${FEB}`);
 console.log('records:', recs.length, 'reconciled:', reconciled.length);
 const cm = getCoveredMonths('2026-02-01');
 console.log('covered months:', cm);
 const fe = computeFilteredEde(recs, reconciled, 'Coverall', cm, null);
-console.log('filteredEde uniqueKeys:', fe.uniqueKeys, 'inBO:', fe.inBOCount);
+console.log('filteredEde Coverall uniqueKeys:', fe.uniqueKeys, 'inBO:', fe.inBOCount);
 const eligible = getEligibleCohort(reconciled, 'Coverall', new Set(), fe);
-console.log('eligible cohort (Coverall):', eligible.length);
-const missing = eligible.filter(r => !r.in_commission);
-console.log('missing-commission (Coverall):', missing.length);
+console.log('eligible Coverall:', eligible.length);
+console.log('missing-commission Coverall:', eligible.filter(r => !r.in_commission).length);
 
 const feAll = computeFilteredEde(recs, reconciled, 'All', cm, null);
-const eligibleAll = getEligibleCohort(reconciled, 'All', new Set(), feAll);
-console.log('All-scope missing:', eligibleAll.filter(r => !r.in_commission).length);
+const elAll = getEligibleCohort(reconciled, 'All', new Set(), feAll);
+console.log('eligible All:', elAll.length);
+console.log('missing-commission All:', elAll.filter(r => !r.in_commission).length);
+
+const feVix = computeFilteredEde(recs, reconciled, 'Vix', cm, null);
+const elVix = getEligibleCohort(reconciled, 'Vix', new Set(), feVix);
+console.log('eligible Vix:', elVix.length);
+console.log('missing-commission Vix:', elVix.filter(r => !r.in_commission).length);
