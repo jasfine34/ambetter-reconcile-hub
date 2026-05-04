@@ -154,6 +154,41 @@ export function resolveMemberId(opts: {
   return '';
 }
 
+/**
+ * Row-context Policy Effective Date (NOT enrichment-walk).
+ * Pulls from EDE `effective_date` (typed) → EDE `raw_json.effectiveDate`
+ * → BO `broker_effective_date` → BO `Policy Effective Date` raw → reconciled
+ * `effective_date`. First non-blank wins. EDE is preferred because it carries
+ * the authoritative policy effective date as filed on the marketplace; BO
+ * dates can lag for retro-enrolled policies.
+ */
+export function resolvePolicyEffectiveDate(opts: {
+  records: any[];
+  reconciledEffectiveDate?: string | null;
+}): string {
+  const recs = opts.records || [];
+  for (const r of recs) {
+    if (r.source_type === 'EDE' && r.effective_date) return String(r.effective_date);
+  }
+  for (const r of recs) {
+    if (r.source_type === 'EDE') {
+      const v = r.raw_json?.effectiveDate;
+      if (v) return String(v).trim();
+    }
+  }
+  for (const r of recs) {
+    if (r.source_type === 'BACK_OFFICE' && r.broker_effective_date) return String(r.broker_effective_date);
+  }
+  for (const r of recs) {
+    if (r.source_type === 'BACK_OFFICE') {
+      const v = r.raw_json?.['Policy Effective Date'];
+      if (v) return String(v).trim();
+    }
+  }
+  if (opts.reconciledEffectiveDate) return String(opts.reconciledEffectiveDate);
+  return '';
+}
+
 /** Bucket a numeric net premium into the three-way premium filter buckets. */
 export function classifyNetPremium(net: number | null | undefined): PremiumBucket {
   const n = Number(net);
