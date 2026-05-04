@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Upload, AlertTriangle, Users, Building2, Link2, FileText, CalendarRange } from 'lucide-react';
+import { LayoutDashboard, Upload, AlertTriangle, Users, Building2, Link2, FileText, CalendarRange, FileDown } from 'lucide-react';
 
 const links = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -10,6 +10,7 @@ const links = [
   { to: '/manual-match', icon: Link2, label: 'Manual Match' },
   { to: '/member-timeline', icon: CalendarRange, label: 'Member Timeline' },
   { to: '/records', icon: FileText, label: 'All Records' },
+  { to: '/exports/missing-commission', icon: FileDown, label: 'Missing Commission' },
 ];
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
