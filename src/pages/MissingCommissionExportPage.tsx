@@ -237,20 +237,28 @@ export function buildMesserCsv(rows: ExportRow[]): string {
 // ---------------------------------------------------------------------------
 
 export default function MissingCommissionExportPage() {
-  const { batches, currentBatchId, setCurrentBatchId, reconciled } = useBatch();
+  const { batches, currentBatchId, setCurrentBatchId, reconciled, resolverIndex } = useBatch();
   const [scope, setScope] = useState<CanonicalScope>('Coverall');
   const [premiumBucket, setPremiumBucket] = useState<PremiumBucket>('all');
   const [allRecords, setAllRecords] = useState<any[]>([]);
+  const [weakOverrides, setWeakOverrides] = useState<Map<string, WeakMatchOverride>>(new Map());
   const [loading, setLoading] = useState(false);
 
-  // Cross-batch normalized records — required for profile enrichment.
+  // Cross-batch normalized records — required for profile enrichment AND
+  // for computing the canonical EE-universe (filteredEde) used by the cohort.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
       try {
-        const data = await getAllNormalizedRecords();
-        if (!cancelled) setAllRecords(data || []);
+        const [data, overrides] = await Promise.all([
+          getAllNormalizedRecords(),
+          loadWeakMatchOverrides().catch(() => new Map<string, WeakMatchOverride>()),
+        ]);
+        if (!cancelled) {
+          setAllRecords(data || []);
+          setWeakOverrides(overrides);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -266,6 +274,11 @@ export default function MissingCommissionExportPage() {
     ? String(currentBatch.statement_month).substring(0, 7)
     : '';
 
+  const coveredMonths = useMemo(
+    () => getCoveredMonths(currentBatch?.statement_month),
+    [currentBatch?.statement_month],
+  );
+
   // batch_id → 'YYYY-MM' for profile tier bucketing.
   const batchMonthByBatchId = useMemo(() => {
     const m = new Map<string, string>();
@@ -274,6 +287,12 @@ export default function MissingCommissionExportPage() {
     }
     return m;
   }, [batches]);
+
+  // Records for the CURRENT batch only — needed for filteredEde / EE universe.
+  const currentBatchRecords = useMemo(
+    () => allRecords.filter((r) => r.batch_id === currentBatchId),
+    [allRecords, currentBatchId],
+  );
 
   // Index records by member_key once (reused for every profile build).
   const recordsByMemberKey = useMemo(() => {
@@ -288,16 +307,40 @@ export default function MissingCommissionExportPage() {
     return m;
   }, [allRecords]);
 
-  // Compute the missing-commission cohort for the active batch + scope.
-  const missingMembers = useMemo(() => {
+  // Canonical EE universe + confirmed weak-match upgrades (#104 cohort fix).
+  // Mirrors DashboardPage so the export count ties to the audit's
+  // Eligible-and-Found cohort (e.g. Apr Coverall = 1,391 not 1,476).
+  const filteredEde = useMemo(
+    () => computeFilteredEde(currentBatchRecords, reconciled, scope, coveredMonths, resolverIndex),
+    [currentBatchRecords, reconciled, scope, coveredMonths, resolverIndex],
+  );
+
+  const confirmedUpgradeMemberKeys = useMemo(() => {
+    const out = new Set<string>();
+    if (!weakOverrides.size || !reconciled.length) return out;
+    const candidates = findWeakMatches(filteredEde.uniqueMembers, currentBatchRecords);
+    const { confirmedKeys } = applyOverrides(candidates, weakOverrides);
+    if (!confirmedKeys.size) return out;
     const inScope = filterReconciledByScope(reconciled, scope);
-    return inScope.filter(
-      (r) =>
-        r.in_back_office &&
-        r.eligible_for_commission === 'Yes' &&
-        !r.in_commission,
-    );
-  }, [reconciled, scope]);
+    for (const r of inScope) {
+      if (r.in_back_office) continue;
+      const key = pickStableKey({
+        issuer_subscriber_id: r.issuer_subscriber_id,
+        exchange_subscriber_id: r.exchange_subscriber_id,
+        policy_number: r.policy_number,
+      });
+      if (key && confirmedKeys.has(key)) out.add(r.member_key);
+    }
+    return out;
+  }, [filteredEde, currentBatchRecords, weakOverrides, reconciled, scope]);
+
+  // Missing-commission cohort: canonical Eligible Cohort ∩ !in_commission.
+  // Eligible Cohort = EE-universe ∩ (in_back_office ∨ confirmed weak match)
+  // ∩ eligible='Yes'. Then drop members whose commission row was found.
+  const missingMembers = useMemo(() => {
+    const eligible = getEligibleCohort(reconciled, scope, confirmedUpgradeMemberKeys, filteredEde);
+    return eligible.filter((r) => !r.in_commission);
+  }, [reconciled, scope, confirmedUpgradeMemberKeys, filteredEde]);
 
   // Build export rows (with enriched profiles).
   const allExportRows = useMemo<ExportRow[]>(() => {
