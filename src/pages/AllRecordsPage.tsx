@@ -4,6 +4,7 @@ import { useBatch } from '@/contexts/BatchContext';
 import { BatchSelector } from '@/components/BatchSelector';
 import { ResolvedBadge } from '@/components/ResolvedBadge';
 import { lookupResolved } from '@/lib/resolvedIdentities';
+import { useBatchDataVersion } from '@/hooks/useBatchDataVersion';
 import { getReconciledMembersPage } from '@/lib/persistence';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { Input } from '@/components/ui/input';
