@@ -490,6 +490,7 @@ describe('#110 final — Deanna Armstrong scope-authority pattern', () => {
     records: [
       deannaCommissionRow,
       comm({ pay_entity: 'Coverall', agent_npn: '21277051', writing_agent_carrier_id: 'CHG9852' }),
+      comm({ pay_entity: 'Coverall', agent_npn: '21055210', writing_agent_carrier_id: 'CHG9852' }),
     ],
     batchMonthByBatchId: monthMap,
   });
