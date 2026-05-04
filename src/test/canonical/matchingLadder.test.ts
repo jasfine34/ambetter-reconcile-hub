@@ -78,24 +78,26 @@ describe('Ambetter EDE↔BO matching ladder', () => {
   });
 
   it('matches all three ladder paths: primary (esid), fallback (issuer-sub→policy), and unmatched', () => {
-    // (1) Primary path: EDE has exchange_subscriber_id that matches BO.Exchange Subscriber ID.
-    //     Use distinct issuer ids to prove the join is via esid, not issuer.
+    // (1) Primary path: EDE has only exchange_subscriber_id (no issuer sub id —
+    //     a common shape for EDE Summary rows where issuerSubscriberId is
+    //     omitted). BO has the matching exchange_subscriber_id. The join MUST
+    //     come from the exchange_subscriber_id rung, not from issuer.
     const edePrimary = ede({
       first: 'Primary',
       last: 'Match',
       exchangeSubId: '0001111111',
-      issuerSubId: 'U10000001',
+      // no issuerSubId — forces ladder to fall through Strategy A and join via Strategy B (esid)
     });
     const boPrimary = bo({
       first: 'Primary',
       last: 'Match',
-      policyNumber: 'U99999998', // intentionally NOT the EDE issuer id
+      policyNumber: 'U10000001', // populates BO.policy_number AND BO.issuer_subscriber_id
       exchangeSubId: '0001111111',
     });
 
     // (2) Fallback path: EDE has issuer_subscriber_id that matches BO Policy Number
     //     (Ambetter quirk — BO's Policy column IS the issuer sub id). EDE has
-    //     NO exchange_subscriber_id, so the primary path cannot fire.
+    //     NO exchange_subscriber_id, so the primary (esid) rung cannot fire.
     const edeFallback = ede({
       first: 'Fallback',
       last: 'Match',
@@ -106,7 +108,7 @@ describe('Ambetter EDE↔BO matching ladder', () => {
       first: 'Fallback',
       last: 'Match',
       policyNumber: 'U20000002', // BO Policy column carries the issuer sub id
-      // no exchangeSubId, so primary can't fire
+      // no exchangeSubId, so the esid rung can't fire
     });
 
     // (3) Unmatched: EDE-only member with no BO row anywhere.
