@@ -189,6 +189,98 @@ export function resolvePolicyEffectiveDate(opts: {
   return '';
 }
 
+// ---------------------------------------------------------------------------
+// #109 — Writing Agent Carrier ID derived lookup.
+//
+// The carrier-specific writing-agent ID lives only on COMMISSION rows. For the
+// missing-commission cohort, by definition there is no current commission row
+// for that member, so direct lookup yields blank for ~85% of rows. We observed
+// (and the diagnostic confirmed) that `writing_agent_carrier_id` is uniform
+// per (carrier, pay_entity, agent_npn) across all loaded commission rows
+// (e.g. every Coverall row → CHG9852, Vix → VIX9696). Building a derived map
+// from observed COMMISSION rows lets us fall back to that ID when the member
+// has no current commission row but the AOR has historical commission activity.
+//
+// Pure (no React hooks) — caller memoizes against batch data-version stamps.
+// ---------------------------------------------------------------------------
+
+export interface WritingAgentIdEntry {
+  /** Most-recent winning ID (by batch month, then created_at). */
+  id: string;
+  /** Distinct losing values, if any, for conflict warnings. */
+  conflicts: string[];
+}
+
+/** Stable key for (carrier, pay_entity, agent_npn). */
+function carrierIdLookupKey(carrier: string, payEntity: string, npn: string): string {
+  return `${(carrier || '').trim().toLowerCase()}|${(payEntity || '').trim().toLowerCase()}|${(npn || '').trim()}`;
+}
+
+/**
+ * Build a lookup `(carrier, pay_entity, agent_npn) → writing_agent_carrier_id`
+ * from observed COMMISSION rows. Most-recent batch month wins on conflict; all
+ * losing values are surfaced in `conflicts` so callers can warn for review.
+ *
+ * Pure — pass already-loaded normalized records and a batch_id → 'YYYY-MM' map.
+ */
+export function buildWritingAgentCarrierIdLookup(opts: {
+  records: any[];
+  batchMonthByBatchId: Map<string, string>;
+}): Map<string, WritingAgentIdEntry> {
+  const groups = new Map<string, Array<{ id: string; month: string; createdAt: string }>>();
+  for (const r of opts.records) {
+    if (r.source_type !== 'COMMISSION') continue;
+    const id = String(r.writing_agent_carrier_id ?? '').trim();
+    if (!id) continue;
+    const npn = String(r.agent_npn ?? '').trim();
+    if (!npn) continue;
+    const key = carrierIdLookupKey(r.carrier ?? '', r.pay_entity ?? '', npn);
+    const month = opts.batchMonthByBatchId.get(r.batch_id) || '';
+    const arr = groups.get(key);
+    const entry = { id, month, createdAt: String(r.created_at ?? '') };
+    if (arr) arr.push(entry); else groups.set(key, [entry]);
+  }
+  const out = new Map<string, WritingAgentIdEntry>();
+  for (const [key, rows] of groups) {
+    // Sort: most-recent month first, then most-recent created_at first.
+    rows.sort((a, b) => {
+      if (a.month !== b.month) return a.month < b.month ? 1 : -1;
+      return a.createdAt < b.createdAt ? 1 : -1;
+    });
+    const winner = rows[0].id;
+    const losers = Array.from(new Set(rows.slice(1).map((r) => r.id).filter((v) => v !== winner)));
+    out.set(key, { id: winner, conflicts: losers });
+  }
+  return out;
+}
+
+/**
+ * Resolution ladder for the export's Writing Agent Carrier ID column:
+ *   1. Direct: member has a commission row with `writing_agent_carrier_id` → use it.
+ *   2. Historical: derived `(carrier, pay_entity, agent_npn)` lookup hit.
+ *   3. Blank.
+ */
+export function resolveWritingAgentCarrierId(opts: {
+  records: any[];
+  carrier: string;
+  payEntity: string;
+  agentNpn: string;
+  lookup: Map<string, WritingAgentIdEntry>;
+}): string {
+  // Direct
+  for (const r of opts.records) {
+    if (r.source_type === 'COMMISSION' && r.writing_agent_carrier_id) {
+      const v = String(r.writing_agent_carrier_id).trim();
+      if (v) return v;
+    }
+  }
+  // Historical
+  const npn = String(opts.agentNpn || '').trim();
+  if (!npn) return '';
+  const hit = opts.lookup.get(carrierIdLookupKey(opts.carrier, opts.payEntity, npn));
+  return hit ? hit.id : '';
+}
+
 /** Bucket a numeric net premium into the three-way premium filter buckets. */
 export function classifyNetPremium(net: number | null | undefined): PremiumBucket {
   const n = Number(net);
