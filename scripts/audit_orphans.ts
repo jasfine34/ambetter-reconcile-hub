@@ -29,9 +29,12 @@ async function fetchAll(): Promise<any[]> {
   let from = 0;
   const pageSize = 1000;
   while (true) {
+    // Canonical active predicate — must match every other active read so the
+    // partial index (idx_normalized_active) is used.
     const { data, error } = await supabase
       .from('normalized_records')
       .select('*')
+      .eq('staging_status', 'active')
       .is('superseded_at', null)
       .order('id', { ascending: true })
       .range(from, from + pageSize - 1);

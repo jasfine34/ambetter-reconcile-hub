@@ -267,8 +267,10 @@ export type Database = {
           policy_term_date: string | null
           premium: number | null
           raw_json: Json | null
+          rebuild_session_id: string | null
           source_file_label: string
           source_type: string
+          staging_status: string
           status: string | null
           superseded_at: string | null
           uploaded_file_id: string
@@ -319,8 +321,10 @@ export type Database = {
           policy_term_date?: string | null
           premium?: number | null
           raw_json?: Json | null
+          rebuild_session_id?: string | null
           source_file_label: string
           source_type: string
+          staging_status?: string
           status?: string | null
           superseded_at?: string | null
           uploaded_file_id: string
@@ -371,8 +375,10 @@ export type Database = {
           policy_term_date?: string | null
           premium?: number | null
           raw_json?: Json | null
+          rebuild_session_id?: string | null
           source_file_label?: string
           source_type?: string
+          staging_status?: string
           status?: string | null
           superseded_at?: string | null
           uploaded_file_id?: string
@@ -589,28 +595,34 @@ export type Database = {
         Row: {
           carrier: string
           created_at: string
+          current_rebuild_session_id: string | null
           id: string
           last_full_rebuild_at: string | null
           last_rebuild_logic_version: string | null
           notes: string | null
+          rebuild_started_at: string | null
           statement_month: string | null
         }
         Insert: {
           carrier?: string
           created_at?: string
+          current_rebuild_session_id?: string | null
           id?: string
           last_full_rebuild_at?: string | null
           last_rebuild_logic_version?: string | null
           notes?: string | null
+          rebuild_started_at?: string | null
           statement_month?: string | null
         }
         Update: {
           carrier?: string
           created_at?: string
+          current_rebuild_session_id?: string | null
           id?: string
           last_full_rebuild_at?: string | null
           last_rebuild_logic_version?: string | null
           notes?: string | null
+          rebuild_started_at?: string | null
           statement_month?: string | null
         }
         Relationships: []
@@ -626,6 +638,7 @@ export type Database = {
           pay_entity: string | null
           snapshot_date: string | null
           source_type: string
+          staging_status: string
           storage_path: string | null
           superseded_at: string | null
         }
@@ -639,6 +652,7 @@ export type Database = {
           pay_entity?: string | null
           snapshot_date?: string | null
           source_type: string
+          staging_status?: string
           storage_path?: string | null
           superseded_at?: string | null
         }
@@ -652,6 +666,7 @@ export type Database = {
           pay_entity?: string | null
           snapshot_date?: string | null
           source_type?: string
+          staging_status?: string
           storage_path?: string | null
           superseded_at?: string | null
         }
@@ -709,9 +724,42 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      acquire_rebuild_lock: {
+        Args: { _batch_id: string; _session_id: string }
+        Returns: string
+      }
+      preflush_stale_staged_rows: {
+        Args: { _batch_id: string; _file_ids: string[] }
+        Returns: number
+      }
+      release_rebuild_lock: {
+        Args: { _batch_id: string; _session_id: string }
+        Returns: undefined
+      }
+      replace_normalized_for_file_set: {
+        Args: { _batch_id: string; _expected_counts: Json; _session_id: string }
+        Returns: number
+      }
       replace_reconciled_members_for_batch: {
         Args: { _batch_id: string; _estimates?: Json; _members: Json }
         Returns: number
+      }
+      upload_replace_file: {
+        Args: {
+          _aor_bucket: string
+          _batch_id: string
+          _bo_snapshot_id: string
+          _ede_snapshot_id: string
+          _expected_count: number
+          _file_label: string
+          _file_name: string
+          _pay_entity: string
+          _rows: Json
+          _snapshot_date: string
+          _source_type: string
+          _storage_path: string
+        }
+        Returns: string
       }
     }
     Enums: {
