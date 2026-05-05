@@ -96,6 +96,22 @@ may not be imported outside `src/test/`.
   function-scoped 120s bump here too, or leave reconcile to the Rebuild
   flow.
 
+- **Disambiguate the upload failure toast.** Today, `processUpload` in
+  `src/pages/UploadPage.tsx` shows the same destructive red "Upload
+  failed: <label>" toast for every failure step, including the
+  post-upload auto-reconcile step. When `upload_replace_file` succeeds
+  but the subsequent `replace_reconciled_members_for_batch` fails (e.g.
+  reconcile statement_timeout), the operator sees a destructive toast
+  even though the file is safely saved and superseded the prior active
+  row. Replace with two distinct surfaces:
+  - Destructive: *"Upload failed — data was not saved. {step}: {msg}"*
+    (any failure where the atomic upload RPC did not promote).
+  - Warning (not destructive): *"Upload saved, but auto-reconcile
+    failed — click Rebuild to refresh. {msg}"* (only the
+    `Reconcile after upload` branch).
+  Pair with the wrong-batch confirmation-modal follow-up — both are
+  operator-trust issues surfaced during the May 2026 Feb recovery.
+
 **Rebuild pipeline ordering** (enforced by `rebuildBatch` in `src/lib/rebuild.ts`):
 
 ```
