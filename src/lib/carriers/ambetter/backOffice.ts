@@ -32,6 +32,7 @@
 import type { NormalizedRecord } from '../../normalize';
 import {
   cleanId,
+  cleanSubscriberId,
   stripApostrophe,
   normalizeDate,
   normalizeEligible,
