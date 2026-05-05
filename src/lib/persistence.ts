@@ -610,6 +610,15 @@ export async function saveReconciledMembers(batchId: string, members: Reconciled
       estimated_commission: m.estimated_missing_commission!,
     }));
 
+  // [#116-diag] Phase-4 instrumentation — read-only logging.
+  console.info('[rebuild-diag] saveReconciledMembers → RPC replace_reconciled_members_for_batch', {
+    batchId,
+    memberRows: rows.length,
+    estimateRows: estimates.length,
+    ts: new Date().toISOString(),
+  });
+  const rpcStart = performance.now();
+
   // Atomic replace: the backend function runs DELETE + INSERT in one database
   // transaction, so a timeout/error rolls back to the prior reconciled state
   // instead of leaving the batch with 0 rows.
@@ -618,7 +627,24 @@ export async function saveReconciledMembers(batchId: string, members: Reconciled
     _members: rows,
     _estimates: estimates,
   });
-  if (error) throw error;
+  const rpcMs = Math.round(performance.now() - rpcStart);
+  if (error) {
+    console.error('[rebuild-diag] saveReconciledMembers RPC ERROR', {
+      batchId,
+      memberRows: rows.length,
+      rpcMs,
+      code: (error as any)?.code,
+      message: (error as any)?.message,
+      details: (error as any)?.details,
+      hint: (error as any)?.hint,
+    });
+    throw error;
+  }
+  console.info('[rebuild-diag] saveReconciledMembers RPC OK', {
+    batchId,
+    memberRows: rows.length,
+    rpcMs,
+  });
 }
 
 /**
