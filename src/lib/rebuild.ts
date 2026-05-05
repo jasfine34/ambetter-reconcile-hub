@@ -4,17 +4,36 @@ import { normalizeEDERow, normalizeBackOfficeRow, normalizeCommissionRow } from 
 import { reconcile } from './reconcile';
 import {
   getUploadedFiles,
-  insertNormalizedRecords,
+  insertStagedNormalizedRecords,
   saveReconciledMembers,
   saveAndVerifyReconciled,
   getNormalizedRecords,
   getOrCreateSnapshotForFile,
-  deleteCurrentNormalizedForBatch,
   countReconciledForBatch,
   countCurrentNormalizedForBatch,
+  acquireRebuildLock,
+  releaseRebuildLock,
+  preflushStaleStagedRows,
+  replaceNormalizedForFileSet,
 } from './persistence';
 import { fallbackReconcileMonth } from './dateRange';
 import { loadResolverIndex } from './resolvedIdentities';
+
+/**
+ * Distinct error class for "promote succeeded, reconcile failed" failures.
+ * Surfaced verbatim by the UI banner so the user knows that the
+ * normalized-records side is fresh and only Phase 4 needs a retry.
+ */
+export class ReconcileAfterPromoteError extends Error {
+  readonly kind = 'reconcile-after-promote';
+  constructor(public readonly underlying: Error) {
+    super(
+      'rebuild promoted new normalized data but reconcile failed — click Rebuild to complete. ' +
+      `Underlying error: ${underlying.message}`,
+    );
+    this.name = 'ReconcileAfterPromoteError';
+  }
+}
 
 /**
  * Bumped whenever normalization or reconciliation logic changes in a way that
