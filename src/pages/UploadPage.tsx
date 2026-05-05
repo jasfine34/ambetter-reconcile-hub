@@ -6,7 +6,7 @@ import { FILE_LABELS } from '@/lib/constants';
 import { parseCSV } from '@/lib/csvParser';
 import { normalizeEDERow, normalizeBackOfficeRow, normalizeCommissionRow } from '@/lib/normalize';
 import { reconcile } from '@/lib/reconcile';
-import { uploadFileToStorage, uploadFileRecord, insertNormalizedRecords, saveAndVerifyReconciled, getNormalizedRecords } from '@/lib/persistence';
+import { uploadFileToStorage, uploadReplaceFile, saveAndVerifyReconciled, getNormalizedRecords } from '@/lib/persistence';
 import { RECONCILE_LOGIC_VERSION } from '@/lib/rebuild';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
