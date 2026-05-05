@@ -92,6 +92,22 @@ export default tseslint.config(
           message:
             "__test_only_deleteCurrentNormalizedForBatch is restricted to src/test/. Production rebuilds use the staged-then-promote pipeline.",
         },
+        {
+          // (5) Direct INSERT into bo_snapshots — upload-lifecycle artifact.
+          //     Must route through upload_replace_file RPC (atomic) or the
+          //     sanctioned helper in persistence.ts (lazy backfill only).
+          selector:
+            "CallExpression[callee.property.name='insert'][callee.object.callee.property.name='from'][callee.object.arguments.0.value='bo_snapshots']",
+          message:
+            "Direct INSERT into bo_snapshots is forbidden. Snapshots are upload-lifecycle artifacts — use the upload_replace_file RPC (uploads) or getOrCreateSnapshotForFile in persistence.ts (rebuild backfill, scheduled for removal).",
+        },
+        {
+          // (6) Direct INSERT into ede_snapshots — same contract as bo_snapshots.
+          selector:
+            "CallExpression[callee.property.name='insert'][callee.object.callee.property.name='from'][callee.object.arguments.0.value='ede_snapshots']",
+          message:
+            "Direct INSERT into ede_snapshots is forbidden. Snapshots are upload-lifecycle artifacts — use the upload_replace_file RPC (uploads) or getOrCreateSnapshotForFile in persistence.ts (rebuild backfill, scheduled for removal).",
+        },
       ],
     },
   },
