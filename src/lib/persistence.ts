@@ -11,6 +11,57 @@ export interface SnapshotRef {
   kind: 'bo' | 'ede';
 }
 
+/* ------------------------------------------------------------------------- *
+ * CANONICAL ACTIVE PREDICATE
+ *
+ * Every read of "what is currently live for this batch" MUST go through this
+ * helper. The full predicate is:
+ *
+ *   staging_status = 'active' AND superseded_at IS NULL
+ *
+ * Why both:
+ *   - staging_status discriminates 'staged' rows mid-rebuild from 'active'
+ *     rows that have been promoted. A bare `superseded_at IS NULL` filter
+ *     would count staged rows of an in-flight rebuild as "current".
+ *   - superseded_at IS NULL keeps the pre-staging history semantics intact
+ *     and matches the partial index `idx_normalized_active_predicate`.
+ *
+ * Forbidden patterns elsewhere in production code (enforced by lint rule
+ * `no-raw-superseded-filter`):
+ *   - .is('superseded_at', null)            ← bare predicate, no status check
+ *   - .eq('staging_status', 'active')       ← missing supersede check
+ *   - direct INSERT into normalized_records ← must go through staged inserter
+ * ------------------------------------------------------------------------- */
+export function activeNormalizedRowsQuery(batchId?: string) {
+  let q: any = (supabase as any)
+    .from('normalized_records')
+    .select('*')
+    .eq('staging_status', 'active')
+    .is('superseded_at', null);
+  if (batchId) q = q.eq('batch_id', batchId);
+  return q;
+}
+
+export function activeNormalizedCountQuery(batchId?: string) {
+  let q: any = (supabase as any)
+    .from('normalized_records')
+    .select('id', { count: 'exact', head: true })
+    .eq('staging_status', 'active')
+    .is('superseded_at', null);
+  if (batchId) q = q.eq('batch_id', batchId);
+  return q;
+}
+
+export function activeUploadedFilesQuery(batchId?: string) {
+  let q: any = (supabase as any)
+    .from('uploaded_files')
+    .select('*')
+    .eq('staging_status', 'active')
+    .is('superseded_at', null);
+  if (batchId) q = q.eq('batch_id', batchId);
+  return q;
+}
+
 /**
  * Unwrap a PostgrestError (or any thrown value) to a human-readable string.
  * PostgrestError is NOT `instanceof Error`, so `String(err)` collapses to
@@ -91,85 +142,73 @@ export async function getBatches() {
 }
 
 export async function getUploadedFiles(batchId: string) {
-  const { data, error } = await supabase
-    .from('uploaded_files')
-    .select('*')
-    .eq('batch_id', batchId)
-    .is('superseded_at', null);
+  // Canonical active predicate (status='active' AND superseded_at IS NULL).
+  const { data, error } = await activeUploadedFilesQuery(batchId);
   if (error) throw error;
   return data;
 }
 
 /**
- * Record a file upload.
+ * Atomic file upload via the `upload_replace_file` RPC.
  *
- * Prior behaviour: DELETE prior normalized_records and the prior uploaded_files
- * row matching (batch_id, file_label). That destroyed historical snapshots.
+ * The RPC runs the entire upload pipeline as a single Postgres transaction:
+ *   1. Inserts the new uploaded_files row (staged).
+ *   2. Inserts the snapshot row (bo_snapshots / ede_snapshots) wired to the
+ *      new uploaded_file_id.
+ *   3. Inserts normalized_records (staged) with the snapshot id linked.
+ *   4. Verifies the staged row count matches what we sent.
+ *   5. Supersedes any prior active rows for the same (batch, file_label).
+ *   6. Promotes the new staged rows to active.
  *
- * New behaviour: mark both rowsets as superseded (append-only history) and
- * create a bo_snapshots or ede_snapshots row for the new upload. Commission
- * uploads don't get a snapshot table; the supersede behaviour still applies so
- * re-uploaded commission files don't double-count.
+ * Any failure (verify, snapshot insert, supersede, promote) rolls the entire
+ * upload back — no orphan rows, no partial supersede, no rollback writer
+ * needed in JS. The caller only owns the storage upload (which is harmless
+ * to leave behind on RPC failure — re-upload overwrites the same path).
  *
- * Returns the new uploaded_files row, plus (for EDE/BACK_OFFICE) the snapshot
- * created for it. The caller passes the snapshot to insertNormalizedRecords so
- * every row is linked back to the snapshot it came from.
+ * Returns the new uploaded_files.id.
  */
-export async function uploadFileRecord(
-  batchId: string, fileLabel: string, fileName: string,
-  sourceType: string, payEntity: string | null, aorBucket: string | null, storagePath: string
-): Promise<{ file: any; snapshot: SnapshotRef | null }> {
-  const now = new Date().toISOString();
+export async function uploadReplaceFile(args: {
+  batchId: string;
+  fileLabel: string;
+  fileName: string;
+  sourceType: string;
+  payEntity: string | null;
+  aorBucket: string | null;
+  storagePath: string;
+  rows: any[];
+  snapshotDate?: string | null;
+}): Promise<string> {
+  const snapshotKind: 'bo' | 'ede' | 'none' =
+    args.sourceType === 'BACK_OFFICE' ? 'bo' :
+    args.sourceType === 'EDE' ? 'ede' : 'none';
 
-  // Mark prior rows as superseded instead of deleting them. Each supersede
-  // MUST capture {error} and throw before we proceed to the INSERT below —
-  // otherwise a silent supersede failure (RLS, timeout, network blip) would
-  // leave the prior current rows live AND the new ones would land on top,
-  // producing duplicate-current data with a success toast (Codex Finding 1).
-  const { error: normSupersedeError } = await supabase
-    .from('normalized_records')
-    .update({ superseded_at: now })
-    .eq('batch_id', batchId)
-    .eq('source_file_label', fileLabel)
-    .is('superseded_at', null);
-  if (normSupersedeError) {
+  const snapshotSourceKind =
+    snapshotKind === 'ede' ? deriveEdeSourceKind(args.fileLabel) : null;
+  const snapshotAgentBucket =
+    snapshotKind === 'bo' ? (args.aorBucket || null) : null;
+
+  const { data, error } = await (supabase as any).rpc('upload_replace_file', {
+    _batch_id: args.batchId,
+    _file_label: args.fileLabel,
+    _file_name: args.fileName,
+    _source_type: args.sourceType,
+    _pay_entity: args.payEntity ?? '',
+    _aor_bucket: args.aorBucket ?? '',
+    _storage_path: args.storagePath,
+    _snapshot_date: args.snapshotDate ?? null,
+    _snapshot_kind: snapshotKind,
+    _snapshot_source_kind: snapshotSourceKind,
+    _snapshot_agent_bucket: snapshotAgentBucket,
+    _rows: args.rows,
+    _expected_count: args.rows.length,
+  });
+  if (error) {
     throw new Error(
-      `Failed to supersede prior normalized_records for ${fileLabel}: ${unwrapPgError(normSupersedeError)}`,
+      `upload_replace_file failed for ${args.fileLabel}: ${unwrapPgError(error)}`,
     );
   }
-
-  const { error: fileSupersedeError } = await supabase
-    .from('uploaded_files')
-    .update({ superseded_at: now })
-    .eq('batch_id', batchId)
-    .eq('file_label', fileLabel)
-    .is('superseded_at', null);
-  if (fileSupersedeError) {
-    throw new Error(
-      `Failed to supersede prior uploaded_files row for ${fileLabel}: ${unwrapPgError(fileSupersedeError)}`,
-    );
-  }
-
-  // Insert the new uploaded_files row.
-  const { data: file, error: fileError } = await supabase
-    .from('uploaded_files')
-    .insert({
-      batch_id: batchId,
-      file_label: fileLabel,
-      file_name: fileName,
-      source_type: sourceType,
-      pay_entity: payEntity,
-      aor_bucket: aorBucket,
-      storage_path: storagePath,
-    })
-    .select()
-    .single();
-  if (fileError) throw fileError;
-
-  // Create a snapshot row for EDE and BACK_OFFICE uploads.
-  const snapshot = await createSnapshotForUpload(file.id, sourceType, aorBucket, fileLabel);
-
-  return { file, snapshot };
+  // RPC returns the new uploaded_files.id (uuid).
+  return data as string;
 }
 
 /**
@@ -256,18 +295,42 @@ export async function getOrCreateSnapshotForFile(file: {
   return null;
 }
 
-export async function insertNormalizedRecords(
+/**
+ * Insert normalized_records as STAGED rows tied to a rebuild session.
+ *
+ * Replaces the legacy `insertNormalizedRecords` (which inserted directly as
+ * 'active'). This is the ONLY production path that writes normalized_records
+ * during a rebuild. Promotion to active happens atomically inside
+ * `replace_normalized_for_file_set` after every per-file stage succeeds.
+ *
+ * Contract:
+ *   - rebuildSessionId is REQUIRED. Staged rows without a session id can't be
+ *     pre-flushed and would orphan if the rebuild dies.
+ *   - All rows land with staging_status='active'-FALSE → 'staged' and
+ *     rebuild_session_id = session.
+ *   - Failure leaves the staged rows behind for the next rebuild's pre-flush
+ *     to clean up (idempotent recovery).
+ */
+export async function insertStagedNormalizedRecords(
   batchId: string,
   uploadedFileId: string,
   records: NormalizedRecord[],
+  rebuildSessionId: string,
   snapshot?: SnapshotRef | null,
 ) {
+  if (!rebuildSessionId) {
+    throw new Error(
+      'insertStagedNormalizedRecords: rebuildSessionId is required (orphan staged rows would be unrecoverable)',
+    );
+  }
   if (records.length === 0) return;
   const rows = records.map(r => ({
     batch_id: batchId,
     uploaded_file_id: uploadedFileId,
     bo_snapshot_id: snapshot?.kind === 'bo' ? snapshot.id : null,
     ede_snapshot_id: snapshot?.kind === 'ede' ? snapshot.id : null,
+    staging_status: 'staged',
+    rebuild_session_id: rebuildSessionId,
     source_type: r.source_type,
     source_file_label: r.source_file_label,
     carrier: r.carrier,
@@ -293,8 +356,6 @@ export async function insertNormalizedRecords(
     eligible_for_commission: r.eligible_for_commission,
     policy_term_date: r.policy_term_date ?? null,
     paid_through_date: r.paid_through_date ?? null,
-    // Phase 1b typed columns — null/empty when the source file doesn't carry
-    // the signal. The adapters decide which ones they populate.
     broker_effective_date: r.broker_effective_date ?? null,
     broker_term_date: r.broker_term_date ?? null,
     member_responsibility: r.member_responsibility ?? null,
@@ -315,6 +376,10 @@ export async function insertNormalizedRecords(
     raw_json: r.raw_json as unknown as Record<string, never>,
   }));
 
+  // Sanctioned writer: this is the ONE place outside the upload_replace_file
+  // RPC that may INSERT into normalized_records. The lint rule
+  // `no-direct-normalized-insert` allows this file/function and forbids the
+  // pattern everywhere else.
   for (let i = 0; i < rows.length; i += 500) {
     const chunk = rows.slice(i, i + 500);
     const { error } = await (supabase as any).from('normalized_records').insert(chunk);
@@ -331,14 +396,10 @@ export async function getNormalizedRecords(batchId: string) {
   let from = 0;
   const pageSize = 1000;
   while (true) {
+    // Canonical active predicate (status='active' AND superseded_at IS NULL).
     // ORDER BY id is REQUIRED for stable pagination — without it Supabase/PG
-    // may return overlapping or missing rows across .range() calls, which
-    // silently inflates or deflates totals downstream.
-    const { data, error } = await supabase
-      .from('normalized_records')
-      .select('*')
-      .eq('batch_id', batchId)
-      .is('superseded_at', null)
+    // may return overlapping or missing rows across .range() calls.
+    const { data, error } = await activeNormalizedRowsQuery(batchId)
       .order('id', { ascending: true })
       .range(from, from + pageSize - 1);
     if (error) throw error;
@@ -352,21 +413,15 @@ export async function getNormalizedRecords(batchId: string) {
 
 /**
  * Returns CURRENT (non-superseded) normalized records across every batch.
- * Powers the Member Timeline's cross-batch scope, where the user wants to see
- * a member's full history (e.g. Jan batch's Jan service + Feb batch's
- * retroactive Jan catch-up together) rather than inspecting batches one at
- * a time. Paged to keep the Supabase query size manageable.
+ * Powers the Member Timeline's cross-batch scope. Uses the canonical active
+ * predicate so an in-flight rebuild's staged rows never leak into the view.
  */
 export async function getAllNormalizedRecords() {
   const allData: any[] = [];
   let from = 0;
   const pageSize = 1000;
   while (true) {
-    // ORDER BY id is REQUIRED for stable pagination — see getNormalizedRecords.
-    const { data, error } = await supabase
-      .from('normalized_records')
-      .select('*')
-      .is('superseded_at', null)
+    const { data, error } = await activeNormalizedRowsQuery()
       .order('id', { ascending: true })
       .range(from, from + pageSize - 1);
     if (error) throw error;
@@ -471,11 +526,8 @@ export async function countReconciledForBatch(batchId: string): Promise<number> 
  * "0 reconciled despite N normalized" failure mode.
  */
 export async function countCurrentNormalizedForBatch(batchId: string): Promise<number> {
-  const { count, error } = await supabase
-    .from('normalized_records')
-    .select('id', { count: 'exact', head: true })
-    .eq('batch_id', batchId)
-    .is('superseded_at', null);
+  // Canonical active predicate.
+  const { count, error } = await activeNormalizedCountQuery(batchId);
   if (error) throw error;
   return count ?? 0;
 }
@@ -499,9 +551,20 @@ export async function countCommissionEstimatesForBatch(batchId: string): Promise
   return count ?? 0;
 }
 
-export async function deleteCurrentNormalizedForBatch(batchId: string) {
+/**
+ * TEST-ONLY destructive deleter. Production rebuilds use the staged-then-
+ * promote pipeline (see `replaceNormalizedForFileSet`) which never deletes
+ * rows; instead it supersedes and promotes inside one TX. This helper is
+ * preserved exclusively for fixture cleanup in unit tests.
+ *
+ * Lint rule `no-test-only-deleter-in-prod` forbids importing this from any
+ * file outside `src/test/` and `src/lib/persistence.ts` itself.
+ *
+ * @internal
+ */
+export async function __test_only_deleteCurrentNormalizedForBatch(batchId: string) {
   const ids = await fetchAllIds('normalized_records', (q) =>
-    q.eq('batch_id', batchId).is('superseded_at', null),
+    q.eq('batch_id', batchId).eq('staging_status', 'active').is('superseded_at', null),
   );
   await chunkedDeleteByIds('normalized_records', ids);
 }
@@ -695,8 +758,8 @@ export async function getReconciledMembersPage(
 
 export async function getBatchCounts(batchId: string) {
   const [files, normalized, reconciled] = await Promise.all([
-    supabase.from('uploaded_files').select('id', { count: 'exact', head: true }).eq('batch_id', batchId).is('superseded_at', null),
-    supabase.from('normalized_records').select('id', { count: 'exact', head: true }).eq('batch_id', batchId).is('superseded_at', null),
+    activeUploadedFilesQuery(batchId).select('id', { count: 'exact', head: true }),
+    activeNormalizedCountQuery(batchId),
     supabase.from('reconciled_members').select('id', { count: 'exact', head: true }).eq('batch_id', batchId),
   ]);
   return {
@@ -720,4 +783,100 @@ export async function uploadFileToStorage(batchId: string, fileLabel: string, fi
   const { error } = await supabase.storage.from('commission-files').upload(path, file);
   if (error) throw error;
   return path;
+}
+
+/* ------------------------------------------------------------------------- *
+ * REBUILD PIPELINE RPC WRAPPERS
+ *
+ * Thin typed wrappers around the four single-flight rebuild RPCs:
+ *   - acquireRebuildLock      → claims the per-batch rebuild slot (TTL 30m)
+ *   - preflushStaleStagedRows → idempotent recovery of orphan staged rows
+ *   - replaceNormalizedForFileSet → in-TX lock-check + per-file count check +
+ *                                   required-source-type aggregate guard +
+ *                                   supersede + promote
+ *   - releaseRebuildLock      → drops the lock; ALWAYS in a finally block
+ * ------------------------------------------------------------------------- */
+
+export async function acquireRebuildLock(
+  batchId: string,
+  sessionId: string,
+): Promise<string> {
+  const { data, error } = await (supabase as any).rpc('acquire_rebuild_lock', {
+    _batch_id: batchId,
+    _session_id: sessionId,
+  });
+  if (error) {
+    throw new Error(
+      `acquireRebuildLock failed for batch ${batchId}: ${unwrapPgError(error)}`,
+    );
+  }
+  return data as string;
+}
+
+export async function releaseRebuildLock(
+  batchId: string,
+  sessionId: string,
+): Promise<void> {
+  const { error } = await (supabase as any).rpc('release_rebuild_lock', {
+    _batch_id: batchId,
+    _session_id: sessionId,
+  });
+  if (error) {
+    // Don't throw from release — we want it to be safe in a finally block
+    // even after an upstream failure. Log so a stuck lock is investigable.
+    console.error(
+      `[rebuild] releaseRebuildLock failed for batch ${batchId} session ${sessionId}: ${unwrapPgError(error)}`,
+    );
+  }
+}
+
+export async function preflushStaleStagedRows(
+  batchId: string,
+  fileIds: string[],
+): Promise<number> {
+  if (fileIds.length === 0) return 0;
+  const { data, error } = await (supabase as any).rpc('preflush_stale_staged_rows', {
+    _batch_id: batchId,
+    _file_ids: fileIds,
+  });
+  if (error) {
+    throw new Error(
+      `preflushStaleStagedRows failed for batch ${batchId}: ${unwrapPgError(error)}`,
+    );
+  }
+  return (data as number) ?? 0;
+}
+
+/**
+ * Atomically promote staged rows for a set of files. The RPC enforces, in a
+ * single transaction:
+ *   (1) lock-ownership cross-check (FOR UPDATE on upload_batches)
+ *   (2) per-file staged-row count matches expected
+ *   (3) every source_type in `requiredSourceTypes` has > 0 staged rows
+ *       (the Feb 15:32 zero-EDE-wipe regression lock)
+ *   (4) supersede prior active rows for these files
+ *   (5) promote staged → active
+ *
+ * `requiredSourceTypes` is REQUIRED. Pass `[]` ONLY in a deliberate test
+ * that wants to bypass the aggregate guard. Passing `null`/omitting the
+ * field will RAISE at the database boundary — by design.
+ */
+export async function replaceNormalizedForFileSet(args: {
+  batchId: string;
+  sessionId: string;
+  expectedCounts: Array<{ file_id: string; expected: number }>;
+  requiredSourceTypes: string[];
+}): Promise<number> {
+  const { data, error } = await (supabase as any).rpc('replace_normalized_for_file_set', {
+    _batch_id: args.batchId,
+    _session_id: args.sessionId,
+    _expected_counts: args.expectedCounts,
+    _required_source_types: args.requiredSourceTypes,
+  });
+  if (error) {
+    throw new Error(
+      `replaceNormalizedForFileSet failed for batch ${args.batchId}: ${unwrapPgError(error)}`,
+    );
+  }
+  return (data as number) ?? 0;
 }

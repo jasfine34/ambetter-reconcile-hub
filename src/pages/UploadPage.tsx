@@ -6,7 +6,7 @@ import { FILE_LABELS } from '@/lib/constants';
 import { parseCSV } from '@/lib/csvParser';
 import { normalizeEDERow, normalizeBackOfficeRow, normalizeCommissionRow } from '@/lib/normalize';
 import { reconcile } from '@/lib/reconcile';
-import { uploadFileToStorage, uploadFileRecord, insertNormalizedRecords, saveAndVerifyReconciled, getNormalizedRecords } from '@/lib/persistence';
+import { uploadFileToStorage, uploadReplaceFile, saveAndVerifyReconciled, getNormalizedRecords } from '@/lib/persistence';
 import { RECONCILE_LOGIC_VERSION } from '@/lib/rebuild';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -80,7 +80,6 @@ export default function UploadPage() {
 
     setSlotUploading(p.fileLabel, true);
     let storagePath: string | null = null;
-    let createdFileId: string | null = null;
 
     const fail = (step: string, err: any) => {
       const msg = err?.message || String(err);
@@ -94,8 +93,6 @@ export default function UploadPage() {
 
     try {
       // Sanity check: the captured batch id must still exist in the DB.
-      // Guards against the case where create-batch silently failed earlier
-      // and the dropdown is pointing at a phantom id.
       try {
         const { data: batchRow, error: batchErr } = await supabase
           .from('upload_batches').select('id, statement_month').eq('id', targetBatchId).maybeSingle();
@@ -130,40 +127,23 @@ export default function UploadPage() {
         }
       } catch (err) { fail('Normalize rows', err); return; }
 
-      // Step 4: Insert uploaded_files + snapshot row. After this point, a
-      // failure leaves a row attached to the batch — we must roll it back.
-      let fileRecord: any;
-      let snapshot: any;
+      // Step 4: ATOMIC upload via the upload_replace_file RPC. The RPC runs
+      // {insert uploaded_files} + {insert snapshot} + {insert normalized_records
+      // staged} + {verify count} + {supersede prior active} + {promote staged
+      // → active} as a SINGLE Postgres transaction. Any failure rolls back
+      // the whole upload — no orphan rows, no rollback writer in JS.
       try {
-        const result = await uploadFileRecord(
-          targetBatchId, p.fileLabel, p.file.name, p.sourceType,
-          p.payEntity, p.aorBucket, storagePath,
-        );
-        fileRecord = result.file;
-        snapshot = result.snapshot;
-        createdFileId = fileRecord.id;
-      } catch (err) { fail('Register uploaded file', err); return; }
-
-      // Step 5: Insert normalized_records.
-      try {
-        await insertNormalizedRecords(targetBatchId, fileRecord.id, normalized, snapshot);
-      } catch (err) {
-        // Rollback: mark the just-inserted uploaded_files row as superseded
-        // so the slot returns to its prior state instead of silently showing
-        // a "successful" upload with zero records behind it.
-        if (createdFileId) {
-          try {
-            await supabase
-              .from('uploaded_files')
-              .update({ superseded_at: new Date().toISOString() })
-              .eq('id', createdFileId);
-          } catch (rollbackErr) {
-            console.error('[upload] rollback failed:', rollbackErr);
-          }
-        }
-        fail('Save normalized records', err);
-        return;
-      }
+        await uploadReplaceFile({
+          batchId: targetBatchId,
+          fileLabel: p.fileLabel,
+          fileName: p.file.name,
+          sourceType: p.sourceType,
+          payEntity: p.payEntity,
+          aorBucket: p.aorBucket,
+          storagePath: storagePath!,
+          rows: normalized,
+        });
+      } catch (err) { fail('Save upload (atomic)', err); return; }
 
       // Step 6: Re-reconcile the batch with the new file included.
       try {

@@ -1,16 +1,10 @@
 /**
  * Codex pass #2 — stamp-error capture in rebuildBatch.
  *
- * The final UPDATE on upload_batches that writes last_full_rebuild_at +
- * last_rebuild_logic_version used to ignore the {error} field. A failed
- * stamp would let rebuildBatch return success, leaving the staleness
- * banner inaccurate. These tests pin the new contract:
- *
- *   1. Happy path — stamp returns {error: null}: rebuildBatch resolves,
- *      and the upload_batches UPDATE patch carries the current logic version.
- *   2. Failure path — stamp returns {error: PostgrestError}: rebuildBatch
- *      throws an Error whose message includes the batchId AND the underlying
- *      Postgres error text (so the dashboard toast surfaces real diagnostics).
+ * Updated for the staged-then-promote pipeline. The stamp UPDATE still runs
+ * inside the Phase-4 reconcile block, so a stamp failure now manifests as a
+ * ReconcileAfterPromoteError whose .underlying.message carries the original
+ * Postgres diagnostic text.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -22,14 +16,22 @@ const state: {
   reconciledCount: number;
   stampError: any | null;
   stampCalls: StampCall[];
-  deleteCount: number;
+  preflushed: number;
+  staged: Array<{ batchId: string; fileId: string; count: number; sessionId: string }>;
+  promoted: Array<{ batchId: string; sessionId: string; expected: any; types: string[] }>;
+  released: Array<{ batchId: string; sessionId: string }>;
+  acquired: Array<{ batchId: string; sessionId: string }>;
 } = {
   files: [],
   normalizedRecords: [],
   reconciledCount: 0,
   stampError: null,
   stampCalls: [],
-  deleteCount: 0,
+  preflushed: 0,
+  staged: [],
+  promoted: [],
+  released: [],
+  acquired: [],
 };
 
 vi.mock('@/integrations/supabase/client', () => {
@@ -69,18 +71,22 @@ vi.mock('@/integrations/supabase/client', () => {
 
 vi.mock('@/lib/persistence', () => ({
   getUploadedFiles: vi.fn(async () => state.files),
-  insertNormalizedRecords: vi.fn(async () => {}),
+  insertStagedNormalizedRecords: vi.fn(async (b: string, f: string, rows: any[], sessionId: string) => {
+    state.staged.push({ batchId: b, fileId: f, count: rows.length, sessionId });
+  }),
   saveReconciledMembers: vi.fn(async () => {}),
   saveAndVerifyReconciled: vi.fn(async () => ({ rowCount: state.reconciledCount, version: null })),
   getNormalizedRecords: vi.fn(async () => state.normalizedRecords),
-  getOrCreateSnapshotForFile: vi.fn(async () => ({ id: 'snap-1' })),
-  deleteCurrentNormalizedForBatch: vi.fn(async () => { state.deleteCount++; }),
+  getOrCreateSnapshotForFile: vi.fn(async () => ({ id: 'snap-1', kind: 'ede' })),
   countReconciledForBatch: vi.fn(async () => state.reconciledCount),
-  // After a delete: 0 (verify-zero passes). The post-INSERT verification
-  // also calls this; we return 0 there too (no inserts actually happen in
-  // this mock — totalNormalized stays 0 since parseCSV→normalize returns
-  // empty arrays — so the post-INSERT branch is skipped).
-  countCurrentNormalizedForBatch: vi.fn(async () => 0),
+  countCurrentNormalizedForBatch: vi.fn(async () => state.normalizedRecords.length),
+  acquireRebuildLock: vi.fn(async (b: string, s: string) => { state.acquired.push({ batchId: b, sessionId: s }); return s; }),
+  releaseRebuildLock: vi.fn(async (b: string, s: string) => { state.released.push({ batchId: b, sessionId: s }); }),
+  preflushStaleStagedRows: vi.fn(async () => { state.preflushed++; return 0; }),
+  replaceNormalizedForFileSet: vi.fn(async (args: any) => {
+    state.promoted.push({ batchId: args.batchId, sessionId: args.sessionId, expected: args.expectedCounts, types: args.requiredSourceTypes });
+    return args.expectedCounts.reduce((s: number, e: any) => s + e.expected, 0);
+  }),
 }));
 
 vi.mock('@/lib/resolvedIdentities', () => ({
@@ -99,7 +105,7 @@ vi.mock('@/lib/normalize', () => ({
 }));
 vi.mock('@/lib/dateRange', () => ({ fallbackReconcileMonth: () => '2026-03' }));
 
-import { rebuildBatch, RECONCILE_LOGIC_VERSION } from '@/lib/rebuild';
+import { rebuildBatch, RECONCILE_LOGIC_VERSION, ReconcileAfterPromoteError } from '@/lib/rebuild';
 
 beforeEach(() => {
   state.files = [
@@ -109,48 +115,44 @@ beforeEach(() => {
   state.reconciledCount = 2;
   state.stampError = null;
   state.stampCalls = [];
+  state.preflushed = 0;
+  state.staged = [];
+  state.promoted = [];
+  state.released = [];
+  state.acquired = [];
 });
 
-describe('rebuildBatch — upload_batches stamp error capture (Codex pass #2)', () => {
-  it('happy path: stamp succeeds and rebuildBatch resolves with current logic version', async () => {
-    state.stampError = null;
+describe('rebuildBatch — upload_batches stamp error capture', () => {
+  it('happy path: stamp succeeds, rebuildBatch resolves, lock released', async () => {
     const result = await rebuildBatch('batch-mar-2026');
     expect(result.membersReconciled).toBe(2);
+    expect(state.acquired).toHaveLength(1);
+    expect(state.released).toHaveLength(1);
+    expect(state.acquired[0].sessionId).toBe(state.released[0].sessionId);
     expect(state.stampCalls).toHaveLength(1);
     expect(state.stampCalls[0].eqId).toBe('batch-mar-2026');
     expect(state.stampCalls[0].patch.last_rebuild_logic_version).toBe(RECONCILE_LOGIC_VERSION);
-    expect(state.stampCalls[0].patch.last_full_rebuild_at).toBeTruthy();
   });
 
-  it('failure path: stamp UPDATE returns PostgrestError → rebuildBatch throws with batchId + underlying error', async () => {
+  it('failure path: stamp UPDATE error → ReconcileAfterPromoteError with underlying diagnostics', async () => {
     state.stampError = {
       message: 'simulated stamp failure',
       code: '42P01',
       details: 'relation does not exist',
       hint: null,
     };
-    await expect(rebuildBatch('batch-mar-2026')).rejects.toThrow(/batch-mar-2026/);
-
-    state.stampCalls = [];
-    state.stampError = {
-      message: 'simulated stamp failure',
-      code: '42P01',
-      details: null,
-      hint: null,
-    };
     let caught: Error | null = null;
-    try {
-      await rebuildBatch('batch-jan-2026');
-    } catch (e: any) {
-      caught = e;
-    }
-    expect(caught).toBeTruthy();
+    try { await rebuildBatch('batch-jan-2026'); } catch (e: any) { caught = e; }
+    expect(caught).toBeInstanceOf(ReconcileAfterPromoteError);
+    expect(caught!.message).toContain('rebuild promoted new normalized data but reconcile failed');
+    expect(caught!.message).toContain('click Rebuild to complete');
     expect(caught!.message).toContain('batch-jan-2026');
     expect(caught!.message).toContain('simulated stamp failure');
-    expect(caught!.message).toContain('42P01');
+    // Lock released even on Phase-4 failure.
+    expect(state.released).toHaveLength(1);
   });
 
-  it('regression: logic version constant is the new eligible-cohort-current-batch token', () => {
+  it('regression: logic version constant pinned', () => {
     expect(RECONCILE_LOGIC_VERSION).toBe('2026.05.01-eligible-cohort-current-batch');
   });
 });
