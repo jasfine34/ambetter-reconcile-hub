@@ -351,7 +351,7 @@ export function reconcile(
       const hit = lookupResolved(r as any, resolverIndex);
       if (!hit) continue;
       if (!r.issuer_subscriber_id && hit.resolved_issuer_subscriber_id) {
-        r.issuer_subscriber_id = cleanId(hit.resolved_issuer_subscriber_id);
+        r.issuer_subscriber_id = cleanSubscriberId(hit.resolved_issuer_subscriber_id);
       }
       if (!r.issuer_policy_id && hit.resolved_issuer_policy_id) {
         r.issuer_policy_id = cleanId(hit.resolved_issuer_policy_id);
