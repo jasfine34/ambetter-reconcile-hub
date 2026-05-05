@@ -145,6 +145,37 @@ export function cleanId(val: string | undefined | null): string {
   return v;
 }
 
+/**
+ * Subscriber-ID-specific cleaner. Use ONLY for ESID/ISID-class fields:
+ *   - exchange_subscriber_id
+ *   - issuer_subscriber_id (incl. the commission policy_number → issuer_sub
+ *     alias in normalizeCommissionRow, where the value is being used as a
+ *     subscriber id, not as a policy number)
+ *   - resolver sidecar overlay assignments for resolved_issuer_subscriber_id
+ *     / resolved_exchange_subscriber_id
+ *   - buildMemberKey ESID/ISID branches
+ *   - weakMatch.ts ESID/ISID lookups
+ *
+ * This wraps cleanId() and additionally strips leading zeros for purely
+ * numeric values (e.g. "0023487406" → "23487406") to fix the Feb #115
+ * defect where EDE Summary emits stripped ESIDs but Jason BO emits padded
+ * ESIDs, causing union-find conflict refusals.
+ *
+ * Preserved as-is (regex /^0+[1-9]\d*$/ deliberately requires a non-zero
+ * digit after the run of zeros):
+ *   - alphanumeric IDs like "u00012345", "u0"  → leading "u" prevents match
+ *   - pure-zero values "0" / "0000"            → no non-zero tail, no strip
+ *
+ * NEVER use for policy_number-as-policy_number, exchange_policy_id,
+ * issuer_policy_id, agent_npn, or writing_agent_carrier_id — those may
+ * carry meaningful leading zeros for future carrier adapters.
+ */
+export function cleanSubscriberId(val: string | undefined | null): string {
+  const c = cleanId(val);
+  if (/^0+[1-9]\d*$/.test(c)) return c.replace(/^0+/, '');
+  return c;
+}
+
 function isAmbetterEDE(row: Record<string, string>): boolean {
   const issuer = (row['issuer'] || row['Issuer'] || '').toLowerCase();
   return issuer.includes('ambetter');
