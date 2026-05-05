@@ -388,25 +388,56 @@ export async function insertStagedNormalizedRecords(
 }
 
 /**
+ * Page size for normalized_records reads.
+ *
+ * Reduced 1000 → 500 (#116) as a defensive margin against PG statement
+ * timeouts (57014). The Feb 2026 Ambetter batch reproducibly timed out on
+ * `select=*` reads at page size 1000 in the 4000–5999 offset band; 500 keeps
+ * each page comfortably under the API timeout while keeping round-trip count
+ * reasonable.
+ */
+const NORMALIZED_PAGE_SIZE = 500;
+
+/**
  * Returns all CURRENT (non-superseded) normalized records for a batch.
  * This is what reconciliation, timeline, and all existing pages consume.
+ *
+ * #116 — Pagination strategy: KEYSET (id > lastId), not OFFSET/.range().
+ *
+ * Why: OFFSET pagination forces PG to scan-and-discard the prior pages on
+ * each call. With `select=*` (which includes the heavy `raw_json` jsonb
+ * payload) on a Feb-sized batch (~7.3k rows) this hit statement_timeout in
+ * the 4000–5999 offset band and surfaced as a 500 from PostgREST mid-rebuild.
+ * Keyset pagination (`order by id asc, where id > lastId limit N`) is O(N)
+ * total instead of O(N²) and uses the primary key index directly.
+ *
+ * Termination: page until fewer than pageSize rows return. Because rows are
+ * sorted ascending by id and we always request the strictly-greater bucket,
+ * there are no duplicates and no misses across pages.
+ *
+ * NOTE: We continue to select `*` (including raw_json) — reconcile,
+ * classifier, aorPicker, and the Gross Commission rollup all read fields out
+ * of raw_json. A future projection refactor (#117 follow-up) can slim this.
  */
 export async function getNormalizedRecords(batchId: string) {
   const allData: any[] = [];
-  let from = 0;
-  const pageSize = 1000;
+  let lastId: string | null = null;
   while (true) {
-    // Canonical active predicate (status='active' AND superseded_at IS NULL).
-    // ORDER BY id is REQUIRED for stable pagination — without it Supabase/PG
-    // may return overlapping or missing rows across .range() calls.
-    const { data, error } = await activeNormalizedRowsQuery(batchId)
+    let q: any = (supabase as any)
+      .from('normalized_records')
+      .select('*')
+      .eq('staging_status', 'active')
+      .is('superseded_at', null)
+      .eq('batch_id', batchId)
       .order('id', { ascending: true })
-      .range(from, from + pageSize - 1);
+      .limit(NORMALIZED_PAGE_SIZE);
+    if (lastId !== null) q = q.gt('id', lastId);
+    const { data, error } = await q;
     if (error) throw error;
     if (!data || data.length === 0) break;
     allData.push(...data);
-    if (data.length < pageSize) break;
-    from += pageSize;
+    if (data.length < NORMALIZED_PAGE_SIZE) break;
+    lastId = data[data.length - 1].id;
   }
   return allData;
 }
@@ -415,20 +446,29 @@ export async function getNormalizedRecords(batchId: string) {
  * Returns CURRENT (non-superseded) normalized records across every batch.
  * Powers the Member Timeline's cross-batch scope. Uses the canonical active
  * predicate so an in-flight rebuild's staged rows never leak into the view.
+ *
+ * #116 — Same keyset pagination as `getNormalizedRecords` for the same
+ * timeout-avoidance reason. Cross-batch reads are even more sensitive to
+ * OFFSET cost than per-batch reads.
  */
 export async function getAllNormalizedRecords() {
   const allData: any[] = [];
-  let from = 0;
-  const pageSize = 1000;
+  let lastId: string | null = null;
   while (true) {
-    const { data, error } = await activeNormalizedRowsQuery()
+    let q: any = (supabase as any)
+      .from('normalized_records')
+      .select('*')
+      .eq('staging_status', 'active')
+      .is('superseded_at', null)
       .order('id', { ascending: true })
-      .range(from, from + pageSize - 1);
+      .limit(NORMALIZED_PAGE_SIZE);
+    if (lastId !== null) q = q.gt('id', lastId);
+    const { data, error } = await q;
     if (error) throw error;
     if (!data || data.length === 0) break;
     allData.push(...data);
-    if (data.length < pageSize) break;
-    from += pageSize;
+    if (data.length < NORMALIZED_PAGE_SIZE) break;
+    lastId = data[data.length - 1].id;
   }
   return allData;
 }
