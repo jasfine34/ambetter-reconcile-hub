@@ -736,24 +736,15 @@ export type Database = {
         Args: { _batch_id: string; _session_id: string }
         Returns: undefined
       }
-      replace_normalized_for_file_set:
-        | {
-            Args: {
-              _batch_id: string
-              _expected_counts: Json
-              _session_id: string
-            }
-            Returns: number
-          }
-        | {
-            Args: {
-              _batch_id: string
-              _expected_counts: Json
-              _required_source_types?: string[]
-              _session_id: string
-            }
-            Returns: number
-          }
+      replace_normalized_for_file_set: {
+        Args: {
+          _batch_id: string
+          _expected_counts: Json
+          _required_source_types: string[]
+          _session_id: string
+        }
+        Returns: number
+      }
       replace_reconciled_members_for_batch: {
         Args: { _batch_id: string; _estimates?: Json; _members: Json }
         Returns: number
