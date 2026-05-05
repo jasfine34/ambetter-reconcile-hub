@@ -1,8 +1,6 @@
 // @ts-nocheck
-// READ-ONLY: re-run reconcile against persisted Feb normalized_records and
-// compare in_back_office assignment vs persisted reconciled_members.
-// Uses raw fetch so no @/integrations/supabase/client import chain is touched.
-import 'dotenv/config';
+// READ-ONLY diagnostic.
+(globalThis as any).localStorage = { getItem:()=>null, setItem:()=>{}, removeItem:()=>{}, clear:()=>{}, key:()=>null, length:0 };
 import { reconcile } from '../src/lib/reconcile';
 
 const URL = 'https://sbbsfbzxixcmaoliixae.supabase.co';
