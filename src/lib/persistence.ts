@@ -11,6 +11,57 @@ export interface SnapshotRef {
   kind: 'bo' | 'ede';
 }
 
+/* ------------------------------------------------------------------------- *
+ * CANONICAL ACTIVE PREDICATE
+ *
+ * Every read of "what is currently live for this batch" MUST go through this
+ * helper. The full predicate is:
+ *
+ *   staging_status = 'active' AND superseded_at IS NULL
+ *
+ * Why both:
+ *   - staging_status discriminates 'staged' rows mid-rebuild from 'active'
+ *     rows that have been promoted. A bare `superseded_at IS NULL` filter
+ *     would count staged rows of an in-flight rebuild as "current".
+ *   - superseded_at IS NULL keeps the pre-staging history semantics intact
+ *     and matches the partial index `idx_normalized_active_predicate`.
+ *
+ * Forbidden patterns elsewhere in production code (enforced by lint rule
+ * `no-raw-superseded-filter`):
+ *   - .is('superseded_at', null)            ← bare predicate, no status check
+ *   - .eq('staging_status', 'active')       ← missing supersede check
+ *   - direct INSERT into normalized_records ← must go through staged inserter
+ * ------------------------------------------------------------------------- */
+export function activeNormalizedRowsQuery(batchId?: string) {
+  let q: any = (supabase as any)
+    .from('normalized_records')
+    .select('*')
+    .eq('staging_status', 'active')
+    .is('superseded_at', null);
+  if (batchId) q = q.eq('batch_id', batchId);
+  return q;
+}
+
+export function activeNormalizedCountQuery(batchId?: string) {
+  let q: any = (supabase as any)
+    .from('normalized_records')
+    .select('id', { count: 'exact', head: true })
+    .eq('staging_status', 'active')
+    .is('superseded_at', null);
+  if (batchId) q = q.eq('batch_id', batchId);
+  return q;
+}
+
+export function activeUploadedFilesQuery(batchId?: string) {
+  let q: any = (supabase as any)
+    .from('uploaded_files')
+    .select('*')
+    .eq('staging_status', 'active')
+    .is('superseded_at', null);
+  if (batchId) q = q.eq('batch_id', batchId);
+  return q;
+}
+
 /**
  * Unwrap a PostgrestError (or any thrown value) to a human-readable string.
  * PostgrestError is NOT `instanceof Error`, so `String(err)` collapses to
