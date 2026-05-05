@@ -420,7 +420,15 @@ export function normalizeCommissionRow(row: Record<string, string>, fileLabel: s
     carrier: 'Ambetter',
     applicant_name: (row['Policyholder Name'] || '').trim(),
     policy_number: cleanId(policyNum),
-    issuer_subscriber_id: cleanId(policyNum),
+    // Commission rows alias policy_number into issuer_subscriber_id because
+    // Ambetter commission feeds carry the U-id in the Policy Number column
+    // and reconcile keys subscribers off issuer_subscriber_id. At THIS point
+    // the value is being used as a subscriber id, so it gets the
+    // subscriber-id cleaner (strip leading zeros for purely numeric).
+    // The policy_number field above keeps its untouched cleanId() because
+    // it's still being used as a policy number — leading zeros there may
+    // be meaningful for future carrier adapters.
+    issuer_subscriber_id: cleanSubscriberId(policyNum),
     agent_name: agentName,
     agent_npn: cleanId(npn) || npn,
     pay_entity: payEntity,
