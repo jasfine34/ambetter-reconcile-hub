@@ -32,8 +32,45 @@ rebuild's staged rows as live data.
 Direct INSERT into normalized_records and direct UPDATE of `superseded_at`
 from JavaScript are both lint errors outside `src/lib/persistence.ts`.
 
+**Snapshots** (`bo_snapshots` / `ede_snapshots`) are upload-lifecycle
+artifacts and follow the same writer policy: direct INSERT outside
+`src/lib/persistence.ts` is a lint error. The sanctioned writers are
+`upload_replace_file` (atomic with the file/normalized rows) and
+`getOrCreateSnapshotForFile()` (rebuild lazy-backfill — see follow-ups).
+
 `__test_only_deleteCurrentNormalizedForBatch` is for fixture cleanup only and
 may not be imported outside `src/test/`.
+
+## Post-Feb-recovery follow-ups
+
+- **Remove `getOrCreateSnapshotForFile` lazy-backfill helper.** This exists
+  only to backfill snapshot rows for files uploaded before the Phase 1a
+  inline-snapshot RPC change. **Removal criterion:** when a query confirms
+  every `uploaded_files` row in the Feb–Apr 2026 batches has an associated
+  `bo_snapshots` / `ede_snapshots` row, delete `getOrCreateSnapshotForFile`
+  from `src/lib/persistence.ts`, drop its call site in `src/lib/rebuild.ts`
+  (rebuilds will then look up the existing snapshot id off the file
+  directly), and remove the carve-out language from the snapshot lint
+  messages.
+  Verification query (must return zero rows before removal):
+  ```sql
+  SELECT uf.id, uf.source_type
+    FROM uploaded_files uf
+    LEFT JOIN bo_snapshots  bs ON bs.uploaded_file_id = uf.id
+    LEFT JOIN ede_snapshots es ON es.uploaded_file_id = uf.id
+   WHERE uf.batch_id IN (<feb..apr batch ids>)
+     AND uf.staging_status = 'active'
+     AND ((uf.source_type = 'BACK_OFFICE' AND bs.id IS NULL)
+       OR (uf.source_type = 'EDE'         AND es.id IS NULL));
+  ```
+
+- **Storage-orphan sweep job.** `uploadFileToStorage` writes to a
+  per-attempt path (`<batchId>/<label>_<Date.now()>.csv`), so an
+  `upload_replace_file` RPC rollback after the storage upload completes
+  leaves the object in the `commission-files` bucket with no
+  `uploaded_files` row pointing at it. Add a periodic sweep that lists
+  bucket objects under each batch prefix and deletes any whose path is
+  not referenced by an active or staged `uploaded_files.storage_path`.
 
 **Rebuild pipeline ordering** (enforced by `rebuildBatch` in `src/lib/rebuild.ts`):
 
