@@ -396,14 +396,10 @@ export async function getNormalizedRecords(batchId: string) {
   let from = 0;
   const pageSize = 1000;
   while (true) {
+    // Canonical active predicate (status='active' AND superseded_at IS NULL).
     // ORDER BY id is REQUIRED for stable pagination — without it Supabase/PG
-    // may return overlapping or missing rows across .range() calls, which
-    // silently inflates or deflates totals downstream.
-    const { data, error } = await supabase
-      .from('normalized_records')
-      .select('*')
-      .eq('batch_id', batchId)
-      .is('superseded_at', null)
+    // may return overlapping or missing rows across .range() calls.
+    const { data, error } = await activeNormalizedRowsQuery(batchId)
       .order('id', { ascending: true })
       .range(from, from + pageSize - 1);
     if (error) throw error;
@@ -417,21 +413,15 @@ export async function getNormalizedRecords(batchId: string) {
 
 /**
  * Returns CURRENT (non-superseded) normalized records across every batch.
- * Powers the Member Timeline's cross-batch scope, where the user wants to see
- * a member's full history (e.g. Jan batch's Jan service + Feb batch's
- * retroactive Jan catch-up together) rather than inspecting batches one at
- * a time. Paged to keep the Supabase query size manageable.
+ * Powers the Member Timeline's cross-batch scope. Uses the canonical active
+ * predicate so an in-flight rebuild's staged rows never leak into the view.
  */
 export async function getAllNormalizedRecords() {
   const allData: any[] = [];
   let from = 0;
   const pageSize = 1000;
   while (true) {
-    // ORDER BY id is REQUIRED for stable pagination — see getNormalizedRecords.
-    const { data, error } = await supabase
-      .from('normalized_records')
-      .select('*')
-      .is('superseded_at', null)
+    const { data, error } = await activeNormalizedRowsQuery()
       .order('id', { ascending: true })
       .range(from, from + pageSize - 1);
     if (error) throw error;
