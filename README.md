@@ -115,16 +115,29 @@ may not be imported outside `src/test/`.
 - **Pre-upload destination-confirmation modal.** Before any
   `upload_replace_file` call, show a modal that displays the destination
   batch month, `file_label`, file name, and file size, and require an
-  explicit click-to-confirm before the RPC fires. Two operator errors
-  observed during the May 2026 Feb recovery — one wrong-batch upload
-  (Feb EDE Summary file landed in the April batch) plus pre-existing
-  misaligned April slots from earlier sessions — both trace to the same
-  root cause: the batch selector drifted between actions and the
-  operator missed the inline active-batch banner on `UploadPage`. A
-  modal makes the destination explicit at the point of action and is
-  unmissable in a way the inline banner is not. Pair with the toast
-  disambiguation and the April misaligned-slots audit — same recovery,
-  same operator-trust theme.
+  explicit click-to-confirm before the RPC fires. All four fields must
+  be shown — three concrete operator errors observed during the May
+  2026 Feb recovery prove that any single field alone is insufficient
+  (operator can match on one and miss another):
+    1. **Wrong-batch upload.** Feb EDE Summary file landed in the April
+       batch — batch selector drifted, file name was correct.
+    2. **Misaligned April slots from earlier sessions.** Feb-named
+       files sitting in April's `EDE Archived Enrolled` /
+       `EDE Archived Not Enrolled` slots — file_label correct, file
+       name wrong for the destination month.
+    3. **Wrong-file upload into correct batch (2026-05-05 03:06–03:07Z).**
+       Batch selector correctly on Feb 2026 and `file_label` correctly
+       `EDE Summary`, but the operator picked the April-anchored
+       `BC3614-…summary--2026-04-01.csv` from disk instead of the
+       intended `BC3614-…summary--2026-02-02.csv`. Destination month
+       and label alone would not have caught this; the file name (and
+       likely size) would have.
+  All three trace to the same root cause: the active destination is
+  not visually anchored to the action. A modal makes destination
+  batch + label + file name + file size explicit at the point of
+  action and is unmissable in a way the inline `UploadPage` banner is
+  not. Pair with the toast disambiguation and the April misaligned-
+  slots audit — same recovery, same operator-trust theme.
 
 **Rebuild pipeline ordering** (enforced by `rebuildBatch` in `src/lib/rebuild.ts`):
 
