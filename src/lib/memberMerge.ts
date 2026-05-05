@@ -8,7 +8,7 @@
  *
  * Mutates `member_key` (and re-cleans IDs) on each input record in place.
  */
-import { cleanId, normalizePolicyStatus } from './normalize';
+import { cleanId, cleanSubscriberId, normalizePolicyStatus } from './normalize';
 import type { NormalizedRecord } from './normalize';
 
 function cleanPolicyBase(val: string | undefined | null): string {
@@ -33,8 +33,12 @@ function normalizeFullName(applicantName: string | undefined | null): string {
 }
 
 function reclean(r: NormalizedRecord): void {
-  r.issuer_subscriber_id = cleanPolicyBase(r.issuer_subscriber_id);
-  r.exchange_subscriber_id = cleanId(r.exchange_subscriber_id);
+  // Subscriber-id fields use cleanSubscriberId so leading-zero asymmetry
+  // between EDE Summary and BO/Commission feeds collapses (Feb #115).
+  // Policy-number fields keep the stricter cleanPolicyBase: leading zeros
+  // there may be carrier-meaningful for future adapters.
+  r.issuer_subscriber_id = cleanSubscriberId(cleanPolicyBase(r.issuer_subscriber_id));
+  r.exchange_subscriber_id = cleanSubscriberId(r.exchange_subscriber_id);
   r.exchange_policy_id = cleanId(r.exchange_policy_id);
   r.issuer_policy_id = cleanId(r.issuer_policy_id);
   r.policy_number = cleanPolicyBase(r.policy_number);

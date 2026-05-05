@@ -32,6 +32,7 @@
 import type { NormalizedRecord } from '../../normalize';
 import {
   cleanId,
+  cleanSubscriberId,
   stripApostrophe,
   normalizeDate,
   normalizeEligible,
@@ -75,10 +76,15 @@ export function normalizeAmbetterBackOfficeRow(
     dob: normalizeDate(row['Member Date Of Birth']),
     member_id: '',
     policy_number: cleanId(policyNumber),
-    exchange_subscriber_id: cleanId(row['Exchange Subscriber ID']),
+    exchange_subscriber_id: cleanSubscriberId(row['Exchange Subscriber ID']),
     exchange_policy_id: '',
     issuer_policy_id: '',
-    issuer_subscriber_id: cleanId(policyNumber),
+    // Ambetter BO carries the U-subscriber-id in the Policy Number column;
+    // when used as issuer_subscriber_id we route through the subscriber-id
+    // cleaner so leading-zero asymmetry between EDE and BO collapses
+    // (Feb #115). The policy_number field above keeps cleanId() because it
+    // is still being used as a policy number.
+    issuer_subscriber_id: cleanSubscriberId(policyNumber),
     agent_name: (row['Broker Name'] || '').trim(),
     agent_npn: npn,
     aor_bucket: aorBucket,

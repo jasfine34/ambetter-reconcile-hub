@@ -145,6 +145,37 @@ export function cleanId(val: string | undefined | null): string {
   return v;
 }
 
+/**
+ * Subscriber-ID-specific cleaner. Use ONLY for ESID/ISID-class fields:
+ *   - exchange_subscriber_id
+ *   - issuer_subscriber_id (incl. the commission policy_number → issuer_sub
+ *     alias in normalizeCommissionRow, where the value is being used as a
+ *     subscriber id, not as a policy number)
+ *   - resolver sidecar overlay assignments for resolved_issuer_subscriber_id
+ *     / resolved_exchange_subscriber_id
+ *   - buildMemberKey ESID/ISID branches
+ *   - weakMatch.ts ESID/ISID lookups
+ *
+ * This wraps cleanId() and additionally strips leading zeros for purely
+ * numeric values (e.g. "0023487406" → "23487406") to fix the Feb #115
+ * defect where EDE Summary emits stripped ESIDs but Jason BO emits padded
+ * ESIDs, causing union-find conflict refusals.
+ *
+ * Preserved as-is (regex /^0+[1-9]\d*$/ deliberately requires a non-zero
+ * digit after the run of zeros):
+ *   - alphanumeric IDs like "u00012345", "u0"  → leading "u" prevents match
+ *   - pure-zero values "0" / "0000"            → no non-zero tail, no strip
+ *
+ * NEVER use for policy_number-as-policy_number, exchange_policy_id,
+ * issuer_policy_id, agent_npn, or writing_agent_carrier_id — those may
+ * carry meaningful leading zeros for future carrier adapters.
+ */
+export function cleanSubscriberId(val: string | undefined | null): string {
+  const c = cleanId(val);
+  if (/^0+[1-9]\d*$/.test(c)) return c.replace(/^0+/, '');
+  return c;
+}
+
 function isAmbetterEDE(row: Record<string, string>): boolean {
   const issuer = (row['issuer'] || row['Issuer'] || '').toLowerCase();
   return issuer.includes('ambetter');
@@ -214,9 +245,12 @@ export interface NormalizedRecord {
 
 export function buildMemberKey(r: Partial<NormalizedRecord>): string {
   // Priority: issuer_subscriber_id > exchange_subscriber_id > policy_number > exchange_policy_id > name+dob
-  const isid = r.issuer_subscriber_id || '';
+  // ESID/ISID branches use cleanSubscriberId so that leading-zero-padded
+  // numeric values collapse to the same key whether the upstream feed
+  // emitted "0023487406" (Feb Jason BO) or "23487406" (Feb EDE Summary).
+  const isid = cleanSubscriberId(r.issuer_subscriber_id);
   if (isid) return `issub:${isid}`;
-  const esid = cleanId(r.exchange_subscriber_id);
+  const esid = cleanSubscriberId(r.exchange_subscriber_id);
   if (esid) return `sub:${esid}`;
   const pn = cleanId(r.policy_number);
   if (pn) return `policy:${pn}`;
@@ -327,10 +361,10 @@ export function normalizeEDERow(row: Record<string, string>, fileLabel: string):
     // DOB is sourced from the carrier back office instead (§2.1).
     dob: normalizeDate(row['dob']),
     member_id: issuerSubIdRaw,
-    exchange_subscriber_id: cleanId(row['exchangeSubscriberId']),
+    exchange_subscriber_id: cleanSubscriberId(row['exchangeSubscriberId']),
     exchange_policy_id: cleanId(row['exchangePolicyId']),
     issuer_policy_id: cleanId(row['issuerPolicyId']),
-    issuer_subscriber_id: cleanId(issuerSubIdRaw),
+    issuer_subscriber_id: cleanSubscriberId(issuerSubIdRaw),
     agent_name: (row['agentName'] || '').trim(),
     agent_npn: stripApostrophe(row['agentNPN']),
     status: normalizePolicyStatus(row['policyStatus']),
@@ -386,7 +420,15 @@ export function normalizeCommissionRow(row: Record<string, string>, fileLabel: s
     carrier: 'Ambetter',
     applicant_name: (row['Policyholder Name'] || '').trim(),
     policy_number: cleanId(policyNum),
-    issuer_subscriber_id: cleanId(policyNum),
+    // Commission rows alias policy_number into issuer_subscriber_id because
+    // Ambetter commission feeds carry the U-id in the Policy Number column
+    // and reconcile keys subscribers off issuer_subscriber_id. At THIS point
+    // the value is being used as a subscriber id, so it gets the
+    // subscriber-id cleaner (strip leading zeros for purely numeric).
+    // The policy_number field above keeps its untouched cleanId() because
+    // it's still being used as a policy number — leading zeros there may
+    // be meaningful for future carrier adapters.
+    issuer_subscriber_id: cleanSubscriberId(policyNum),
     agent_name: agentName,
     agent_npn: cleanId(npn) || npn,
     pay_entity: payEntity,

@@ -1,5 +1,5 @@
 import { NPN_MAP, DEFAULT_COMMISSION_ESTIMATE, SBA_STATES } from './constants';
-import { cleanId, normalizePolicyStatus } from './normalize';
+import { cleanId, cleanSubscriberId, normalizePolicyStatus } from './normalize';
 import type { NormalizedRecord } from './normalize';
 import { isCoverallAORByName } from './agents';
 import { getCoveredMonths, fallbackReconcileMonth } from './dateRange';
@@ -233,8 +233,10 @@ function normalizeFullName(applicantName: string | undefined | null): string {
  * Re-clean IDs on DB records (which may have been stored with older normalization).
  */
 function reclean(r: NormalizedRecord): void {
-  r.issuer_subscriber_id = cleanPolicyBase(r.issuer_subscriber_id);
-  r.exchange_subscriber_id = cleanId(r.exchange_subscriber_id);
+  // Subscriber-id fields use cleanSubscriberId so leading-zero asymmetry
+  // between EDE Summary and BO/Commission feeds collapses (Feb #115).
+  r.issuer_subscriber_id = cleanSubscriberId(cleanPolicyBase(r.issuer_subscriber_id));
+  r.exchange_subscriber_id = cleanSubscriberId(r.exchange_subscriber_id);
   r.exchange_policy_id = cleanId(r.exchange_policy_id);
   r.issuer_policy_id = cleanId(r.issuer_policy_id);
   r.policy_number = cleanPolicyBase(r.policy_number);
@@ -351,7 +353,7 @@ export function reconcile(
       const hit = lookupResolved(r as any, resolverIndex);
       if (!hit) continue;
       if (!r.issuer_subscriber_id && hit.resolved_issuer_subscriber_id) {
-        r.issuer_subscriber_id = cleanId(hit.resolved_issuer_subscriber_id);
+        r.issuer_subscriber_id = cleanSubscriberId(hit.resolved_issuer_subscriber_id);
       }
       if (!r.issuer_policy_id && hit.resolved_issuer_policy_id) {
         r.issuer_policy_id = cleanId(hit.resolved_issuer_policy_id);
