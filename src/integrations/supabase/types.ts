@@ -753,14 +753,15 @@ export type Database = {
         Args: {
           _aor_bucket: string
           _batch_id: string
-          _bo_snapshot_id: string
-          _ede_snapshot_id: string
           _expected_count: number
           _file_label: string
           _file_name: string
           _pay_entity: string
           _rows: Json
+          _snapshot_agent_bucket: string
           _snapshot_date: string
+          _snapshot_kind: string
+          _snapshot_source_kind: string
           _source_type: string
           _storage_path: string
         }
