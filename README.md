@@ -187,3 +187,86 @@ A reconcile failure AFTER a successful promote raises
 `ReconcileAfterPromoteError` so the UI can surface the explicit message:
 *"rebuild promoted new normalized data but reconcile failed — click
 Rebuild to complete."*
+
+---
+
+## Open Tickets
+
+### #113 (P1) — Member-key alignment drift between rebuild reconciler and in-browser canonical recompute
+
+**Status**: Open — diagnosis-only, no patches until fix shape is reviewed.
+**Parent**: #112 (Feb 2026 recovery) — stays open until #113 is resolved or
+explicitly split off as an accepted follow-up.
+
+**Symptoms**
+- Missing Commission Export for Feb / Coverall returns **0 rows** while DB
+  and Dashboard show **~51–55 unpaid / missing-commission candidates**
+  (`commission_estimates` count = 55, Dashboard "Unpaid Policies" = 55).
+- Dashboard *Found in Back Office* / *Eligible* values diverge from
+  Source Funnel BO attributed counts.
+- Source Funnel Feb BO attributed = **1,439** while
+  `reconciled_members.in_back_office = true` count = **210**
+  (only Erica's 359 BO bucket flips the flag; Jason's 2,295 and Becky's
+  594 do not).
+- `reconciled_members.in_back_office` / eligible predicates do not align
+  with the restored Jason / Becky BO data.
+- In-browser `filteredEde` / `getEligibleCohort` cannot see the same
+  members that the rebuilt `reconciled_members` snapshot contains.
+
+**Working hypothesis**
+`computeFilteredEde` (`src/lib/expectedEde.ts`) and `getEligibleCohort`
+(`src/lib/canonical/metrics.ts`) rebuild member keys *in-browser* from raw
+/ current-batch records, while `reconciled_members.member_key` was written
+by the rebuild reconciler **after** the resolver / canonical merge pass
+(`mergeRecordsToMemberKeys` in `src/lib/canonical/memberKeyMerge.ts`,
+which layers `resolved_identities` overlay on top of the union-find).
+The two key spaces are not aligning post-recovery, so
+`eeUniverse.has(member_key)` fails even though the DB-level predicate
+fields are populated.
+
+This is the same family of defect as the BO attribution flag mismatch:
+the reconciler-written `in_back_office` flag is computed against one
+key space; downstream UI predicates evaluate against a different one.
+
+**Diagnosis plan (next session)**
+1. Compare key derivation between:
+   - `reconcile.ts` (writes `reconciled_members.member_key`)
+   - `computeFilteredEde` / `filteredEde` uniqueMembers
+   - `getEligibleCohort` predicate
+   - `mergeRecordsToMemberKeys` (canonical) vs `assignMergedMemberKeys`
+     (raw union, no sidecar overlay)
+2. Inspect 5–10 of the 55 unpaid Feb members. For each, capture:
+   - `reconciled_members.member_key`
+   - EDE-derived raw key (pre-merge)
+   - resolved / canonical key (post-`mergeRecordsToMemberKeys`)
+   - `filteredEde` uniqueMembers key
+3. Identify the divergence point — is the in-browser path skipping the
+   `resolved_identities` overlay? Using `assignMergedMemberKeys` directly
+   instead of `mergeRecordsToMemberKeys`?
+4. Decide fix location:
+   - in-browser path adopts the canonical `mergeRecordsToMemberKeys`
+     (preferred — matches reconciler), **or**
+   - reconciler output contract is adjusted so downstream consumers can
+     re-derive without the sidecar.
+5. Apply canonical-predicate-pattern discipline: one helper / source of
+   truth, both Dashboard and Export paths route through it. See
+   `ARCHITECTURE_PLAN.md § Canonical Helpers — Consumer Adoption Status`.
+
+**Hard rule**: diagnose first. **No mutations or patches** until the fix
+shape is reviewed and approved.
+
+**Recovered state (from #112) — preserved**
+- Active `normalized_records` restored: **7,293**
+- All 8 Feb source slots clean (Coverall 1,525 / Vix 107 / Jason 2,295 /
+  Becky 594 / Erica 359 / EDE Summary 1,657 / EDE Archived Enrolled 222 /
+  EDE Archived Not Enrolled 534).
+- Rebuild pipeline completed; lock clean; 0 staged stragglers.
+- DB / Dashboard correctly show 55 unpaid / missing-commission candidates.
+
+**Related follow-ups (separate tickets, do not bundle)**
+- `preflush_stale_staged_rows` `57014` timeout + UI retry-status surfacing
+- Rebuild error-toast misclassification (showed "failed" on silent retry success)
+- Loading-state UX (spinner / skeleton / empty state) on data-fetching pages
+- Explicit "Run Report" action on filter-driven pages
+- Misaligned April slots audit
+- Ghost `uploaded_files` rows audit (zero normalized children)
