@@ -245,9 +245,12 @@ export interface NormalizedRecord {
 
 export function buildMemberKey(r: Partial<NormalizedRecord>): string {
   // Priority: issuer_subscriber_id > exchange_subscriber_id > policy_number > exchange_policy_id > name+dob
-  const isid = r.issuer_subscriber_id || '';
+  // ESID/ISID branches use cleanSubscriberId so that leading-zero-padded
+  // numeric values collapse to the same key whether the upstream feed
+  // emitted "0023487406" (Feb Jason BO) or "23487406" (Feb EDE Summary).
+  const isid = cleanSubscriberId(r.issuer_subscriber_id);
   if (isid) return `issub:${isid}`;
-  const esid = cleanId(r.exchange_subscriber_id);
+  const esid = cleanSubscriberId(r.exchange_subscriber_id);
   if (esid) return `sub:${esid}`;
   const pn = cleanId(r.policy_number);
   if (pn) return `policy:${pn}`;
@@ -358,10 +361,10 @@ export function normalizeEDERow(row: Record<string, string>, fileLabel: string):
     // DOB is sourced from the carrier back office instead (§2.1).
     dob: normalizeDate(row['dob']),
     member_id: issuerSubIdRaw,
-    exchange_subscriber_id: cleanId(row['exchangeSubscriberId']),
+    exchange_subscriber_id: cleanSubscriberId(row['exchangeSubscriberId']),
     exchange_policy_id: cleanId(row['exchangePolicyId']),
     issuer_policy_id: cleanId(row['issuerPolicyId']),
-    issuer_subscriber_id: cleanId(issuerSubIdRaw),
+    issuer_subscriber_id: cleanSubscriberId(issuerSubIdRaw),
     agent_name: (row['agentName'] || '').trim(),
     agent_npn: stripApostrophe(row['agentNPN']),
     status: normalizePolicyStatus(row['policyStatus']),
