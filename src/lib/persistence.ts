@@ -758,8 +758,8 @@ export async function getReconciledMembersPage(
 
 export async function getBatchCounts(batchId: string) {
   const [files, normalized, reconciled] = await Promise.all([
-    supabase.from('uploaded_files').select('id', { count: 'exact', head: true }).eq('batch_id', batchId).is('superseded_at', null),
-    supabase.from('normalized_records').select('id', { count: 'exact', head: true }).eq('batch_id', batchId).is('superseded_at', null),
+    activeUploadedFilesQuery(batchId).select('id', { count: 'exact', head: true }),
+    activeNormalizedCountQuery(batchId),
     supabase.from('reconciled_members').select('id', { count: 'exact', head: true }).eq('batch_id', batchId),
   ]);
   return {
@@ -783,4 +783,100 @@ export async function uploadFileToStorage(batchId: string, fileLabel: string, fi
   const { error } = await supabase.storage.from('commission-files').upload(path, file);
   if (error) throw error;
   return path;
+}
+
+/* ------------------------------------------------------------------------- *
+ * REBUILD PIPELINE RPC WRAPPERS
+ *
+ * Thin typed wrappers around the four single-flight rebuild RPCs:
+ *   - acquireRebuildLock      → claims the per-batch rebuild slot (TTL 30m)
+ *   - preflushStaleStagedRows → idempotent recovery of orphan staged rows
+ *   - replaceNormalizedForFileSet → in-TX lock-check + per-file count check +
+ *                                   required-source-type aggregate guard +
+ *                                   supersede + promote
+ *   - releaseRebuildLock      → drops the lock; ALWAYS in a finally block
+ * ------------------------------------------------------------------------- */
+
+export async function acquireRebuildLock(
+  batchId: string,
+  sessionId: string,
+): Promise<string> {
+  const { data, error } = await (supabase as any).rpc('acquire_rebuild_lock', {
+    _batch_id: batchId,
+    _session_id: sessionId,
+  });
+  if (error) {
+    throw new Error(
+      `acquireRebuildLock failed for batch ${batchId}: ${unwrapPgError(error)}`,
+    );
+  }
+  return data as string;
+}
+
+export async function releaseRebuildLock(
+  batchId: string,
+  sessionId: string,
+): Promise<void> {
+  const { error } = await (supabase as any).rpc('release_rebuild_lock', {
+    _batch_id: batchId,
+    _session_id: sessionId,
+  });
+  if (error) {
+    // Don't throw from release — we want it to be safe in a finally block
+    // even after an upstream failure. Log so a stuck lock is investigable.
+    console.error(
+      `[rebuild] releaseRebuildLock failed for batch ${batchId} session ${sessionId}: ${unwrapPgError(error)}`,
+    );
+  }
+}
+
+export async function preflushStaleStagedRows(
+  batchId: string,
+  fileIds: string[],
+): Promise<number> {
+  if (fileIds.length === 0) return 0;
+  const { data, error } = await (supabase as any).rpc('preflush_stale_staged_rows', {
+    _batch_id: batchId,
+    _file_ids: fileIds,
+  });
+  if (error) {
+    throw new Error(
+      `preflushStaleStagedRows failed for batch ${batchId}: ${unwrapPgError(error)}`,
+    );
+  }
+  return (data as number) ?? 0;
+}
+
+/**
+ * Atomically promote staged rows for a set of files. The RPC enforces, in a
+ * single transaction:
+ *   (1) lock-ownership cross-check (FOR UPDATE on upload_batches)
+ *   (2) per-file staged-row count matches expected
+ *   (3) every source_type in `requiredSourceTypes` has > 0 staged rows
+ *       (the Feb 15:32 zero-EDE-wipe regression lock)
+ *   (4) supersede prior active rows for these files
+ *   (5) promote staged → active
+ *
+ * `requiredSourceTypes` is REQUIRED. Pass `[]` ONLY in a deliberate test
+ * that wants to bypass the aggregate guard. Passing `null`/omitting the
+ * field will RAISE at the database boundary — by design.
+ */
+export async function replaceNormalizedForFileSet(args: {
+  batchId: string;
+  sessionId: string;
+  expectedCounts: Array<{ file_id: string; expected: number }>;
+  requiredSourceTypes: string[];
+}): Promise<number> {
+  const { data, error } = await (supabase as any).rpc('replace_normalized_for_file_set', {
+    _batch_id: args.batchId,
+    _session_id: args.sessionId,
+    _expected_counts: args.expectedCounts,
+    _required_source_types: args.requiredSourceTypes,
+  });
+  if (error) {
+    throw new Error(
+      `replaceNormalizedForFileSet failed for batch ${args.batchId}: ${unwrapPgError(error)}`,
+    );
+  }
+  return (data as number) ?? 0;
 }
