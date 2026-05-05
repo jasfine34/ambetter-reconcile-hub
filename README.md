@@ -160,6 +160,21 @@ may not be imported outside `src/test/`.
   of red/destructive. Observed twice during the May 2026 Feb
   recovery (EDE Summary 1c, Coverall Commission 2a).
 
+- **Sweep ghost `uploaded_files` rows with zero normalized rows.**
+  Surfaced during the May 2026 Feb recovery Vix verification: the
+  superseded Vix Commission Statement file `bf2fb7ca-b449-4285-bd25-9b74775e65ea`
+  (uploaded 2026-04-23 19:40Z, file_name `Renewal Agent Statement -
+  2026-03-21 Vix.csv`) has 0 rows in `normalized_records`. Predates
+  the atomic `upload_replace_file` refactor and is consistent with an
+  earlier upload session committing the `uploaded_files` row without
+  committing the per-file normalized rows. Add a one-time audit query
+  (`SELECT f.id, f.batch_id, f.file_label, f.staging_status FROM
+  uploaded_files f LEFT JOIN normalized_records n ON
+  n.uploaded_file_id = f.id GROUP BY f.id HAVING COUNT(n.id) = 0`) and
+  decide per-row whether to delete the ghost or backfill from storage.
+  Pair with the misaligned-April-slots audit — both clean up
+  pre-refactor data drift before the next rebuild cycle.
+
 **Rebuild pipeline ordering** (enforced by `rebuildBatch` in `src/lib/rebuild.ts`):
 
 ```
