@@ -27,7 +27,8 @@ function isDueEligible(r: any, payEntity = 'Coverall'): boolean {
   const all: any[] = [];
   let from = 0;
   while (true) {
-    const { data } = await supabase.from('normalized_records').select('*').is('superseded_at', null).order('id').range(from, from + 999);
+    // Canonical active predicate (matches idx_normalized_active partial index).
+    const { data } = await supabase.from('normalized_records').select('*').eq('staging_status', 'active').is('superseded_at', null).order('id').range(from, from + 999);
     if (!data?.length) break;
     all.push(...data);
     if (data.length < 1000) break;
