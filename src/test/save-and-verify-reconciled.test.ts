@@ -110,7 +110,7 @@ vi.mock('@/integrations/supabase/client', () => {
 
 import {
   saveAndVerifyReconciled,
-  uploadFileRecord,
+  uploadReplaceFile,
 } from '@/lib/persistence';
 
 beforeEach(() => {
