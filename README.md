@@ -112,6 +112,20 @@ may not be imported outside `src/test/`.
   Pair with the wrong-batch confirmation-modal follow-up — both are
   operator-trust issues surfaced during the May 2026 Feb recovery.
 
+- **Pre-upload destination-confirmation modal.** Before any
+  `upload_replace_file` call, show a modal that displays the destination
+  batch month, `file_label`, file name, and file size, and require an
+  explicit click-to-confirm before the RPC fires. Two operator errors
+  observed during the May 2026 Feb recovery — one wrong-batch upload
+  (Feb EDE Summary file landed in the April batch) plus pre-existing
+  misaligned April slots from earlier sessions — both trace to the same
+  root cause: the batch selector drifted between actions and the
+  operator missed the inline active-batch banner on `UploadPage`. A
+  modal makes the destination explicit at the point of action and is
+  unmissable in a way the inline banner is not. Pair with the toast
+  disambiguation and the April misaligned-slots audit — same recovery,
+  same operator-trust theme.
+
 **Rebuild pipeline ordering** (enforced by `rebuildBatch` in `src/lib/rebuild.ts`):
 
 ```
