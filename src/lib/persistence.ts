@@ -142,11 +142,8 @@ export async function getBatches() {
 }
 
 export async function getUploadedFiles(batchId: string) {
-  const { data, error } = await supabase
-    .from('uploaded_files')
-    .select('*')
-    .eq('batch_id', batchId)
-    .is('superseded_at', null);
+  // Canonical active predicate (status='active' AND superseded_at IS NULL).
+  const { data, error } = await activeUploadedFilesQuery(batchId);
   if (error) throw error;
   return data;
 }
