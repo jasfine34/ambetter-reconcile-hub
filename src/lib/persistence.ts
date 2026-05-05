@@ -526,11 +526,8 @@ export async function countReconciledForBatch(batchId: string): Promise<number> 
  * "0 reconciled despite N normalized" failure mode.
  */
 export async function countCurrentNormalizedForBatch(batchId: string): Promise<number> {
-  const { count, error } = await supabase
-    .from('normalized_records')
-    .select('id', { count: 'exact', head: true })
-    .eq('batch_id', batchId)
-    .is('superseded_at', null);
+  // Canonical active predicate.
+  const { count, error } = await activeNormalizedCountQuery(batchId);
   if (error) throw error;
   return count ?? 0;
 }
@@ -554,9 +551,20 @@ export async function countCommissionEstimatesForBatch(batchId: string): Promise
   return count ?? 0;
 }
 
-export async function deleteCurrentNormalizedForBatch(batchId: string) {
+/**
+ * TEST-ONLY destructive deleter. Production rebuilds use the staged-then-
+ * promote pipeline (see `replaceNormalizedForFileSet`) which never deletes
+ * rows; instead it supersedes and promotes inside one TX. This helper is
+ * preserved exclusively for fixture cleanup in unit tests.
+ *
+ * Lint rule `no-test-only-deleter-in-prod` forbids importing this from any
+ * file outside `src/test/` and `src/lib/persistence.ts` itself.
+ *
+ * @internal
+ */
+export async function __test_only_deleteCurrentNormalizedForBatch(batchId: string) {
   const ids = await fetchAllIds('normalized_records', (q) =>
-    q.eq('batch_id', batchId).is('superseded_at', null),
+    q.eq('batch_id', batchId).eq('staging_status', 'active').is('superseded_at', null),
   );
   await chunkedDeleteByIds('normalized_records', ids);
 }
