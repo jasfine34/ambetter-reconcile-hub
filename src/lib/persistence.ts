@@ -149,75 +149,66 @@ export async function getUploadedFiles(batchId: string) {
 }
 
 /**
- * Record a file upload.
+ * Atomic file upload via the `upload_replace_file` RPC.
  *
- * Prior behaviour: DELETE prior normalized_records and the prior uploaded_files
- * row matching (batch_id, file_label). That destroyed historical snapshots.
+ * The RPC runs the entire upload pipeline as a single Postgres transaction:
+ *   1. Inserts the new uploaded_files row (staged).
+ *   2. Inserts the snapshot row (bo_snapshots / ede_snapshots) wired to the
+ *      new uploaded_file_id.
+ *   3. Inserts normalized_records (staged) with the snapshot id linked.
+ *   4. Verifies the staged row count matches what we sent.
+ *   5. Supersedes any prior active rows for the same (batch, file_label).
+ *   6. Promotes the new staged rows to active.
  *
- * New behaviour: mark both rowsets as superseded (append-only history) and
- * create a bo_snapshots or ede_snapshots row for the new upload. Commission
- * uploads don't get a snapshot table; the supersede behaviour still applies so
- * re-uploaded commission files don't double-count.
+ * Any failure (verify, snapshot insert, supersede, promote) rolls the entire
+ * upload back — no orphan rows, no partial supersede, no rollback writer
+ * needed in JS. The caller only owns the storage upload (which is harmless
+ * to leave behind on RPC failure — re-upload overwrites the same path).
  *
- * Returns the new uploaded_files row, plus (for EDE/BACK_OFFICE) the snapshot
- * created for it. The caller passes the snapshot to insertNormalizedRecords so
- * every row is linked back to the snapshot it came from.
+ * Returns the new uploaded_files.id.
  */
-export async function uploadFileRecord(
-  batchId: string, fileLabel: string, fileName: string,
-  sourceType: string, payEntity: string | null, aorBucket: string | null, storagePath: string
-): Promise<{ file: any; snapshot: SnapshotRef | null }> {
-  const now = new Date().toISOString();
+export async function uploadReplaceFile(args: {
+  batchId: string;
+  fileLabel: string;
+  fileName: string;
+  sourceType: string;
+  payEntity: string | null;
+  aorBucket: string | null;
+  storagePath: string;
+  rows: any[];
+  snapshotDate?: string | null;
+}): Promise<string> {
+  const snapshotKind: 'bo' | 'ede' | 'none' =
+    args.sourceType === 'BACK_OFFICE' ? 'bo' :
+    args.sourceType === 'EDE' ? 'ede' : 'none';
 
-  // Mark prior rows as superseded instead of deleting them. Each supersede
-  // MUST capture {error} and throw before we proceed to the INSERT below —
-  // otherwise a silent supersede failure (RLS, timeout, network blip) would
-  // leave the prior current rows live AND the new ones would land on top,
-  // producing duplicate-current data with a success toast (Codex Finding 1).
-  const { error: normSupersedeError } = await supabase
-    .from('normalized_records')
-    .update({ superseded_at: now })
-    .eq('batch_id', batchId)
-    .eq('source_file_label', fileLabel)
-    .is('superseded_at', null);
-  if (normSupersedeError) {
+  const snapshotSourceKind =
+    snapshotKind === 'ede' ? deriveEdeSourceKind(args.fileLabel) : null;
+  const snapshotAgentBucket =
+    snapshotKind === 'bo' ? (args.aorBucket || null) : null;
+
+  const { data, error } = await (supabase as any).rpc('upload_replace_file', {
+    _batch_id: args.batchId,
+    _file_label: args.fileLabel,
+    _file_name: args.fileName,
+    _source_type: args.sourceType,
+    _pay_entity: args.payEntity ?? '',
+    _aor_bucket: args.aorBucket ?? '',
+    _storage_path: args.storagePath,
+    _snapshot_date: args.snapshotDate ?? null,
+    _snapshot_kind: snapshotKind,
+    _snapshot_source_kind: snapshotSourceKind,
+    _snapshot_agent_bucket: snapshotAgentBucket,
+    _rows: args.rows,
+    _expected_count: args.rows.length,
+  });
+  if (error) {
     throw new Error(
-      `Failed to supersede prior normalized_records for ${fileLabel}: ${unwrapPgError(normSupersedeError)}`,
+      `upload_replace_file failed for ${args.fileLabel}: ${unwrapPgError(error)}`,
     );
   }
-
-  const { error: fileSupersedeError } = await supabase
-    .from('uploaded_files')
-    .update({ superseded_at: now })
-    .eq('batch_id', batchId)
-    .eq('file_label', fileLabel)
-    .is('superseded_at', null);
-  if (fileSupersedeError) {
-    throw new Error(
-      `Failed to supersede prior uploaded_files row for ${fileLabel}: ${unwrapPgError(fileSupersedeError)}`,
-    );
-  }
-
-  // Insert the new uploaded_files row.
-  const { data: file, error: fileError } = await supabase
-    .from('uploaded_files')
-    .insert({
-      batch_id: batchId,
-      file_label: fileLabel,
-      file_name: fileName,
-      source_type: sourceType,
-      pay_entity: payEntity,
-      aor_bucket: aorBucket,
-      storage_path: storagePath,
-    })
-    .select()
-    .single();
-  if (fileError) throw fileError;
-
-  // Create a snapshot row for EDE and BACK_OFFICE uploads.
-  const snapshot = await createSnapshotForUpload(file.id, sourceType, aorBucket, fileLabel);
-
-  return { file, snapshot };
+  // RPC returns the new uploaded_files.id (uuid).
+  return data as string;
 }
 
 /**
