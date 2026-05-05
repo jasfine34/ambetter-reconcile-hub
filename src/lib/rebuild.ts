@@ -334,7 +334,13 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
     });
 
     try {
+      console.info('[rebuild-diag] Phase4 ENTER reconcile()', { batchId, sessionId });
+      const reconcileStart = performance.now();
       const allRecords = await getNormalizedRecords(batchId);
+      console.info('[rebuild-diag] Phase4 fetched normalized_records', {
+        batchId,
+        normalizedRows: allRecords.length,
+      });
 
       const { data: batchData } = await supabase
         .from('upload_batches')
@@ -348,9 +354,25 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
 
       const resolverIndex = await loadResolverIndex(true);
       const { members } = reconcile(allRecords as any[], reconcileMonth, resolverIndex);
+      const reconcileMs = Math.round(performance.now() - reconcileStart);
+
+      const inBoTrue = members.filter((m: any) => m.in_back_office === true).length;
+      console.info('[rebuild-diag] Phase4 EXIT reconcile()', {
+        batchId,
+        reconcileMonth,
+        memberCount: members.length,
+        inBackOfficeTrue: inBoTrue,
+        reconcileMs,
+      });
 
       const persistedNormalizedCount = await countCurrentNormalizedForBatch(batchId);
       const expectingRows = members.length > 0 && persistedNormalizedCount > 0;
+      console.info('[rebuild-diag] Phase4 pre-save state', {
+        batchId,
+        memberCount: members.length,
+        persistedNormalizedCount,
+        expectingRows,
+      });
 
       const MAX_ATTEMPTS = 3;
       const BACKOFFS_MS = [0, 1000, 3000];
@@ -369,6 +391,12 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
         });
 
         try {
+          console.info('[rebuild-diag] Phase4 save attempt', {
+            batchId,
+            attempt,
+            expectingRows,
+            memberCount: members.length,
+          });
           if (expectingRows) {
             const { rowCount } = await saveAndVerifyReconciled(batchId, members);
             verifiedCount = rowCount;
@@ -376,6 +404,11 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
             await saveReconciledMembers(batchId, members);
             verifiedCount = await countReconciledForBatch(batchId);
           }
+          console.info('[rebuild-diag] Phase4 save attempt OK', {
+            batchId,
+            attempt,
+            verifiedCount,
+          });
           emit({
             phase: 'verifying',
             filesProcessed: files.length,
@@ -387,6 +420,15 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
           break;
         } catch (err: any) {
           lastError = err instanceof Error ? err : new Error(extractErrorMessage(err));
+          console.error('[rebuild-diag] Phase4 save attempt FAILED', {
+            batchId,
+            attempt,
+            errorMessage: lastError.message,
+            errorName: lastError.name,
+            code: (err as any)?.code,
+            details: (err as any)?.details,
+            hint: (err as any)?.hint,
+          });
         }
       }
 
@@ -398,6 +440,7 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
       }
 
       // Stamp metadata only after a clean reconcile.
+      console.info('[rebuild-diag] Phase4 stamp ENTER', { batchId, verifiedCount });
       const { error: stampError } = await supabase
         .from('upload_batches')
         .update({
@@ -406,10 +449,16 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
         })
         .eq('id', batchId);
       if (stampError) {
+        console.error('[rebuild-diag] Phase4 stamp FAILED', {
+          batchId,
+          message: (stampError as any)?.message,
+          code: (stampError as any)?.code,
+        });
         throw new Error(
           `Failed to stamp rebuild metadata for batch ${batchId}: ${extractErrorMessage(stampError)}`,
         );
       }
+      console.info('[rebuild-diag] Phase4 stamp OK', { batchId });
     } catch (reconcileErr) {
       // Promote succeeded; reconcile/stamp did not. Surface the distinct
       // ReconcileAfterPromoteError so the UI banner can show the explicit
@@ -417,6 +466,13 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
       const underlying = reconcileErr instanceof Error
         ? reconcileErr
         : new Error(extractErrorMessage(reconcileErr));
+      const isReconcileAfterPromote = reconcileErr instanceof ReconcileAfterPromoteError;
+      console.error('[rebuild-diag] Phase4 CAUGHT error', {
+        batchId,
+        promoted,
+        errorClass: isReconcileAfterPromote ? 'ReconcileAfterPromoteError' : underlying.name,
+        message: underlying.message,
+      });
       throw new ReconcileAfterPromoteError(underlying);
     }
   } finally {
@@ -424,7 +480,17 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
       lockHeld = false;
       // Best-effort release. releaseRebuildLock only logs on failure (it
       // doesn't throw) so a release-time error never masks an upstream one.
-      await releaseRebuildLock(batchId, sessionId);
+      console.info('[rebuild-diag] releasing rebuild lock', { batchId, sessionId });
+      try {
+        await releaseRebuildLock(batchId, sessionId);
+        console.info('[rebuild-diag] lock released OK', { batchId, sessionId });
+      } catch (relErr: any) {
+        console.error('[rebuild-diag] lock release FAILED', {
+          batchId,
+          sessionId,
+          message: relErr?.message,
+        });
+      }
     }
   }
 
