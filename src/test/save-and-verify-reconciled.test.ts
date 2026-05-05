@@ -192,66 +192,59 @@ describe('saveAndVerifyReconciled — canonical save+verify+stamp (Finding 2)', 
   });
 });
 
-describe('uploadFileRecord — supersede error capture (Finding 1)', () => {
-  it('throws if the normalized_records supersede UPDATE returns a Postgres error', async () => {
-    captured.normalized_supersede_error = {
-      message: 'permission denied for table normalized_records',
-      code: '42501',
-    };
-
-    let caught: Error | null = null;
-    try {
-      await uploadFileRecord(
-        'batch-1', 'EDE Summary', 'a.csv', 'EDE', null, null, '/p/a.csv',
-      );
-    } catch (err: any) {
-      caught = err;
-    }
-
-    expect(caught).not.toBeNull();
-    expect(caught!.message).toMatch(/Failed to supersede prior normalized_records/);
-    expect(caught!.message).toMatch(/permission denied/);
-    expect(caught!.message).toMatch(/42501/);
-
-    // CRITICAL: the uploaded_files INSERT must NOT have run.
-    const fileInsert = captured.inserts.find(i => i.table === 'uploaded_files');
-    expect(fileInsert).toBeUndefined();
+describe('uploadReplaceFile — RPC wrapper contract', () => {
+  it('routes through upload_replace_file with snapshot kind=ede for EDE uploads', async () => {
+    await uploadReplaceFile({
+      batchId: 'b1',
+      fileLabel: 'EDE Summary',
+      fileName: 'a.csv',
+      sourceType: 'EDE',
+      payEntity: null,
+      aorBucket: null,
+      storagePath: '/p/a.csv',
+      rows: [{ member_key: 'm1' }],
+    });
+    const call = captured.rpcCalls.find(c => c.name === 'upload_replace_file');
+    expect(call).toBeDefined();
+    expect(call!.args._snapshot_kind).toBe('ede');
+    expect(call!.args._snapshot_source_kind).toBe('summary');
+    expect(call!.args._snapshot_agent_bucket).toBeNull();
+    expect(call!.args._expected_count).toBe(1);
+    expect(call!.args._batch_id).toBe('b1');
   });
 
-  it('throws if the uploaded_files supersede UPDATE returns a Postgres error', async () => {
-    captured.uploaded_files_supersede_error = {
-      message: 'connection terminated',
-      code: '57P01',
-    };
-
-    let caught: Error | null = null;
-    try {
-      await uploadFileRecord(
-        'batch-1', 'EDE Summary', 'a.csv', 'EDE', null, null, '/p/a.csv',
-      );
-    } catch (err: any) {
-      caught = err;
-    }
-
-    expect(caught).not.toBeNull();
-    expect(caught!.message).toMatch(/Failed to supersede prior uploaded_files/);
-    expect(caught!.message).toMatch(/connection terminated/);
-
-    // INSERT must NOT have run after the second supersede failed.
-    const fileInsert = captured.inserts.find(i => i.table === 'uploaded_files');
-    expect(fileInsert).toBeUndefined();
+  it('uses snapshot kind=bo and forwards aor_bucket for BACK_OFFICE uploads', async () => {
+    await uploadReplaceFile({
+      batchId: 'b1',
+      fileLabel: 'BO Mariner',
+      fileName: 'bo.csv',
+      sourceType: 'BACK_OFFICE',
+      payEntity: null,
+      aorBucket: 'Mariner',
+      storagePath: '/p/bo.csv',
+      rows: [],
+    });
+    const call = captured.rpcCalls.find(c => c.name === 'upload_replace_file');
+    expect(call).toBeDefined();
+    expect(call!.args._snapshot_kind).toBe('bo');
+    expect(call!.args._snapshot_agent_bucket).toBe('Mariner');
+    expect(call!.args._snapshot_source_kind).toBeNull();
   });
 
-  it('proceeds to INSERT when both supersedes succeed', async () => {
-    captured.normalized_supersede_error = null;
-    captured.uploaded_files_supersede_error = null;
-
-    const result = await uploadFileRecord(
-      'batch-1', 'EDE Summary', 'a.csv', 'EDE', null, null, '/p/a.csv',
-    );
-    expect(result.file).toBeTruthy();
-    const fileInsert = captured.inserts.find(i => i.table === 'uploaded_files');
-    expect(fileInsert).toBeDefined();
-    expect(fileInsert!.payload.batch_id).toBe('batch-1');
+  it('uses snapshot kind=none for COMMISSION uploads', async () => {
+    await uploadReplaceFile({
+      batchId: 'b1',
+      fileLabel: 'Commission Statement',
+      fileName: 'c.csv',
+      sourceType: 'COMMISSION',
+      payEntity: 'CoverAll',
+      aorBucket: null,
+      storagePath: '/p/c.csv',
+      rows: [],
+    });
+    const call = captured.rpcCalls.find(c => c.name === 'upload_replace_file');
+    expect(call).toBeDefined();
+    expect(call!.args._snapshot_kind).toBe('none');
   });
 });
+
