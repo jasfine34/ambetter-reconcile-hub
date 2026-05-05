@@ -295,18 +295,42 @@ export async function getOrCreateSnapshotForFile(file: {
   return null;
 }
 
-export async function insertNormalizedRecords(
+/**
+ * Insert normalized_records as STAGED rows tied to a rebuild session.
+ *
+ * Replaces the legacy `insertNormalizedRecords` (which inserted directly as
+ * 'active'). This is the ONLY production path that writes normalized_records
+ * during a rebuild. Promotion to active happens atomically inside
+ * `replace_normalized_for_file_set` after every per-file stage succeeds.
+ *
+ * Contract:
+ *   - rebuildSessionId is REQUIRED. Staged rows without a session id can't be
+ *     pre-flushed and would orphan if the rebuild dies.
+ *   - All rows land with staging_status='active'-FALSE → 'staged' and
+ *     rebuild_session_id = session.
+ *   - Failure leaves the staged rows behind for the next rebuild's pre-flush
+ *     to clean up (idempotent recovery).
+ */
+export async function insertStagedNormalizedRecords(
   batchId: string,
   uploadedFileId: string,
   records: NormalizedRecord[],
+  rebuildSessionId: string,
   snapshot?: SnapshotRef | null,
 ) {
+  if (!rebuildSessionId) {
+    throw new Error(
+      'insertStagedNormalizedRecords: rebuildSessionId is required (orphan staged rows would be unrecoverable)',
+    );
+  }
   if (records.length === 0) return;
   const rows = records.map(r => ({
     batch_id: batchId,
     uploaded_file_id: uploadedFileId,
     bo_snapshot_id: snapshot?.kind === 'bo' ? snapshot.id : null,
     ede_snapshot_id: snapshot?.kind === 'ede' ? snapshot.id : null,
+    staging_status: 'staged',
+    rebuild_session_id: rebuildSessionId,
     source_type: r.source_type,
     source_file_label: r.source_file_label,
     carrier: r.carrier,
@@ -332,8 +356,6 @@ export async function insertNormalizedRecords(
     eligible_for_commission: r.eligible_for_commission,
     policy_term_date: r.policy_term_date ?? null,
     paid_through_date: r.paid_through_date ?? null,
-    // Phase 1b typed columns — null/empty when the source file doesn't carry
-    // the signal. The adapters decide which ones they populate.
     broker_effective_date: r.broker_effective_date ?? null,
     broker_term_date: r.broker_term_date ?? null,
     member_responsibility: r.member_responsibility ?? null,
@@ -354,6 +376,10 @@ export async function insertNormalizedRecords(
     raw_json: r.raw_json as unknown as Record<string, never>,
   }));
 
+  // Sanctioned writer: this is the ONE place outside the upload_replace_file
+  // RPC that may INSERT into normalized_records. The lint rule
+  // `no-direct-normalized-insert` allows this file/function and forbids the
+  // pattern everywhere else.
   for (let i = 0; i < rows.length; i += 500) {
     const chunk = rows.slice(i, i + 500);
     const { error } = await (supabase as any).from('normalized_records').insert(chunk);
