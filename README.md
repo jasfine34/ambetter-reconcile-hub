@@ -139,6 +139,27 @@ may not be imported outside `src/test/`.
   not. Pair with the toast disambiguation and the April misaligned-
   slots audit — same recovery, same operator-trust theme.
 
+- **Upload tile last-uploaded summary.** Each upload tile on
+  `UploadPage` should display a "last uploaded" timestamp + filename
+  for its slot at a glance, so operators can visually confirm slot
+  state without querying the DB. Surfaced during the May 2026 Feb
+  recovery: after the wrong-file Feb EDE Summary upload (and again
+  after the Coverall Commission misleading toast), the only way to
+  confirm what was actually active in each slot was an out-of-band
+  DB query. Tile-level visibility would close the loop and let the
+  operator self-verify each upload before proceeding to the next
+  step. Same operator-trust theme as the confirmation modal and
+  toast disambiguation.
+
+- **Toast header for post-upload reconcile failures.** The toast
+  body was improved to say *"file saved — try Rebuild"*, but the
+  red header still reads *"Upload failed: {label}"* even though the
+  upload succeeded and only the post-upload auto-reconcile timed
+  out. Header should match the body's semantics — e.g. *"Saved,
+  reconcile pending: {label}"* with a yellow/warning style instead
+  of red/destructive. Observed twice during the May 2026 Feb
+  recovery (EDE Summary 1c, Coverall Commission 2a).
+
 **Rebuild pipeline ordering** (enforced by `rebuildBatch` in `src/lib/rebuild.ts`):
 
 ```
