@@ -72,6 +72,30 @@ may not be imported outside `src/test/`.
   bucket objects under each batch prefix and deletes any whose path is
   not referenced by an active or staged `uploaded_files.storage_path`.
 
+- **Audit April 2026 batch for misaligned slots.** During the May 2026 Feb
+  recovery, two April active rows were observed holding Feb-named files
+  (uploaded ~2026-05-04 23:27Z, before the recovery session):
+  - `EDE Archived Enrolled` active = `63be8a8b-94b7-4d72-8c98-87c452d554f3`
+    → `BC3614-aca-enrollments-archived_enrolled--2026-02-02 (1).csv`
+  - `EDE Archived Not Enrolled` active = `ff11558a-dcc4-4472-818a-1112f3b5707e`
+    → `BC3614-aca-enrollments-archived_not_enrolled--2026-02-02 (1).csv`
+  After Feb is fully restored and rebuilt, audit every active
+  `uploaded_files` row in the April batch (`652750c4-...`), confirm
+  whether each file_label's active row points at a `--2026-04-01.csv`
+  file (or otherwise correct April data), and atomically replace any
+  misaligned slots before re-running the April rebuild. Do NOT touch
+  April further until Feb recovery completes.
+
+- **Consider bumping `replace_reconciled_members_for_batch` statement
+  timeout.** Observed during the May 2026 Feb recovery: the post-upload
+  reconcile invocation from `processUpload` hit `statement_timeout`
+  (SQLSTATE 57014) on the April batch at 02:50:55Z, ~27s after a
+  successful `upload_replace_file`. The atomic upload is preserved —
+  reconcile failure is non-fatal and the user re-runs reconcile via
+  Rebuild — but the toast surface is noisy. Decide whether to apply a
+  function-scoped 120s bump here too, or leave reconcile to the Rebuild
+  flow.
+
 **Rebuild pipeline ordering** (enforced by `rebuildBatch` in `src/lib/rebuild.ts`):
 
 ```
