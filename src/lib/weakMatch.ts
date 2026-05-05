@@ -30,7 +30,7 @@
  * policy_number cleanId, issuer_subscriber_id} and require ≥2 matches.
  */
 import { supabase } from '@/integrations/supabase/client';
-import { cleanId } from './normalize';
+import { cleanId, cleanSubscriberId } from './normalize';
 import type { FilteredEdeRow } from './expectedEde';
 
 export type WeakMatchDecision = 'confirmed' | 'rejected' | 'deferred';
@@ -87,9 +87,9 @@ export function pickStableKey(opts: {
   policy_number?: string | null;
 }): string {
   const isid = String(opts.issuer_subscriber_id ?? '').trim();
-  if (isid) return `issub:${cleanId(isid)}`;
+  if (isid) return `issub:${cleanSubscriberId(isid)}`;
   const esid = String(opts.exchange_subscriber_id ?? '').trim();
-  if (esid) return `sub:${cleanId(esid)}`;
+  if (esid) return `sub:${cleanSubscriberId(esid)}`;
   const pn = String(opts.policy_number ?? '').trim();
   if (pn) return `policy:${cleanId(pn)}`;
   return '';
@@ -132,8 +132,8 @@ export function findWeakMatches(
     if (r.source_type !== 'BACK_OFFICE') continue;
     const nm = normName(r.applicant_name);
     if (nm) push(boByName, nm, r);
-    if (r.exchange_subscriber_id) push(boByEsid, cleanId(r.exchange_subscriber_id), r);
-    if (r.issuer_subscriber_id) push(boByIsid, cleanId(r.issuer_subscriber_id), r);
+    if (r.exchange_subscriber_id) push(boByEsid, cleanSubscriberId(r.exchange_subscriber_id), r);
+    if (r.issuer_subscriber_id) push(boByIsid, cleanSubscriberId(r.issuer_subscriber_id), r);
     if (r.policy_number) push(boByPolicy, cleanId(r.policy_number), r);
   }
 
@@ -151,8 +151,8 @@ export function findWeakMatches(
       for (const r of rs) seen.set(r.id, r);
     };
     consider(boByName.get(normName(fe.applicant_name)));
-    if (fe.exchange_subscriber_id) consider(boByEsid.get(cleanId(fe.exchange_subscriber_id)));
-    if (fe.issuer_subscriber_id) consider(boByIsid.get(cleanId(fe.issuer_subscriber_id)));
+    if (fe.exchange_subscriber_id) consider(boByEsid.get(cleanSubscriberId(fe.exchange_subscriber_id)));
+    if (fe.issuer_subscriber_id) consider(boByIsid.get(cleanSubscriberId(fe.issuer_subscriber_id)));
     if (fe.policy_number) consider(boByPolicy.get(cleanId(fe.policy_number)));
 
     if (seen.size === 0) continue; // genuine Not-in-BO — not a weak match
@@ -174,16 +174,16 @@ export function findWeakMatches(
       } else unknown.push('applicant_name');
 
       // exchange_subscriber_id
-      const feE = cleanId(fe.exchange_subscriber_id);
-      const boE = cleanId(r.exchange_subscriber_id);
+      const feE = cleanSubscriberId(fe.exchange_subscriber_id);
+      const boE = cleanSubscriberId(r.exchange_subscriber_id);
       if (feE && boE) {
         if (feE === boE) matched.push('exchange_subscriber_id');
         else differed.push('exchange_subscriber_id');
       } else unknown.push('exchange_subscriber_id');
 
       // issuer_subscriber_id (the de-facto ffmAppId)
-      const feI = cleanId(fe.issuer_subscriber_id);
-      const boI = cleanId(r.issuer_subscriber_id);
+      const feI = cleanSubscriberId(fe.issuer_subscriber_id);
+      const boI = cleanSubscriberId(r.issuer_subscriber_id);
       if (feI && boI) {
         if (feI === boI) matched.push('issuer_subscriber_id');
         else differed.push('issuer_subscriber_id');
