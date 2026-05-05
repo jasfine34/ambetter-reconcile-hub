@@ -668,9 +668,19 @@ export async function saveAndVerifyReconciled(
   members: ReconciledMember[],
   opts: { stampLogicVersion?: boolean; logicVersion?: string } = {},
 ): Promise<{ rowCount: number; version?: string }> {
+  console.info('[rebuild-diag] saveAndVerifyReconciled ENTER', {
+    batchId,
+    payloadSize: members.length,
+    stampLogicVersion: !!opts.stampLogicVersion,
+  });
   await saveReconciledMembers(batchId, members);
 
   const rowCount = await countReconciledForBatch(batchId);
+  console.info('[rebuild-diag] saveAndVerifyReconciled readback', {
+    batchId,
+    payloadSize: members.length,
+    rowCount,
+  });
   if (rowCount === 0 && members.length > 0) {
     throw new Error(
       `Save verification failed for batch ${batchId}: expected ${members.length} reconciled ` +
