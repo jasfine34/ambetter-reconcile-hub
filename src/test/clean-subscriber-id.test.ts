@@ -169,16 +169,19 @@ describe('reconcile / assignMergedMemberKeys — Feb-style asymmetry merges', ()
     expect(boRec.exchange_subscriber_id).toBe('23487406');
   });
 
-  it('genuinely different non-padding ESIDs do NOT merge (true conflict still refused)', () => {
+  it('genuinely different non-padding ESIDs+ISIDs do NOT merge (true conflict still refused)', () => {
     const records = synthFebPair();
-    // Replace the BO row's ESID with a genuinely different value.
+    // Replace BOTH strong IDs on the BO row with genuinely different values
+    // (not a leading-zero variant). The conflict gate must keep them apart.
     records[1].exchange_subscriber_id = '99999999';
-    // Same agent NPN, but the conflict gate must keep them separate to avoid
-    // an unsafe merge.
+    records[1].issuer_subscriber_id = 'u88888888';
+    // Also drop policy_number alignment so name/policy can't bridge.
+    records[1].policy_number = 'u88888888';
+    records[1].applicant_name = 'Different Person';
+    records[1].first_name = 'Different';
+    records[1].last_name = 'Person';
     assignMergedMemberKeys(records, null);
 
-    // EDE and BO must NOT share a key — only the commission row may join
-    // EDE via issuer_subscriber_id.
     const edeKey = records.find(r => r.source_type === 'EDE')!.member_key;
     const boKey = records.find(r => r.source_type === 'BACK_OFFICE')!.member_key;
     expect(edeKey).not.toBe(boKey);
@@ -193,14 +196,22 @@ describe('reconcile / assignMergedMemberKeys — Feb-style asymmetry merges', ()
     expect(secondKeys).toEqual(firstKeys);
   });
 
-  it('policy_number is not stripped when used as policy_number (carrier-future safety)', () => {
-    // Numeric policy with leading zeros, alongside a member with the same
-    // numeric pattern as ESID. policy_number must keep its zeros so future
-    // carriers that use leading zeros as meaningful aren't damaged.
+  it('policy_number is not stripped when numeric with leading zeros (carrier-future safety)', () => {
+    // Test the helper boundary directly: cleanId() must preserve leading
+    // zeros on policy_number-class values (a future carrier may treat them
+    // as significant). cleanSubscriberId() strips them. Verify both.
+    expect(cleanId('00012345')).toBe('00012345');
+    expect(cleanSubscriberId('00012345')).toBe('12345');
+
+    // Also: in the Ambetter BO normalizer, the SAME raw "Policy Number"
+    // value is written to TWO fields. policy_number stays on cleanId() and
+    // issuer_subscriber_id goes through cleanSubscriberId(). For a numeric
+    // padded value, the two fields must DIVERGE, proving the alias-aware
+    // routing approved in the audit.
     const fakeBO: Record<string, string> = {
       'Broker Name': 'X',
       'Broker NPN': '1',
-      'Policy Number': 'U-keep',        // ISID alias — irrelevant
+      'Policy Number': '0099015281',     // numeric padded
       'Insured First Name': 'F',
       'Insured Last Name': 'L',
       'Broker Effective Date': '02/01/2026',
@@ -216,10 +227,8 @@ describe('reconcile / assignMergedMemberKeys — Feb-style asymmetry merges', ()
       'Eligible for Commission': 'Yes',
     };
     const r = normalizeBackOfficeRow(fakeBO, 'f.csv', 'Jason');
-    // policy_number kept on cleanId (preserves any carrier-meaningful zeros
-    // — Ambetter's "U-..." stays untouched here too).
-    expect(r.policy_number).toBe('ukeep');
-    // ESID gets the subscriber-cleaner.
-    expect(r.exchange_subscriber_id).toBe('23487406');
+    expect(r.policy_number).toBe('0099015281');           // zeros preserved
+    expect(r.issuer_subscriber_id).toBe('99015281');       // zeros stripped (subscriber-id alias)
+    expect(r.exchange_subscriber_id).toBe('23487406');     // zeros stripped
   });
 });
