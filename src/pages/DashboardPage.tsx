@@ -366,6 +366,19 @@ export default function DashboardPage() {
     [normalizedRecords, reconciled, payEntityFilter, coveredMonths, resolverIndex]
   );
 
+  /**
+   * Canonical EE-universe member_key set (#118 migration, 2026-05-06).
+   * Sourced from `filteredEde.uniqueMembers` (current-batch span, AOR-based)
+   * — this is the SAME predicate the canonical helpers use. Replaces the
+   * persistent `reconciled_members.is_in_expected_ede_universe` flag for
+   * every UI metric, drilldown, and unpaid sample. The persistent column
+   * is retained as a diagnostic readout in the debug strip below.
+   */
+  const eeUniverseKeys = useMemo(
+    () => new Set(filteredEde.uniqueMembers.map((m) => m.member_key)),
+    [filteredEde]
+  );
+
   // Weak-match resolution (2026-04-27). For each EE-universe member that
   // failed strict join to BO, check if a BO sibling exists by ≥2 fuzzy
   // signals. Apply persistent overrides from `weak_match_overrides`:
