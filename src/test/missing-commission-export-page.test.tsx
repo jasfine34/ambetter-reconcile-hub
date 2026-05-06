@@ -204,8 +204,8 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
 
     fireEvent.click(screen.getByTestId('run-report'));
     await waitFor(() => expect(screen.getByTestId('error-state')).toBeInTheDocument());
-    expect(screen.getByText(/Run failed/i)).toBeInTheDocument();
-    expect(screen.getByText(/simulated compute failure/i)).toBeInTheDocument();
+    expect(screen.getByTestId('error-state')).toHaveTextContent(/Run failed/i);
+    expect(screen.getByTestId('error-state')).toHaveTextContent(/simulated compute failure/i);
     expect(screen.getByTestId('retry-run')).toBeInTheDocument();
     expect(screen.queryByTestId('results-table')).not.toBeInTheDocument();
   });
