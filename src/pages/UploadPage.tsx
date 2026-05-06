@@ -364,6 +364,21 @@ export default function UploadPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <WrongBatchConfirmModal
+        open={!!pendingConfirm}
+        batchLabel={pendingConfirm?.batchLabel ?? null}
+        fileLabel={pendingConfirm?.fileLabel ?? null}
+        file={pendingConfirm?.file ?? null}
+        warning={pendingConfirm?.warning ?? { kind: 'none' }}
+        onCancel={() => setPendingConfirm(null)}
+        onConfirm={() => {
+          const p = pendingConfirm;
+          if (!p) return;
+          setPendingConfirm(null);
+          void runUploadAfterConfirm(p.fileLabel, p.sourceType, p.payEntity, p.aorBucket, p.file);
+        }}
+      />
     </div>
   );
 }
