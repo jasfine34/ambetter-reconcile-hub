@@ -298,7 +298,11 @@ describe('page wiring — #118 EE-universe canonical migration', () => {
     return { reconciled, filteredEde };
   }
 
-  it('Dashboard "expected" / "foundBO" / "eligible" / "unpaid" drilldowns MUST exclude ghost rows', () => {
+  // #121: Found in Back Office / Eligible for Commission / Should Be Paid hero cards
+  // were collapsed into a single Should Be Paid card. The underlying canonical predicates
+  // are still asserted below — the consolidated card and its drilldown share the
+  // `eligible` predicate (EE universe ∩ Back Office ∩ eligible_for_commission='Yes').
+  it('Dashboard "expected" / consolidated should-be-paid / "unpaid" drilldowns MUST exclude ghost rows', () => {
     const { reconciled, filteredEde } = makeGhostFixture();
     const eeUniverseKeys = new Set(filteredEde.uniqueMembers.map((m) => m.member_key));
 
