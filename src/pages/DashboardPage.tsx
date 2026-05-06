@@ -853,13 +853,13 @@ export default function DashboardPage() {
             variant="outline"
             size="sm"
             onClick={() => {
-              executeInvariants();
               setInvariantsOpen(true);
+              executeInvariants();
             }}
-            disabled={!currentBatchId || reconciled.length === 0}
+            disabled={!currentBatchId || reconciled.length === 0 || invariantsRunning}
           >
-            <ShieldAlert className="h-4 w-4 mr-1" />
-            Run Invariants
+            <ShieldAlert className={`h-4 w-4 mr-1 ${invariantsRunning ? 'animate-pulse' : ''}`} />
+            {invariantsRunning ? 'Running…' : 'Run Invariants'}
           </Button>
           <Button variant="outline" size="sm" onClick={() => setResolveConfirmOpen(true)} disabled={resolving}>
             <Link2 className={`h-4 w-4 mr-1 ${resolving ? 'animate-pulse' : ''}`} />
