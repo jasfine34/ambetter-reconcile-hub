@@ -786,8 +786,11 @@ export default function DashboardPage() {
     if (!drilldown) return null;
     switch (drilldown) {
       case 'expected': return filtered.filter(r => eeUniverseKeys.has(r.member_key));
-      case 'foundBO': return filtered.filter(r => eeUniverseKeys.has(r.member_key) && effInBO(r));
-      case 'eligible': return filtered.filter(r => eeUniverseKeys.has(r.member_key) && effInBO(r) && r.eligible_for_commission === 'Yes');
+      // 'foundBO' and 'eligible' drilldown cases removed: their hero cards
+      // were consolidated away in #121 and no setDrilldown(...) call site
+      // produces these keys anymore. metrics.foundBO / metrics.eligibleCohort
+      // remain — they still feed live cards (shouldPay, paidEligible, unpaid)
+      // and Reconciliation Validation invariants.
       // #121: 'shouldPay' opens the consolidated card's underlying cohort.
       // Source it directly from the canonical `eligibleCohort` (same array
       // `metrics.shouldPay` counts) so the drilldown row count equals the
