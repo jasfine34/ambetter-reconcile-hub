@@ -312,6 +312,29 @@ export default function UploadPage() {
     ? `${new Date(`${currentBatch.statement_month}T00:00:00`).toLocaleDateString('en-US', { year: 'numeric', month: 'long' })} — ${currentBatch.carrier}`
     : null;
 
+  /**
+   * #127 — Build per-tile metadata: active filename, last-uploaded timestamp,
+   * row count for the active uploaded_file_id, and filename-vs-batch-month
+   * warning (reuses the #122 heuristic). Reads from data already loaded by
+   * BatchContext (uploadedFiles) plus the rowCounts map populated above. No
+   * extra RPC calls per render.
+   */
+  const buildTileMeta = (label: string, sourceType: string) => {
+    const f = uploadedFiles.find((uf: any) => uf.file_label === label);
+    const name = f?.file_name?.trim() || null;
+    if (!f || !name) {
+      return { uploadedFileName: null, lastUploadedAt: null, rowCount: null, warning: undefined };
+    }
+    const warning = evaluateFilenameDate(name, sourceType, currentBatch?.statement_month);
+    return {
+      uploadedFileName: name,
+      lastUploadedAt: f.created_at ?? null,
+      rowCount: rowCounts[f.id] ?? null,
+      warning,
+    };
+  };
+
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
