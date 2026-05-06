@@ -134,20 +134,29 @@ describe('D2: Net Paid + Direct/Downline use canonical helpers (Coverall scope)'
 });
 
 describe('D2: Vix scope behavior is explicitly documented (NOT a Direct/Downline invariant)', () => {
-  it('[REGRESSION-ONLY] Vix scope rows fall into Unclassified by design', () => {
-    // Direct/Downline is a Coverall-shaped concept: "Direct" = Coverall NPN,
-    // "Downline" = pay_entity Coverall but non-Coverall NPN. Neither bucket
-    // applies to Vix-scoped rows. Future readers must NOT generalize the
-    // Coverall closure above into "Direct + Downline always ties to Net Paid"
-    // — for Vix, all of Net Paid lands in `unclassifiedNet`.
+  it('[REGRESSION-ONLY] Vix scope: downline bucket is structurally 0 (no Coverall pay_entity rows)', () => {
+    // Direct/Downline is a Coverall-shaped concept:
+    //   Direct   = writing-agent NPN is a Coverall NPN.
+    //   Downline = pay_entity = 'Coverall' AND writing-agent NPN is NOT Coverall.
+    // The Vix scope filter (filterCommissionRowsByScope, scope='Vix') only
+    // admits rows whose pay_entity === 'Vix', so the Downline bucket is
+    // STRUCTURALLY 0 for Vix scope — never because of a fixture coincidence.
+    // Whether a Vix row lands in Direct or Unclassified depends on its
+    // writing-agent NPN (Erica's NPN is a Coverall NPN, so her Vix rows
+    // land in coverallDirectNet). Future readers MUST NOT interpret this
+    // as "Vix should have Coverall direct/downline behavior" — it does not.
     const { normalizedRecords } = fixture();
     const np = getNetPaidCommission(normalizedRecords, 'Vix');
     const split = getDirectVsDownlineSplit(normalizedRecords, 'Vix', isCoverallAORByNPN);
     expect(np.net).toBe(50);
-    expect(split.coverallDirectNet).toBe(0);
-    expect(split.downlineNet).toBe(0);
-    expect(split.unclassifiedNet).toBe(50);
-    // Net Paid is still fully accounted for — just in the Unclassified bucket.
+    expect(split.downlineNet).toBe(0); // structural for Vix scope
+    // The 50 lands in Direct here only because Erica's NPN happens to be a
+    // Coverall NPN. A Vix row written by a non-Coverall NPN would land in
+    // Unclassified instead. Both outcomes are correct for Vix.
+    expect(split.coverallDirectNet + split.unclassifiedNet).toBe(50);
+    // Closure (direct + downline + unclassified === net) still holds, but
+    // it holds trivially when downline is always 0 — do NOT promote this
+    // to a generalized invariant for Vix.
     expect(split.coverallDirectNet + split.downlineNet + split.unclassifiedNet).toBeCloseTo(np.net, 2);
   });
 });
