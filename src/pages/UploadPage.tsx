@@ -94,16 +94,22 @@ export default function UploadPage() {
    *     rather than a half-attached file that silently displaces the prior
    *     upload.
    */
-  const processUpload = useCallback(async (p: Omit<PendingUpload, 'detected'>) => {
-    // Capture the active batch id at the START of the upload so a later
-    // batch-switch (or async setState) can never redirect this upload to a
-    // different batch (FINDING #68 corrected — race-condition guard).
-    const targetBatchId = currentBatchId;
+  const processUpload = useCallback(async (
+    p: Omit<PendingUpload, 'detected'>,
+    batchIdOverride?: string,
+  ) => {
+    // Use the batchId captured upstream (modal-open time) when provided.
+    // This locks the destination to what the operator confirmed in the
+    // Wrong-Batch modal (#122) and prevents any async state change to
+    // currentBatchId from redirecting the upload to a different batch.
+    // Falls back to currentBatchId only for callers that don't capture
+    // upstream (none today, but kept defensive).
+    const targetBatchId = batchIdOverride ?? currentBatchId;
     if (!targetBatchId) {
       toast({ title: 'No batch selected', description: 'Create or select a batch first.', variant: 'destructive' });
       return;
     }
-    console.debug('[upload] start', { fileLabel: p.fileLabel, targetBatchId });
+    console.debug('[upload] start', { fileLabel: p.fileLabel, targetBatchId, captured: !!batchIdOverride });
 
     setSlotUploading(p.fileLabel, true);
     let storagePath: string | null = null;
