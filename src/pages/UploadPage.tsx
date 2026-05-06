@@ -42,6 +42,14 @@ interface PendingConfirm {
   payEntity: string | null;
   aorBucket: string | null;
   file: File;
+  /**
+   * Batch id captured at modal-open time. The Confirm handler passes this
+   * value directly to the upload path so an async state change (or any
+   * refresh/subscription event) cannot redirect the upload to a different
+   * batch between modal-open and Confirm-click. The modal label is derived
+   * from this same id, so what the operator sees is what the upload uses.
+   */
+  batchId: string;
   batchLabel: string | null;
   warning: FilenameWarning;
 }
@@ -86,16 +94,22 @@ export default function UploadPage() {
    *     rather than a half-attached file that silently displaces the prior
    *     upload.
    */
-  const processUpload = useCallback(async (p: Omit<PendingUpload, 'detected'>) => {
-    // Capture the active batch id at the START of the upload so a later
-    // batch-switch (or async setState) can never redirect this upload to a
-    // different batch (FINDING #68 corrected — race-condition guard).
-    const targetBatchId = currentBatchId;
+  const processUpload = useCallback(async (
+    p: Omit<PendingUpload, 'detected'>,
+    batchIdOverride?: string,
+  ) => {
+    // Use the batchId captured upstream (modal-open time) when provided.
+    // This locks the destination to what the operator confirmed in the
+    // Wrong-Batch modal (#122) and prevents any async state change to
+    // currentBatchId from redirecting the upload to a different batch.
+    // Falls back to currentBatchId only for callers that don't capture
+    // upstream (none today, but kept defensive).
+    const targetBatchId = batchIdOverride ?? currentBatchId;
     if (!targetBatchId) {
       toast({ title: 'No batch selected', description: 'Create or select a batch first.', variant: 'destructive' });
       return;
     }
-    console.debug('[upload] start', { fileLabel: p.fileLabel, targetBatchId });
+    console.debug('[upload] start', { fileLabel: p.fileLabel, targetBatchId, captured: !!batchIdOverride });
 
     setSlotUploading(p.fileLabel, true);
     let storagePath: string | null = null;
@@ -202,14 +216,10 @@ export default function UploadPage() {
    * dialog) and otherwise hands off to processUpload.
    */
   const runUploadAfterConfirm = useCallback(async (
+    batchId: string,
     fileLabel: string, sourceType: string, payEntity: string | null,
     aorBucket: string | null, file: File,
   ) => {
-    if (!currentBatchId) {
-      toast({ title: 'No batch selected', description: 'Create or select a batch before uploading.', variant: 'destructive' });
-      return;
-    }
-
     // Detect schema from headers and warn if mismatched.
     try {
       const headers = await readCSVHeaders(file);
@@ -223,8 +233,8 @@ export default function UploadPage() {
       // If header read fails, fall through and attempt processing.
     }
 
-    await processUpload({ fileLabel, sourceType, payEntity, aorBucket, file });
-  }, [currentBatchId, processUpload, toast]);
+    await processUpload({ fileLabel, sourceType, payEntity, aorBucket, file }, batchId);
+  }, [processUpload]);
 
   /**
    * Entry point invoked by every UploadCard. Opens the Wrong-Batch
@@ -248,7 +258,7 @@ export default function UploadPage() {
     const warning = evaluateFilenameDate(file.name, sourceType, batch?.statement_month);
 
     setPendingConfirm({
-      fileLabel, sourceType, payEntity, aorBucket, file, batchLabel, warning,
+      batchId: currentBatchId, fileLabel, sourceType, payEntity, aorBucket, file, batchLabel, warning,
     });
   }, [currentBatchId, batches, toast]);
 
@@ -376,7 +386,7 @@ export default function UploadPage() {
           const p = pendingConfirm;
           if (!p) return;
           setPendingConfirm(null);
-          void runUploadAfterConfirm(p.fileLabel, p.sourceType, p.payEntity, p.aorBucket, p.file);
+          void runUploadAfterConfirm(p.batchId, p.fileLabel, p.sourceType, p.payEntity, p.aorBucket, p.file);
         }}
       />
     </div>
