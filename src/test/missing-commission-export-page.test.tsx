@@ -143,7 +143,7 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
     render(<MissingCommissionExportPage />);
     // Wait for source load to finish
     await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
-    expect(screen.getByText(/Choose filters and click Run Report/i)).toBeInTheDocument();
+    expect(screen.getByTestId('initial-state')).toHaveTextContent(/Choose filters and click Run Report/i);
     expect(screen.queryByTestId('results-table')).not.toBeInTheDocument();
     expect(screen.queryByTestId('loading-state')).not.toBeInTheDocument();
   });
