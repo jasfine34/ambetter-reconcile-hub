@@ -67,7 +67,8 @@ function fixture() {
     uniqueMembers: [
       { member_key: 'm1', applicant_name: 'A', policy_number: '', exchange_subscriber_id: '', issuer_subscriber_id: '', current_policy_aor: '', effective_date: '2026-03-01', policy_status: 'Effectuated', covered_member_count: 1, effective_month: '2026-03', active_months: ['2026-03'], in_back_office: true },
       { member_key: 'm2', applicant_name: 'B', policy_number: '', exchange_subscriber_id: '', issuer_subscriber_id: '', current_policy_aor: '', effective_date: '2026-03-01', policy_status: 'Effectuated', covered_member_count: 1, effective_month: '2026-03', active_months: ['2026-03'], in_back_office: true },
-      // m3 intentionally absent — persistent flag still on but not in this batch.
+      // m3 and m4 intentionally absent — persistent flag still on but not in this batch.
+      // m3 drives the unpaid-side drift; m4 drives the paid-side drift.
     ],
     uniqueKeys: 2,
     byMonth: { '2026-03': 2 },
