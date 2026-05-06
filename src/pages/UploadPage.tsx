@@ -203,10 +203,15 @@ export default function UploadPage() {
           logicVersion: RECONCILE_LOGIC_VERSION,
         });
       } catch (err) {
-        // Reconcile failure is non-fatal for the upload itself; warn the
-        // user but keep the file attached — they can re-run reconcile via
-        // the Rebuild button.
-        fail('Reconcile after upload (file saved — try Rebuild)', err);
+        // Reconcile failure is non-fatal for the upload itself: the
+        // upload_replace_file RPC already committed, so source + normalized
+        // data is saved. Only derived metrics (reconciled_members) are stale.
+        // Surface as a WARNING (not destructive) via the centralized
+        // classifier so the operator does not misread this as "the upload
+        // failed" — the exact misread we hit during the Feb recovery.
+        console.error(`[upload:${p.fileLabel}] Reconcile after upload failed:`, err);
+        const t = classifyUploadError(err, { phase: 'after-upload', fileLabel: p.fileLabel });
+        toast({ title: t.title, description: t.description, variant: t.variant as any });
         await refreshAll();
         return;
       }
