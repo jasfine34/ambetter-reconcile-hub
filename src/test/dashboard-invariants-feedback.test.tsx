@@ -17,8 +17,8 @@
  * Heavy compute / data dependencies are mocked so the page mounts
  * deterministically without DB or canonical math.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
 
 // ---- Mocks ----------------------------------------------------------------
