@@ -87,6 +87,26 @@ export default function UploadPage() {
     });
   }, []);
 
+  // #127 — Per-tile active normalized row counts. Refetched whenever the set
+  // of active uploaded_files changes (initial load, post-upload refreshAll,
+  // batch switch). One head-only count query per file (no rows transferred).
+  const [rowCounts, setRowCounts] = useState<Record<string, number>>({});
+  useEffect(() => {
+    if (!currentBatchId || !uploadedFiles?.length) {
+      setRowCounts({});
+      return;
+    }
+    let cancelled = false;
+    const ids = uploadedFiles.map((f: any) => f.id).filter(Boolean);
+    getActiveRowCountByUploadedFile(currentBatchId, ids)
+      .then((counts) => { if (!cancelled) setRowCounts(counts); })
+      .catch((err) => {
+        console.warn('[upload-tile] row count fetch failed', err);
+        if (!cancelled) setRowCounts({});
+      });
+    return () => { cancelled = true; };
+  }, [currentBatchId, uploadedFiles]);
+
   /**
    * Process one upload with FINDING #68 hardening:
    *   - Every async step is wrapped in try/catch and surfaces a toast on
