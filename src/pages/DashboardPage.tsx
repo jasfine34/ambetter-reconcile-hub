@@ -1559,15 +1559,15 @@ export default function DashboardPage() {
               <h3 className="text-lg font-semibold mb-3">Exception Summary</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {([
-                  { issue: 'Missing from Back Office', tip: { text: "These members appear in our system but are not found in Ambetter's system.", why: "If the carrier doesn't recognize the policy, they cannot pay commission on it." } },
-                  { issue: 'Missing from Commission', tip: { text: "These members should have generated commission but do not appear on the commission statements.", why: "These are likely unpaid policies and should be reviewed for missing payments." } },
+                  { issue: 'Missing from Back Office', tip: { text: "Members with an EDE row whose policy is NOT present in any Back Office export. Distinct from \"Not in BO\" (which is scoped to the current EE universe).", why: "If the carrier's back office doesn't have the policy, commission cannot be paid on it." } },
+                  { issue: 'Missing from Commission', tip: { text: "Members eligible for commission AND found in Back Office, but with no matching commission row. Mutually exclusive with Wrong Pay Entity / Erica Paid Under Coverall / Erica Paid Under Vix.", why: "These are likely unpaid policies and should be reviewed for missing payments." } },
                   { issue: 'Wrong Pay Entity', tip: { text: "These members were paid, but under the wrong entity (for example, Vix instead of Coverall).", why: "Revenue may be going to the wrong account and may need to be corrected." } },
                   { issue: 'Not Eligible for Commission', tip: { text: "These members exist but are not marked as eligible for commission by the carrier.", why: "These policies will not generate revenue unless eligibility is corrected." } },
                   { issue: 'Paid but Missing from EDE', tip: { text: "These members were paid on commission statements but do not appear in our enrollment system.", why: "This may indicate external enrollments, data mismatches, or policies written outside your tracked workflow." } },
                 ] as const).map(({ issue, tip }) => {
                   const count = filtered.filter(r => r.issue_type === issue).length;
                   return count > 0 ? (
-                    <MetricCard key={issue} title={issue} value={count} variant={issue.includes('Wrong') ? 'destructive' : 'warning'} tooltip={tip} />
+                    <MetricCard key={issue} title={getIssueTypeLabel(issue)} value={count} variant={issue.includes('Wrong') ? 'destructive' : 'warning'} tooltip={tip} />
                   ) : null;
                 })}
               </div>
