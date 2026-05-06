@@ -797,8 +797,11 @@ export default function DashboardPage() {
       // the canonical helper applies and the inline predicate did not.
       case 'shouldPay': return metrics.eligibleCohort;
       case 'paidComm': return filtered.filter(r => r.in_commission);
-      case 'paidEligible': return filtered.filter(r => eeUniverseKeys.has(r.member_key) && effInBO(r) && r.eligible_for_commission === 'Yes' && r.in_commission);
-      case 'unpaid': return filtered.filter(r => eeUniverseKeys.has(r.member_key) && effInBO(r) && r.eligible_for_commission === 'Yes' && !r.in_commission);
+      // D1 (PR2): drilldowns slice the canonical `eligibleCohort` so the
+      // row counts can never drift from `metrics.paidEligible` /
+      // `metrics.unpaid` (which are computed the same way).
+      case 'paidEligible': return metrics.eligibleCohort.filter(r => r.in_commission);
+      case 'unpaid': return metrics.eligibleCohort.filter(r => !r.in_commission);
       case 'fullyMatched': return filtered.filter(r => r.in_ede && effInBO(r) && r.in_commission);
       case 'paidOutsideEde': return filtered.filter(r => !r.in_ede && effInBO(r) && r.in_commission);
       case 'commissionOnly': return filtered.filter(r => !r.in_ede && !effInBO(r) && r.in_commission);
