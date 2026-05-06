@@ -406,10 +406,13 @@ export default function DashboardPage() {
         pending: [] as ReturnType<typeof findWeakMatches>,
       };
     }
-    const candidates = findWeakMatches(filteredEde.uniqueMembers, normalizedRecords);
+    // #129 follow-up: pass batch's statement_month as periodStart so this
+    // Dashboard count agrees with ManualMatchPage (canonical-predicate parity).
+    const periodStart = currentBatch?.statement_month ?? null;
+    const candidates = findWeakMatches(filteredEde.uniqueMembers, normalizedRecords, { periodStart });
     const { confirmedKeys, rejectedKeys, pending } = applyOverrides(candidates, weakOverrides);
     return { candidates, confirmedKeys, rejectedKeys, pending };
-  }, [filteredEde, normalizedRecords, weakOverrides]);
+  }, [filteredEde, normalizedRecords, weakOverrides, currentBatch?.statement_month]);
 
   // Confirmed weak-match upgrades: build a Set of reconciled-member member_keys
   // whose stable identity key has a 'confirmed' override. These members'

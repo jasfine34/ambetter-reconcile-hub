@@ -75,10 +75,13 @@ describe('#129 weak-match active-BO filter (Fix 1)', () => {
     expect(out[0].boCandidate.record_id).toBe('bo-active');
   });
 
-  it('legacy behavior: omitting periodStart includes terminated BO rows', () => {
+  it('legacy behavior: explicit null periodStart includes terminated BO rows', () => {
     const ee = [ede()];
     const records = [bo({ policy_term_date: '2026-02-28' })];
-    const out = findWeakMatches(ee, records);
+    // Sentinel: explicit null opts out of the active-BO filter for
+    // diagnostic/legacy callers. periodStart is REQUIRED in the signature
+    // (#129 follow-up) to prevent silent consumer divergence.
+    const out = findWeakMatches(ee, records, { periodStart: null });
     expect(out).toHaveLength(1);
   });
 });
