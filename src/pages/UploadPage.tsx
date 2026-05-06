@@ -216,14 +216,10 @@ export default function UploadPage() {
    * dialog) and otherwise hands off to processUpload.
    */
   const runUploadAfterConfirm = useCallback(async (
+    batchId: string,
     fileLabel: string, sourceType: string, payEntity: string | null,
     aorBucket: string | null, file: File,
   ) => {
-    if (!currentBatchId) {
-      toast({ title: 'No batch selected', description: 'Create or select a batch before uploading.', variant: 'destructive' });
-      return;
-    }
-
     // Detect schema from headers and warn if mismatched.
     try {
       const headers = await readCSVHeaders(file);
@@ -237,8 +233,8 @@ export default function UploadPage() {
       // If header read fails, fall through and attempt processing.
     }
 
-    await processUpload({ fileLabel, sourceType, payEntity, aorBucket, file });
-  }, [currentBatchId, processUpload, toast]);
+    await processUpload({ fileLabel, sourceType, payEntity, aorBucket, file }, batchId);
+  }, [processUpload]);
 
   /**
    * Entry point invoked by every UploadCard. Opens the Wrong-Batch
