@@ -36,23 +36,32 @@ import type { FilteredEdeResult } from '@/lib/expectedEde';
  * Fixture shape:
  *   m1 — in current-batch filteredEde, in BO, eligible, paid.
  *   m2 — in current-batch filteredEde, in BO, eligible, NOT paid.
- *   m3 — has the persistent `is_in_expected_ede_universe` flag set and is
- *        in BO + eligible + unpaid, but is NOT in this batch's filteredEde
- *        (e.g. AOR transferred OUT after a prior batch flipped the flag on).
- *        The pre-PR2 inline predicate
- *          filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r)
- *                                 && r.eligible_for_commission === 'Yes'
- *                                 && !r.in_commission)
- *        would count m3 in `unpaid`, but the canonical
- *        `getEligibleCohort(...)` (which gates on filteredEde.uniqueMembers)
- *        will not. This is the exact D1 drift shape and lets the parity
- *        tests below fail on main.
+ *   m3 — UNPAID stale member: persistent `is_in_expected_ede_universe` flag
+ *        is set and member is in BO + eligible + unpaid, but NOT in this
+ *        batch's filteredEde (e.g. AOR transferred OUT after a prior batch
+ *        flipped the flag on). Drives the [MAIN-FAIL] Unpaid Policies test.
+ *   m4 — PAID stale member: same drift shape as m3 but `in_commission=true`.
+ *        Drives the [MAIN-FAIL] Paid Within Eligible test. Without this,
+ *        the paid-side parity test was only [REGRESSION-ONLY] because m1
+ *        was the lone paid row and the inline predicate vs canonical
+ *        cohort agreed by coincidence on the paid side.
+ *
+ *   Drift mechanic m3/m4 exercise:
+ *     Pre-PR2 inline predicate
+ *       filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r)
+ *                              && r.eligible_for_commission === 'Yes'
+ *                              && (paid? r.in_commission : !r.in_commission))
+ *     would COUNT these stale members (persistent flag is true).
+ *     Canonical `getEligibleCohort(...)` gates on filteredEde.uniqueMembers
+ *     and EXCLUDES them. Card↔drilldown parity therefore fails on main and
+ *     holds on PR2 where both slice the canonical cohort.
  */
 function fixture() {
   const reconciled: any[] = [
     { member_key: 'm1', current_policy_aor: 'Jason Fine (21055210)', is_in_expected_ede_universe: true, in_back_office: true, eligible_for_commission: 'Yes', in_commission: true, agent_npn: '21055210' },
     { member_key: 'm2', current_policy_aor: 'Jason Fine (21055210)', is_in_expected_ede_universe: true, in_back_office: true, eligible_for_commission: 'Yes', in_commission: false, agent_npn: '21055210' },
     { member_key: 'm3', current_policy_aor: 'Jason Fine (21055210)', is_in_expected_ede_universe: true, in_back_office: true, eligible_for_commission: 'Yes', in_commission: false, agent_npn: '21055210' },
+    { member_key: 'm4', current_policy_aor: 'Jason Fine (21055210)', is_in_expected_ede_universe: true, in_back_office: true, eligible_for_commission: 'Yes', in_commission: true, agent_npn: '21055210' },
   ];
   const filteredEde: FilteredEdeResult = {
     uniqueMembers: [
