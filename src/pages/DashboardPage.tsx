@@ -757,19 +757,19 @@ export default function DashboardPage() {
 
   const unpaidSample = useMemo(() => {
     return filtered
-      .filter(r => r.is_in_expected_ede_universe && effInBO(r) && r.eligible_for_commission === 'Yes' && !r.in_commission)
+      .filter(r => eeUniverseKeys.has(r.member_key) && effInBO(r) && r.eligible_for_commission === 'Yes' && !r.in_commission)
       .slice(0, 50);
-  }, [filtered, effInBO]);
+  }, [filtered, effInBO, eeUniverseKeys]);
 
   const drilldownData = useMemo(() => {
     if (!drilldown) return null;
     switch (drilldown) {
-      case 'expected': return filtered.filter(r => r.is_in_expected_ede_universe);
-      case 'foundBO': return filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r));
-      case 'eligible': return filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r) && r.eligible_for_commission === 'Yes');
+      case 'expected': return filtered.filter(r => eeUniverseKeys.has(r.member_key));
+      case 'foundBO': return filtered.filter(r => eeUniverseKeys.has(r.member_key) && effInBO(r));
+      case 'eligible': return filtered.filter(r => eeUniverseKeys.has(r.member_key) && effInBO(r) && r.eligible_for_commission === 'Yes');
       case 'paidComm': return filtered.filter(r => r.in_commission);
-      case 'paidEligible': return filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r) && r.eligible_for_commission === 'Yes' && r.in_commission);
-      case 'unpaid': return filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r) && r.eligible_for_commission === 'Yes' && !r.in_commission);
+      case 'paidEligible': return filtered.filter(r => eeUniverseKeys.has(r.member_key) && effInBO(r) && r.eligible_for_commission === 'Yes' && r.in_commission);
+      case 'unpaid': return filtered.filter(r => eeUniverseKeys.has(r.member_key) && effInBO(r) && r.eligible_for_commission === 'Yes' && !r.in_commission);
       case 'fullyMatched': return filtered.filter(r => r.in_ede && effInBO(r) && r.in_commission);
       case 'paidOutsideEde': return filtered.filter(r => !r.in_ede && effInBO(r) && r.in_commission);
       case 'commissionOnly': return filtered.filter(r => !r.in_ede && !effInBO(r) && r.in_commission);
@@ -779,7 +779,7 @@ export default function DashboardPage() {
       case 'paidOutsideExpected': return filtered.filter(r => !r.in_ede && r.in_commission);
       default: return filtered;
     }
-  }, [drilldown, filtered, effInBO]);
+  }, [drilldown, filtered, effInBO, eeUniverseKeys]);
 
   const isCoverageDrilldown = ['fullyMatched', 'paidOutsideEde', 'commissionOnly', 'backOfficeOnly', 'unpaidExpected', 'totalPaidAll', 'paidOutsideExpected'].includes(drilldown || '');
 
