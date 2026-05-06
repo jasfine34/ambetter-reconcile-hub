@@ -34,6 +34,7 @@ import {
   getNotInBackOffice,
   isActiveBackOfficeRecord,
 } from '@/lib/canonical';
+import { getIssueTypeLabel } from '@/lib/constants';
 
 /** Format '2026-01' as '1/1/2026' for display. */
 function formatMonthStart(monthKey: string): string {
