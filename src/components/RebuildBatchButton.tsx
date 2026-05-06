@@ -4,6 +4,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useToast } from '@/hooks/use-toast';
 import { useBatch } from '@/contexts/BatchContext';
 import { rebuildBatchWithRetry, type RebuildProgress } from '@/lib/rebuild';
+import { classifyRebuildError } from '@/lib/toastClassification';
 import { Hammer, Loader2 } from 'lucide-react';
 
 function formatBatchLabel(batch: any): string {
