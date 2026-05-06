@@ -42,6 +42,14 @@ interface PendingConfirm {
   payEntity: string | null;
   aorBucket: string | null;
   file: File;
+  /**
+   * Batch id captured at modal-open time. The Confirm handler passes this
+   * value directly to the upload path so an async state change (or any
+   * refresh/subscription event) cannot redirect the upload to a different
+   * batch between modal-open and Confirm-click. The modal label is derived
+   * from this same id, so what the operator sees is what the upload uses.
+   */
+  batchId: string;
   batchLabel: string | null;
   warning: FilenameWarning;
 }
