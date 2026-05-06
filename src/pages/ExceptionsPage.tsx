@@ -30,11 +30,16 @@ export default function ExceptionsPage() {
   [reconciled]);
 
   const chips = useMemo(() =>
-    ISSUE_TYPES.filter(t => t !== 'Fully Matched').map(t => ({
-      label: `${t} (${exceptions.filter(e => e.issue_type === t).length})`,
-      value: t,
-      field: 'issue_type',
-    })).filter(c => c.label.includes('(0)') === false),
+    ISSUE_TYPES.filter(t => t !== 'Fully Matched').map(t => {
+      const count = exceptions.filter(e => e.issue_type === t).length;
+      return {
+        label: `${getIssueTypeLabel(t)} (${count})`,
+        value: t,
+        field: 'issue_type',
+        tooltip: getIssueTypeTooltip(t),
+        _count: count,
+      };
+    }).filter(c => c._count > 0),
   [exceptions]);
 
   return (
@@ -46,7 +51,15 @@ export default function ExceptionsPage() {
         </div>
         <BatchSelector />
       </div>
-      <DataTable data={exceptions} columns={COLUMNS} exportFileName="exception_queue.csv" filterChips={chips} />
+      <DataTable
+        data={exceptions}
+        columns={COLUMNS}
+        exportFileName="exception_queue.csv"
+        filterChips={chips}
+        renderCell={(key, row) =>
+          key === 'issue_type' ? getIssueTypeLabel(String(row.issue_type ?? '')) : undefined
+        }
+      />
       <IdentityResolutionConflictsPanel />
     </div>
   );
