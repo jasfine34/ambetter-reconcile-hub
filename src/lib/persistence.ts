@@ -149,6 +149,37 @@ export async function getUploadedFiles(batchId: string) {
 }
 
 /**
+ * Per-file active normalized row counts for #127 (Upload tile last-uploaded
+ * display). Returns a Map keyed by uploaded_file_id → count of active
+ * normalized_records owned by that file.
+ *
+ * Implementation note: supabase-js cannot GROUP BY without an RPC, so we
+ * issue one head-only count query per uploaded_file_id in parallel. Counts
+ * are cheap (head:true transfers no rows) and the cardinality is bounded by
+ * FILE_LABELS (≤8 per batch). No data-path / RPC change.
+ */
+export async function getActiveRowCountByUploadedFile(
+  batchId: string,
+  uploadedFileIds: string[],
+): Promise<Record<string, number>> {
+  if (!uploadedFileIds.length) return {};
+  const results = await Promise.all(
+    uploadedFileIds.map(async (id) => {
+      const { count, error } = await (supabase as any)
+        .from('normalized_records')
+        .select('id', { count: 'exact', head: true })
+        .eq('staging_status', 'active')
+        .is('superseded_at', null)
+        .eq('batch_id', batchId)
+        .eq('uploaded_file_id', id);
+      if (error) throw error;
+      return [id, count ?? 0] as const;
+    }),
+  );
+  return Object.fromEntries(results);
+}
+
+/**
  * Atomic file upload via the `upload_replace_file` RPC.
  *
  * The RPC runs the entire upload pipeline as a single Postgres transaction:
