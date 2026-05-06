@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useBatch } from '@/contexts/BatchContext';
 import { BatchSelector } from '@/components/BatchSelector';
 import { UploadCard } from '@/components/UploadCard';
@@ -6,7 +6,10 @@ import { FILE_LABELS } from '@/lib/constants';
 import { parseCSV } from '@/lib/csvParser';
 import { normalizeEDERow, normalizeBackOfficeRow, normalizeCommissionRow } from '@/lib/normalize';
 import { reconcile } from '@/lib/reconcile';
-import { uploadFileToStorage, uploadReplaceFile, saveAndVerifyReconciled, getNormalizedRecords } from '@/lib/persistence';
+import {
+  uploadFileToStorage, uploadReplaceFile, saveAndVerifyReconciled,
+  getNormalizedRecords, getActiveRowCountByUploadedFile,
+} from '@/lib/persistence';
 import { RECONCILE_LOGIC_VERSION } from '@/lib/rebuild';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
