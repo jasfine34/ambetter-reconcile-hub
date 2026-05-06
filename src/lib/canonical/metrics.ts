@@ -99,15 +99,18 @@ export function getFoundInBackOffice(
 }
 
 /**
- * Not in Back Office — members in the EE universe with no strict BO join and
- * no confirmed weak-match override. Subtracts confirmed upgrades from the
- * raw missingFromBO list so the breakdown ties to Expected Enrollments.
+ * Not in Back Office (rows) — EE-universe members missing from BO with
+ * confirmed weak-match overrides removed. Single source of truth for both
+ * the Dashboard "Not in Back Office" card count AND the drilldown modal's
+ * tabbed row lists. Card and modal MUST consume from this helper (or pass
+ * its result around) so the two surfaces never diverge again (B1 follow-up
+ * to #129).
  */
-export function getNotInBackOffice(
+export function getNotInBackOfficeRows(
   filteredEde: FilteredEdeResult,
   confirmedWeakMatchOverrideKeys: Set<string>,
   pickStableKey: (r: { issuer_subscriber_id?: string | null; exchange_subscriber_id?: string | null; policy_number?: string | null }) => string,
-): number {
+): FilteredEdeResult['missingFromBO'] {
   return filteredEde.missingFromBO.filter(
     (r) => !confirmedWeakMatchOverrideKeys.has(
       pickStableKey({
@@ -116,7 +119,20 @@ export function getNotInBackOffice(
         policy_number: r.policy_number,
       }),
     ),
-  ).length;
+  );
+}
+
+/**
+ * Not in Back Office — members in the EE universe with no strict BO join and
+ * no confirmed weak-match override. Delegates to {@link getNotInBackOfficeRows}
+ * so the count is mechanically identical to the row list the modal renders.
+ */
+export function getNotInBackOffice(
+  filteredEde: FilteredEdeResult,
+  confirmedWeakMatchOverrideKeys: Set<string>,
+  pickStableKey: (r: { issuer_subscriber_id?: string | null; exchange_subscriber_id?: string | null; policy_number?: string | null }) => string,
+): number {
+  return getNotInBackOfficeRows(filteredEde, confirmedWeakMatchOverrideKeys, pickStableKey).length;
 }
 
 /**

@@ -31,7 +31,7 @@ import {
   type InvariantResult,
   getFoundInBackOffice,
   getEligibleCohort,
-  getNotInBackOffice,
+  getNotInBackOfficeRows,
   isActiveBackOfficeRecord,
 } from '@/lib/canonical';
 import { getIssueTypeLabel } from '@/lib/constants';
@@ -444,6 +444,20 @@ export default function DashboardPage() {
     (r: { member_key: string; in_back_office: boolean }) =>
       r.in_back_office || confirmedUpgradeMemberKeys.has(r.member_key),
     [confirmedUpgradeMemberKeys],
+  );
+
+  /**
+   * Single source of truth for the "Not in Back Office" card subtitle math
+   * AND the drilldown modal's row tabs. Built via the canonical
+   * {@link getNotInBackOfficeRows} helper so the card count and modal row
+   * count are mechanically identical (B1 follow-up to #129 — previously the
+   * card subtracted confirmed weak-match overrides while the modal pulled
+   * raw `filteredEde.missingFromBO`, leaking confirmed members into the
+   * drilldown view).
+   */
+  const filteredMissingFromBO = useMemo(
+    () => getNotInBackOfficeRows(filteredEde, weakMatchResult.confirmedKeys, pickStableKey),
+    [filteredEde, weakMatchResult.confirmedKeys],
   );
 
   /**
@@ -1324,9 +1338,10 @@ export default function DashboardPage() {
                   exchange_subscriber_id: r.exchange_subscriber_id,
                   policy_number: r.policy_number,
                 });
-              const filteredMissing = filteredEde.missingFromBO.filter(
-                (r) => !confirmed.has(keyFor(r)),
-              );
+              // Card and modal share filteredMissingFromBO (canonical
+              // getNotInBackOfficeRows). Confirmed weak-match overrides are
+              // already excluded — see the page-level memo.
+              const filteredMissing = filteredMissingFromBO;
               const weakPending = filteredMissing.filter((r) =>
                 pendingKeys.has(keyFor(r)),
               ).length;
@@ -1705,7 +1720,7 @@ export default function DashboardPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-destructive" />
-              EDE Enrollments Not in Back Office ({filteredEde.notInBOCount})
+              EDE Enrollments Not in Back Office ({filteredMissingFromBO.length})
             </DialogTitle>
             <DialogDescription>
               Members who pass the Expected Enrollments filter (scope: {payEntityFilter}) but have no
@@ -1713,8 +1728,11 @@ export default function DashboardPage() {
             </DialogDescription>
           </DialogHeader>
           {(() => {
-            const hasIssuerRows = filteredEde.missingFromBO.filter(r => String(r.issuer_subscriber_id ?? '').trim() !== '');
-            const missingIssuerRows = filteredEde.missingFromBO.filter(r => String(r.issuer_subscriber_id ?? '').trim() === '');
+            // Card and modal share the same canonical row set
+            // (filteredMissingFromBO via getNotInBackOfficeRows) so confirmed
+            // weak-match overrides never appear in either surface.
+            const hasIssuerRows = filteredMissingFromBO.filter(r => String(r.issuer_subscriber_id ?? '').trim() !== '');
+            const missingIssuerRows = filteredMissingFromBO.filter(r => String(r.issuer_subscriber_id ?? '').trim() === '');
             const monthSuffix = statementMonth || priorMonth || '';
             const fileSuffix = monthSuffix ? `_${monthSuffix}` : '';
             return (
