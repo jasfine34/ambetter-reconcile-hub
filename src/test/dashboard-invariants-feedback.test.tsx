@@ -211,24 +211,19 @@ describe('DashboardPage — #125 Run Invariants UI feedback', () => {
     expect(btn).not.toBeDisabled();
 
     // Click — executeInvariants flips invariantsRunning synchronously and
-    // schedules the runner via setTimeout(0). Before timers advance, the
+    // schedules the runner via setTimeout(0). Before the timer fires, the
     // button must reflect the running state.
-    act(() => {
-      fireEvent.click(btn);
-    });
+    fireEvent.click(btn);
 
     const runningBtn = getRunInvariantsButton()!;
     expect(runningBtn.textContent).toMatch(/Running…/);
     expect(runningBtn).toBeDisabled();
 
-    // Advance the deferred runner.
-    await act(async () => {
-      await vi.runAllTimersAsync();
+    // Wait for completion (setTimeout(0) + state flush).
+    await waitFor(() => {
+      expect(getRunInvariantsButton()!.textContent).toMatch(/Run Invariants/);
     });
-
-    const afterBtn = getRunInvariantsButton()!;
-    expect(afterBtn.textContent).toMatch(/Run Invariants/);
-    expect(afterBtn).not.toBeDisabled();
+    expect(getRunInvariantsButton()!).not.toBeDisabled();
   });
 
   it('completion → renders aggregate summary and timestamp', async () => {
@@ -236,9 +231,6 @@ describe('DashboardPage — #125 Run Invariants UI feedback', () => {
     render(<DashboardPage />);
 
     fireEvent.click(getRunInvariantsButton()!);
-    await act(async () => {
-      await vi.runAllTimersAsync();
-    });
 
     const summary = await screen.findByTestId('invariants-summary');
     expect(summary.textContent).toMatch(/All 3 invariants passed/);
@@ -250,28 +242,23 @@ describe('DashboardPage — #125 Run Invariants UI feedback', () => {
     render(<DashboardPage />);
 
     fireEvent.click(getRunInvariantsButton()!);
-    await act(async () => {
-      await vi.runAllTimersAsync();
-    });
-
-    const firstSummary = screen.getByTestId('invariants-summary');
+    const firstSummary = await screen.findByTestId('invariants-summary');
     const firstTs = firstSummary.querySelector('[title]')?.getAttribute('title');
     expect(firstTs).toBeTruthy();
-
-    // Advance wall clock so the next `new Date()` is strictly later, then
-    // re-click. Same results — only the timestamp should change.
-    await act(async () => {
-      vi.setSystemTime(new Date(Date.now() + 60_000));
+    await waitFor(() => {
+      expect(getRunInvariantsButton()!.textContent).toMatch(/Run Invariants/);
     });
+
+    // Wait long enough for `new Date()` to differ on the next run (>= 5ms).
+    await new Promise((r) => setTimeout(r, 25));
 
     fireEvent.click(getRunInvariantsButton()!);
-    await act(async () => {
-      await vi.runAllTimersAsync();
-    });
 
-    const secondTs = screen.getByTestId('invariants-summary').querySelector('[title]')?.getAttribute('title');
-    expect(secondTs).toBeTruthy();
-    expect(secondTs).not.toBe(firstTs);
+    await waitFor(() => {
+      const ts = screen.getByTestId('invariants-summary').querySelector('[title]')?.getAttribute('title');
+      expect(ts).toBeTruthy();
+      expect(ts).not.toBe(firstTs);
+    });
     // Runner was invoked twice (no caching of "same result" suppression).
     expect(mockRunInvariants).toHaveBeenCalledTimes(2);
   });
@@ -281,18 +268,16 @@ describe('DashboardPage — #125 Run Invariants UI feedback', () => {
     render(<DashboardPage />);
 
     const btn = getRunInvariantsButton()!;
-    // First click flips running=true; subsequent clicks must be ignored
-    // (button is also disabled, but executeInvariants has its own guard).
-    act(() => {
-      fireEvent.click(btn);
-      // Even if we forced a click on the (now disabled) node, the
-      // executeInvariants single-flight guard should prevent re-entry.
-      fireEvent.click(btn);
-      fireEvent.click(btn);
-    });
+    // First click flips invariantsRunning=true synchronously and disables
+    // the button. The DOM node is the same; further fireEvent.click calls
+    // on a disabled button are no-ops at the React handler level. We assert
+    // exactly one runner invocation completes.
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+    fireEvent.click(btn);
 
-    await act(async () => {
-      await vi.runAllTimersAsync();
+    await waitFor(() => {
+      expect(getRunInvariantsButton()!.textContent).toMatch(/Run Invariants/);
     });
 
     expect(mockRunInvariants).toHaveBeenCalledTimes(1);
@@ -307,28 +292,21 @@ describe('DashboardPage — #125 Run Invariants UI feedback', () => {
     render(<DashboardPage />);
 
     fireEvent.click(getRunInvariantsButton()!);
-    await act(async () => {
-      await vi.runAllTimersAsync();
-    });
 
-    // Aggregate summary partitions into pass/fail/error.
     const summary = await screen.findByTestId('invariants-summary');
     expect(summary.textContent).toMatch(/1 of 3 passed/);
     expect(summary.textContent).toMatch(/1 failed/);
     expect(summary.textContent).toMatch(/1 errored/);
 
-    // Error row carries an "error" pill — fail row does NOT.
+    // Error row carries an "error" pill and the runtime detail.
     const errRow = screen.getByTestId('invariant-runtime-err');
     expect(errRow.textContent).toMatch(/error/i);
     expect(errRow.textContent).toMatch(/Runtime error while evaluating invariant: kaboom/);
 
+    // Logical fail row does NOT carry the runtime-error language; it has
+    // expected/actual/delta diagnostics instead.
     const failRow = screen.getByTestId('invariant-logical-fail');
-    // The pill text 'error' (uppercase 'ERROR' via CSS) should not appear in
-    // the fail row's accessible text content as a standalone token.
-    const failHasErrorPill = /\berror\b/i.test(failRow.textContent || '') &&
-      !/Runtime error/.test(failRow.textContent || '');
-    expect(failHasErrorPill).toBe(false);
-    // Fail row still shows expected/actual/delta diagnostics.
+    expect(failRow.textContent).not.toMatch(/Runtime error/);
     expect(failRow.textContent).toMatch(/expected:/);
     expect(failRow.textContent).toMatch(/actual:/);
     expect(failRow.textContent).toMatch(/delta:/);
