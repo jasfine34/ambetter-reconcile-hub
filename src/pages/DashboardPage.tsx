@@ -1282,7 +1282,11 @@ export default function DashboardPage() {
               const tieOut = filteredEde.inBOCount + filteredEde.notInBOCount;
               const tiesOut = tieOut === expectedTotal;
               const monthBreakdown = formatMonthBreakdown(filteredEde.byMonth, { yearless: true });
-              const tooltipText = `Total Ambetter policies with a Coverall AOR (scope: ${payEntityFilter}) in a qualifying status (Effectuated / PendingEffectuation / PendingTermination), active in this batch's covered months. Per-month breakdown shows NEWLY-EFFECTIVE members per actual effective month, so per-month numbers SUM to the total. Sourced from raw EDE rows so this matches the EDE debug panel exactly. Tie-out check: In BO ${filteredEde.inBOCount} + Not in BO ${filteredEde.notInBOCount} = ${tieOut} ${tiesOut ? '✓' : '⚠️ MISMATCH vs ' + expectedTotal}.`;
+              // Tie-out is the RAW pre-override EDE bucketing (strict BO match vs raw EDE
+              // missing-from-BO). It is intentionally distinct from the live "Not in Back Office"
+              // Dashboard card, which applies override-aware post weak-match-confirmation logic.
+              // Wording uses "Raw strict BO" / "Raw EDE Not-in-BO" to disambiguate.
+              const tooltipText = `Total Ambetter policies with a Coverall AOR (scope: ${payEntityFilter}) in a qualifying status (Effectuated / PendingEffectuation / PendingTermination), active in this batch's covered months. Per-month breakdown shows NEWLY-EFFECTIVE members per actual effective month, so per-month numbers SUM to the total. Sourced from raw EDE rows so this matches the EDE debug panel exactly. This tie-out is the raw pre-override EDE bucketing and is distinct from the override-aware "Not in Back Office" card. Tie-out check: Raw strict BO ${filteredEde.inBOCount} + Raw EDE Not-in-BO ${filteredEde.notInBOCount} = ${tieOut} ${tiesOut ? '✓' : '⚠️ MISMATCH vs ' + expectedTotal}.`;
               return (
                 <MetricCard
                   title="Expected Enrollments"
