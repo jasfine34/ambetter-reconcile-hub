@@ -115,13 +115,20 @@ export default function UploadPage() {
     setSlotUploading(p.fileLabel, true);
     let storagePath: string | null = null;
 
+    // Centralized failure-mode classification (#123). All pre-RPC steps and
+    // the upload_replace_file call itself fall under "phase: 'rpc'" — the
+    // upload is transactional, so on any failure here NO source or normalized
+    // data was saved. The post-upload auto-reconcile catch below uses
+    // "phase: 'after-upload'" instead so the operator sees a warning (not
+    // destructive) toast that distinguishes "upload saved, metrics stale"
+    // from "upload failed, nothing saved".
     const fail = (step: string, err: any) => {
-      const msg = err?.message || String(err);
       console.error(`[upload:${p.fileLabel}] ${step} failed:`, err);
+      const t = classifyUploadError(err, { phase: 'rpc', fileLabel: p.fileLabel });
       toast({
-        title: `Upload failed: ${p.fileLabel}`,
-        description: `${step}: ${msg}`,
-        variant: 'destructive',
+        title: t.title,
+        description: `${t.description} (${step})`,
+        variant: t.variant as any,
       });
     };
 
