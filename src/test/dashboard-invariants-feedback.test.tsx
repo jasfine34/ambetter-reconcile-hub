@@ -183,14 +183,9 @@ const ERROR_ROW = (id = 'inv-err') => ({
 });
 
 beforeEach(() => {
-  vi.useFakeTimers();
   mockUseBatch.mockReset();
   mockRunInvariants.mockReset();
   setBatchContext();
-});
-
-afterEach(() => {
-  vi.useRealTimers();
 });
 
 function getRunInvariantsButton() {
