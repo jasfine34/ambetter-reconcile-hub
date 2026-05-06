@@ -768,6 +768,10 @@ export default function DashboardPage() {
       case 'expected': return filtered.filter(r => eeUniverseKeys.has(r.member_key));
       case 'foundBO': return filtered.filter(r => eeUniverseKeys.has(r.member_key) && effInBO(r));
       case 'eligible': return filtered.filter(r => eeUniverseKeys.has(r.member_key) && effInBO(r) && r.eligible_for_commission === 'Yes');
+      // #121: 'shouldPay' opens the same row set the consolidated card replaces.
+      // Predicate matches the prior 'eligible' / 'foundBO' (modulo eligibility) cohort
+      // by design — the three cards were arithmetically identical.
+      case 'shouldPay': return filtered.filter(r => eeUniverseKeys.has(r.member_key) && effInBO(r) && r.eligible_for_commission === 'Yes');
       case 'paidComm': return filtered.filter(r => r.in_commission);
       case 'paidEligible': return filtered.filter(r => eeUniverseKeys.has(r.member_key) && effInBO(r) && r.eligible_for_commission === 'Yes' && r.in_commission);
       case 'unpaid': return filtered.filter(r => eeUniverseKeys.has(r.member_key) && effInBO(r) && r.eligible_for_commission === 'Yes' && !r.in_commission);
@@ -1336,9 +1340,20 @@ export default function DashboardPage() {
               </button>
             )}
             <MetricCard title="Total Covered Lives" value={debugStats?.totalCoveredLives ?? 0} icon={<Users className="h-4 w-4" />} variant="info" subtitle={debugStats ? (formatMonthBreakdown(debugStats.totalCoveredLivesByMonth, { yearless: true }) || undefined) : undefined} tooltip={{ text: "Sum of coveredMemberCount across all qualified EDE records — counts the subscriber plus every dependent on each policy. Per-month breakdown is by actual effective month (newly effective lives) so per-month numbers SUM to the total.", why: "Reflects the actual number of insured lives, not just policy holders. Use this when reporting total members served or comparing to per-life carrier metrics." }} />
-            <MetricCard title="Found in Back Office" value={metrics.foundBO} icon={<Building2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('foundBO')} tooltip={{ text: "Out of the expected members, these are the ones Ambetter recognizes in their system.", why: "If members are missing here, Ambetter may not have the policy correctly recorded, which can prevent payment." }} />
-            <MetricCard title="Eligible for Commission" value={metrics.eligible} icon={<CheckCircle2 className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('eligible')} tooltip={{ text: "These are members that exist in Ambetter's system and are marked as eligible for commission.", why: "Only members in this group can generate commission. If eligibility is wrong, payments will not occur." }} />
-            <MetricCard title="Should Be Paid" value={metrics.shouldPay} icon={<DollarSign className="h-4 w-4" />} tooltip={{ text: "This is the total number of members we expect to receive commission for based on enrollment, carrier records, and eligibility.", why: "This represents your true payable book of business and is the key number for identifying missing revenue." }} />
+            {/* #121: Found in Back Office / Eligible for Commission / Should Be Paid were
+                arithmetically identical for this cohort (EE universe ∩ Back Office ∩ eligible),
+                so they have been consolidated into a single Should Be Paid hero card. The
+                drilldown opens the same row set the prior three cards opened. */}
+            <MetricCard
+              title="Should Be Paid"
+              value={metrics.shouldPay}
+              icon={<DollarSign className="h-4 w-4" />}
+              onClick={() => setDrilldown('shouldPay')}
+              tooltip={{
+                text: "Members in the EE universe who are found in Back Office and eligible for commission. This is the canonical should-be-paid cohort. The prior Found in Back Office, Eligible for Commission, and Should Be Paid cards were arithmetically identical for this cohort, so they have been consolidated.",
+                why: "This represents your true payable book of business and is the key number for identifying missing revenue.",
+              }}
+            />
             <MetricCard title="Paid Commission Records" value={metrics.paidCommRecords} icon={<CheckCircle2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('paidComm')} tooltip={{ text: "These are all members that appear on the commission statements as having been paid, regardless of whether they match our expected book.", why: "This shows what the carrier actually paid, including payments that may not belong to your tracked enrollments." }} />
             <MetricCard title="Paid Within Eligible Cohort" value={metrics.paidEligible} icon={<CheckCircle2 className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('paidEligible')} tooltip={{ text: "These are members we expected to be paid on AND actually received commission for.", why: "This is your true success rate — how much of your expected revenue you actually collected." }} />
             <MetricCard title="Unpaid Policies" value={metrics.unpaid} icon={<XCircle className="h-4 w-4" />} variant="destructive" onClick={() => setDrilldown('unpaid')} tooltip={{ text: "These are members we expected to be paid on but did not receive commission for.", why: "This is your potential revenue loss and the most important number for recovery and escalation." }} />
