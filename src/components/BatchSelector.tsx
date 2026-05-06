@@ -93,7 +93,7 @@ export function BatchSelector() {
     // currentBatchId and may not auto-select the new batch; the subsequent
     // setCurrentBatchId works but a render can flash the OLD selection,
     // and any upload triggered in that window targets the wrong batch.
-    setCurrentBatchId(batch.id);
+    setCurrentBatchId(batch.id, 'create');
     console.debug('[batch-create] setCurrentBatchId called', { newId: batch.id });
 
     try {
@@ -122,7 +122,7 @@ export function BatchSelector() {
       await deleteBatch(id);
       // If the deleted batch was selected, clear selection; BatchContext's
       // refreshBatches will auto-select the first remaining batch.
-      if (currentBatchId === id) setCurrentBatchId(null);
+      if (currentBatchId === id) setCurrentBatchId(null, 'delete');
       await refreshBatches();
       toast({ title: 'Batch deleted', description: label });
     } catch (err: any) {
@@ -149,7 +149,7 @@ export function BatchSelector() {
 
   return (
     <div className="flex items-center gap-3">
-      <Select value={currentBatchId ?? undefined} onValueChange={setCurrentBatchId}>
+      <Select value={currentBatchId ?? undefined} onValueChange={(v) => setCurrentBatchId(v, 'user-dropdown')}>
         <SelectTrigger className="w-[220px]">
           <SelectValue placeholder="Select batch...">{selectedBatchLabel}</SelectValue>
         </SelectTrigger>
