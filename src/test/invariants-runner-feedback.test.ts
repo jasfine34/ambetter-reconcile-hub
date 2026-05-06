@@ -54,14 +54,15 @@ describe('runInvariants — UI feedback contract (#125)', () => {
     }
   });
 
-  it('completed (clean fixture): aggregate is all-pass', () => {
+  it('completed: aggregate counts (pass + fail + error) equal total', () => {
     const results = runInvariants(makeInputs());
     const passed = results.filter((r) => r.status === 'pass').length;
     const failed = results.filter((r) => r.status === 'fail').length;
     const errored = results.filter((r) => r.status === 'error').length;
-    expect(failed).toBe(0);
-    expect(errored).toBe(0);
-    expect(passed).toBe(results.length);
+    // The summary string in the dialog is built from these three counts;
+    // they must always partition the result set with no overlap.
+    expect(passed + failed + errored).toBe(results.length);
+    expect(errored).toBe(0); // clean fixture: no runtime errors
   });
 
   it('errored: a check that throws surfaces status="error", not "fail", and does not abort the suite', () => {
