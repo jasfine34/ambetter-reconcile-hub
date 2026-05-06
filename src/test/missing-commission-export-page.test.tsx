@@ -149,38 +149,30 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
   });
 
   it('loading state: shows spinner after Run Report click while runner is in flight', async () => {
-    let releaseRun: () => void = () => {};
-    mockGetEligible.mockImplementation(() => {
-      // Synchronous, but we delay the runner via a deferred promise on a different layer:
-      // since computeFilteredEde is mocked sync, the runner itself is async (await runner()).
-      // To pause we make getAllNormalizedRecords resolve, then use a microtask gap.
-      return [];
-    });
-    // Block the inner runner by making an awaited dep slow: switch getEligibleCohort to throw a pause.
-    let releaseEligible: (v: any[]) => void = () => {};
-    const eligiblePromise = new Promise<any[]>((res) => { releaseEligible = res; });
-    mockGetEligible.mockImplementation(() => {
-      // Synchronously return [] — but we need an async pause inside the runner.
-      // Easiest: hook into computeFilteredEde re-mock per-test.
-      return [];
-    });
-
-    const { computeFilteredEde } = await import('@/lib/expectedEde');
-    (computeFilteredEde as any).mockImplementationOnce(async () => {
-      await eligiblePromise;
-      return { uniqueMembers: [] };
-    });
-
+    // Pause the runner mid-flight by deferring getEligibleCohort behind a
+    // promise that the test releases on demand. Because the page's runner
+    // body awaits getAllNormalizedRecords-derived data via subsequent ticks,
+    // the simplest way to hold the runner is to swap getEligibleCohort to a
+    // function that throws a thenable... but it's called synchronously.
+    // Instead we delay by stalling the source-records refresh? No — source
+    // is already loaded by the time we click. We use a real async pause
+    // by patching computeFilteredEde to return a Promise the page DOES NOT
+    // await — that won't work either. The reliable approach: assert
+    // synchronously between the click (which commits setStatus('loading'))
+    // and the next microtask flush (which resolves the async runner body).
+    mockGetEligible.mockReturnValue([]);
     render(<MissingCommissionExportPage />);
     await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
 
+    // Fire the click; do NOT await anything before the assertion. React 18
+    // commits the synchronous setStatus('loading') from inside run() before
+    // the awaited runner body resumes on the next microtask.
     fireEvent.click(screen.getByTestId('run-report'));
-    // Loading state should appear
-    await waitFor(() => expect(screen.getByTestId('loading-state')).toBeInTheDocument());
+    // Loading panel must be visible synchronously.
+    expect(screen.getByTestId('loading-state')).toBeInTheDocument();
     expect(screen.getByTestId('loading-state')).toHaveTextContent(/Running report/i);
 
-    await act(async () => { releaseEligible([]); });
-    // After release, transitions to empty (no missing members)
+    // Drain microtasks → transitions to empty (no missing members).
     await waitFor(() => expect(screen.queryByTestId('loading-state')).not.toBeInTheDocument());
   });
 
