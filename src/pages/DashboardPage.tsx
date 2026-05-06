@@ -1720,7 +1720,7 @@ export default function DashboardPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-destructive" />
-              EDE Enrollments Not in Back Office ({filteredEde.notInBOCount})
+              EDE Enrollments Not in Back Office ({filteredMissingFromBO.length})
             </DialogTitle>
             <DialogDescription>
               Members who pass the Expected Enrollments filter (scope: {payEntityFilter}) but have no
@@ -1728,8 +1728,11 @@ export default function DashboardPage() {
             </DialogDescription>
           </DialogHeader>
           {(() => {
-            const hasIssuerRows = filteredEde.missingFromBO.filter(r => String(r.issuer_subscriber_id ?? '').trim() !== '');
-            const missingIssuerRows = filteredEde.missingFromBO.filter(r => String(r.issuer_subscriber_id ?? '').trim() === '');
+            // Card and modal share the same canonical row set
+            // (filteredMissingFromBO via getNotInBackOfficeRows) so confirmed
+            // weak-match overrides never appear in either surface.
+            const hasIssuerRows = filteredMissingFromBO.filter(r => String(r.issuer_subscriber_id ?? '').trim() !== '');
+            const missingIssuerRows = filteredMissingFromBO.filter(r => String(r.issuer_subscriber_id ?? '').trim() === '');
             const monthSuffix = statementMonth || priorMonth || '';
             const fileSuffix = monthSuffix ? `_${monthSuffix}` : '';
             return (
