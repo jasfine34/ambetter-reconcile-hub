@@ -10,6 +10,7 @@ import { uploadFileToStorage, uploadReplaceFile, saveAndVerifyReconciled, getNor
 import { RECONCILE_LOGIC_VERSION } from '@/lib/rebuild';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { classifyUploadError } from '@/lib/toastClassification';
 import { detectSchema, readCSVHeaders, type DetectedSchema } from '@/lib/schemaDetect';
 import { fallbackReconcileMonth } from '@/lib/dateRange';
 import { loadResolverIndex } from '@/lib/resolvedIdentities';
