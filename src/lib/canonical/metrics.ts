@@ -37,15 +37,14 @@ export interface NetPaidBreakdown {
  * COMMISSION row in scope. Matches the Net Paid Commission card on Dashboard
  * EXACTLY (Mar 2026 Coverall = $36,640.50).
  *
- * Note on `confirmedWeakMatchKeys`: weak-match overrides upgrade members from
- * "not in BO" to "effectively in BO" but they do NOT change which commission
- * rows exist — they only change the BO-attribution count. So the override
- * set is accepted here for API symmetry but does not alter Net Paid output.
+ * Weak-match overrides are intentionally NOT a parameter: they upgrade
+ * members from "not in BO" to "effectively in BO" but do not change which
+ * commission rows exist, so they cannot affect Net Paid. The signature
+ * reflects actual behavior — normalizedRecords + scope only.
  */
 export function getNetPaidCommission(
   normalizedRecords: any[],
   scope: CanonicalScope,
-  _confirmedWeakMatchKeys?: Set<string>,
 ): NetPaidBreakdown {
   const rows = filterCommissionRowsByScope(normalizedRecords, scope);
   let gross = 0;
