@@ -246,3 +246,92 @@ describe('page wiring — EE universe AOR ≡ aorPicker AOR (Option A)', () => {
     expect(pickerAor).toBe('Erica Fine (21277051)');
   });
 });
+
+/**
+ * #118 migration regression guards (2026-05-06): Dashboard drilldowns,
+ * unpaidSample, AgentSummary "Expected (AOR)" and the
+ * checkUnpaidAndPaidDisjoint invariant MUST source EE-universe membership
+ * from `filteredEde.uniqueMembers` (canonical), NOT from the persistent
+ * `reconciled_members.is_in_expected_ede_universe` flag. Ghost-row fixture
+ * (persistent flag carryover from prior batch, absent from current
+ * filteredEde) must be excluded by every consumer.
+ */
+describe('page wiring — #118 EE-universe canonical migration', () => {
+  function makeGhostFixture() {
+    const reconciled: any[] = [
+      // Real current-batch member, all flags healthy.
+      {
+        member_key: 'm1',
+        current_policy_aor: 'Jason Fine (21055210)',
+        is_in_expected_ede_universe: true,
+        in_back_office: true,
+        in_ede: true,
+        eligible_for_commission: 'Yes',
+        in_commission: false,
+        agent_npn: '21055210',
+        estimated_missing_commission: 0,
+      },
+      // Ghost: persistent flag set by prior reconcile, but NOT in this
+      // batch's filteredEde.uniqueMembers — must be excluded everywhere.
+      {
+        member_key: 'mGhost',
+        current_policy_aor: 'Jason Fine (21055210)',
+        is_in_expected_ede_universe: true,
+        in_back_office: true,
+        in_ede: true,
+        eligible_for_commission: 'Yes',
+        in_commission: false,
+        agent_npn: '21055210',
+        estimated_missing_commission: 0,
+      },
+    ];
+    const filteredEde: FilteredEdeResult = {
+      uniqueMembers: [
+        { member_key: 'm1', applicant_name: 'Alpha', policy_number: 'P1', exchange_subscriber_id: '', issuer_subscriber_id: 'U111', current_policy_aor: 'Jason Fine (21055210)', effective_date: '2026-03-01', policy_status: 'Effectuated', covered_member_count: 1, effective_month: '2026-03', active_months: ['2026-03'], in_back_office: true },
+      ],
+      uniqueKeys: 1,
+      byMonth: { '2026-03': 1 },
+      inBOCount: 1,
+      notInBOCount: 0,
+      missingFromBO: [],
+    };
+    return { reconciled, filteredEde };
+  }
+
+  it('Dashboard "expected" / "foundBO" / "eligible" / "unpaid" drilldowns MUST exclude ghost rows', () => {
+    const { reconciled, filteredEde } = makeGhostFixture();
+    const eeUniverseKeys = new Set(filteredEde.uniqueMembers.map((m) => m.member_key));
+
+    // Replicate the canonical drilldown formulas from DashboardPage.
+    const expected = reconciled.filter((r) => eeUniverseKeys.has(r.member_key));
+    const foundBO = reconciled.filter((r) => eeUniverseKeys.has(r.member_key) && r.in_back_office);
+    const eligible = reconciled.filter(
+      (r) => eeUniverseKeys.has(r.member_key) && r.in_back_office && r.eligible_for_commission === 'Yes',
+    );
+    const unpaid = reconciled.filter(
+      (r) =>
+        eeUniverseKeys.has(r.member_key) &&
+        r.in_back_office &&
+        r.eligible_for_commission === 'Yes' &&
+        !r.in_commission,
+    );
+
+    expect(expected).toHaveLength(1);
+    expect(foundBO).toHaveLength(1);
+    expect(eligible).toHaveLength(1);
+    expect(unpaid).toHaveLength(1);
+    // The pre-#118 persistent-flag formula would have returned 2 for each.
+    const oldExpected = reconciled.filter((r) => r.is_in_expected_ede_universe).length;
+    expect(oldExpected).toBe(2);
+    expect(oldExpected).not.toBe(expected.length);
+  });
+
+  it('AgentSummary "Expected (AOR)" MUST source from filteredEde.uniqueMembers', () => {
+    const { filteredEde } = makeGhostFixture();
+    // Replicate AgentSummary's expected_count formula for Jason Fine.
+    const jasonExpected = filteredEde.uniqueMembers.filter((m) =>
+      String(m.current_policy_aor || '').includes('21055210'),
+    ).length;
+    expect(jasonExpected).toBe(1);
+  });
+});

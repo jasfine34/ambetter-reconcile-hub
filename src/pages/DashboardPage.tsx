@@ -366,6 +366,19 @@ export default function DashboardPage() {
     [normalizedRecords, reconciled, payEntityFilter, coveredMonths, resolverIndex]
   );
 
+  /**
+   * Canonical EE-universe member_key set (#118 migration, 2026-05-06).
+   * Sourced from `filteredEde.uniqueMembers` (current-batch span, AOR-based)
+   * — this is the SAME predicate the canonical helpers use. Replaces the
+   * persistent `reconciled_members.is_in_expected_ede_universe` flag for
+   * every UI metric, drilldown, and unpaid sample. The persistent column
+   * is retained as a diagnostic readout in the debug strip below.
+   */
+  const eeUniverseKeys = useMemo(
+    () => new Set(filteredEde.uniqueMembers.map((m) => m.member_key)),
+    [filteredEde]
+  );
+
   // Weak-match resolution (2026-04-27). For each EE-universe member that
   // failed strict join to BO, check if a BO sibling exists by ≥2 fuzzy
   // signals. Apply persistent overrides from `weak_match_overrides`:
@@ -452,7 +465,7 @@ export default function DashboardPage() {
   }, [payEntityFilter]);
 
   const metrics = useMemo(() => {
-    const expected = filtered.filter(r => r.is_in_expected_ede_universe).length;
+    const expected = filtered.filter(r => eeUniverseKeys.has(r.member_key)).length;
     // PER-MONTH BREAKDOWN (2026-04-26): per-month Expected Enrollments now
     // counts NEWLY-EFFECTIVE members per month (each unique member attributed
     // to their first active covered month), so the per-month numbers SUM to
@@ -547,7 +560,7 @@ export default function DashboardPage() {
     const totalPaidAll = filtered.filter(r => r.in_commission).length;
     const paidOutsideExpected = filtered.filter(r => !r.in_ede && r.in_commission).length;
     return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidOutsideEde, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, paidOutsideExpected, coverallDirectNet, downlineNet, netPaidTotal, splitDelta, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
-  }, [filtered, reconciled, normalizedRecords, payEntityFilter, filteredEde, priorMonth, statementMonth, effInBO, confirmedUpgradeMemberKeys]);
+  }, [filtered, reconciled, normalizedRecords, payEntityFilter, filteredEde, eeUniverseKeys, priorMonth, statementMonth, effInBO, confirmedUpgradeMemberKeys]);
 
   // Clawback rows — every commission row with amount < 0 within the current
   // pay-entity scope. Derived from RAW normalized commission records (same
@@ -744,19 +757,19 @@ export default function DashboardPage() {
 
   const unpaidSample = useMemo(() => {
     return filtered
-      .filter(r => r.is_in_expected_ede_universe && effInBO(r) && r.eligible_for_commission === 'Yes' && !r.in_commission)
+      .filter(r => eeUniverseKeys.has(r.member_key) && effInBO(r) && r.eligible_for_commission === 'Yes' && !r.in_commission)
       .slice(0, 50);
-  }, [filtered, effInBO]);
+  }, [filtered, effInBO, eeUniverseKeys]);
 
   const drilldownData = useMemo(() => {
     if (!drilldown) return null;
     switch (drilldown) {
-      case 'expected': return filtered.filter(r => r.is_in_expected_ede_universe);
-      case 'foundBO': return filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r));
-      case 'eligible': return filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r) && r.eligible_for_commission === 'Yes');
+      case 'expected': return filtered.filter(r => eeUniverseKeys.has(r.member_key));
+      case 'foundBO': return filtered.filter(r => eeUniverseKeys.has(r.member_key) && effInBO(r));
+      case 'eligible': return filtered.filter(r => eeUniverseKeys.has(r.member_key) && effInBO(r) && r.eligible_for_commission === 'Yes');
       case 'paidComm': return filtered.filter(r => r.in_commission);
-      case 'paidEligible': return filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r) && r.eligible_for_commission === 'Yes' && r.in_commission);
-      case 'unpaid': return filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r) && r.eligible_for_commission === 'Yes' && !r.in_commission);
+      case 'paidEligible': return filtered.filter(r => eeUniverseKeys.has(r.member_key) && effInBO(r) && r.eligible_for_commission === 'Yes' && r.in_commission);
+      case 'unpaid': return filtered.filter(r => eeUniverseKeys.has(r.member_key) && effInBO(r) && r.eligible_for_commission === 'Yes' && !r.in_commission);
       case 'fullyMatched': return filtered.filter(r => r.in_ede && effInBO(r) && r.in_commission);
       case 'paidOutsideEde': return filtered.filter(r => !r.in_ede && effInBO(r) && r.in_commission);
       case 'commissionOnly': return filtered.filter(r => !r.in_ede && !effInBO(r) && r.in_commission);
@@ -766,7 +779,7 @@ export default function DashboardPage() {
       case 'paidOutsideExpected': return filtered.filter(r => !r.in_ede && r.in_commission);
       default: return filtered;
     }
-  }, [drilldown, filtered, effInBO]);
+  }, [drilldown, filtered, effInBO, eeUniverseKeys]);
 
   const isCoverageDrilldown = ['fullyMatched', 'paidOutsideEde', 'commissionOnly', 'backOfficeOnly', 'unpaidExpected', 'totalPaidAll', 'paidOutsideExpected'].includes(drilldown || '');
 
@@ -1166,14 +1179,19 @@ export default function DashboardPage() {
           bucket that hides bugs. */}
       {reconciled.length > 0 && normalizedRecords.length > 0 && (
         <CollapsibleDebugCard
-          title="EE Universe Audit"
+          title="Persistent vs Canonical EE-Universe Drift"
           icon={<ShieldAlert className="h-4 w-4" />}
           summary={`${eeAuditRows.length} EE members fall outside Found and Not-in-BO buckets`}
         >
           <div className="text-xs text-muted-foreground">
+            Diagnostic (#118 follow-up): rows where the persistent
+            <code className="font-mono mx-1">reconciled_members.is_in_expected_ede_universe</code>
+            flag and live <em>canonical</em> EE-universe calculation disagree.
             Members in the Expected Enrollments universe (scope:{' '}
             <strong>{payEntityFilter}</strong>) who are NOT in the Found-in-BO
-            bucket and NOT in the actionable Not-in-BO bucket. The
+            bucket and NOT in the actionable Not-in-BO bucket. UI metrics no
+            longer depend on the persistent flag — this panel exists to
+            surface stale-rebuild / reconcile-time drift. The
             <em> Inferred Reason</em> column is a best-effort classification
             computed at render time, not stored.
           </div>
@@ -1486,8 +1504,8 @@ export default function DashboardPage() {
                   <span className="text-muted-foreground">Unique Member Keys: <strong className="text-foreground">{debugStats.uniqueMemberKeys}</strong></span>
                   <span className="text-muted-foreground">Avg Records/Key: <strong className="text-foreground">{debugStats.avgRecordsPerKey}</strong></span>
                   <span className="text-muted-foreground">has_any_ede: <strong className="text-foreground">{metrics.hasAnyEde}</strong></span>
-                  <span className="text-muted-foreground">is_in_expected_ede_universe: <strong className="text-foreground">{metrics.hasExpectedEde}</strong></span>
-                  <span className="text-muted-foreground">expected + in_back_office: <strong className="text-foreground">{metrics.expectedWithBO}</strong></span>
+                  <span className="text-muted-foreground">persistent is_in_expected_ede_universe (diagnostic): <strong className="text-foreground">{metrics.hasExpectedEde}</strong></span>
+                  <span className="text-muted-foreground">persistent EE ∩ BO (diagnostic): <strong className="text-foreground">{metrics.expectedWithBO}</strong></span>
                 </div>
               )}
               {metrics.unpaidVariance > 5 && (

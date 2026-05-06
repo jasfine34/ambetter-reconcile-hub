@@ -238,10 +238,17 @@ function checkAgentSumEqualsDirect(inp: InvariantInputs): InvariantResult {
  *      simultaneously in 'Has unpaid' and 'Fully paid' buckets.
  */
 function checkUnpaidAndPaidDisjoint(inp: InvariantInputs): InvariantResult {
+  // CANONICAL PREDICATE (#118 migration, 2026-05-06): EE-universe membership
+  // is sourced from filteredEde.uniqueMembers (current-batch span, AOR-based)
+  // — the SAME predicate the UI now uses for the Eligible / Unpaid /
+  // PaidEligible drilldowns. Previously this invariant used the persistent
+  // `r.is_in_expected_ede_universe` flag, which could pass while the UI
+  // (via canonical helpers) showed a different bucket.
+  const eeUniverse = new Set(inp.filteredEde.uniqueMembers.map((m) => m.member_key));
   const inScope = filterReconciledByScope(inp.reconciled, inp.scope);
   const violators = inScope.filter(
     (r) =>
-      r.is_in_expected_ede_universe &&
+      eeUniverse.has(r.member_key) &&
       (r.in_back_office || inp.confirmedUpgradeMemberKeys.has(r.member_key)) &&
       r.eligible_for_commission === 'Yes' &&
       // unpaid and paid at the same time would be the bug

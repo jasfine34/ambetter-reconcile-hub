@@ -8,6 +8,8 @@ import { NPN_MAP } from '@/lib/constants';
 import { extractNpnFromAorString } from '@/lib/agents';
 import { getNormalizedRecords } from '@/lib/persistence';
 import { filterCommissionRowsByScope } from '@/lib/canonical';
+import { computeFilteredEde } from '@/lib/expectedEde';
+import { getCoveredMonths } from '@/lib/dateRange';
 import { usePayEntityScope, type PayEntityScope } from '@/hooks/usePayEntityScope';
 
 const AGENTS = Object.entries(NPN_MAP).map(([npn, info]) => ({ npn, ...info }));
@@ -53,9 +55,18 @@ function aorMatchesAgent(currentPolicyAor: string | null | undefined, agent: { n
  * the Dashboard's Coverall (Direct) total at the same scope (within $0.01).
  */
 export default function AgentSummaryPage() {
-  const { reconciled, currentBatchId } = useBatch();
+  const { reconciled, currentBatchId, batches, resolverIndex } = useBatch();
   const [normalizedRecords, setNormalizedRecords] = useState<any[]>([]);
   const [scope, setScope] = usePayEntityScope();
+
+  const currentBatch = useMemo(
+    () => batches.find((b: any) => b.id === currentBatchId),
+    [batches, currentBatchId],
+  );
+  const coveredMonths = useMemo(
+    () => getCoveredMonths(currentBatch?.statement_month),
+    [currentBatch?.statement_month],
+  );
 
   useEffect(() => {
     if (!currentBatchId) { setNormalizedRecords([]); return; }
@@ -98,16 +109,29 @@ export default function AgentSummaryPage() {
     return map;
   }, [normalizedRecords, scope]);
 
+  /**
+   * Canonical EE universe (#118 migration, 2026-05-06): "Expected (AOR)"
+   * now reads from `computeFilteredEde` (the AOR-based current-batch span)
+   * instead of the persistent `is_in_expected_ede_universe` flag. The
+   * persistent flag bakes in pay-entity match and carries across batches,
+   * which produced the Vix structural under-count documented in #118
+   * (0 persistent vs 244 canonical for Apr 2026 Vix).
+   */
+  const filteredEde = useMemo(
+    () => computeFilteredEde(normalizedRecords, reconciled, scope, coveredMonths, resolverIndex),
+    [normalizedRecords, reconciled, scope, coveredMonths, resolverIndex],
+  );
+
   const agentData = useMemo(() =>
     AGENTS.map(agent => {
       // Writing-agent scoped reconciled rows (drives BO / eligible / paid /
       // unpaid / est-missing). Commission $ comes from raw rows above.
       const writingRecs = reconciled.filter(r => r.agent_npn === agent.npn);
 
-      // Canonical "Expected (AOR)" — count by current_policy_aor matching
-      // this agent (NPN-embedded or name-prefix), within the EE universe.
-      const expected = reconciled.filter(r =>
-        r.is_in_expected_ede_universe && aorMatchesAgent(r.current_policy_aor, agent),
+      // Canonical "Expected (AOR)" — count EE-universe members (current
+      // batch span, AOR-based) whose current_policy_aor matches this agent.
+      const expected = filteredEde.uniqueMembers.filter(m =>
+        aorMatchesAgent(m.current_policy_aor, agent),
       ).length;
 
       const writtenBy = writingRecs.length;
@@ -133,7 +157,7 @@ export default function AgentSummaryPage() {
         estimated_missing_commission: estMissing,
       };
     }),
-  [reconciled, commissionByNpn]);
+  [reconciled, commissionByNpn, filteredEde]);
 
   const columns = [
     { key: 'agent_name', label: 'Agent' },
