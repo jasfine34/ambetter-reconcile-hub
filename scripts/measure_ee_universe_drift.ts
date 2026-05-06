@@ -10,6 +10,10 @@
  * Read-only. No DB writes, no UI. Run via:
  *   bun run scripts/measure_ee_universe_drift.ts
  */
+// Stub browser globals before any project imports (the supabase client touches localStorage).
+(globalThis as any).localStorage = {
+  getItem: () => null, setItem: () => {}, removeItem: () => {}, clear: () => {}, key: () => null, length: 0,
+};
 import { createClient } from '@supabase/supabase-js';
 import { computeFilteredEde, type PayEntityScope } from '../src/lib/expectedEde';
 import { getMembersInScope, type CanonicalScope } from '../src/lib/canonical/scope';
