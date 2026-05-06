@@ -64,6 +64,7 @@ export default function UploadPage() {
   const { currentBatchId, uploadedFiles, refreshAll, batches } = useBatch();
   const [uploading, setUploading] = useState<UploadingMap>({});
   const [pending, setPending] = useState<PendingUpload | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
   const { toast } = useToast();
 
   const setSlotUploading = useCallback((label: string, value: boolean) => {
