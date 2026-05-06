@@ -22,7 +22,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Download, Info, AlertTriangle } from 'lucide-react';
+import { Download, Info, AlertTriangle, Play, Loader2, RefreshCw, AlertCircle, Inbox } from 'lucide-react';
+import { useReportRunner } from '@/hooks/useReportRunner';
 import Papa from 'papaparse';
 import { getAllNormalizedRecords } from '@/lib/persistence';
 import {
@@ -413,14 +414,22 @@ export default function MissingCommissionExportPage() {
   const [premiumBucket, setPremiumBucket] = useState<PremiumBucket>('all');
   const [allRecords, setAllRecords] = useState<any[]>([]);
   const [weakOverrides, setWeakOverrides] = useState<Map<string, WeakMatchOverride>>(new Map());
-  const [loading, setLoading] = useState(false);
+  // Page-level mount-load spinner. Distinct from the report runner's
+  // `loading` state — `sourceLoading` covers the one-shot pull of
+  // cross-batch normalized records on first render; `runner.status === 'loading'`
+  // covers a Run Report click.
+  const [sourceLoading, setSourceLoading] = useState(false);
+  const [sourceError, setSourceError] = useState<Error | null>(null);
 
   // Cross-batch normalized records — required for profile enrichment AND
   // for computing the canonical EE-universe (filteredEde) used by the cohort.
+  // Loaded once on mount; the report runner consumes a snapshot of this on
+  // each Run Report click.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      setLoading(true);
+      setSourceLoading(true);
+      setSourceError(null);
       try {
         const [data, overrides] = await Promise.all([
           getAllNormalizedRecords(),
@@ -430,27 +439,18 @@ export default function MissingCommissionExportPage() {
           setAllRecords(data || []);
           setWeakOverrides(overrides);
         }
+      } catch (err) {
+        if (!cancelled) {
+          setSourceError(err instanceof Error ? err : new Error(String(err)));
+        }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setSourceLoading(false);
       }
     })();
     return () => { cancelled = true; };
   }, []);
 
-  const currentBatch = useMemo(
-    () => batches.find((b: any) => b.id === currentBatchId) ?? null,
-    [batches, currentBatchId],
-  );
-  const currentBatchMonth: string = currentBatch?.statement_month
-    ? String(currentBatch.statement_month).substring(0, 7)
-    : '';
-
-  const coveredMonths = useMemo(
-    () => getCoveredMonths(currentBatch?.statement_month),
-    [currentBatch?.statement_month],
-  );
-
-  // batch_id → 'YYYY-MM' for profile tier bucketing.
+  // batch_id → 'YYYY-MM' (source-only — independent of filters).
   const batchMonthByBatchId = useMemo(() => {
     const m = new Map<string, string>();
     for (const b of batches) {
@@ -459,13 +459,7 @@ export default function MissingCommissionExportPage() {
     return m;
   }, [batches]);
 
-  // Records for the CURRENT batch only — needed for filteredEde / EE universe.
-  const currentBatchRecords = useMemo(
-    () => allRecords.filter((r) => r.batch_id === currentBatchId),
-    [allRecords, currentBatchId],
-  );
-
-  // Index records by member_key once (reused for every profile build).
+  // Index records by member_key once (source-only — reused for every profile build).
   const recordsByMemberKey = useMemo(() => {
     const m = new Map<string, any[]>();
     for (const r of allRecords) {
@@ -478,45 +472,8 @@ export default function MissingCommissionExportPage() {
     return m;
   }, [allRecords]);
 
-  // Canonical EE universe + confirmed weak-match upgrades (#104 cohort fix).
-  // Mirrors DashboardPage so the export count ties to the audit's
-  // Eligible-and-Found cohort (e.g. Apr Coverall = 1,391 not 1,476).
-  const filteredEde = useMemo(
-    () => computeFilteredEde(currentBatchRecords, reconciled, scope, coveredMonths, resolverIndex),
-    [currentBatchRecords, reconciled, scope, coveredMonths, resolverIndex],
-  );
-
-  const confirmedUpgradeMemberKeys = useMemo(() => {
-    const out = new Set<string>();
-    if (!weakOverrides.size || !reconciled.length) return out;
-    const candidates = findWeakMatches(filteredEde.uniqueMembers, currentBatchRecords);
-    const { confirmedKeys } = applyOverrides(candidates, weakOverrides);
-    if (!confirmedKeys.size) return out;
-    const inScope = filterReconciledByScope(reconciled, scope);
-    for (const r of inScope) {
-      if (r.in_back_office) continue;
-      const key = pickStableKey({
-        issuer_subscriber_id: r.issuer_subscriber_id,
-        exchange_subscriber_id: r.exchange_subscriber_id,
-        policy_number: r.policy_number,
-      });
-      if (key && confirmedKeys.has(key)) out.add(r.member_key);
-    }
-    return out;
-  }, [filteredEde, currentBatchRecords, weakOverrides, reconciled, scope]);
-
-  // Missing-commission cohort: canonical Eligible Cohort ∩ !in_commission.
-  // Eligible Cohort = EE-universe ∩ (in_back_office ∨ confirmed weak match)
-  // ∩ eligible='Yes'. Then drop members whose commission row was found.
-  const missingMembers = useMemo(() => {
-    const eligible = getEligibleCohort(reconciled, scope, confirmedUpgradeMemberKeys, filteredEde);
-    return eligible.filter((r) => !r.in_commission);
-  }, [reconciled, scope, confirmedUpgradeMemberKeys, filteredEde]);
-
-  // #109 — derived (carrier, pay_entity, agent_npn) → writing_agent_carrier_id
-  // map. Memoized over allRecords (which is reloaded on mount, and via the
-  // page's data-version subscription on Re-run Reconciliation). When new
-  // commission rows arrive, the map recomputes and stale blanks fill in.
+  // #109 derived (carrier, pay_entity, agent_npn) → writing_agent_carrier_id
+  // map. Source-only — depends solely on allRecords (cross-batch).
   const writingAgentIdLookup = useMemo(
     () => buildWritingAgentCarrierIdLookup({ records: allRecords, batchMonthByBatchId }),
     [allRecords, batchMonthByBatchId],
@@ -537,38 +494,102 @@ export default function MissingCommissionExportPage() {
     }
   }, [writingAgentIdLookup]);
 
-  // Build export rows (with enriched profiles).
-  const allExportRows = useMemo<ExportRow[]>(() => {
-    const out: ExportRow[] = [];
+  // -------------------------------------------------------------------------
+  // #124 — Run Report runner.
+  //
+  // All filter-driven work lives in the runner; clicking Run Report captures
+  // the current (scope, premiumBucket, batchId) snapshot, computes the
+  // export rows, and stores them. The page never recomputes export rows
+  // when filters change — it only flags `runner.stale` so the operator
+  // knows the on-screen result no longer matches their selections.
+  //
+  // The runner closes over the latest source data (allRecords, reconciled,
+  // resolverIndex, weakOverrides) so a background data refresh between
+  // clicks does not require re-binding `run`.
+  // -------------------------------------------------------------------------
+  interface ReportFilters {
+    scope: CanonicalScope;
+    premiumBucket: PremiumBucket;
+    batchId: string | null;
+  }
+  interface ReportResult {
+    /** Rows after the premium-bucket filter (what the table + CSV use). */
+    rows: ExportRow[];
+    /** Rows BEFORE the premium-bucket filter — used by the "(N before premium filter)" hint. */
+    allBeforeBucket: ExportRow[];
+    /** Batch month captured at run time (used for the CSV filename). */
+    ranBatchMonth: string;
+  }
+  const filters: ReportFilters = useMemo(
+    () => ({ scope, premiumBucket, batchId: currentBatchId ?? null }),
+    [scope, premiumBucket, currentBatchId],
+  );
+
+  const runner = useReportRunner<ReportFilters, ReportResult>(filters, async (f) => {
+    // Resolve the run-time batch from the snapshot, NOT the live state, so
+    // the operator's download matches the table they're looking at even if
+    // they change the batch picker afterwards.
+    const ranBatch = batches.find((b: any) => b.id === f.batchId) ?? null;
+    const ranBatchMonth: string = ranBatch?.statement_month
+      ? String(ranBatch.statement_month).substring(0, 7)
+      : '';
+    const ranCoveredMonths = getCoveredMonths(ranBatch?.statement_month);
+
+    const ranBatchRecords = allRecords.filter((r) => r.batch_id === f.batchId);
+
+    const ranFilteredEde = computeFilteredEde(
+      ranBatchRecords,
+      reconciled,
+      f.scope,
+      ranCoveredMonths,
+      resolverIndex,
+    );
+
+    // Confirmed weak-match upgrades (mirrors prior derivation).
+    const confirmedUpgradeMemberKeys = (() => {
+      const out = new Set<string>();
+      if (!weakOverrides.size || !reconciled.length) return out;
+      const candidates = findWeakMatches(ranFilteredEde.uniqueMembers, ranBatchRecords);
+      const { confirmedKeys } = applyOverrides(candidates, weakOverrides);
+      if (!confirmedKeys.size) return out;
+      const inScope = filterReconciledByScope(reconciled, f.scope);
+      for (const r of inScope) {
+        if (r.in_back_office) continue;
+        const key = pickStableKey({
+          issuer_subscriber_id: r.issuer_subscriber_id,
+          exchange_subscriber_id: r.exchange_subscriber_id,
+          policy_number: r.policy_number,
+        });
+        if (key && confirmedKeys.has(key)) out.add(r.member_key);
+      }
+      return out;
+    })();
+
+    const eligible = getEligibleCohort(reconciled, f.scope, confirmedUpgradeMemberKeys, ranFilteredEde);
+    const missingMembers = eligible.filter((r) => !r.in_commission);
+
+    const allBeforeBucket: ExportRow[] = [];
     for (const m of missingMembers) {
       const memberKey = m.member_key;
       const records = recordsByMemberKey.get(memberKey) ?? [];
       const profile = buildMemberProfile(memberKey, {
         records,
-        referenceMonth: currentBatchMonth,
+        referenceMonth: ranBatchMonth,
         batchMonthByBatchId,
       });
 
       const nameVal = profile.applicant_name.value || m.applicant_name || '';
       const { first, last } = splitNameLastSpace(nameVal);
 
-      // NPN: prefer NPN embedded in current_policy_aor; fall back to writing-agent NPN.
       const aor = String(m.current_policy_aor ?? '').trim();
       const aorNpn = extractNpnFromAorString(aor);
       const npn = aorNpn || String(m.agent_npn ?? '').trim();
 
-      // Writing Agent Carrier ID (#109/#110): scope-aware, NPN-aware ladder.
-      // First resolve the target pay entity (handles 'Coverall_or_Vix' and
-      // blank EPE; falls back to scope or per-NPN default in All scope).
-      // Then Tier-1 (Direct) requires the commission row to match BOTH the
-      // target pay entity AND the resolved current AOR NPN, so an
-      // AOR-transferred member can't pull a stale prior-AOR / prior-pay-entity
-      // ID. Tier-2 (Historical) keys on the same (carrier, pe, npn).
       const commRec = records.find((r) => r.source_type === 'COMMISSION' && r.writing_agent_carrier_id);
       const targetPayEntity = resolveTargetPayEntity({
         expectedPayEntity: m.expected_pay_entity,
         actualPayEntity: m.actual_pay_entity,
-        scope,
+        scope: f.scope,
         agentNpn: npn,
       });
       const writingAgentCarrierId = resolveWritingAgentCarrierId({
@@ -579,7 +600,6 @@ export default function MissingCommissionExportPage() {
         lookup: writingAgentIdLookup,
       });
 
-      // Writing Agent Name: AOR display → BO Broker Name → Commission Writing Agent Name → blank.
       const boRec = records.find((r) => r.source_type === 'BACK_OFFICE' && r.agent_name);
       const writingAgentName = resolveWritingAgentName({
         currentPolicyAor: aor,
@@ -618,7 +638,7 @@ export default function MissingCommissionExportPage() {
         profile.phone.conflict ||
         profile.email.conflict;
 
-      out.push({
+      allBeforeBucket.push({
         carrierName: 'Ambetter',
         npn,
         writingAgentCarrierId,
@@ -631,7 +651,7 @@ export default function MissingCommissionExportPage() {
         memberFirstName: first,
         memberLastName: last,
         dob: profile.dob.value || (m.dob ? String(m.dob) : ''),
-        ssn: '', // v1: no trusted source
+        ssn: '',
         memberId,
         address,
         _memberKey: memberKey,
@@ -648,20 +668,33 @@ export default function MissingCommissionExportPage() {
         _hasConflict: hasConflict,
       });
     }
-    return out;
-  }, [missingMembers, recordsByMemberKey, currentBatchMonth, batchMonthByBatchId, writingAgentIdLookup, scope]);
 
-  const filteredExportRows = useMemo(() => {
-    if (premiumBucket === 'all') return allExportRows;
-    return allExportRows.filter((r) => r._netPremiumBucket === premiumBucket);
-  }, [allExportRows, premiumBucket]);
+    const rows =
+      f.premiumBucket === 'all'
+        ? allBeforeBucket
+        : allBeforeBucket.filter((r) => r._netPremiumBucket === f.premiumBucket);
+
+    return { rows, allBeforeBucket, ranBatchMonth };
+  }, {
+    // Empty bucket = zero displayed rows (after premium filter). The
+    // operator should still see "no rows" as an explicit empty state, not
+    // a populated table.
+    isEmpty: (r) => r.rows.length === 0,
+  });
+
+  // The displayed result set — `null` until the first successful run.
+  const displayed = runner.result;
 
   function handleDownload() {
-    const csv = buildMesserCsv(filteredExportRows);
+    if (!displayed || !runner.ranFilters) return;
+    // CSV uses the SNAPSHOT result + filters from the last run, not live
+    // filter state. This is the #124 contract: the file matches the
+    // on-screen table even if the operator has since changed filters.
+    const csv = buildMesserCsv(displayed.rows);
     const filename = buildMesserCsvFilename({
-      scope,
-      batchMonth: currentBatchMonth,
-      filter: premiumBucket,
+      scope: runner.ranFilters.scope,
+      batchMonth: displayed.ranBatchMonth,
+      filter: runner.ranFilters.premiumBucket,
       downloadDate: new Date(),
     });
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -750,27 +783,145 @@ export default function MissingCommissionExportPage() {
             </div>
           </div>
 
+          {/* #124 — Run Report row. Filters never auto-run; the Run Report
+              button is the only thing that produces results. The download
+              button reflects the SNAPSHOT result (runner.result), not live
+              filter state, so the file always matches the on-screen table. */}
           <div className="flex items-center justify-between pt-2 border-t">
-            <div className="text-sm text-muted-foreground">
-              {loading ? 'Loading cross-batch records…' : `${filteredExportRows.length} member${filteredExportRows.length === 1 ? '' : 's'}`}
-              {filteredExportRows.length !== allExportRows.length && (
-                <span className="ml-2 text-xs">({allExportRows.length} before premium filter)</span>
+            <div className="text-sm text-muted-foreground" data-testid="report-count">
+              {sourceLoading
+                ? 'Loading cross-batch records…'
+                : runner.status === 'idle'
+                  ? 'Choose filters and click Run Report.'
+                  : runner.status === 'loading'
+                    ? 'Running report…'
+                    : runner.status === 'error'
+                      ? 'Run failed. See details below.'
+                      : displayed
+                        ? `${displayed.rows.length} member${displayed.rows.length === 1 ? '' : 's'}`
+                        : ''}
+              {displayed && displayed.rows.length !== displayed.allBeforeBucket.length && (
+                <span className="ml-2 text-xs">({displayed.allBeforeBucket.length} before premium filter)</span>
               )}
             </div>
-            <Button
-              onClick={handleDownload}
-              disabled={filteredExportRows.length === 0}
-              data-testid="messer-download"
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Download Messer Form (CSV)
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => runner.run()}
+                disabled={sourceLoading || runner.status === 'loading' || !currentBatchId}
+                variant={runner.status === 'idle' || runner.stale ? 'default' : 'outline'}
+                data-testid="run-report"
+              >
+                {runner.status === 'loading' ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : runner.stale ? (
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                ) : (
+                  <Play className="h-4 w-4 mr-2" />
+                )}
+                {runner.status === 'loading' ? 'Running…' : runner.stale ? 'Re-run Report' : 'Run Report'}
+              </Button>
+              <Button
+                onClick={handleDownload}
+                disabled={!displayed || displayed.rows.length === 0}
+                variant="outline"
+                data-testid="messer-download"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Download Messer Form (CSV)
+              </Button>
+            </div>
           </div>
         </div>
 
-        {/* Preview table */}
-        <div className="rounded-lg border overflow-auto">
-          <Table>
+        {/* #124 — Stale-filter banner. Old results stay visible (so the
+            operator can still read / download them) but a banner makes it
+            unmissable that filters changed since the last run. */}
+        {runner.stale && (
+          <div
+            role="status"
+            data-testid="stale-banner"
+            className="flex items-center gap-2 rounded-md border border-warning bg-warning/10 px-4 py-2 text-sm text-warning-foreground"
+          >
+            <AlertTriangle className="h-4 w-4 text-warning" />
+            <span className="text-foreground">
+              Filters changed. Click <strong>Re-run Report</strong> to refresh.
+            </span>
+          </div>
+        )}
+
+        {/* #124 — Five explicit content states. Errors NEVER render as a
+            blank table; idle and empty are visually distinct from loading. */}
+        {sourceError ? (
+          <div
+            role="alert"
+            data-testid="source-error-state"
+            className="rounded-lg border border-destructive bg-destructive/5 p-8 text-center space-y-3"
+          >
+            <AlertCircle className="h-8 w-8 mx-auto text-destructive" />
+            <div className="text-sm font-medium">Failed to load source records</div>
+            <div className="text-xs text-muted-foreground max-w-md mx-auto">{sourceError.message}</div>
+          </div>
+        ) : sourceLoading ? (
+          <div
+            data-testid="source-loading-state"
+            className="rounded-lg border bg-card p-12 text-center space-y-3"
+          >
+            <Loader2 className="h-8 w-8 mx-auto animate-spin text-muted-foreground" />
+            <div className="text-sm text-muted-foreground">Loading cross-batch records…</div>
+          </div>
+        ) : runner.status === 'idle' ? (
+          <div
+            data-testid="initial-state"
+            className="rounded-lg border bg-card p-12 text-center space-y-3"
+          >
+            <Play className="h-8 w-8 mx-auto text-muted-foreground" />
+            <div className="text-sm font-medium">Choose filters and click Run Report.</div>
+            <div className="text-xs text-muted-foreground max-w-md mx-auto">
+              Pick a batch, scope, and premium bucket above. Results will appear here once you run the report.
+            </div>
+          </div>
+        ) : runner.status === 'loading' ? (
+          <div
+            data-testid="loading-state"
+            className="rounded-lg border bg-card p-12 text-center space-y-3"
+          >
+            <Loader2 className="h-8 w-8 mx-auto animate-spin text-primary" />
+            <div className="text-sm font-medium">Running report…</div>
+            <div className="text-xs text-muted-foreground">Computing missing-commission cohort.</div>
+          </div>
+        ) : runner.status === 'error' ? (
+          <div
+            role="alert"
+            data-testid="error-state"
+            className="rounded-lg border border-destructive bg-destructive/5 p-8 text-center space-y-3"
+          >
+            <AlertCircle className="h-8 w-8 mx-auto text-destructive" />
+            <div className="text-sm font-medium">Run failed</div>
+            <div className="text-xs text-muted-foreground max-w-md mx-auto break-words">
+              {runner.error?.message ?? 'Unknown error'}
+            </div>
+            <Button onClick={() => runner.run()} variant="outline" size="sm" data-testid="retry-run">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Run again
+            </Button>
+          </div>
+        ) : runner.status === 'empty' ? (
+          <div
+            data-testid="empty-state"
+            className="rounded-lg border bg-card p-12 text-center space-y-3"
+          >
+            <Inbox className="h-8 w-8 mx-auto text-muted-foreground" />
+            <div className="text-sm font-medium">No records found for the selected filters.</div>
+            <div className="text-xs text-muted-foreground max-w-md mx-auto">
+              Try a different scope, batch, or premium bucket and click Run Report.
+            </div>
+          </div>
+        ) : (
+          // Populated state — the existing preview table, unchanged
+          // visually. Only the data source switched from filteredExportRows
+          // to displayed.rows (the snapshot from the last run).
+          <div className="rounded-lg border overflow-auto" data-testid="results-table">
+            <Table>
             <TableHeader>
               <TableRow>
                 {MESSER_COLUMNS.map((c) => (
@@ -795,82 +946,75 @@ export default function MissingCommissionExportPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredExportRows.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={MESSER_COLUMNS.length + INTERNAL_COLUMNS.length} className="text-center text-sm text-muted-foreground py-12">
-                    {loading ? 'Loading…' : 'No missing-commission members in this scope/filter.'}
-                  </TableCell>
+              {displayed!.rows.slice(0, 250).map((row) => (
+                <TableRow key={row._memberKey}>
+                  {MESSER_COLUMNS.map((c) => {
+                    const v = row[c.key];
+                    const fieldKey = c.key as string;
+                    const profileField =
+                      fieldKey === 'address'
+                        ? row._profile.address1
+                        : fieldKey === 'dob'
+                          ? row._profile.dob
+                          : fieldKey === 'memberFirstName' || fieldKey === 'memberLastName'
+                            ? row._profile.applicant_name
+                            : null;
+                    return (
+                      <TableCell key={fieldKey} className="text-sm whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1.5">
+                          {v == null || v === '' ? <span className="text-muted-foreground">—</span> : String(v)}
+                          {profileField && profileField.source_type && (
+                            <Badge variant="outline" className="text-[9px] px-1 py-0 font-normal">
+                              {profileField.source_type === 'back_office' ? 'BO' : profileField.source_type === 'ede' ? 'EDE' : 'COMM'}
+                              {profileField.source_month ? ` · ${profileField.source_month}` : ''}
+                            </Badge>
+                          )}
+                          {profileField && profileField.conflict && (
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <AlertTriangle className="h-3 w-3 text-amber-500" />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                Conflict — also saw: {profileField.conflict_values.map(c => c.value).join(', ')}
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+                        </span>
+                      </TableCell>
+                    );
+                  })}
+                  {INTERNAL_COLUMNS.map((c) => {
+                    const v = row[c.key];
+                    let display: React.ReactNode;
+                    if (c.key === '_ffmId' || c.key === '_phone' || c.key === '_email') {
+                      const f = v as EnrichedField<string>;
+                      display = f?.value ? f.value : <span className="text-muted-foreground">—</span>;
+                    } else if (c.key === '_estimatedMissingCommission') {
+                      display = typeof v === 'number'
+                        ? `$${v.toFixed(2)}`
+                        : <span className="text-muted-foreground">TBD</span>;
+                    } else if (v == null || v === '') {
+                      display = <span className="text-muted-foreground">—</span>;
+                    } else {
+                      display = String(v);
+                    }
+                    return (
+                      <TableCell key={String(c.key)} className="text-sm whitespace-nowrap bg-muted/20 text-muted-foreground">
+                        {display}
+                      </TableCell>
+                    );
+                  })}
                 </TableRow>
-              ) : (
-                filteredExportRows.slice(0, 250).map((row) => (
-                  <TableRow key={row._memberKey}>
-                    {MESSER_COLUMNS.map((c) => {
-                      const v = row[c.key];
-                      const fieldKey = c.key as string;
-                      const profileField =
-                        fieldKey === 'address'
-                          ? row._profile.address1
-                          : fieldKey === 'dob'
-                            ? row._profile.dob
-                            : fieldKey === 'memberFirstName' || fieldKey === 'memberLastName'
-                              ? row._profile.applicant_name
-                              : null;
-                      return (
-                        <TableCell key={fieldKey} className="text-sm whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1.5">
-                            {v == null || v === '' ? <span className="text-muted-foreground">—</span> : String(v)}
-                            {profileField && profileField.source_type && (
-                              <Badge variant="outline" className="text-[9px] px-1 py-0 font-normal">
-                                {profileField.source_type === 'back_office' ? 'BO' : profileField.source_type === 'ede' ? 'EDE' : 'COMM'}
-                                {profileField.source_month ? ` · ${profileField.source_month}` : ''}
-                              </Badge>
-                            )}
-                            {profileField && profileField.conflict && (
-                              <Tooltip>
-                                <TooltipTrigger>
-                                  <AlertTriangle className="h-3 w-3 text-amber-500" />
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  Conflict — also saw: {profileField.conflict_values.map(c => c.value).join(', ')}
-                                </TooltipContent>
-                              </Tooltip>
-                            )}
-                          </span>
-                        </TableCell>
-                      );
-                    })}
-                    {INTERNAL_COLUMNS.map((c) => {
-                      const v = row[c.key];
-                      let display: React.ReactNode;
-                      if (c.key === '_ffmId' || c.key === '_phone' || c.key === '_email') {
-                        const f = v as EnrichedField<string>;
-                        display = f?.value ? f.value : <span className="text-muted-foreground">—</span>;
-                      } else if (c.key === '_estimatedMissingCommission') {
-                        display = typeof v === 'number'
-                          ? `$${v.toFixed(2)}`
-                          : <span className="text-muted-foreground">TBD</span>;
-                      } else if (v == null || v === '') {
-                        display = <span className="text-muted-foreground">—</span>;
-                      } else {
-                        display = String(v);
-                      }
-                      return (
-                        <TableCell key={String(c.key)} className="text-sm whitespace-nowrap bg-muted/20 text-muted-foreground">
-                          {display}
-                        </TableCell>
-                      );
-                    })}
-                  </TableRow>
-                ))
-              )}
+              ))}
             </TableBody>
-          </Table>
-          {filteredExportRows.length > 250 && (
-            <div className="px-4 py-2 text-xs text-muted-foreground border-t bg-muted/20">
-              Preview limited to first 250 rows. CSV download includes all {filteredExportRows.length}.
-            </div>
-          )}
-        </div>
+            </Table>
+            {displayed!.rows.length > 250 && (
+              <div className="px-4 py-2 text-xs text-muted-foreground border-t bg-muted/20">
+                Preview limited to first 250 rows. CSV download includes all {displayed!.rows.length}.
+              </div>
+            )}
+          </div>
+        )}
 
         <p className="text-xs text-muted-foreground">
           NPN reference (Coverall): {Object.entries(NPN_MAP).map(([npn, info]) => `${info.name} (${npn})`).join(' · ')}
