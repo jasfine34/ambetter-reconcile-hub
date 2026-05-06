@@ -447,6 +447,20 @@ export default function DashboardPage() {
   );
 
   /**
+   * Single source of truth for the "Not in Back Office" card subtitle math
+   * AND the drilldown modal's row tabs. Built via the canonical
+   * {@link getNotInBackOfficeRows} helper so the card count and modal row
+   * count are mechanically identical (B1 follow-up to #129 — previously the
+   * card subtracted confirmed weak-match overrides while the modal pulled
+   * raw `filteredEde.missingFromBO`, leaking confirmed members into the
+   * drilldown view).
+   */
+  const filteredMissingFromBO = useMemo(
+    () => getNotInBackOfficeRows(filteredEde, weakMatchResult.confirmedKeys, pickStableKey),
+    [filteredEde, weakMatchResult.confirmedKeys],
+  );
+
+  /**
    * Run the canonical invariant suite against the currently-loaded data and
    * stash results into modal state. Extracted as a callback so the modal's
    * "Re-run" button can re-invoke it without duplicating the input wiring.
