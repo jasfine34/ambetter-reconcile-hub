@@ -414,14 +414,22 @@ export default function MissingCommissionExportPage() {
   const [premiumBucket, setPremiumBucket] = useState<PremiumBucket>('all');
   const [allRecords, setAllRecords] = useState<any[]>([]);
   const [weakOverrides, setWeakOverrides] = useState<Map<string, WeakMatchOverride>>(new Map());
-  const [loading, setLoading] = useState(false);
+  // Page-level mount-load spinner. Distinct from the report runner's
+  // `loading` state — `sourceLoading` covers the one-shot pull of
+  // cross-batch normalized records on first render; `runner.status === 'loading'`
+  // covers a Run Report click.
+  const [sourceLoading, setSourceLoading] = useState(false);
+  const [sourceError, setSourceError] = useState<Error | null>(null);
 
   // Cross-batch normalized records — required for profile enrichment AND
   // for computing the canonical EE-universe (filteredEde) used by the cohort.
+  // Loaded once on mount; the report runner consumes a snapshot of this on
+  // each Run Report click.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      setLoading(true);
+      setSourceLoading(true);
+      setSourceError(null);
       try {
         const [data, overrides] = await Promise.all([
           getAllNormalizedRecords(),
@@ -431,27 +439,18 @@ export default function MissingCommissionExportPage() {
           setAllRecords(data || []);
           setWeakOverrides(overrides);
         }
+      } catch (err) {
+        if (!cancelled) {
+          setSourceError(err instanceof Error ? err : new Error(String(err)));
+        }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setSourceLoading(false);
       }
     })();
     return () => { cancelled = true; };
   }, []);
 
-  const currentBatch = useMemo(
-    () => batches.find((b: any) => b.id === currentBatchId) ?? null,
-    [batches, currentBatchId],
-  );
-  const currentBatchMonth: string = currentBatch?.statement_month
-    ? String(currentBatch.statement_month).substring(0, 7)
-    : '';
-
-  const coveredMonths = useMemo(
-    () => getCoveredMonths(currentBatch?.statement_month),
-    [currentBatch?.statement_month],
-  );
-
-  // batch_id → 'YYYY-MM' for profile tier bucketing.
+  // batch_id → 'YYYY-MM' (source-only — independent of filters).
   const batchMonthByBatchId = useMemo(() => {
     const m = new Map<string, string>();
     for (const b of batches) {
@@ -460,13 +459,7 @@ export default function MissingCommissionExportPage() {
     return m;
   }, [batches]);
 
-  // Records for the CURRENT batch only — needed for filteredEde / EE universe.
-  const currentBatchRecords = useMemo(
-    () => allRecords.filter((r) => r.batch_id === currentBatchId),
-    [allRecords, currentBatchId],
-  );
-
-  // Index records by member_key once (reused for every profile build).
+  // Index records by member_key once (source-only — reused for every profile build).
   const recordsByMemberKey = useMemo(() => {
     const m = new Map<string, any[]>();
     for (const r of allRecords) {
@@ -479,45 +472,8 @@ export default function MissingCommissionExportPage() {
     return m;
   }, [allRecords]);
 
-  // Canonical EE universe + confirmed weak-match upgrades (#104 cohort fix).
-  // Mirrors DashboardPage so the export count ties to the audit's
-  // Eligible-and-Found cohort (e.g. Apr Coverall = 1,391 not 1,476).
-  const filteredEde = useMemo(
-    () => computeFilteredEde(currentBatchRecords, reconciled, scope, coveredMonths, resolverIndex),
-    [currentBatchRecords, reconciled, scope, coveredMonths, resolverIndex],
-  );
-
-  const confirmedUpgradeMemberKeys = useMemo(() => {
-    const out = new Set<string>();
-    if (!weakOverrides.size || !reconciled.length) return out;
-    const candidates = findWeakMatches(filteredEde.uniqueMembers, currentBatchRecords);
-    const { confirmedKeys } = applyOverrides(candidates, weakOverrides);
-    if (!confirmedKeys.size) return out;
-    const inScope = filterReconciledByScope(reconciled, scope);
-    for (const r of inScope) {
-      if (r.in_back_office) continue;
-      const key = pickStableKey({
-        issuer_subscriber_id: r.issuer_subscriber_id,
-        exchange_subscriber_id: r.exchange_subscriber_id,
-        policy_number: r.policy_number,
-      });
-      if (key && confirmedKeys.has(key)) out.add(r.member_key);
-    }
-    return out;
-  }, [filteredEde, currentBatchRecords, weakOverrides, reconciled, scope]);
-
-  // Missing-commission cohort: canonical Eligible Cohort ∩ !in_commission.
-  // Eligible Cohort = EE-universe ∩ (in_back_office ∨ confirmed weak match)
-  // ∩ eligible='Yes'. Then drop members whose commission row was found.
-  const missingMembers = useMemo(() => {
-    const eligible = getEligibleCohort(reconciled, scope, confirmedUpgradeMemberKeys, filteredEde);
-    return eligible.filter((r) => !r.in_commission);
-  }, [reconciled, scope, confirmedUpgradeMemberKeys, filteredEde]);
-
-  // #109 — derived (carrier, pay_entity, agent_npn) → writing_agent_carrier_id
-  // map. Memoized over allRecords (which is reloaded on mount, and via the
-  // page's data-version subscription on Re-run Reconciliation). When new
-  // commission rows arrive, the map recomputes and stale blanks fill in.
+  // #109 derived (carrier, pay_entity, agent_npn) → writing_agent_carrier_id
+  // map. Source-only — depends solely on allRecords (cross-batch).
   const writingAgentIdLookup = useMemo(
     () => buildWritingAgentCarrierIdLookup({ records: allRecords, batchMonthByBatchId }),
     [allRecords, batchMonthByBatchId],
@@ -538,38 +494,102 @@ export default function MissingCommissionExportPage() {
     }
   }, [writingAgentIdLookup]);
 
-  // Build export rows (with enriched profiles).
-  const allExportRows = useMemo<ExportRow[]>(() => {
-    const out: ExportRow[] = [];
+  // -------------------------------------------------------------------------
+  // #124 — Run Report runner.
+  //
+  // All filter-driven work lives in the runner; clicking Run Report captures
+  // the current (scope, premiumBucket, batchId) snapshot, computes the
+  // export rows, and stores them. The page never recomputes export rows
+  // when filters change — it only flags `runner.stale` so the operator
+  // knows the on-screen result no longer matches their selections.
+  //
+  // The runner closes over the latest source data (allRecords, reconciled,
+  // resolverIndex, weakOverrides) so a background data refresh between
+  // clicks does not require re-binding `run`.
+  // -------------------------------------------------------------------------
+  interface ReportFilters {
+    scope: CanonicalScope;
+    premiumBucket: PremiumBucket;
+    batchId: string | null;
+  }
+  interface ReportResult {
+    /** Rows after the premium-bucket filter (what the table + CSV use). */
+    rows: ExportRow[];
+    /** Rows BEFORE the premium-bucket filter — used by the "(N before premium filter)" hint. */
+    allBeforeBucket: ExportRow[];
+    /** Batch month captured at run time (used for the CSV filename). */
+    ranBatchMonth: string;
+  }
+  const filters: ReportFilters = useMemo(
+    () => ({ scope, premiumBucket, batchId: currentBatchId ?? null }),
+    [scope, premiumBucket, currentBatchId],
+  );
+
+  const runner = useReportRunner<ReportFilters, ReportResult>(filters, async (f) => {
+    // Resolve the run-time batch from the snapshot, NOT the live state, so
+    // the operator's download matches the table they're looking at even if
+    // they change the batch picker afterwards.
+    const ranBatch = batches.find((b: any) => b.id === f.batchId) ?? null;
+    const ranBatchMonth: string = ranBatch?.statement_month
+      ? String(ranBatch.statement_month).substring(0, 7)
+      : '';
+    const ranCoveredMonths = getCoveredMonths(ranBatch?.statement_month);
+
+    const ranBatchRecords = allRecords.filter((r) => r.batch_id === f.batchId);
+
+    const ranFilteredEde = computeFilteredEde(
+      ranBatchRecords,
+      reconciled,
+      f.scope,
+      ranCoveredMonths,
+      resolverIndex,
+    );
+
+    // Confirmed weak-match upgrades (mirrors prior derivation).
+    const confirmedUpgradeMemberKeys = (() => {
+      const out = new Set<string>();
+      if (!weakOverrides.size || !reconciled.length) return out;
+      const candidates = findWeakMatches(ranFilteredEde.uniqueMembers, ranBatchRecords);
+      const { confirmedKeys } = applyOverrides(candidates, weakOverrides);
+      if (!confirmedKeys.size) return out;
+      const inScope = filterReconciledByScope(reconciled, f.scope);
+      for (const r of inScope) {
+        if (r.in_back_office) continue;
+        const key = pickStableKey({
+          issuer_subscriber_id: r.issuer_subscriber_id,
+          exchange_subscriber_id: r.exchange_subscriber_id,
+          policy_number: r.policy_number,
+        });
+        if (key && confirmedKeys.has(key)) out.add(r.member_key);
+      }
+      return out;
+    })();
+
+    const eligible = getEligibleCohort(reconciled, f.scope, confirmedUpgradeMemberKeys, ranFilteredEde);
+    const missingMembers = eligible.filter((r) => !r.in_commission);
+
+    const allBeforeBucket: ExportRow[] = [];
     for (const m of missingMembers) {
       const memberKey = m.member_key;
       const records = recordsByMemberKey.get(memberKey) ?? [];
       const profile = buildMemberProfile(memberKey, {
         records,
-        referenceMonth: currentBatchMonth,
+        referenceMonth: ranBatchMonth,
         batchMonthByBatchId,
       });
 
       const nameVal = profile.applicant_name.value || m.applicant_name || '';
       const { first, last } = splitNameLastSpace(nameVal);
 
-      // NPN: prefer NPN embedded in current_policy_aor; fall back to writing-agent NPN.
       const aor = String(m.current_policy_aor ?? '').trim();
       const aorNpn = extractNpnFromAorString(aor);
       const npn = aorNpn || String(m.agent_npn ?? '').trim();
 
-      // Writing Agent Carrier ID (#109/#110): scope-aware, NPN-aware ladder.
-      // First resolve the target pay entity (handles 'Coverall_or_Vix' and
-      // blank EPE; falls back to scope or per-NPN default in All scope).
-      // Then Tier-1 (Direct) requires the commission row to match BOTH the
-      // target pay entity AND the resolved current AOR NPN, so an
-      // AOR-transferred member can't pull a stale prior-AOR / prior-pay-entity
-      // ID. Tier-2 (Historical) keys on the same (carrier, pe, npn).
       const commRec = records.find((r) => r.source_type === 'COMMISSION' && r.writing_agent_carrier_id);
       const targetPayEntity = resolveTargetPayEntity({
         expectedPayEntity: m.expected_pay_entity,
         actualPayEntity: m.actual_pay_entity,
-        scope,
+        scope: f.scope,
         agentNpn: npn,
       });
       const writingAgentCarrierId = resolveWritingAgentCarrierId({
@@ -580,7 +600,6 @@ export default function MissingCommissionExportPage() {
         lookup: writingAgentIdLookup,
       });
 
-      // Writing Agent Name: AOR display → BO Broker Name → Commission Writing Agent Name → blank.
       const boRec = records.find((r) => r.source_type === 'BACK_OFFICE' && r.agent_name);
       const writingAgentName = resolveWritingAgentName({
         currentPolicyAor: aor,
@@ -619,7 +638,7 @@ export default function MissingCommissionExportPage() {
         profile.phone.conflict ||
         profile.email.conflict;
 
-      out.push({
+      allBeforeBucket.push({
         carrierName: 'Ambetter',
         npn,
         writingAgentCarrierId,
@@ -632,7 +651,7 @@ export default function MissingCommissionExportPage() {
         memberFirstName: first,
         memberLastName: last,
         dob: profile.dob.value || (m.dob ? String(m.dob) : ''),
-        ssn: '', // v1: no trusted source
+        ssn: '',
         memberId,
         address,
         _memberKey: memberKey,
@@ -649,20 +668,33 @@ export default function MissingCommissionExportPage() {
         _hasConflict: hasConflict,
       });
     }
-    return out;
-  }, [missingMembers, recordsByMemberKey, currentBatchMonth, batchMonthByBatchId, writingAgentIdLookup, scope]);
 
-  const filteredExportRows = useMemo(() => {
-    if (premiumBucket === 'all') return allExportRows;
-    return allExportRows.filter((r) => r._netPremiumBucket === premiumBucket);
-  }, [allExportRows, premiumBucket]);
+    const rows =
+      f.premiumBucket === 'all'
+        ? allBeforeBucket
+        : allBeforeBucket.filter((r) => r._netPremiumBucket === f.premiumBucket);
+
+    return { rows, allBeforeBucket, ranBatchMonth };
+  }, {
+    // Empty bucket = zero displayed rows (after premium filter). The
+    // operator should still see "no rows" as an explicit empty state, not
+    // a populated table.
+    isEmpty: (r) => r.rows.length === 0,
+  });
+
+  // The displayed result set — `null` until the first successful run.
+  const displayed = runner.result;
 
   function handleDownload() {
-    const csv = buildMesserCsv(filteredExportRows);
+    if (!displayed || !runner.ranFilters) return;
+    // CSV uses the SNAPSHOT result + filters from the last run, not live
+    // filter state. This is the #124 contract: the file matches the
+    // on-screen table even if the operator has since changed filters.
+    const csv = buildMesserCsv(displayed.rows);
     const filename = buildMesserCsvFilename({
-      scope,
-      batchMonth: currentBatchMonth,
-      filter: premiumBucket,
+      scope: runner.ranFilters.scope,
+      batchMonth: displayed.ranBatchMonth,
+      filter: runner.ranFilters.premiumBucket,
       downloadDate: new Date(),
     });
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
