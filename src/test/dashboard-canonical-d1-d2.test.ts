@@ -36,29 +36,39 @@ import type { FilteredEdeResult } from '@/lib/expectedEde';
  * Fixture shape:
  *   m1 — in current-batch filteredEde, in BO, eligible, paid.
  *   m2 — in current-batch filteredEde, in BO, eligible, NOT paid.
- *   m3 — has the persistent `is_in_expected_ede_universe` flag set and is
- *        in BO + eligible + unpaid, but is NOT in this batch's filteredEde
- *        (e.g. AOR transferred OUT after a prior batch flipped the flag on).
- *        The pre-PR2 inline predicate
- *          filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r)
- *                                 && r.eligible_for_commission === 'Yes'
- *                                 && !r.in_commission)
- *        would count m3 in `unpaid`, but the canonical
- *        `getEligibleCohort(...)` (which gates on filteredEde.uniqueMembers)
- *        will not. This is the exact D1 drift shape and lets the parity
- *        tests below fail on main.
+ *   m3 — UNPAID stale member: persistent `is_in_expected_ede_universe` flag
+ *        is set and member is in BO + eligible + unpaid, but NOT in this
+ *        batch's filteredEde (e.g. AOR transferred OUT after a prior batch
+ *        flipped the flag on). Drives the [MAIN-FAIL] Unpaid Policies test.
+ *   m4 — PAID stale member: same drift shape as m3 but `in_commission=true`.
+ *        Drives the [MAIN-FAIL] Paid Within Eligible test. Without this,
+ *        the paid-side parity test was only [REGRESSION-ONLY] because m1
+ *        was the lone paid row and the inline predicate vs canonical
+ *        cohort agreed by coincidence on the paid side.
+ *
+ *   Drift mechanic m3/m4 exercise:
+ *     Pre-PR2 inline predicate
+ *       filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r)
+ *                              && r.eligible_for_commission === 'Yes'
+ *                              && (paid? r.in_commission : !r.in_commission))
+ *     would COUNT these stale members (persistent flag is true).
+ *     Canonical `getEligibleCohort(...)` gates on filteredEde.uniqueMembers
+ *     and EXCLUDES them. Card↔drilldown parity therefore fails on main and
+ *     holds on PR2 where both slice the canonical cohort.
  */
 function fixture() {
   const reconciled: any[] = [
     { member_key: 'm1', current_policy_aor: 'Jason Fine (21055210)', is_in_expected_ede_universe: true, in_back_office: true, eligible_for_commission: 'Yes', in_commission: true, agent_npn: '21055210' },
     { member_key: 'm2', current_policy_aor: 'Jason Fine (21055210)', is_in_expected_ede_universe: true, in_back_office: true, eligible_for_commission: 'Yes', in_commission: false, agent_npn: '21055210' },
     { member_key: 'm3', current_policy_aor: 'Jason Fine (21055210)', is_in_expected_ede_universe: true, in_back_office: true, eligible_for_commission: 'Yes', in_commission: false, agent_npn: '21055210' },
+    { member_key: 'm4', current_policy_aor: 'Jason Fine (21055210)', is_in_expected_ede_universe: true, in_back_office: true, eligible_for_commission: 'Yes', in_commission: true, agent_npn: '21055210' },
   ];
   const filteredEde: FilteredEdeResult = {
     uniqueMembers: [
       { member_key: 'm1', applicant_name: 'A', policy_number: '', exchange_subscriber_id: '', issuer_subscriber_id: '', current_policy_aor: '', effective_date: '2026-03-01', policy_status: 'Effectuated', covered_member_count: 1, effective_month: '2026-03', active_months: ['2026-03'], in_back_office: true },
       { member_key: 'm2', applicant_name: 'B', policy_number: '', exchange_subscriber_id: '', issuer_subscriber_id: '', current_policy_aor: '', effective_date: '2026-03-01', policy_status: 'Effectuated', covered_member_count: 1, effective_month: '2026-03', active_months: ['2026-03'], in_back_office: true },
-      // m3 intentionally absent — persistent flag still on but not in this batch.
+      // m3 and m4 intentionally absent — persistent flag still on but not in this batch.
+      // m3 drives the unpaid-side drift; m4 drives the paid-side drift.
     ],
     uniqueKeys: 2,
     byMonth: { '2026-03': 2 },
@@ -76,20 +86,25 @@ function fixture() {
 }
 
 describe('D1: card↔drilldown parity for Paid Within Eligible / Unpaid', () => {
-  it('[REGRESSION-ONLY] Paid Within Eligible card count === paidEligible drilldown row count', () => {
-    // Relabeled from [MAIN-FAIL]: with the current fixture m3 is unpaid, so
-    // the pre-PR2 inline predicate and the canonical cohort agree on the
-    // PAID side (both count just m1). To make this genuinely main-failing
-    // we'd need a separate stale-paid member (persistent flag on, absent
-    // from current-batch filteredEde, in_commission=true). Captured as a
-    // follow-up; for now this test locks the canonical wiring against
-    // future drift.
+  it('[MAIN-FAIL] Paid Within Eligible card count === paidEligible drilldown row count', () => {
+    // Drift mechanic: m4 has persistent is_in_expected_ede_universe=true,
+    // is in BO, eligible, and in_commission=true, but is ABSENT from this
+    // batch's filteredEde.uniqueMembers. The pre-PR2 inline predicate
+    // (filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r)
+    //   && r.eligible_for_commission==='Yes' && r.in_commission)) would
+    // include m4, while the canonical getEligibleCohort gates on
+    // filteredEde.uniqueMembers and excludes it. Pre-PR2 the card and the
+    // drilldown re-derived this independently and could disagree on m4 if
+    // either side ever drifted; on PR2 both slice the canonical cohort,
+    // so they agree (count = 1, just m1). Without m4 this test was only
+    // [REGRESSION-ONLY] because the lone paid row was m1 and there was
+    // nothing the inline-vs-canonical paths could disagree about.
     const { reconciled, filteredEde } = fixture();
     const cohort = getEligibleCohort(reconciled, 'Coverall', new Set(), filteredEde);
     const cardValue = cohort.filter((r) => r.in_commission).length;
     const drilldownRows = cohort.filter((r) => r.in_commission);
     expect(cardValue).toBe(drilldownRows.length);
-    expect(cardValue).toBe(1);
+    expect(cardValue).toBe(1); // m1 only — m4 excluded because not in current-batch filteredEde.
   });
 
   it('[MAIN-FAIL] Unpaid Policies card count === unpaid drilldown row count', () => {
