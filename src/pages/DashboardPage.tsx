@@ -465,7 +465,7 @@ export default function DashboardPage() {
   }, [payEntityFilter]);
 
   const metrics = useMemo(() => {
-    const expected = filtered.filter(r => r.is_in_expected_ede_universe).length;
+    const expected = filtered.filter(r => eeUniverseKeys.has(r.member_key)).length;
     // PER-MONTH BREAKDOWN (2026-04-26): per-month Expected Enrollments now
     // counts NEWLY-EFFECTIVE members per month (each unique member attributed
     // to their first active covered month), so the per-month numbers SUM to
