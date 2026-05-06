@@ -28,6 +28,55 @@ export const ISSUE_TYPES = [
   'Fully Matched',
 ] as const;
 
+export type IssueType = (typeof ISSUE_TYPES)[number];
+
+/**
+ * Display labels for issue_type enum values. The underlying enum strings are
+ * persisted in `reconciled_members.issue_type` and used as predicate keys
+ * across reconcile, classifier, exports, and tests — they MUST NOT change.
+ *
+ * These labels are UI-only renames (#119, #120 from the Phase 1 audit) that
+ * make the chip labels reflect the literal predicate they apply, so users
+ * stop conflating Exception-queue chips with Dashboard EE-universe metrics
+ * of similar-sounding names.
+ *
+ * Use `getIssueTypeLabel(issueType)` instead of rendering the raw enum string
+ * in any user-facing context.
+ */
+export const ISSUE_TYPE_LABELS: Record<IssueType, string> = {
+  'Missing from Back Office': 'Has EDE Row but Not in Back Office',
+  'Missing from Commission': 'Eligible & In BO but No Commission Row',
+  'Paid but Missing from EDE': 'Paid but Missing from EDE',
+  'SBA Enrollment (no FFM EDE expected)': 'SBA Enrollment (no FFM EDE expected)',
+  'Back Office but Missing from EDE': 'Back Office but Missing from EDE',
+  'Not Eligible for Commission': 'Not Eligible for Commission',
+  'Wrong Pay Entity': 'Wrong Pay Entity',
+  'Erica Paid Under Coverall': 'Erica Paid Under Coverall',
+  'Erica Paid Under Vix': 'Erica Paid Under Vix',
+  'Fully Matched': 'Fully Matched',
+};
+
+/**
+ * Per-issue-type tooltip copy clarifying the literal predicate vs. the
+ * similar-sounding Dashboard EE-universe metrics. Surface in chip / card
+ * tooltips so operators understand what each Exception bucket actually
+ * counts.
+ */
+export const ISSUE_TYPE_TOOLTIPS: Partial<Record<IssueType, string>> = {
+  'Missing from Back Office':
+    'Members with an EDE row whose policy is NOT present in any Back Office export. Distinct from Dashboard "Not in BO" (which is scoped to the current EE universe).',
+  'Missing from Commission':
+    'Members eligible for commission AND found in Back Office, but with no matching commission row. Mutually exclusive with Wrong Pay Entity / Erica Paid Under Coverall / Erica Paid Under Vix.',
+};
+
+export function getIssueTypeLabel(issueType: string): string {
+  return (ISSUE_TYPE_LABELS as Record<string, string>)[issueType] ?? issueType;
+}
+
+export function getIssueTypeTooltip(issueType: string): string | undefined {
+  return (ISSUE_TYPE_TOOLTIPS as Record<string, string | undefined>)[issueType];
+}
+
 /**
  * State-Based Exchange (SBA) state codes. Coverall enrolls in these states via
  * SBA platforms whose EDE files are intentionally NOT uploaded to this app, so
