@@ -18,6 +18,8 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { WrongBatchConfirmModal } from '@/components/WrongBatchConfirmModal';
+import { evaluateFilenameDate, type FilenameWarning } from '@/lib/filenameDateHeuristic';
 
 interface PendingUpload {
   fileLabel: string;
@@ -26,6 +28,22 @@ interface PendingUpload {
   aorBucket: string | null;
   file: File;
   detected: DetectedSchema;
+}
+
+/**
+ * State backing the Wrong-Batch Upload Confirmation Modal (#122). Captures
+ * the destination batch label and filename heuristic at the moment the file
+ * was selected, so the modal renders consistent values even if the
+ * BatchSelector changes underneath us.
+ */
+interface PendingConfirm {
+  fileLabel: string;
+  sourceType: string;
+  payEntity: string | null;
+  aorBucket: string | null;
+  file: File;
+  batchLabel: string | null;
+  warning: FilenameWarning;
 }
 
 const SCHEMA_LABEL: Record<DetectedSchema, string> = {
@@ -46,6 +64,7 @@ export default function UploadPage() {
   const { currentBatchId, uploadedFiles, refreshAll, batches } = useBatch();
   const [uploading, setUploading] = useState<UploadingMap>({});
   const [pending, setPending] = useState<PendingUpload | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
   const { toast } = useToast();
 
   const setSlotUploading = useCallback((label: string, value: boolean) => {
@@ -177,7 +196,15 @@ export default function UploadPage() {
     }
   }, [currentBatchId, refreshAll, toast, batches, setSlotUploading]);
 
-  const handleUpload = useCallback(async (fileLabel: string, sourceType: string, payEntity: string | null, aorBucket: string | null, file: File) => {
+  /**
+   * Internal: runs after the operator confirms the Wrong-Batch modal (#122).
+   * Handles schema-detection (which may itself open the schema-mismatch
+   * dialog) and otherwise hands off to processUpload.
+   */
+  const runUploadAfterConfirm = useCallback(async (
+    fileLabel: string, sourceType: string, payEntity: string | null,
+    aorBucket: string | null, file: File,
+  ) => {
     if (!currentBatchId) {
       toast({ title: 'No batch selected', description: 'Create or select a batch before uploading.', variant: 'destructive' });
       return;
@@ -198,6 +225,32 @@ export default function UploadPage() {
 
     await processUpload({ fileLabel, sourceType, payEntity, aorBucket, file });
   }, [currentBatchId, processUpload, toast]);
+
+  /**
+   * Entry point invoked by every UploadCard. Opens the Wrong-Batch
+   * Confirmation Modal (#122) before any storage / RPC call. The modal blocks
+   * upload until the operator explicitly confirms the destination batch and
+   * slot. No DB / storage / RPC call occurs unless Confirm is clicked.
+   */
+  const handleUpload = useCallback(async (
+    fileLabel: string, sourceType: string, payEntity: string | null,
+    aorBucket: string | null, file: File,
+  ) => {
+    if (!currentBatchId) {
+      toast({ title: 'No batch selected', description: 'Create or select a batch before uploading.', variant: 'destructive' });
+      return;
+    }
+
+    const batch = batches.find((b: any) => b.id === currentBatchId);
+    const batchLabel = batch?.statement_month
+      ? `${new Date(`${batch.statement_month}T00:00:00`).toLocaleDateString('en-US', { year: 'numeric', month: 'long' })} — ${batch.carrier}`
+      : null;
+    const warning = evaluateFilenameDate(file.name, sourceType, batch?.statement_month);
+
+    setPendingConfirm({
+      fileLabel, sourceType, payEntity, aorBucket, file, batchLabel, warning,
+    });
+  }, [currentBatchId, batches, toast]);
 
   const getUploadedFileName = (label: string): string | null => {
     const f = uploadedFiles.find((uf: any) => uf.file_label === label);
@@ -311,6 +364,21 @@ export default function UploadPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <WrongBatchConfirmModal
+        open={!!pendingConfirm}
+        batchLabel={pendingConfirm?.batchLabel ?? null}
+        fileLabel={pendingConfirm?.fileLabel ?? null}
+        file={pendingConfirm?.file ?? null}
+        warning={pendingConfirm?.warning ?? { kind: 'none' }}
+        onCancel={() => setPendingConfirm(null)}
+        onConfirm={() => {
+          const p = pendingConfirm;
+          if (!p) return;
+          setPendingConfirm(null);
+          void runUploadAfterConfirm(p.fileLabel, p.sourceType, p.payEntity, p.aorBucket, p.file);
+        }}
+      />
     </div>
   );
 }
