@@ -18,6 +18,8 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { WrongBatchConfirmModal } from '@/components/WrongBatchConfirmModal';
+import { evaluateFilenameDate, type FilenameWarning } from '@/lib/filenameDateHeuristic';
 
 interface PendingUpload {
   fileLabel: string;
@@ -26,6 +28,22 @@ interface PendingUpload {
   aorBucket: string | null;
   file: File;
   detected: DetectedSchema;
+}
+
+/**
+ * State backing the Wrong-Batch Upload Confirmation Modal (#122). Captures
+ * the destination batch label and filename heuristic at the moment the file
+ * was selected, so the modal renders consistent values even if the
+ * BatchSelector changes underneath us.
+ */
+interface PendingConfirm {
+  fileLabel: string;
+  sourceType: string;
+  payEntity: string | null;
+  aorBucket: string | null;
+  file: File;
+  batchLabel: string | null;
+  warning: FilenameWarning;
 }
 
 const SCHEMA_LABEL: Record<DetectedSchema, string> = {
