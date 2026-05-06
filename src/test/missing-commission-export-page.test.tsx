@@ -238,7 +238,7 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
     await waitFor(() => expect(screen.getByTestId('stale-banner')).toBeInTheDocument());
     // Old results still visible
     expect(screen.getByTestId('results-table')).toBeInTheDocument();
-    expect(screen.getByText(/Re-run Report/i)).toBeInTheDocument();
+    expect(screen.getByTestId('run-report')).toHaveTextContent(/Re-run Report/i);
   });
 
   it('download uses last-run snapshot, not current edited filters', async () => {
