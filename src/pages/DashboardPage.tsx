@@ -541,64 +541,30 @@ export default function DashboardPage() {
     const shouldPay = eligible;
     // Count distinct policies with positive payments
     const paidCommRecords = filtered.filter(r => r.in_commission).length;
+    // D1 (PR2): paidEligible / unpaid derived by slicing the canonical
+    // `eligibleCohort` array on `in_commission`, NOT by re-deriving the
+    // EE-universe ∩ BO ∩ eligible predicate inline. If `getEligibleCohort`
+    // gains another tiebreaker, both numbers move together automatically.
     const paidEligible = eligibleCohort.filter(r => r.in_commission).length;
-    const unpaid = shouldPay - paidEligible;
-    // Gross / Clawbacks / Net Paid — computed from RAW commission records and
-    // scoped by the dashboard's pay_entity filter, so they match exactly what
-    // the carrier statement(s) for the selected scope contain. Aggregating from
-    // the per-member `filtered` set bleeds in cross-entity dollars whenever a
-    // member's expected_pay_entity differs from where they were actually paid
-    // (e.g. expected Coverall but Vix paid the row, or vice-versa).
-    let totalComm = 0;
-    let totalClawbacks = 0;
-    for (const rec of normalizedRecords) {
-      if (rec.source_type !== 'COMMISSION') continue;
-      if (payEntityFilter === 'Coverall' && rec.pay_entity !== 'Coverall') continue;
-      if (payEntityFilter === 'Vix' && rec.pay_entity !== 'Vix') continue;
-      const amt = Number(rec.commission_amount) || 0;
-      if (amt > 0) totalComm += amt;
-      else if (amt < 0) totalClawbacks += amt;
-    }
-    // Coverall vs Downline split — computed from RAW commission records (not the
-    // per-member aggregates) because positives and clawbacks within a single
-    // reconciled member can come from rows with different writing-agent NPNs.
-    //
-    // Bucketing per row (commission rows only):
-    //   - Coverall (direct): writing-agent NPN ∈ COVERALL_NPN_SET (any pay_entity).
-    //   - Downline (overrides): pay_entity = "Coverall" AND writing-agent NPN ∉ COVERALL_NPN_SET
-    //     (this also catches blank/unknown NPNs on Coverall statements per the
-    //     "income belongs to Coverall regardless of who wrote it" rule).
-    //   - Otherwise: not in either bucket (e.g. Vix-statement rows for non-Coverall NPNs).
-    //
-    // Each bucket is NET (positives minus clawbacks within the bucket), so
-    // direct + downline ties to Net Paid Commission exactly when scope is
-    // Coverall or All.
-    let coverallDirectNet = 0;
-    let downlineNet = 0;
-    let coverallDirectRows = 0;
-    let downlineRows = 0;
-    let unclassifiedRows = 0;
-    let unclassifiedNet = 0;
-    for (const rec of normalizedRecords) {
-      if (rec.source_type !== 'COMMISSION') continue;
-      const amt = Number(rec.commission_amount) || 0;
-      if (amt === 0) continue;
-      // Apply same pay-entity scope as the rest of the dashboard.
-      if (payEntityFilter === 'Coverall' && rec.pay_entity !== 'Coverall') continue;
-      if (payEntityFilter === 'Vix' && rec.pay_entity !== 'Vix') continue;
-      const isCoverallNpn = isCoverallAORByNPN(rec.agent_npn);
-      if (isCoverallNpn) {
-        coverallDirectNet += amt;
-        coverallDirectRows += 1;
-      } else if (rec.pay_entity === 'Coverall') {
-        downlineNet += amt;
-        downlineRows += 1;
-      } else {
-        unclassifiedRows += 1;
-        unclassifiedNet += amt;
-      }
-    }
-    const netPaidTotal = totalComm + totalClawbacks;
+    const unpaid = eligibleCohort.filter(r => !r.in_commission).length;
+    // D2 (PR2): Net Paid totals come from the canonical `getNetPaidCommission`
+    // helper. Same scope as the dashboard's pay_entity filter; matches every
+    // other surface (EntitySummary, AgentSummary). Replaces a hand-rolled
+    // commission-row loop that risked drifting from the helper.
+    const netPaid = getNetPaidCommission(normalizedRecords, scopeForCanonical);
+    const totalComm = netPaid.gross;
+    const totalClawbacks = netPaid.clawbacks;
+    // D2 (PR2): Direct-vs-Downline split also delegates to the canonical
+    // helper. Bucketing rules live in one place and the Dashboard renders
+    // exactly what the helper returns.
+    const split = getDirectVsDownlineSplit(normalizedRecords, scopeForCanonical, isCoverallAORByNPN);
+    const coverallDirectNet = split.coverallDirectNet;
+    const downlineNet = split.downlineNet;
+    const coverallDirectRows = split.coverallDirectRows;
+    const downlineRows = split.downlineRows;
+    const unclassifiedRows = split.unclassifiedRows;
+    const unclassifiedNet = split.unclassifiedNet;
+    const netPaidTotal = netPaid.net;
     const splitDelta = netPaidTotal - (coverallDirectNet + downlineNet);
     const estMissing = filtered.reduce((s, r) => s + (r.estimated_missing_commission || 0), 0);
     const difference = shouldPay - paidEligible;
