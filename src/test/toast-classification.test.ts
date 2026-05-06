@@ -84,6 +84,29 @@ describe('classifyRebuildError', () => {
     expect(t.variant).toBe('info');
   });
 
+  it('class 6 (mid-promote): replaceNormalizedForFileSet wrapped lock_not_available → info, NOT unexpected', () => {
+    // Shape produced by persistence.replaceNormalizedForFileSet when the
+    // in-TX lock cross-check inside the RPC raises lock_not_available
+    // (fault-injection test (6) — "lock-loss during promote"). This must
+    // route into the lock bucket, not the generic unexpected bucket.
+    const err = new Error(
+      'replaceNormalizedForFileSet failed for batch b1: lock_not_available',
+    );
+    const t = classifyRebuildError(err, { batchLabel: 'Mar 2026' });
+    expect(t.classId).toBe('rebuild-lock-contention');
+    expect(t.variant).toBe('info');
+    expect(t.classId).not.toBe('unexpected');
+  });
+
+  it('class 6 (mid-promote): raw 55P03 PostgrestError shape from RPC also → info', () => {
+    // PostgrestError-like object (not an Error instance) coming straight
+    // from supabase-js if the RPC failure bypasses our wrapper.
+    const err = { message: 'lock_not_available', code: '55P03', details: null, hint: null };
+    const t = classifyRebuildError(err);
+    expect(t.classId).toBe('rebuild-lock-contention');
+    expect(t.variant).toBe('info');
+  });
+
   it('class 4a: aggregate guard (zero-EDE wipe) → destructive "row count was zero… preserved"', () => {
     const err = new Error(
       'replaceNormalizedForFileSet failed: required source type EDE has 0 staged rows for batch b1 (refusing to promote — would wipe active EDE data)',

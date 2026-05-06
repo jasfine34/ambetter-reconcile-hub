@@ -126,10 +126,25 @@ export function classifyRebuildError(
     };
   }
 
-  // Class 6 — single-flight lock contention. acquire_rebuild_lock raises
-  // SQLSTATE 55P03 with the literal "lock_not_available" token; the same
-  // token also appears if the in-TX cross-check inside
-  // replace_normalized_for_file_set loses the lock mid-promote.
+  // Class 6 — lock-related failures, BOTH variants:
+  //
+  //   (a) Pre-rebuild contention: acquire_rebuild_lock returns SQLSTATE
+  //       55P03 with the literal "lock_not_available" token before the
+  //       rebuild begins.
+  //   (b) Mid-promote lock cross-check / lock-loss: the in-TX lock check
+  //       inside replace_normalized_for_file_set raises the same
+  //       lock_not_available token (also surfaces as 55P03), wrapped by
+  //       persistence.replaceNormalizedForFileSet into a message of the
+  //       form "replaceNormalizedForFileSet failed for batch X:
+  //       lock_not_available". See fault-injection test (6) "lock-loss
+  //       during promote".
+  //
+  // Both share this bucket on purpose (Option A from the #123 review): in
+  // both cases the operator action is identical — wait for the holder to
+  // finish, then retry — and the message text already disambiguates for
+  // anyone reading the logs. The critical guardrail is that mid-promote
+  // lock loss MUST NOT fall into the generic "unexpected" bucket; the
+  // regression tests in toast-classification.test.ts lock that contract.
   if (msg.includes('lock_not_available') || (err as any)?.code === '55P03') {
     return {
       variant: 'info',
