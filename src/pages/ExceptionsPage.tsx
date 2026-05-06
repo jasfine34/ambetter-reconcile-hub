@@ -18,7 +18,7 @@ const COLUMNS = [
   { key: 'actual_pay_entity', label: 'Actual Entity' },
   { key: 'actual_commission', label: 'Commission $' },
   { key: 'estimated_missing_commission', label: 'Est. Missing $' },
-  { key: 'issue_type', label: 'Issue Type', render: (row: Record<string, unknown>) => getIssueTypeLabel(String(row.issue_type ?? '')) },
+  { key: 'issue_type', label: 'Issue Type' },
   { key: 'issue_notes', label: 'Notes' },
 ];
 
