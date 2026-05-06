@@ -32,6 +32,20 @@
 import { supabase } from '@/integrations/supabase/client';
 import { cleanId, cleanSubscriberId } from './normalize';
 import type { FilteredEdeRow } from './expectedEde';
+import { isActiveBackOfficeRecord } from './canonical/isActiveBackOfficeRecord';
+
+/**
+ * Carriers for which the BO `policy_number` field is structurally redundant
+ * with `issuer_subscriber_id` (same source column, different normalizer) and
+ * therefore must NOT be used as a weak-match signal — every comparison
+ * against an EDE row's `exchangePolicyId`-derived `policy_number` would
+ * otherwise be a guaranteed false mismatch (#129).
+ */
+const POLICY_SIGNAL_REDUNDANT_CARRIERS = new Set(['ambetter']);
+
+function carrierKey(c: string | undefined | null): string {
+  return String(c ?? '').trim().toLowerCase();
+}
 
 export type WeakMatchDecision = 'confirmed' | 'rejected' | 'deferred';
 
@@ -107,6 +121,12 @@ function normName(name: string | undefined | null): string {
  *
  * @param eeUniverse   filteredEde.uniqueMembers (EE-universe rows)
  * @param normalizedRecords  raw normalized_records for the batch
+ * @param opts.periodStart  Start of the reconcile period (e.g. batch's
+ *   statement_month). When provided, BO rows that fail
+ *   `isActiveBackOfficeRecord(rec, periodStart)` (terminated / past
+ *   policy_term_date / etc.) are excluded as candidates so the weak-match
+ *   queue mirrors the strict reconcile's active-BO semantics (#129).
+ *   When omitted, all BO rows are eligible (legacy behavior).
  *
  * Returns one candidate per EE member (the best BO candidate by signal count).
  * Members already in `in_back_office` are excluded.
@@ -114,7 +134,10 @@ function normName(name: string | undefined | null): string {
 export function findWeakMatches(
   eeUniverse: FilteredEdeRow[],
   normalizedRecords: any[],
+  opts: { periodStart?: Date | string | null } = {},
 ): WeakMatchCandidate[] {
+  const periodStart = opts.periodStart ?? null;
+
   // Index BO records by every signal we can match on.
   const boByName = new Map<string, any[]>();
   const boByEsid = new Map<string, any[]>();
@@ -130,6 +153,9 @@ export function findWeakMatches(
 
   for (const r of normalizedRecords) {
     if (r.source_type !== 'BACK_OFFICE') continue;
+    // #129: exclude inactive/terminated BO rows so we don't surface them
+    // as weak-match candidates. Mirrors strict reconcile's active-BO filter.
+    if (periodStart && !isActiveBackOfficeRecord(r, periodStart)) continue;
     const nm = normName(r.applicant_name);
     if (nm) push(boByName, nm, r);
     if (r.exchange_subscriber_id) push(boByEsid, cleanSubscriberId(r.exchange_subscriber_id), r);
@@ -189,13 +215,19 @@ export function findWeakMatches(
         else differed.push('issuer_subscriber_id');
       } else unknown.push('issuer_subscriber_id');
 
-      // policy_number (cleanId — strips suffix)
-      const feP = cleanId(fe.policy_number);
-      const boP = cleanId(r.policy_number);
-      if (feP && boP) {
-        if (feP === boP) matched.push('policy_number');
-        else differed.push('policy_number');
-      } else unknown.push('policy_number');
+      // policy_number — suppressed for carriers where BO `policy_number`
+      // is structurally redundant with `issuer_subscriber_id` (Ambetter,
+      // #129). For other carriers, compare normally.
+      const carrier = carrierKey((fe as any).carrier ?? r.carrier);
+      const policySignalSuppressed = POLICY_SIGNAL_REDUNDANT_CARRIERS.has(carrier);
+      if (!policySignalSuppressed) {
+        const feP = cleanId(fe.policy_number);
+        const boP = cleanId(r.policy_number);
+        if (feP && boP) {
+          if (feP === boP) matched.push('policy_number');
+          else differed.push('policy_number');
+        } else unknown.push('policy_number');
+      }
 
       const score = matched.length;
       const tieBreak = matched.includes('applicant_name') ? 0.5 : 0;

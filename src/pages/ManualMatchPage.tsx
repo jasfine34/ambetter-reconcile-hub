@@ -72,14 +72,18 @@ export default function ManualMatchPage() {
   const candidates: WeakMatchCandidate[] = useMemo(() => {
     if (!normalizedRecords.length || !reconciled.length) return [];
     const fe = computeFilteredEde(normalizedRecords, reconciled, scope, coveredMonths, resolverIndex);
-    const cands = findWeakMatches(fe.uniqueMembers, normalizedRecords);
+    // #129: pass the batch's statement_month as periodStart so weakMatch
+    // applies the same active-BO filter strict reconcile uses, excluding
+    // terminated/inactive BO rows from candidacy.
+    const periodStart = currentBatch?.statement_month ?? null;
+    const cands = findWeakMatches(fe.uniqueMembers, normalizedRecords, { periodStart });
     // Diagnostic: log so a future scope/dep mismatch is visible in console
     // immediately rather than presenting as an empty queue.
     // eslint-disable-next-line no-console
     console.debug('[ManualMatch] batch=%s scope=%s ee=%d candidates=%d',
       currentBatchId, scope, fe.uniqueMembers.length, cands.length);
     return cands;
-  }, [normalizedRecords, reconciled, scope, coveredMonths, resolverIndex, currentBatchId]);
+  }, [normalizedRecords, reconciled, scope, coveredMonths, resolverIndex, currentBatchId, currentBatch?.statement_month]);
 
   const { pending, confirmedKeys, rejectedKeys } = useMemo(
     () => applyOverrides(candidates, overrides),
