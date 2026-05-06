@@ -32,6 +32,8 @@ import {
   getFoundInBackOffice,
   getEligibleCohort,
   getNotInBackOfficeRows,
+  getNetPaidCommission,
+  getDirectVsDownlineSplit,
   isActiveBackOfficeRecord,
 } from '@/lib/canonical';
 import { getIssueTypeLabel } from '@/lib/constants';
