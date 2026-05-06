@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useBatch } from '@/contexts/BatchContext';
 import { BatchSelector } from '@/components/BatchSelector';
 import { UploadCard } from '@/components/UploadCard';
@@ -6,7 +6,10 @@ import { FILE_LABELS } from '@/lib/constants';
 import { parseCSV } from '@/lib/csvParser';
 import { normalizeEDERow, normalizeBackOfficeRow, normalizeCommissionRow } from '@/lib/normalize';
 import { reconcile } from '@/lib/reconcile';
-import { uploadFileToStorage, uploadReplaceFile, saveAndVerifyReconciled, getNormalizedRecords } from '@/lib/persistence';
+import {
+  uploadFileToStorage, uploadReplaceFile, saveAndVerifyReconciled,
+  getNormalizedRecords, getActiveRowCountByUploadedFile,
+} from '@/lib/persistence';
 import { RECONCILE_LOGIC_VERSION } from '@/lib/rebuild';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -83,6 +86,26 @@ export default function UploadPage() {
       return next;
     });
   }, []);
+
+  // #127 — Per-tile active normalized row counts. Refetched whenever the set
+  // of active uploaded_files changes (initial load, post-upload refreshAll,
+  // batch switch). One head-only count query per file (no rows transferred).
+  const [rowCounts, setRowCounts] = useState<Record<string, number>>({});
+  useEffect(() => {
+    if (!currentBatchId || !uploadedFiles?.length) {
+      setRowCounts({});
+      return;
+    }
+    let cancelled = false;
+    const ids = uploadedFiles.map((f: any) => f.id).filter(Boolean);
+    getActiveRowCountByUploadedFile(currentBatchId, ids)
+      .then((counts) => { if (!cancelled) setRowCounts(counts); })
+      .catch((err) => {
+        console.warn('[upload-tile] row count fetch failed', err);
+        if (!cancelled) setRowCounts({});
+      });
+    return () => { cancelled = true; };
+  }, [currentBatchId, uploadedFiles]);
 
   /**
    * Process one upload with FINDING #68 hardening:
@@ -289,6 +312,29 @@ export default function UploadPage() {
     ? `${new Date(`${currentBatch.statement_month}T00:00:00`).toLocaleDateString('en-US', { year: 'numeric', month: 'long' })} — ${currentBatch.carrier}`
     : null;
 
+  /**
+   * #127 — Build per-tile metadata: active filename, last-uploaded timestamp,
+   * row count for the active uploaded_file_id, and filename-vs-batch-month
+   * warning (reuses the #122 heuristic). Reads from data already loaded by
+   * BatchContext (uploadedFiles) plus the rowCounts map populated above. No
+   * extra RPC calls per render.
+   */
+  const buildTileMeta = (label: string, sourceType: string) => {
+    const f = uploadedFiles.find((uf: any) => uf.file_label === label);
+    const name = f?.file_name?.trim() || null;
+    if (!f || !name) {
+      return { uploadedFileName: null, lastUploadedAt: null, rowCount: null, warning: undefined };
+    }
+    const warning = evaluateFilenameDate(name, sourceType, currentBatch?.statement_month);
+    return {
+      uploadedFileName: name,
+      lastUploadedAt: f.created_at ?? null,
+      rowCount: rowCounts[f.id] ?? null,
+      warning,
+    };
+  };
+
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -321,28 +367,40 @@ export default function UploadPage() {
           <div>
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">EDE Files</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {FILE_LABELS.filter(f => f.sourceType === 'EDE').map(f => (
-                <UploadCard key={f.label} label={f.label} uploadedFileName={getUploadedFileName(f.label)}
-                  isUploading={!!uploading[f.label]} onUpload={(file) => handleUpload(f.label, f.sourceType, f.payEntity, f.aorBucket, file)} />
-              ))}
+              {FILE_LABELS.filter(f => f.sourceType === 'EDE').map(f => {
+                const meta = buildTileMeta(f.label, f.sourceType);
+                return (
+                  <UploadCard key={f.label} label={f.label} {...meta}
+                    isUploading={!!uploading[f.label]}
+                    onUpload={(file) => handleUpload(f.label, f.sourceType, f.payEntity, f.aorBucket, file)} />
+                );
+              })}
             </div>
           </div>
           <div>
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Back Office Files</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {FILE_LABELS.filter(f => f.sourceType === 'BACK_OFFICE').map(f => (
-                <UploadCard key={f.label} label={f.label} uploadedFileName={getUploadedFileName(f.label)}
-                  isUploading={!!uploading[f.label]} onUpload={(file) => handleUpload(f.label, f.sourceType, f.payEntity, f.aorBucket, file)} />
-              ))}
+              {FILE_LABELS.filter(f => f.sourceType === 'BACK_OFFICE').map(f => {
+                const meta = buildTileMeta(f.label, f.sourceType);
+                return (
+                  <UploadCard key={f.label} label={f.label} {...meta}
+                    isUploading={!!uploading[f.label]}
+                    onUpload={(file) => handleUpload(f.label, f.sourceType, f.payEntity, f.aorBucket, file)} />
+                );
+              })}
             </div>
           </div>
           <div>
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Commission Statements</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {FILE_LABELS.filter(f => f.sourceType === 'COMMISSION').map(f => (
-                <UploadCard key={f.label} label={f.label} uploadedFileName={getUploadedFileName(f.label)}
-                  isUploading={!!uploading[f.label]} onUpload={(file) => handleUpload(f.label, f.sourceType, f.payEntity, f.aorBucket, file)} />
-              ))}
+              {FILE_LABELS.filter(f => f.sourceType === 'COMMISSION').map(f => {
+                const meta = buildTileMeta(f.label, f.sourceType);
+                return (
+                  <UploadCard key={f.label} label={f.label} {...meta}
+                    isUploading={!!uploading[f.label]}
+                    onUpload={(file) => handleUpload(f.label, f.sourceType, f.payEntity, f.aorBucket, file)} />
+                );
+              })}
             </div>
           </div>
         </>
