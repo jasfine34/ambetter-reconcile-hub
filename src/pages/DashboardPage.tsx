@@ -31,7 +31,7 @@ import {
   type InvariantResult,
   getFoundInBackOffice,
   getEligibleCohort,
-  getNotInBackOffice,
+  getNotInBackOfficeRows,
   isActiveBackOfficeRecord,
 } from '@/lib/canonical';
 import { getIssueTypeLabel } from '@/lib/constants';
