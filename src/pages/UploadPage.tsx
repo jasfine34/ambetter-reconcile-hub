@@ -258,7 +258,7 @@ export default function UploadPage() {
     const warning = evaluateFilenameDate(file.name, sourceType, batch?.statement_month);
 
     setPendingConfirm({
-      fileLabel, sourceType, payEntity, aorBucket, file, batchLabel, warning,
+      batchId: currentBatchId, fileLabel, sourceType, payEntity, aorBucket, file, batchLabel, warning,
     });
   }, [currentBatchId, batches, toast]);
 
