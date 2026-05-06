@@ -65,6 +65,7 @@ export function DataTable({ data, columns, exportFileName, pageSize = 25, filter
           <button
             key={chip.value}
             onClick={() => { setActiveChip(activeChip === chip.value ? null : chip.value); setPage(0); }}
+            title={chip.tooltip}
             className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${activeChip === chip.value ? 'bg-primary text-primary-foreground border-primary' : 'bg-secondary text-secondary-foreground border-border hover:bg-accent'}`}
           >
             {chip.label}
