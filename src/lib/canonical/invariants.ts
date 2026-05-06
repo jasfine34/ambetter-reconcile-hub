@@ -26,7 +26,7 @@ import {
 
 const DOLLAR_TOLERANCE = 0.01;
 
-export type InvariantStatus = 'pass' | 'fail';
+export type InvariantStatus = 'pass' | 'fail' | 'error';
 
 export interface InvariantResult {
   /** Stable identifier (e.g. 'net-paid-equals-raw-sum'). */
