@@ -386,7 +386,7 @@ export default function UploadPage() {
           const p = pendingConfirm;
           if (!p) return;
           setPendingConfirm(null);
-          void runUploadAfterConfirm(p.fileLabel, p.sourceType, p.payEntity, p.aorBucket, p.file);
+          void runUploadAfterConfirm(p.batchId, p.fileLabel, p.sourceType, p.payEntity, p.aorBucket, p.file);
         }}
       />
     </div>
