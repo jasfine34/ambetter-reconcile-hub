@@ -783,27 +783,145 @@ export default function MissingCommissionExportPage() {
             </div>
           </div>
 
+          {/* #124 — Run Report row. Filters never auto-run; the Run Report
+              button is the only thing that produces results. The download
+              button reflects the SNAPSHOT result (runner.result), not live
+              filter state, so the file always matches the on-screen table. */}
           <div className="flex items-center justify-between pt-2 border-t">
-            <div className="text-sm text-muted-foreground">
-              {loading ? 'Loading cross-batch records…' : `${filteredExportRows.length} member${filteredExportRows.length === 1 ? '' : 's'}`}
-              {filteredExportRows.length !== allExportRows.length && (
-                <span className="ml-2 text-xs">({allExportRows.length} before premium filter)</span>
+            <div className="text-sm text-muted-foreground" data-testid="report-count">
+              {sourceLoading
+                ? 'Loading cross-batch records…'
+                : runner.status === 'idle'
+                  ? 'Choose filters and click Run Report.'
+                  : runner.status === 'loading'
+                    ? 'Running report…'
+                    : runner.status === 'error'
+                      ? 'Run failed. See details below.'
+                      : displayed
+                        ? `${displayed.rows.length} member${displayed.rows.length === 1 ? '' : 's'}`
+                        : ''}
+              {displayed && displayed.rows.length !== displayed.allBeforeBucket.length && (
+                <span className="ml-2 text-xs">({displayed.allBeforeBucket.length} before premium filter)</span>
               )}
             </div>
-            <Button
-              onClick={handleDownload}
-              disabled={filteredExportRows.length === 0}
-              data-testid="messer-download"
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Download Messer Form (CSV)
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => runner.run()}
+                disabled={sourceLoading || runner.status === 'loading' || !currentBatchId}
+                variant={runner.status === 'idle' || runner.stale ? 'default' : 'outline'}
+                data-testid="run-report"
+              >
+                {runner.status === 'loading' ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : runner.stale ? (
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                ) : (
+                  <Play className="h-4 w-4 mr-2" />
+                )}
+                {runner.status === 'loading' ? 'Running…' : runner.stale ? 'Re-run Report' : 'Run Report'}
+              </Button>
+              <Button
+                onClick={handleDownload}
+                disabled={!displayed || displayed.rows.length === 0}
+                variant="outline"
+                data-testid="messer-download"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Download Messer Form (CSV)
+              </Button>
+            </div>
           </div>
         </div>
 
-        {/* Preview table */}
-        <div className="rounded-lg border overflow-auto">
-          <Table>
+        {/* #124 — Stale-filter banner. Old results stay visible (so the
+            operator can still read / download them) but a banner makes it
+            unmissable that filters changed since the last run. */}
+        {runner.stale && (
+          <div
+            role="status"
+            data-testid="stale-banner"
+            className="flex items-center gap-2 rounded-md border border-warning bg-warning/10 px-4 py-2 text-sm text-warning-foreground"
+          >
+            <AlertTriangle className="h-4 w-4 text-warning" />
+            <span className="text-foreground">
+              Filters changed. Click <strong>Re-run Report</strong> to refresh.
+            </span>
+          </div>
+        )}
+
+        {/* #124 — Five explicit content states. Errors NEVER render as a
+            blank table; idle and empty are visually distinct from loading. */}
+        {sourceError ? (
+          <div
+            role="alert"
+            data-testid="source-error-state"
+            className="rounded-lg border border-destructive bg-destructive/5 p-8 text-center space-y-3"
+          >
+            <AlertCircle className="h-8 w-8 mx-auto text-destructive" />
+            <div className="text-sm font-medium">Failed to load source records</div>
+            <div className="text-xs text-muted-foreground max-w-md mx-auto">{sourceError.message}</div>
+          </div>
+        ) : sourceLoading ? (
+          <div
+            data-testid="source-loading-state"
+            className="rounded-lg border bg-card p-12 text-center space-y-3"
+          >
+            <Loader2 className="h-8 w-8 mx-auto animate-spin text-muted-foreground" />
+            <div className="text-sm text-muted-foreground">Loading cross-batch records…</div>
+          </div>
+        ) : runner.status === 'idle' ? (
+          <div
+            data-testid="initial-state"
+            className="rounded-lg border bg-card p-12 text-center space-y-3"
+          >
+            <Play className="h-8 w-8 mx-auto text-muted-foreground" />
+            <div className="text-sm font-medium">Choose filters and click Run Report.</div>
+            <div className="text-xs text-muted-foreground max-w-md mx-auto">
+              Pick a batch, scope, and premium bucket above. Results will appear here once you run the report.
+            </div>
+          </div>
+        ) : runner.status === 'loading' ? (
+          <div
+            data-testid="loading-state"
+            className="rounded-lg border bg-card p-12 text-center space-y-3"
+          >
+            <Loader2 className="h-8 w-8 mx-auto animate-spin text-primary" />
+            <div className="text-sm font-medium">Running report…</div>
+            <div className="text-xs text-muted-foreground">Computing missing-commission cohort.</div>
+          </div>
+        ) : runner.status === 'error' ? (
+          <div
+            role="alert"
+            data-testid="error-state"
+            className="rounded-lg border border-destructive bg-destructive/5 p-8 text-center space-y-3"
+          >
+            <AlertCircle className="h-8 w-8 mx-auto text-destructive" />
+            <div className="text-sm font-medium">Run failed</div>
+            <div className="text-xs text-muted-foreground max-w-md mx-auto break-words">
+              {runner.error?.message ?? 'Unknown error'}
+            </div>
+            <Button onClick={() => runner.run()} variant="outline" size="sm" data-testid="retry-run">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Run again
+            </Button>
+          </div>
+        ) : runner.status === 'empty' ? (
+          <div
+            data-testid="empty-state"
+            className="rounded-lg border bg-card p-12 text-center space-y-3"
+          >
+            <Inbox className="h-8 w-8 mx-auto text-muted-foreground" />
+            <div className="text-sm font-medium">No records found for the selected filters.</div>
+            <div className="text-xs text-muted-foreground max-w-md mx-auto">
+              Try a different scope, batch, or premium bucket and click Run Report.
+            </div>
+          </div>
+        ) : (
+          // Populated state — the existing preview table, unchanged
+          // visually. Only the data source switched from filteredExportRows
+          // to displayed.rows (the snapshot from the last run).
+          <div className="rounded-lg border overflow-auto" data-testid="results-table">
+            <Table>
             <TableHeader>
               <TableRow>
                 {MESSER_COLUMNS.map((c) => (
