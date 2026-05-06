@@ -76,19 +76,20 @@ function fixture() {
 }
 
 describe('D1: card↔drilldown parity for Paid Within Eligible / Unpaid', () => {
-  it('[MAIN-FAIL] Paid Within Eligible card count === paidEligible drilldown row count', () => {
-    // Page-equivalent derivation. Card value and drilldown rows BOTH slice
-    // the canonical `eligibleCohort`, so they cannot drift.
+  it('[REGRESSION-ONLY] Paid Within Eligible card count === paidEligible drilldown row count', () => {
+    // Relabeled from [MAIN-FAIL]: with the current fixture m3 is unpaid, so
+    // the pre-PR2 inline predicate and the canonical cohort agree on the
+    // PAID side (both count just m1). To make this genuinely main-failing
+    // we'd need a separate stale-paid member (persistent flag on, absent
+    // from current-batch filteredEde, in_commission=true). Captured as a
+    // follow-up; for now this test locks the canonical wiring against
+    // future drift.
     const { reconciled, filteredEde } = fixture();
     const cohort = getEligibleCohort(reconciled, 'Coverall', new Set(), filteredEde);
     const cardValue = cohort.filter((r) => r.in_commission).length;
     const drilldownRows = cohort.filter((r) => r.in_commission);
     expect(cardValue).toBe(drilldownRows.length);
     expect(cardValue).toBe(1);
-    // Pre-PR2 fails because the inline predicate over `filtered` would treat
-    // m3 (persistent flag, not in this batch's EE universe) as eligible and
-    // count it in the unpaid bucket while the drilldown — once it routed
-    // through canonical — would not.
   });
 
   it('[MAIN-FAIL] Unpaid Policies card count === unpaid drilldown row count', () => {
