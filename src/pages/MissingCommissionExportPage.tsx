@@ -924,6 +924,19 @@ export default function MissingCommissionExportPage() {
             <Table>
             <TableHeader>
               <TableRow>
+                {/* Operator-aid column: FFM ID = issuer_subscriber_id, the
+                    primary lookup key for researching members in Ambetter's
+                    carrier system. Placed first so operators can read it at
+                    a glance without scrolling. Not part of the Messer CSV
+                    column set (issuer_subscriber_id already flows into the
+                    Messer "Member ID" column via resolveMemberId). */}
+                <TableHead
+                  data-testid="ffm-id-header"
+                  className="whitespace-nowrap text-xs uppercase tracking-wide bg-primary/5 text-foreground"
+                  title="Issuer Subscriber ID (FFM ID) — primary Ambetter lookup key"
+                >
+                  FFM ID
+                </TableHead>
                 {MESSER_COLUMNS.map((c) => (
                   <TableHead key={String(c.key)} className="whitespace-nowrap text-xs uppercase tracking-wide">
                     {c.label}
@@ -948,6 +961,16 @@ export default function MissingCommissionExportPage() {
             <TableBody>
               {displayed!.rows.slice(0, 250).map((row) => (
                 <TableRow key={row._memberKey}>
+                  {/* FFM ID cell — issuer_subscriber_id from the row's
+                      canonical source (BO for Missing-from-Commission). */}
+                  <TableCell
+                    data-testid="ffm-id-cell"
+                    className="text-sm whitespace-nowrap font-mono bg-primary/5"
+                  >
+                    {row._issuerSubscriberId
+                      ? row._issuerSubscriberId
+                      : <span className="text-muted-foreground">—</span>}
+                  </TableCell>
                   {MESSER_COLUMNS.map((c) => {
                     const v = row[c.key];
                     const fieldKey = c.key as string;
