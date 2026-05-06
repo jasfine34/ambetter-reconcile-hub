@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { AlertTriangle, FileText, Calendar, Tag } from 'lucide-react';
 import {
   AlertDialog,
