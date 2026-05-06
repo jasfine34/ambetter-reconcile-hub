@@ -367,28 +367,40 @@ export default function UploadPage() {
           <div>
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">EDE Files</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {FILE_LABELS.filter(f => f.sourceType === 'EDE').map(f => (
-                <UploadCard key={f.label} label={f.label} uploadedFileName={getUploadedFileName(f.label)}
-                  isUploading={!!uploading[f.label]} onUpload={(file) => handleUpload(f.label, f.sourceType, f.payEntity, f.aorBucket, file)} />
-              ))}
+              {FILE_LABELS.filter(f => f.sourceType === 'EDE').map(f => {
+                const meta = buildTileMeta(f.label, f.sourceType);
+                return (
+                  <UploadCard key={f.label} label={f.label} {...meta}
+                    isUploading={!!uploading[f.label]}
+                    onUpload={(file) => handleUpload(f.label, f.sourceType, f.payEntity, f.aorBucket, file)} />
+                );
+              })}
             </div>
           </div>
           <div>
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Back Office Files</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {FILE_LABELS.filter(f => f.sourceType === 'BACK_OFFICE').map(f => (
-                <UploadCard key={f.label} label={f.label} uploadedFileName={getUploadedFileName(f.label)}
-                  isUploading={!!uploading[f.label]} onUpload={(file) => handleUpload(f.label, f.sourceType, f.payEntity, f.aorBucket, file)} />
-              ))}
+              {FILE_LABELS.filter(f => f.sourceType === 'BACK_OFFICE').map(f => {
+                const meta = buildTileMeta(f.label, f.sourceType);
+                return (
+                  <UploadCard key={f.label} label={f.label} {...meta}
+                    isUploading={!!uploading[f.label]}
+                    onUpload={(file) => handleUpload(f.label, f.sourceType, f.payEntity, f.aorBucket, file)} />
+                );
+              })}
             </div>
           </div>
           <div>
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Commission Statements</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {FILE_LABELS.filter(f => f.sourceType === 'COMMISSION').map(f => (
-                <UploadCard key={f.label} label={f.label} uploadedFileName={getUploadedFileName(f.label)}
-                  isUploading={!!uploading[f.label]} onUpload={(file) => handleUpload(f.label, f.sourceType, f.payEntity, f.aorBucket, file)} />
-              ))}
+              {FILE_LABELS.filter(f => f.sourceType === 'COMMISSION').map(f => {
+                const meta = buildTileMeta(f.label, f.sourceType);
+                return (
+                  <UploadCard key={f.label} label={f.label} {...meta}
+                    isUploading={!!uploading[f.label]}
+                    onUpload={(file) => handleUpload(f.label, f.sourceType, f.payEntity, f.aorBucket, file)} />
+                );
+              })}
             </div>
           </div>
         </>
