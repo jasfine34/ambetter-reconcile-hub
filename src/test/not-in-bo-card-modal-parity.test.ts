@@ -25,12 +25,12 @@ import type { FilteredEdeResult } from '@/lib/expectedEde';
 
 function makeFixture(): FilteredEdeResult {
   // Two EE-universe members missing from BO. m2 has a confirmed weak-match
-  // override (issuer_sub_id 'ISID-2' → stable key 'issub:ISID-2').
+  // override (issuer_sub_id 'ISIDTWO' → stable key 'issub:ISIDTWO').
   const missingFromBO = [
     {
       member_key: 'm1',
       applicant_name: 'Alice One',
-      issuer_subscriber_id: 'ISID-1',
+      issuer_subscriber_id: 'ISIDONE',
       exchange_subscriber_id: '',
       policy_number: '',
       effective_month: '2026-03',
@@ -40,7 +40,7 @@ function makeFixture(): FilteredEdeResult {
     {
       member_key: 'm2-confirmed',
       applicant_name: 'Bob Confirmed',
-      issuer_subscriber_id: 'ISID-2',
+      issuer_subscriber_id: 'ISIDTWO',
       exchange_subscriber_id: '',
       policy_number: '',
       effective_month: '2026-03',
@@ -62,7 +62,7 @@ function makeFixture(): FilteredEdeResult {
 describe('Not-in-BO card↔modal parity', () => {
   const filteredEde = makeFixture();
   const confirmed = new Set<string>([
-    pickStableKey({ issuer_subscriber_id: 'ISID-2' }),
+    pickStableKey({ issuer_subscriber_id: 'ISIDTWO' }),
   ]);
 
   it('card count equals modal row count', () => {
