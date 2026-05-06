@@ -71,7 +71,7 @@ describe('#126-OBS Part A — refreshBatches failure surfaces a visible toast', 
   afterEach(() => { errSpy.mockRestore(); });
 
   it('mount-time failure: toast fires, batches stays empty, selection preserved (null)', async () => {
-    getBatchesMock.mockRejectedValueOnce(new Error('network down'));
+    getBatchesMock.mockReset().mockRejectedValue(new Error('network down'));
     let latestCtx: ReturnType<typeof useBatch> | null = null;
     render(
       <BatchProvider>
@@ -84,7 +84,7 @@ describe('#126-OBS Part A — refreshBatches failure surfaces a visible toast', 
     const call = toastMock.mock.calls[0][0];
     expect(String(call.title)).toMatch(/refresh batch list/i);
     expect(String(call.description)).toMatch(/preserved/i);
-    // Selection was not yanked.
+    // Selection was not yanked, batches not cleared (started empty, still empty).
     expect(latestCtx!.currentBatchId).toBeNull();
     expect(latestCtx!.batches).toEqual([]);
   });
