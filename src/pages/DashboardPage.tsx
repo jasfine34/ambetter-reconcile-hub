@@ -776,11 +776,11 @@ export default function DashboardPage() {
     return rows;
   }, [filteredEde, reconciled, normalizedRecords, coveredMonths]);
 
+  // D1 (PR2 follow-up): route through canonical eligibleCohort so the
+  // validation sample cannot drift from the Unpaid Policies card/drilldown.
   const unpaidSample = useMemo(() => {
-    return filtered
-      .filter(r => eeUniverseKeys.has(r.member_key) && effInBO(r) && r.eligible_for_commission === 'Yes' && !r.in_commission)
-      .slice(0, 50);
-  }, [filtered, effInBO, eeUniverseKeys]);
+    return metrics.eligibleCohort.filter(r => !r.in_commission).slice(0, 50);
+  }, [metrics.eligibleCohort]);
 
   const drilldownData = useMemo(() => {
     if (!drilldown) return null;
