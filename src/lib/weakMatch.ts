@@ -134,8 +134,12 @@ function normName(name: string | undefined | null): string {
 export function findWeakMatches(
   eeUniverse: FilteredEdeRow[],
   normalizedRecords: any[],
-  opts: { periodStart?: Date | string | null } = {},
+  opts: { periodStart: Date | string | null },
 ): WeakMatchCandidate[] {
+  // #129 follow-up: `periodStart` is a REQUIRED object property to prevent
+  // silent consumer divergence (Dashboard vs ManualMatch counted differently
+  // when the parameter was optional). Pass an explicit `null` only for
+  // legacy/diagnostic callers that intentionally want unfiltered behavior.
   const periodStart = opts.periodStart ?? null;
 
   // Index BO records by every signal we can match on.

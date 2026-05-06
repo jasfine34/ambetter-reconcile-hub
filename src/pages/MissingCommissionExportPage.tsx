@@ -549,7 +549,10 @@ export default function MissingCommissionExportPage() {
     const confirmedUpgradeMemberKeys = (() => {
       const out = new Set<string>();
       if (!weakOverrides.size || !reconciled.length) return out;
-      const candidates = findWeakMatches(ranFilteredEde.uniqueMembers, ranBatchRecords);
+      // #129 follow-up: pass periodStart from the run-time batch's
+      // statement_month so this consumer aligns with Dashboard/ManualMatch.
+      const periodStart = ranBatch?.statement_month ?? null;
+      const candidates = findWeakMatches(ranFilteredEde.uniqueMembers, ranBatchRecords, { periodStart });
       const { confirmedKeys } = applyOverrides(candidates, weakOverrides);
       if (!confirmedKeys.size) return out;
       const inScope = filterReconciledByScope(reconciled, f.scope);
