@@ -1338,9 +1338,10 @@ export default function DashboardPage() {
                   exchange_subscriber_id: r.exchange_subscriber_id,
                   policy_number: r.policy_number,
                 });
-              const filteredMissing = filteredEde.missingFromBO.filter(
-                (r) => !confirmed.has(keyFor(r)),
-              );
+              // Card and modal share filteredMissingFromBO (canonical
+              // getNotInBackOfficeRows). Confirmed weak-match overrides are
+              // already excluded — see the page-level memo.
+              const filteredMissing = filteredMissingFromBO;
               const weakPending = filteredMissing.filter((r) =>
                 pendingKeys.has(keyFor(r)),
               ).length;
