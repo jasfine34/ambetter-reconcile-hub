@@ -203,11 +203,14 @@ describe('page wiring — ManualMatch queue parity with Dashboard weak-pending',
         raw_json: {},
       },
     ];
-    const candidates = findWeakMatches(eeUniverse as any, normalizedRecords);
+    // #129 follow-up: BOTH consumers (Dashboard card + ManualMatchPage)
+    // MUST pass the same periodStart. Previously periodStart was optional
+    // and the Dashboard card omitted it, causing March to show 48 vs 0.
+    const periodStart = '2026-03-01';
+    const candidates = findWeakMatches(eeUniverse as any, normalizedRecords, { periodStart });
     const dashboardPending = applyOverrides(candidates, new Map()).pending;
-    // ManualMatch must apply the SAME pipeline → same pending count.
     const manualMatchPending = applyOverrides(
-      findWeakMatches(eeUniverse as any, normalizedRecords),
+      findWeakMatches(eeUniverse as any, normalizedRecords, { periodStart }),
       new Map(),
     ).pending;
     expect(manualMatchPending.length).toBe(dashboardPending.length);
@@ -215,6 +218,51 @@ describe('page wiring — ManualMatch queue parity with Dashboard weak-pending',
     // Sanity: signal set must include name + issuer_subscriber_id matches.
     expect(manualMatchPending[0].signals.matched).toContain('applicant_name');
     expect(manualMatchPending[0].signals.matched).toContain('issuer_subscriber_id');
+  });
+
+  it('Dashboard and ManualMatch agree even when terminated BO rows are in the data (#129 follow-up)', async () => {
+    const { findWeakMatches, applyOverrides } = await import('@/lib/weakMatch');
+    const eeUniverse: any[] = [{
+      member_key: 'eeT',
+      applicant_name: 'Kevin Compton',
+      policy_number: '',
+      exchange_subscriber_id: '3938172',
+      issuer_subscriber_id: 'u70162404',
+      current_policy_aor: '',
+      effective_date: '2026-03-01',
+      policy_status: 'Effectuated',
+      covered_member_count: 1,
+      effective_month: '2026-03',
+      active_months: ['2026-03'],
+      in_back_office: false,
+    }];
+    // BO row matches strongly but is TERMINATED before the period.
+    const normalizedRecords: any[] = [{
+      id: 'bo-term',
+      source_type: 'BACK_OFFICE',
+      carrier: 'Ambetter',
+      applicant_name: 'Kevin Compton',
+      member_key: 'boT',
+      issuer_subscriber_id: 'u70162404',
+      exchange_subscriber_id: '3938172',
+      policy_number: 'u70162404',
+      eligible_for_commission: 'Yes',
+      policy_term_date: '2026-02-28',
+      raw_json: {},
+    }];
+    const periodStart = '2026-03-01';
+    // Both surfaces must use the SAME periodStart and therefore produce
+    // the SAME pending count (0 — terminated BO is filtered out).
+    const dash = applyOverrides(
+      findWeakMatches(eeUniverse as any, normalizedRecords, { periodStart }),
+      new Map(),
+    ).pending;
+    const mm = applyOverrides(
+      findWeakMatches(eeUniverse as any, normalizedRecords, { periodStart }),
+      new Map(),
+    ).pending;
+    expect(dash.length).toBe(mm.length);
+    expect(dash.length).toBe(0);
   });
 });
 
