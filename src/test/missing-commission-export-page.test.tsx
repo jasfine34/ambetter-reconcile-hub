@@ -272,3 +272,91 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
     expect(downloadName).not.toMatch(/2026_02/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// FFM ID front-of-table column (operator lookup aid).
+//
+// Verifies that issuer_subscriber_id is surfaced as the first table column
+// labeled "FFM ID", that the value matches the row's canonical
+// issuer_subscriber_id, and that blanks render as "—" (never empty cells).
+// ---------------------------------------------------------------------------
+describe('MissingCommissionExportPage — FFM ID front column', () => {
+  it('renders FFM ID as the first column header with the right label', async () => {
+    mockGetEligible.mockReturnValue([makeMissingMember('m-1')]);
+    render(<MissingCommissionExportPage />);
+    await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('run-report'));
+    await waitFor(() => expect(screen.getByTestId('results-table')).toBeInTheDocument());
+
+    const header = screen.getByTestId('ffm-id-header');
+    expect(header).toBeInTheDocument();
+    expect(header).toHaveTextContent(/^FFM ID$/);
+
+    // Confirm it's positioned BEFORE the first Messer header ("Carrier Name").
+    const headerRow = header.closest('tr')!;
+    const cells = Array.from(headerRow.querySelectorAll('th'));
+    expect(cells[0]).toBe(header);
+    expect(cells[1]).toHaveTextContent(/Carrier Name/i);
+  });
+
+  it('renders the row issuer_subscriber_id in the FFM ID cell', async () => {
+    mockGetEligible.mockReturnValue([makeMissingMember('m-1'), makeMissingMember('m-2')]);
+    render(<MissingCommissionExportPage />);
+    await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('run-report'));
+    await waitFor(() => expect(screen.getByTestId('results-table')).toBeInTheDocument());
+
+    const cells = screen.getAllByTestId('ffm-id-cell');
+    expect(cells).toHaveLength(2);
+    // makeMissingMember sets issuer_subscriber_id = `iss-${memberKey}`.
+    expect(cells[0]).toHaveTextContent('iss-m-1');
+    expect(cells[1]).toHaveTextContent('iss-m-2');
+  });
+
+  it('renders "—" when issuer_subscriber_id is blank (never an empty cell)', async () => {
+    const m = makeMissingMember('m-blank');
+    m.issuer_subscriber_id = '';
+    mockGetEligible.mockReturnValue([m]);
+    render(<MissingCommissionExportPage />);
+    await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('run-report'));
+    await waitFor(() => expect(screen.getByTestId('results-table')).toBeInTheDocument());
+
+    const cell = screen.getByTestId('ffm-id-cell');
+    expect(cell).toHaveTextContent('—');
+  });
+
+  it('CSV download still includes FFM ID via the Messer "Member ID" column (no regression)', async () => {
+    // resolveMemberId prefers issuer_subscriber_id; verify a populated row
+    // still yields that value in the Messer Member ID CSV column.
+    const m = makeMissingMember('m-csv');
+    mockGetEligible.mockReturnValue([m]);
+    render(<MissingCommissionExportPage />);
+    await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('run-report'));
+    await waitFor(() => expect(screen.getByTestId('results-table')).toBeInTheDocument());
+
+    let csvText = '';
+    const realBlob = global.Blob;
+    (global as any).Blob = function (parts: any[]) {
+      csvText = parts.join('');
+      return new realBlob(parts, { type: 'text/csv' });
+    };
+    (URL as any).createObjectURL = vi.fn(() => 'blob://x');
+    (URL as any).revokeObjectURL = vi.fn();
+    const realCreate = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      const el = realCreate(tag) as any;
+      if (tag === 'a') el.click = () => {};
+      return el;
+    });
+
+    fireEvent.click(screen.getByTestId('messer-download'));
+    (global as any).Blob = realBlob;
+    vi.restoreAllMocks();
+
+    // CSV header must include Member ID; data row must include the FFM ID value.
+    expect(csvText).toMatch(/Member ID/);
+    expect(csvText).toMatch(/iss-m-csv/);
+  });
+});
