@@ -10,9 +10,22 @@ vi.mock('@/contexts/BatchContext', () => ({
 }));
 
 const mockRebuild = vi.fn();
-vi.mock('@/lib/rebuild', () => ({
-  rebuildBatchWithRetry: (...args: any[]) => mockRebuild(...args),
-}));
+vi.mock('@/lib/rebuild', () => {
+  // Real ReconcileAfterPromoteError shape preserved so the toast classifier
+  // (#123), which does `instanceof ReconcileAfterPromoteError`, still works
+  // when the rebuild module is mocked here.
+  class ReconcileAfterPromoteError extends Error {
+    readonly kind = 'reconcile-after-promote';
+    constructor(public readonly underlying: Error) {
+      super(`reconcile after promote: ${underlying.message}`);
+      this.name = 'ReconcileAfterPromoteError';
+    }
+  }
+  return {
+    rebuildBatchWithRetry: (...args: any[]) => mockRebuild(...args),
+    ReconcileAfterPromoteError,
+  };
+});
 
 const mockToast = vi.fn();
 vi.mock('@/hooks/use-toast', () => ({
