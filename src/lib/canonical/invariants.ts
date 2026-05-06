@@ -26,7 +26,7 @@ import {
 
 const DOLLAR_TOLERANCE = 0.01;
 
-export type InvariantStatus = 'pass' | 'fail';
+export type InvariantStatus = 'pass' | 'fail' | 'error';
 
 export interface InvariantResult {
   /** Stable identifier (e.g. 'net-paid-equals-raw-sum'). */
@@ -271,15 +271,31 @@ function checkUnpaidAndPaidDisjoint(inp: InvariantInputs): InvariantResult {
 
 /**
  * Run the full invariant suite for the given scope. Returns one result per
- * check, in display order.
+ * check, in display order. Each check is wrapped in try/catch so a runtime
+ * exception in one check surfaces as an `error` status (distinct from a
+ * logical `fail`) without aborting the rest of the suite. #125.
  */
 export function runInvariants(inp: InvariantInputs): InvariantResult[] {
-  return [
-    checkNetPaidEqualsRawSum(inp),
-    checkEeBucketCoverage(inp),
-    checkEligibleBreakdownSum(inp),
-    checkEligibleHelperConsistency(inp),
-    checkUnpaidAndPaidDisjoint(inp),
-    checkAgentSumEqualsDirect(inp),
+  const checks: Array<{ id: string; label: string; fn: (i: InvariantInputs) => InvariantResult }> = [
+    { id: 'net-paid-equals-raw-sum', label: 'Net Paid Commission ties to raw commission row sum', fn: checkNetPaidEqualsRawSum },
+    { id: 'ee-buckets-cover-expected', label: 'Found + Not-in-BO equals Expected Enrollments (no double-count)', fn: checkEeBucketCoverage },
+    { id: 'eligible-paid-plus-unpaid', label: 'Eligible Cohort = Paid + Unpaid', fn: checkEligibleBreakdownSum },
+    { id: 'eligible-helper-vs-direct', label: 'Eligible canonical helper matches direct predicate filter', fn: checkEligibleHelperConsistency },
+    { id: 'unpaid-paid-disjoint', label: 'No member is simultaneously fully paid and unpaid', fn: checkUnpaidAndPaidDisjoint },
+    { id: 'agent-sum-equals-direct', label: 'Per-agent commission sum equals Coverall (Direct) total', fn: checkAgentSumEqualsDirect },
   ];
+  return checks.map(({ id, label, fn }) => {
+    try {
+      return fn(inp);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        id,
+        label,
+        scope: inp.scope,
+        status: 'error',
+        detail: `Runtime error while evaluating invariant: ${msg}`,
+      };
+    }
+  });
 }

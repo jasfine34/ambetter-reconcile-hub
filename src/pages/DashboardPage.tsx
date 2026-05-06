@@ -167,6 +167,12 @@ export default function DashboardPage() {
   const [clawbacksOpen, setClawbacksOpen] = useState(false);
   const [invariantsOpen, setInvariantsOpen] = useState(false);
   const [invariantResults, setInvariantResults] = useState<InvariantResult[] | null>(null);
+  // #125 — Run Invariants UI feedback. Track last-run timestamp + running
+  // state so operators can confirm a click actually executed (especially
+  // when chips were already green). Single-flight: overlapping runs would
+  // race on setInvariantResults and confuse the timestamp.
+  const [invariantsRunning, setInvariantsRunning] = useState(false);
+  const [invariantsLastRunAt, setInvariantsLastRunAt] = useState<Date | null>(null);
   // Sort state for the Clawbacks Detail / Clawbacks dialog Statement Date
   // column. null = default sort (most-negative amount first).
   const [clawbackStatementSort, setClawbackStatementSort] = useState<'asc' | 'desc' | null>(null);
@@ -441,21 +447,50 @@ export default function DashboardPage() {
    * Run the canonical invariant suite against the currently-loaded data and
    * stash results into modal state. Extracted as a callback so the modal's
    * "Re-run" button can re-invoke it without duplicating the input wiring.
+   *
+   * #125: single-flight (no overlapping runs), with running state and a
+   * timestamp captured at completion so operators can confirm the click
+   * actually executed even when results are unchanged.
    */
   const executeInvariants = useCallback(() => {
-    const results = runInvariants({
-      reconciled,
-      normalizedRecords,
-      filteredEde,
-      confirmedUpgradeMemberKeys,
-      confirmedWeakMatchOverrideKeys: weakMatchResult.confirmedKeys,
-      weakMatchPendingOverrideKeys: new Set(weakMatchResult.pending.map((c) => c.override_key)),
-      scope: payEntityFilter === 'All' ? 'All' : payEntityFilter,
-      pickStableKey,
-      isCoverallNpn: isCoverallAORByNPN,
-    });
-    setInvariantResults(results);
-  }, [reconciled, normalizedRecords, filteredEde, confirmedUpgradeMemberKeys, weakMatchResult, payEntityFilter]);
+    if (invariantsRunning) return;
+    setInvariantsRunning(true);
+    // Defer to next tick so the "Running..." UI paints before the (sync)
+    // computation blocks the main thread on large batches.
+    setTimeout(() => {
+      try {
+        const results = runInvariants({
+          reconciled,
+          normalizedRecords,
+          filteredEde,
+          confirmedUpgradeMemberKeys,
+          confirmedWeakMatchOverrideKeys: weakMatchResult.confirmedKeys,
+          weakMatchPendingOverrideKeys: new Set(weakMatchResult.pending.map((c) => c.override_key)),
+          scope: payEntityFilter === 'All' ? 'All' : payEntityFilter,
+          pickStableKey,
+          isCoverallNpn: isCoverallAORByNPN,
+        });
+        setInvariantResults(results);
+        setInvariantsLastRunAt(new Date());
+      } catch (err) {
+        // runInvariants now wraps each check; a throw here is a runner-level
+        // bug. Surface a single error row so the panel is never blank.
+        const msg = err instanceof Error ? err.message : String(err);
+        setInvariantResults([
+          {
+            id: 'runner-error',
+            label: 'Invariant runner failed',
+            scope: payEntityFilter === 'All' ? 'All' : payEntityFilter,
+            status: 'error',
+            detail: `Runner threw before any invariant executed: ${msg}`,
+          },
+        ]);
+        setInvariantsLastRunAt(new Date());
+      } finally {
+        setInvariantsRunning(false);
+      }
+    }, 0);
+  }, [invariantsRunning, reconciled, normalizedRecords, filteredEde, confirmedUpgradeMemberKeys, weakMatchResult, payEntityFilter]);
 
   const dashboardTitle = useMemo(() => {
     switch (payEntityFilter) {
@@ -818,13 +853,13 @@ export default function DashboardPage() {
             variant="outline"
             size="sm"
             onClick={() => {
-              executeInvariants();
               setInvariantsOpen(true);
+              executeInvariants();
             }}
-            disabled={!currentBatchId || reconciled.length === 0}
+            disabled={!currentBatchId || reconciled.length === 0 || invariantsRunning}
           >
-            <ShieldAlert className="h-4 w-4 mr-1" />
-            Run Invariants
+            <ShieldAlert className={`h-4 w-4 mr-1 ${invariantsRunning ? 'animate-pulse' : ''}`} />
+            {invariantsRunning ? 'Running…' : 'Run Invariants'}
           </Button>
           <Button variant="outline" size="sm" onClick={() => setResolveConfirmOpen(true)} disabled={resolving}>
             <Link2 className={`h-4 w-4 mr-1 ${resolving ? 'animate-pulse' : ''}`} />
@@ -1773,28 +1808,84 @@ export default function DashboardPage() {
               outside the canonical helpers in <code className="font-mono">src/lib/canonical/</code>.
             </DialogDescription>
           </DialogHeader>
+          {/* #125 — Run summary header: timestamp + aggregate counts so the
+              operator can confirm the click executed even when results
+              didn't change. Always rendered after at least one run. */}
+          {(() => {
+            if (invariantsRunning && !invariantResults) {
+              return (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground border rounded-md px-3 py-2">
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  Running invariant checks…
+                </div>
+              );
+            }
+            if (!invariantResults) return null;
+            const passed = invariantResults.filter((r) => r.status === 'pass').length;
+            const failed = invariantResults.filter((r) => r.status === 'fail').length;
+            const errored = invariantResults.filter((r) => r.status === 'error').length;
+            const total = invariantResults.length;
+            const allGreen = passed === total && total > 0;
+            const ts = invariantsLastRunAt;
+            const summaryText = allGreen
+              ? `All ${total} invariants passed`
+              : `${passed} of ${total} passed${failed ? ` · ${failed} failed` : ''}${errored ? ` · ${errored} errored` : ''}`;
+            return (
+              <div
+                className={`flex items-center justify-between gap-3 border rounded-md px-3 py-2 text-sm ${
+                  allGreen ? 'bg-success/10 border-success/30' : 'bg-destructive/10 border-destructive/30'
+                }`}
+                data-testid="invariants-summary"
+              >
+                <div className="flex items-center gap-2 font-medium text-foreground">
+                  {allGreen ? (
+                    <CheckCircle2 className="h-4 w-4 text-success" />
+                  ) : (
+                    <XCircle className="h-4 w-4 text-destructive" />
+                  )}
+                  {summaryText}
+                  {invariantsRunning && (
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin text-muted-foreground ml-1" />
+                  )}
+                </div>
+                {ts && (
+                  <div className="text-xs text-muted-foreground font-mono" title={ts.toISOString()}>
+                    Last run: {ts.toLocaleTimeString()}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           <div className="space-y-2">
             {(invariantResults ?? []).map((r) => {
               const hasNumbers =
                 r.status === 'fail' &&
                 (typeof r.expected === 'number' || typeof r.actual === 'number');
+              const tone =
+                r.status === 'pass'
+                  ? 'bg-success/10 border-success/30'
+                  : r.status === 'error'
+                    ? 'bg-warning/10 border-warning/40'
+                    : 'bg-destructive/10 border-destructive/30';
               return (
-                <div
-                  key={r.id}
-                  className={`rounded-md border px-3 py-2 text-sm ${
-                    r.status === 'pass'
-                      ? 'bg-success/10 border-success/30'
-                      : 'bg-destructive/10 border-destructive/30'
-                  }`}
-                >
+                <div key={r.id} className={`rounded-md border px-3 py-2 text-sm ${tone}`} data-testid={`invariant-${r.id}`}>
                   <div className="flex items-start gap-2">
                     {r.status === 'pass' ? (
                       <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-success" />
+                    ) : r.status === 'error' ? (
+                      <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-warning" />
                     ) : (
                       <XCircle className="h-4 w-4 mt-0.5 shrink-0 text-destructive" />
                     )}
                     <div className="flex-1">
-                      <div className="font-medium text-foreground">{r.label}</div>
+                      <div className="font-medium text-foreground flex items-center gap-2">
+                        {r.label}
+                        {r.status === 'error' && (
+                          <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-warning/20 text-warning-foreground border border-warning/40">
+                            error
+                          </span>
+                        )}
+                      </div>
                       <div className="text-xs text-muted-foreground mt-0.5">{r.detail}</div>
                       {hasNumbers && (
                         <div className="text-xs font-mono mt-1 grid grid-cols-3 gap-2 text-foreground">
@@ -1808,17 +1899,11 @@ export default function DashboardPage() {
                 </div>
               );
             })}
-            {invariantResults && invariantResults.length > 0 && (
-              <div className="text-xs text-muted-foreground pt-2 border-t">
-                {invariantResults.filter((r) => r.status === 'pass').length} passed ·{' '}
-                {invariantResults.filter((r) => r.status === 'fail').length} failed
-              </div>
-            )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={executeInvariants}>
-              <RefreshCw className="h-4 w-4 mr-1" />
-              Re-run
+            <Button variant="outline" onClick={executeInvariants} disabled={invariantsRunning}>
+              <RefreshCw className={`h-4 w-4 mr-1 ${invariantsRunning ? 'animate-spin' : ''}`} />
+              {invariantsRunning ? 'Running…' : 'Re-run'}
             </Button>
             <Button variant="outline" onClick={() => setInvariantsOpen(false)}>Close</Button>
           </DialogFooter>
