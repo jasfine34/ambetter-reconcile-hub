@@ -135,8 +135,8 @@ export function WrongBatchConfirmModal({
         </div>
 
         <AlertDialogFooter>
-          <AlertDialogCancel onClick={onCancel}>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={onConfirm} autoFocus>
+          <AlertDialogCancel onClick={handleCancel}>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={handleConfirm} autoFocus>
             Confirm Upload
           </AlertDialogAction>
         </AlertDialogFooter>
