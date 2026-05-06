@@ -157,7 +157,7 @@ export default function AgentSummaryPage() {
         estimated_missing_commission: estMissing,
       };
     }),
-  [reconciled, commissionByNpn]);
+  [reconciled, commissionByNpn, filteredEde]);
 
   const columns = [
     { key: 'agent_name', label: 'Agent' },
