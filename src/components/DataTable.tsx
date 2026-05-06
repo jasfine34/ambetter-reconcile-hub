@@ -10,7 +10,7 @@ interface DataTableProps {
   columns: { key: string; label: string }[];
   exportFileName?: string;
   pageSize?: number;
-  filterChips?: { label: string; value: string; field: string }[];
+  filterChips?: { label: string; value: string; field: string; tooltip?: string }[];
   /**
    * Optional per-cell render override. Return `undefined` to fall through to
    * the default rendering. Useful for adornments like a "resolved identity"
