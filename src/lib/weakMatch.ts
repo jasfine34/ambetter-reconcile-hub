@@ -32,6 +32,20 @@
 import { supabase } from '@/integrations/supabase/client';
 import { cleanId, cleanSubscriberId } from './normalize';
 import type { FilteredEdeRow } from './expectedEde';
+import { isActiveBackOfficeRecord } from './canonical/isActiveBackOfficeRecord';
+
+/**
+ * Carriers for which the BO `policy_number` field is structurally redundant
+ * with `issuer_subscriber_id` (same source column, different normalizer) and
+ * therefore must NOT be used as a weak-match signal — every comparison
+ * against an EDE row's `exchangePolicyId`-derived `policy_number` would
+ * otherwise be a guaranteed false mismatch (#129).
+ */
+const POLICY_SIGNAL_REDUNDANT_CARRIERS = new Set(['ambetter']);
+
+function carrierKey(c: string | undefined | null): string {
+  return String(c ?? '').trim().toLowerCase();
+}
 
 export type WeakMatchDecision = 'confirmed' | 'rejected' | 'deferred';
 
