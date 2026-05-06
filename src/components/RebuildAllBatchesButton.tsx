@@ -21,6 +21,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useBatch } from '@/contexts/BatchContext';
 import { rebuildBatchWithRetry, type RebuildProgress } from '@/lib/rebuild';
+import { classifyRebuildError } from '@/lib/toastClassification';
 import { Hammer, Loader2 } from 'lucide-react';
 
 interface BatchProgress {
@@ -94,9 +95,14 @@ export function RebuildAllBatchesButton({ variant = 'outline', label = 'Rebuild 
         );
         successCount++;
       } catch (err: any) {
+        // Per-batch failure: route through the centralized classifier so the
+        // in-modal error text matches the operator-actionable copy used by
+        // the single-batch Rebuild button (#123). The aggregate summary
+        // toast below stays generic — it only counts successes vs failures.
+        const t = classifyRebuildError(err, { batchLabel: batchLabel(b) });
         setProgressList((prev) =>
           prev.map((p, idx) =>
-            idx === i ? { ...p, status: 'error', error: err?.message ?? 'Unknown error' } : p
+            idx === i ? { ...p, status: 'error', error: `${t.title}: ${t.description}` } : p
           )
         );
         errorCount++;

@@ -4,6 +4,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useToast } from '@/hooks/use-toast';
 import { useBatch } from '@/contexts/BatchContext';
 import { rebuildBatchWithRetry, type RebuildProgress } from '@/lib/rebuild';
+import { classifyRebuildError } from '@/lib/toastClassification';
 import { Hammer, Loader2 } from 'lucide-react';
 
 function formatBatchLabel(batch: any): string {
@@ -63,8 +64,12 @@ export function RebuildBatchButton() {
     } catch (err: any) {
       // eslint-disable-next-line no-console
       console.error('[RebuildBatchButton] rebuild failed', { batchId, label, err });
-      const description = (err && (err.message || String(err))) || 'Unknown error';
-      toast({ title: `Rebuild Failed: ${label}`, description, variant: 'destructive' });
+      // Centralized failure-mode classification (#123). Picks the right
+      // variant + operator-actionable copy based on the error class /
+      // message shape (ReconcileAfterPromoteError, lock_not_available,
+      // aggregate guard, count mismatch, staging failure, or unknown).
+      const t = classifyRebuildError(err, { batchLabel: label });
+      toast({ title: t.title, description: t.description, variant: t.variant as any });
     } finally {
       setRunning(false);
       setProgress(null);

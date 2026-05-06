@@ -10,9 +10,22 @@ vi.mock('@/contexts/BatchContext', () => ({
 }));
 
 const mockRebuild = vi.fn();
-vi.mock('@/lib/rebuild', () => ({
-  rebuildBatchWithRetry: (...args: any[]) => mockRebuild(...args),
-}));
+vi.mock('@/lib/rebuild', () => {
+  // Real ReconcileAfterPromoteError shape preserved so the toast classifier
+  // (#123), which does `instanceof ReconcileAfterPromoteError`, still works
+  // when the rebuild module is mocked here.
+  class ReconcileAfterPromoteError extends Error {
+    readonly kind = 'reconcile-after-promote';
+    constructor(public readonly underlying: Error) {
+      super(`reconcile after promote: ${underlying.message}`);
+      this.name = 'ReconcileAfterPromoteError';
+    }
+  }
+  return {
+    rebuildBatchWithRetry: (...args: any[]) => mockRebuild(...args),
+    ReconcileAfterPromoteError,
+  };
+});
 
 const mockToast = vi.fn();
 vi.mock('@/hooks/use-toast', () => ({
@@ -120,11 +133,14 @@ describe('RebuildBatchButton — wrong-batch race', () => {
     fireEvent.click(screen.getByRole('button', { name: /Rebuild Now/i }));
 
     await waitFor(() => {
+      // After #123 the generic-error path lands in the "unexpected" bucket
+      // ("Operation failed unexpectedly — <batch>"). Title must still name
+      // the targeted batch and the variant must still be destructive.
       const failCall = mockToast.mock.calls.find(
-        (c) => c[0]?.title && /Rebuild Failed/i.test(c[0].title)
+        (c) => c[0]?.variant === 'destructive' && /Mar 2026/.test(c[0]?.title ?? ''),
       );
       expect(failCall).toBeTruthy();
-      expect(failCall![0].title).toMatch(/Mar 2026/);
+      expect(failCall![0].title).toMatch(/unexpectedly/i);
       expect(failCall![0].variant).toBe('destructive');
     });
   });
