@@ -196,7 +196,15 @@ export default function UploadPage() {
     }
   }, [currentBatchId, refreshAll, toast, batches, setSlotUploading]);
 
-  const handleUpload = useCallback(async (fileLabel: string, sourceType: string, payEntity: string | null, aorBucket: string | null, file: File) => {
+  /**
+   * Internal: runs after the operator confirms the Wrong-Batch modal (#122).
+   * Handles schema-detection (which may itself open the schema-mismatch
+   * dialog) and otherwise hands off to processUpload.
+   */
+  const runUploadAfterConfirm = useCallback(async (
+    fileLabel: string, sourceType: string, payEntity: string | null,
+    aorBucket: string | null, file: File,
+  ) => {
     if (!currentBatchId) {
       toast({ title: 'No batch selected', description: 'Create or select a batch before uploading.', variant: 'destructive' });
       return;
@@ -217,6 +225,32 @@ export default function UploadPage() {
 
     await processUpload({ fileLabel, sourceType, payEntity, aorBucket, file });
   }, [currentBatchId, processUpload, toast]);
+
+  /**
+   * Entry point invoked by every UploadCard. Opens the Wrong-Batch
+   * Confirmation Modal (#122) before any storage / RPC call. The modal blocks
+   * upload until the operator explicitly confirms the destination batch and
+   * slot. No DB / storage / RPC call occurs unless Confirm is clicked.
+   */
+  const handleUpload = useCallback(async (
+    fileLabel: string, sourceType: string, payEntity: string | null,
+    aorBucket: string | null, file: File,
+  ) => {
+    if (!currentBatchId) {
+      toast({ title: 'No batch selected', description: 'Create or select a batch before uploading.', variant: 'destructive' });
+      return;
+    }
+
+    const batch = batches.find((b: any) => b.id === currentBatchId);
+    const batchLabel = batch?.statement_month
+      ? `${new Date(`${batch.statement_month}T00:00:00`).toLocaleDateString('en-US', { year: 'numeric', month: 'long' })} — ${batch.carrier}`
+      : null;
+    const warning = evaluateFilenameDate(file.name, sourceType, batch?.statement_month);
+
+    setPendingConfirm({
+      fileLabel, sourceType, payEntity, aorBucket, file, batchLabel, warning,
+    });
+  }, [currentBatchId, batches, toast]);
 
   const getUploadedFileName = (label: string): string | null => {
     const f = uploadedFiles.find((uf: any) => uf.file_label === label);
