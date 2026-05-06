@@ -177,7 +177,7 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
     fireEvent.click(screen.getByTestId('run-report'));
     // Loading state should appear
     await waitFor(() => expect(screen.getByTestId('loading-state')).toBeInTheDocument());
-    expect(screen.getByText(/Running report/i)).toBeInTheDocument();
+    expect(screen.getByTestId('loading-state')).toHaveTextContent(/Running report/i);
 
     await act(async () => { releaseEligible([]); });
     // After release, transitions to empty (no missing members)
