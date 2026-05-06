@@ -133,11 +133,14 @@ describe('RebuildBatchButton — wrong-batch race', () => {
     fireEvent.click(screen.getByRole('button', { name: /Rebuild Now/i }));
 
     await waitFor(() => {
+      // After #123 the generic-error path lands in the "unexpected" bucket
+      // ("Operation failed unexpectedly — <batch>"). Title must still name
+      // the targeted batch and the variant must still be destructive.
       const failCall = mockToast.mock.calls.find(
-        (c) => c[0]?.title && /Rebuild Failed/i.test(c[0].title)
+        (c) => c[0]?.variant === 'destructive' && /Mar 2026/.test(c[0]?.title ?? ''),
       );
       expect(failCall).toBeTruthy();
-      expect(failCall![0].title).toMatch(/Mar 2026/);
+      expect(failCall![0].title).toMatch(/unexpectedly/i);
       expect(failCall![0].variant).toBe('destructive');
     });
   });
