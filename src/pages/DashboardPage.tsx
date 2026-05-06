@@ -788,7 +788,7 @@ export default function DashboardPage() {
       case 'paidOutsideExpected': return filtered.filter(r => !r.in_ede && r.in_commission);
       default: return filtered;
     }
-  }, [drilldown, filtered, effInBO, eeUniverseKeys]);
+  }, [drilldown, filtered, effInBO, eeUniverseKeys, metrics.eligibleCohort]);
 
   const isCoverageDrilldown = ['fullyMatched', 'paidOutsideEde', 'commissionOnly', 'backOfficeOnly', 'unpaidExpected', 'totalPaidAll', 'paidOutsideExpected'].includes(drilldown || '');
 
