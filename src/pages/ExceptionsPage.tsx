@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useBatch } from '@/contexts/BatchContext';
 import { BatchSelector } from '@/components/BatchSelector';
 import { DataTable } from '@/components/DataTable';
-import { ISSUE_TYPES } from '@/lib/constants';
+import { ISSUE_TYPES, getIssueTypeLabel, getIssueTypeTooltip } from '@/lib/constants';
 import { IdentityResolutionConflictsPanel } from '@/components/IdentityResolutionConflictsPanel';
 
 const COLUMNS = [
