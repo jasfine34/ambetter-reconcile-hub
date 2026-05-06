@@ -48,14 +48,33 @@ export function WrongBatchConfirmModal({
 }: WrongBatchConfirmModalProps) {
   const isHard = warning.kind === 'hard';
   const isSoft = warning.kind === 'soft';
+  // Radix fires onOpenChange(false) for both Cancel and Confirm clicks
+  // (and for Escape, which we already intercept). Without a guard, Confirm
+  // would also count as a Cancel and Cancel would be called twice. Track
+  // whether the close was driven by an explicit Confirm/Cancel click so the
+  // Radix-driven close becomes a no-op in that case.
+  const handledRef = useRef(false);
+
+  const handleConfirm = () => {
+    handledRef.current = true;
+    onConfirm();
+  };
+  const handleCancel = () => {
+    handledRef.current = true;
+    onCancel();
+  };
 
   return (
     <AlertDialog
       open={open}
-      onOpenChange={(next) => { if (!next) onCancel(); }}
+      onOpenChange={(next) => {
+        if (next) { handledRef.current = false; return; }
+        if (handledRef.current) { handledRef.current = false; return; }
+        onCancel();
+      }}
     >
       <AlertDialogContent
-        onEscapeKeyDown={(e) => { e.preventDefault(); onCancel(); }}
+        onEscapeKeyDown={(e) => { e.preventDefault(); handleCancel(); }}
       >
         <AlertDialogHeader>
           <AlertDialogTitle>Confirm upload destination</AlertDialogTitle>
