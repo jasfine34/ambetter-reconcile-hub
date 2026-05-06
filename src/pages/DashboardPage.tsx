@@ -447,21 +447,50 @@ export default function DashboardPage() {
    * Run the canonical invariant suite against the currently-loaded data and
    * stash results into modal state. Extracted as a callback so the modal's
    * "Re-run" button can re-invoke it without duplicating the input wiring.
+   *
+   * #125: single-flight (no overlapping runs), with running state and a
+   * timestamp captured at completion so operators can confirm the click
+   * actually executed even when results are unchanged.
    */
   const executeInvariants = useCallback(() => {
-    const results = runInvariants({
-      reconciled,
-      normalizedRecords,
-      filteredEde,
-      confirmedUpgradeMemberKeys,
-      confirmedWeakMatchOverrideKeys: weakMatchResult.confirmedKeys,
-      weakMatchPendingOverrideKeys: new Set(weakMatchResult.pending.map((c) => c.override_key)),
-      scope: payEntityFilter === 'All' ? 'All' : payEntityFilter,
-      pickStableKey,
-      isCoverallNpn: isCoverallAORByNPN,
-    });
-    setInvariantResults(results);
-  }, [reconciled, normalizedRecords, filteredEde, confirmedUpgradeMemberKeys, weakMatchResult, payEntityFilter]);
+    if (invariantsRunning) return;
+    setInvariantsRunning(true);
+    // Defer to next tick so the "Running..." UI paints before the (sync)
+    // computation blocks the main thread on large batches.
+    setTimeout(() => {
+      try {
+        const results = runInvariants({
+          reconciled,
+          normalizedRecords,
+          filteredEde,
+          confirmedUpgradeMemberKeys,
+          confirmedWeakMatchOverrideKeys: weakMatchResult.confirmedKeys,
+          weakMatchPendingOverrideKeys: new Set(weakMatchResult.pending.map((c) => c.override_key)),
+          scope: payEntityFilter === 'All' ? 'All' : payEntityFilter,
+          pickStableKey,
+          isCoverallNpn: isCoverallAORByNPN,
+        });
+        setInvariantResults(results);
+        setInvariantsLastRunAt(new Date());
+      } catch (err) {
+        // runInvariants now wraps each check; a throw here is a runner-level
+        // bug. Surface a single error row so the panel is never blank.
+        const msg = err instanceof Error ? err.message : String(err);
+        setInvariantResults([
+          {
+            id: 'runner-error',
+            label: 'Invariant runner failed',
+            scope: payEntityFilter === 'All' ? 'All' : payEntityFilter,
+            status: 'error',
+            detail: `Runner threw before any invariant executed: ${msg}`,
+          },
+        ]);
+        setInvariantsLastRunAt(new Date());
+      } finally {
+        setInvariantsRunning(false);
+      }
+    }, 0);
+  }, [invariantsRunning, reconciled, normalizedRecords, filteredEde, confirmedUpgradeMemberKeys, weakMatchResult, payEntityFilter]);
 
   const dashboardTitle = useMemo(() => {
     switch (payEntityFilter) {
