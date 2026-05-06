@@ -8,6 +8,8 @@ import { NPN_MAP } from '@/lib/constants';
 import { extractNpnFromAorString } from '@/lib/agents';
 import { getNormalizedRecords } from '@/lib/persistence';
 import { filterCommissionRowsByScope } from '@/lib/canonical';
+import { computeFilteredEde } from '@/lib/expectedEde';
+import { getCoveredMonths } from '@/lib/dateRange';
 import { usePayEntityScope, type PayEntityScope } from '@/hooks/usePayEntityScope';
 
 const AGENTS = Object.entries(NPN_MAP).map(([npn, info]) => ({ npn, ...info }));
