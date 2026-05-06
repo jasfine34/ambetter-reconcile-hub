@@ -946,82 +946,75 @@ export default function MissingCommissionExportPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredExportRows.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={MESSER_COLUMNS.length + INTERNAL_COLUMNS.length} className="text-center text-sm text-muted-foreground py-12">
-                    {loading ? 'Loading…' : 'No missing-commission members in this scope/filter.'}
-                  </TableCell>
+              {displayed!.rows.slice(0, 250).map((row) => (
+                <TableRow key={row._memberKey}>
+                  {MESSER_COLUMNS.map((c) => {
+                    const v = row[c.key];
+                    const fieldKey = c.key as string;
+                    const profileField =
+                      fieldKey === 'address'
+                        ? row._profile.address1
+                        : fieldKey === 'dob'
+                          ? row._profile.dob
+                          : fieldKey === 'memberFirstName' || fieldKey === 'memberLastName'
+                            ? row._profile.applicant_name
+                            : null;
+                    return (
+                      <TableCell key={fieldKey} className="text-sm whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1.5">
+                          {v == null || v === '' ? <span className="text-muted-foreground">—</span> : String(v)}
+                          {profileField && profileField.source_type && (
+                            <Badge variant="outline" className="text-[9px] px-1 py-0 font-normal">
+                              {profileField.source_type === 'back_office' ? 'BO' : profileField.source_type === 'ede' ? 'EDE' : 'COMM'}
+                              {profileField.source_month ? ` · ${profileField.source_month}` : ''}
+                            </Badge>
+                          )}
+                          {profileField && profileField.conflict && (
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <AlertTriangle className="h-3 w-3 text-amber-500" />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                Conflict — also saw: {profileField.conflict_values.map(c => c.value).join(', ')}
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+                        </span>
+                      </TableCell>
+                    );
+                  })}
+                  {INTERNAL_COLUMNS.map((c) => {
+                    const v = row[c.key];
+                    let display: React.ReactNode;
+                    if (c.key === '_ffmId' || c.key === '_phone' || c.key === '_email') {
+                      const f = v as EnrichedField<string>;
+                      display = f?.value ? f.value : <span className="text-muted-foreground">—</span>;
+                    } else if (c.key === '_estimatedMissingCommission') {
+                      display = typeof v === 'number'
+                        ? `$${v.toFixed(2)}`
+                        : <span className="text-muted-foreground">TBD</span>;
+                    } else if (v == null || v === '') {
+                      display = <span className="text-muted-foreground">—</span>;
+                    } else {
+                      display = String(v);
+                    }
+                    return (
+                      <TableCell key={String(c.key)} className="text-sm whitespace-nowrap bg-muted/20 text-muted-foreground">
+                        {display}
+                      </TableCell>
+                    );
+                  })}
                 </TableRow>
-              ) : (
-                filteredExportRows.slice(0, 250).map((row) => (
-                  <TableRow key={row._memberKey}>
-                    {MESSER_COLUMNS.map((c) => {
-                      const v = row[c.key];
-                      const fieldKey = c.key as string;
-                      const profileField =
-                        fieldKey === 'address'
-                          ? row._profile.address1
-                          : fieldKey === 'dob'
-                            ? row._profile.dob
-                            : fieldKey === 'memberFirstName' || fieldKey === 'memberLastName'
-                              ? row._profile.applicant_name
-                              : null;
-                      return (
-                        <TableCell key={fieldKey} className="text-sm whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1.5">
-                            {v == null || v === '' ? <span className="text-muted-foreground">—</span> : String(v)}
-                            {profileField && profileField.source_type && (
-                              <Badge variant="outline" className="text-[9px] px-1 py-0 font-normal">
-                                {profileField.source_type === 'back_office' ? 'BO' : profileField.source_type === 'ede' ? 'EDE' : 'COMM'}
-                                {profileField.source_month ? ` · ${profileField.source_month}` : ''}
-                              </Badge>
-                            )}
-                            {profileField && profileField.conflict && (
-                              <Tooltip>
-                                <TooltipTrigger>
-                                  <AlertTriangle className="h-3 w-3 text-amber-500" />
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  Conflict — also saw: {profileField.conflict_values.map(c => c.value).join(', ')}
-                                </TooltipContent>
-                              </Tooltip>
-                            )}
-                          </span>
-                        </TableCell>
-                      );
-                    })}
-                    {INTERNAL_COLUMNS.map((c) => {
-                      const v = row[c.key];
-                      let display: React.ReactNode;
-                      if (c.key === '_ffmId' || c.key === '_phone' || c.key === '_email') {
-                        const f = v as EnrichedField<string>;
-                        display = f?.value ? f.value : <span className="text-muted-foreground">—</span>;
-                      } else if (c.key === '_estimatedMissingCommission') {
-                        display = typeof v === 'number'
-                          ? `$${v.toFixed(2)}`
-                          : <span className="text-muted-foreground">TBD</span>;
-                      } else if (v == null || v === '') {
-                        display = <span className="text-muted-foreground">—</span>;
-                      } else {
-                        display = String(v);
-                      }
-                      return (
-                        <TableCell key={String(c.key)} className="text-sm whitespace-nowrap bg-muted/20 text-muted-foreground">
-                          {display}
-                        </TableCell>
-                      );
-                    })}
-                  </TableRow>
-                ))
-              )}
+              ))}
             </TableBody>
-          </Table>
-          {filteredExportRows.length > 250 && (
-            <div className="px-4 py-2 text-xs text-muted-foreground border-t bg-muted/20">
-              Preview limited to first 250 rows. CSV download includes all {filteredExportRows.length}.
-            </div>
-          )}
-        </div>
+            </Table>
+            {displayed!.rows.length > 250 && (
+              <div className="px-4 py-2 text-xs text-muted-foreground border-t bg-muted/20">
+                Preview limited to first 250 rows. CSV download includes all {displayed!.rows.length}.
+              </div>
+            )}
+          </div>
+        )}
 
         <p className="text-xs text-muted-foreground">
           NPN reference (Coverall): {Object.entries(NPN_MAP).map(([npn, info]) => `${info.name} (${npn})`).join(' · ')}
