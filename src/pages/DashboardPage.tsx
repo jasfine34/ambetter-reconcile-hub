@@ -1808,28 +1808,84 @@ export default function DashboardPage() {
               outside the canonical helpers in <code className="font-mono">src/lib/canonical/</code>.
             </DialogDescription>
           </DialogHeader>
+          {/* #125 — Run summary header: timestamp + aggregate counts so the
+              operator can confirm the click executed even when results
+              didn't change. Always rendered after at least one run. */}
+          {(() => {
+            if (invariantsRunning && !invariantResults) {
+              return (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground border rounded-md px-3 py-2">
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  Running invariant checks…
+                </div>
+              );
+            }
+            if (!invariantResults) return null;
+            const passed = invariantResults.filter((r) => r.status === 'pass').length;
+            const failed = invariantResults.filter((r) => r.status === 'fail').length;
+            const errored = invariantResults.filter((r) => r.status === 'error').length;
+            const total = invariantResults.length;
+            const allGreen = passed === total && total > 0;
+            const ts = invariantsLastRunAt;
+            const summaryText = allGreen
+              ? `All ${total} invariants passed`
+              : `${passed} of ${total} passed${failed ? ` · ${failed} failed` : ''}${errored ? ` · ${errored} errored` : ''}`;
+            return (
+              <div
+                className={`flex items-center justify-between gap-3 border rounded-md px-3 py-2 text-sm ${
+                  allGreen ? 'bg-success/10 border-success/30' : 'bg-destructive/10 border-destructive/30'
+                }`}
+                data-testid="invariants-summary"
+              >
+                <div className="flex items-center gap-2 font-medium text-foreground">
+                  {allGreen ? (
+                    <CheckCircle2 className="h-4 w-4 text-success" />
+                  ) : (
+                    <XCircle className="h-4 w-4 text-destructive" />
+                  )}
+                  {summaryText}
+                  {invariantsRunning && (
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin text-muted-foreground ml-1" />
+                  )}
+                </div>
+                {ts && (
+                  <div className="text-xs text-muted-foreground font-mono" title={ts.toISOString()}>
+                    Last run: {ts.toLocaleTimeString()}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           <div className="space-y-2">
             {(invariantResults ?? []).map((r) => {
               const hasNumbers =
                 r.status === 'fail' &&
                 (typeof r.expected === 'number' || typeof r.actual === 'number');
+              const tone =
+                r.status === 'pass'
+                  ? 'bg-success/10 border-success/30'
+                  : r.status === 'error'
+                    ? 'bg-warning/10 border-warning/40'
+                    : 'bg-destructive/10 border-destructive/30';
               return (
-                <div
-                  key={r.id}
-                  className={`rounded-md border px-3 py-2 text-sm ${
-                    r.status === 'pass'
-                      ? 'bg-success/10 border-success/30'
-                      : 'bg-destructive/10 border-destructive/30'
-                  }`}
-                >
+                <div key={r.id} className={`rounded-md border px-3 py-2 text-sm ${tone}`} data-testid={`invariant-${r.id}`}>
                   <div className="flex items-start gap-2">
                     {r.status === 'pass' ? (
                       <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-success" />
+                    ) : r.status === 'error' ? (
+                      <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-warning" />
                     ) : (
                       <XCircle className="h-4 w-4 mt-0.5 shrink-0 text-destructive" />
                     )}
                     <div className="flex-1">
-                      <div className="font-medium text-foreground">{r.label}</div>
+                      <div className="font-medium text-foreground flex items-center gap-2">
+                        {r.label}
+                        {r.status === 'error' && (
+                          <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-warning/20 text-warning-foreground border border-warning/40">
+                            error
+                          </span>
+                        )}
+                      </div>
                       <div className="text-xs text-muted-foreground mt-0.5">{r.detail}</div>
                       {hasNumbers && (
                         <div className="text-xs font-mono mt-1 grid grid-cols-3 gap-2 text-foreground">
@@ -1843,17 +1899,11 @@ export default function DashboardPage() {
                 </div>
               );
             })}
-            {invariantResults && invariantResults.length > 0 && (
-              <div className="text-xs text-muted-foreground pt-2 border-t">
-                {invariantResults.filter((r) => r.status === 'pass').length} passed ·{' '}
-                {invariantResults.filter((r) => r.status === 'fail').length} failed
-              </div>
-            )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={executeInvariants}>
-              <RefreshCw className="h-4 w-4 mr-1" />
-              Re-run
+            <Button variant="outline" onClick={executeInvariants} disabled={invariantsRunning}>
+              <RefreshCw className={`h-4 w-4 mr-1 ${invariantsRunning ? 'animate-spin' : ''}`} />
+              {invariantsRunning ? 'Running…' : 'Re-run'}
             </Button>
             <Button variant="outline" onClick={() => setInvariantsOpen(false)}>Close</Button>
           </DialogFooter>
