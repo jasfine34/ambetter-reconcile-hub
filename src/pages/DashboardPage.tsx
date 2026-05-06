@@ -1179,14 +1179,19 @@ export default function DashboardPage() {
           bucket that hides bugs. */}
       {reconciled.length > 0 && normalizedRecords.length > 0 && (
         <CollapsibleDebugCard
-          title="EE Universe Audit"
+          title="Persistent vs Canonical EE-Universe Drift"
           icon={<ShieldAlert className="h-4 w-4" />}
           summary={`${eeAuditRows.length} EE members fall outside Found and Not-in-BO buckets`}
         >
           <div className="text-xs text-muted-foreground">
+            Diagnostic (#118 follow-up): rows where the persistent
+            <code className="font-mono mx-1">reconciled_members.is_in_expected_ede_universe</code>
+            flag and live <em>canonical</em> EE-universe calculation disagree.
             Members in the Expected Enrollments universe (scope:{' '}
             <strong>{payEntityFilter}</strong>) who are NOT in the Found-in-BO
-            bucket and NOT in the actionable Not-in-BO bucket. The
+            bucket and NOT in the actionable Not-in-BO bucket. UI metrics no
+            longer depend on the persistent flag — this panel exists to
+            surface stale-rebuild / reconcile-time drift. The
             <em> Inferred Reason</em> column is a best-effort classification
             computed at render time, not stored.
           </div>
