@@ -768,6 +768,10 @@ export default function DashboardPage() {
       case 'expected': return filtered.filter(r => eeUniverseKeys.has(r.member_key));
       case 'foundBO': return filtered.filter(r => eeUniverseKeys.has(r.member_key) && effInBO(r));
       case 'eligible': return filtered.filter(r => eeUniverseKeys.has(r.member_key) && effInBO(r) && r.eligible_for_commission === 'Yes');
+      // #121: 'shouldPay' opens the same row set the consolidated card replaces.
+      // Predicate matches the prior 'eligible' / 'foundBO' (modulo eligibility) cohort
+      // by design — the three cards were arithmetically identical.
+      case 'shouldPay': return filtered.filter(r => eeUniverseKeys.has(r.member_key) && effInBO(r) && r.eligible_for_commission === 'Yes');
       case 'paidComm': return filtered.filter(r => r.in_commission);
       case 'paidEligible': return filtered.filter(r => eeUniverseKeys.has(r.member_key) && effInBO(r) && r.eligible_for_commission === 'Yes' && r.in_commission);
       case 'unpaid': return filtered.filter(r => eeUniverseKeys.has(r.member_key) && effInBO(r) && r.eligible_for_commission === 'Yes' && !r.in_commission);
