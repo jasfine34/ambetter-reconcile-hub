@@ -167,6 +167,12 @@ export default function DashboardPage() {
   const [clawbacksOpen, setClawbacksOpen] = useState(false);
   const [invariantsOpen, setInvariantsOpen] = useState(false);
   const [invariantResults, setInvariantResults] = useState<InvariantResult[] | null>(null);
+  // #125 — Run Invariants UI feedback. Track last-run timestamp + running
+  // state so operators can confirm a click actually executed (especially
+  // when chips were already green). Single-flight: overlapping runs would
+  // race on setInvariantResults and confuse the timestamp.
+  const [invariantsRunning, setInvariantsRunning] = useState(false);
+  const [invariantsLastRunAt, setInvariantsLastRunAt] = useState<Date | null>(null);
   // Sort state for the Clawbacks Detail / Clawbacks dialog Statement Date
   // column. null = default sort (most-negative amount first).
   const [clawbackStatementSort, setClawbackStatementSort] = useState<'asc' | 'desc' | null>(null);
