@@ -156,7 +156,7 @@ describe('#126-OBS Part B — forensic logging for unexpected currentBatchId mut
       String(c[0] || '').includes('unknown source')
     );
     expect(forensic).toBeDefined();
-    const payload = forensic![1];
+    const payload = forensic![1] as any;
     expect(payload.prev).toBe(JAN.id);
     expect(payload.next).toBe(MAR.id);
     expect(payload.source).toBe('(none)');
@@ -187,6 +187,6 @@ describe('#126-OBS Part B — forensic logging for unexpected currentBatchId mut
       String(c[0] || '').includes('unknown source')
     );
     expect(forensic).toBeDefined();
-    expect(forensic![1].source).toBe('mystery-path');
+    expect((forensic![1] as any).source).toBe('mystery-path');
   });
 });
