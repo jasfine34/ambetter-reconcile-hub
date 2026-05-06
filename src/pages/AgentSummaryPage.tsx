@@ -55,9 +55,18 @@ function aorMatchesAgent(currentPolicyAor: string | null | undefined, agent: { n
  * the Dashboard's Coverall (Direct) total at the same scope (within $0.01).
  */
 export default function AgentSummaryPage() {
-  const { reconciled, currentBatchId } = useBatch();
+  const { reconciled, currentBatchId, batches, resolverIndex } = useBatch();
   const [normalizedRecords, setNormalizedRecords] = useState<any[]>([]);
   const [scope, setScope] = usePayEntityScope();
+
+  const currentBatch = useMemo(
+    () => batches.find((b: any) => b.id === currentBatchId),
+    [batches, currentBatchId],
+  );
+  const coveredMonths = useMemo(
+    () => getCoveredMonths(currentBatch?.statement_month),
+    [currentBatch?.statement_month],
+  );
 
   useEffect(() => {
     if (!currentBatchId) { setNormalizedRecords([]); return; }
