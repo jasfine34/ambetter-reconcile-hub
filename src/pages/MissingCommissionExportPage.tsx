@@ -725,7 +725,7 @@ export default function MissingCommissionExportPage() {
           <div className="grid gap-4 md:grid-cols-3">
             <div>
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Month (Batch)</label>
-              <Select value={currentBatchId ?? ''} onValueChange={(v) => setCurrentBatchId(v)}>
+              <Select value={currentBatchId ?? ''} onValueChange={(v) => setCurrentBatchId(v, 'mce-page-picker')}>
                 <SelectTrigger className="mt-1.5"><SelectValue placeholder="Select batch" /></SelectTrigger>
                 <SelectContent>
                   {batches.map((b: any) => (
