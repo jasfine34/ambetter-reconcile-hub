@@ -34,6 +34,8 @@ import {
   getNotInBackOfficeRows,
   getNetPaidCommission,
   getDirectVsDownlineSplit,
+  getTotalCoveredLives,
+  getMonthlyBreakdown,
   isActiveBackOfficeRecord,
 } from '@/lib/canonical';
 import { getIssueTypeLabel } from '@/lib/constants';
@@ -1374,7 +1376,28 @@ export default function DashboardPage() {
                 </div>
               </button>
             )}
-            <MetricCard title="Total Covered Lives" value={debugStats?.totalCoveredLives ?? 0} icon={<Users className="h-4 w-4" />} variant="info" subtitle={debugStats ? (formatMonthBreakdown(debugStats.totalCoveredLivesByMonth, { yearless: true }) || undefined) : undefined} tooltip={{ text: "Sum of coveredMemberCount across all qualified EDE records — counts the subscriber plus every dependent on each policy. Per-month breakdown is by actual effective month (newly effective lives) so per-month numbers SUM to the total.", why: "Reflects the actual number of insured lives, not just policy holders. Use this when reporting total members served or comparing to per-life carrier metrics." }} />
+            {/* Total Covered Lives — sourced from canonical filteredEde so it
+                follows the scope dropdown (Coverall / Vix / All) the same way
+                Expected Enrollments does. The legacy debugStats.totalCoveredLives
+                is whole-batch / scope-blind and is intentionally retained for one
+                release as a parity oracle (verified near-equal at scope=All). */}
+            {(() => {
+              const tclTotal = getTotalCoveredLives(filteredEde);
+              const tclByMonth = getMonthlyBreakdown('totalCoveredLives', filteredEde);
+              return (
+                <MetricCard
+                  title="Total Covered Lives"
+                  value={tclTotal}
+                  icon={<Users className="h-4 w-4" />}
+                  variant="info"
+                  subtitle={formatMonthBreakdown(tclByMonth, { yearless: true }) || undefined}
+                  tooltip={{
+                    text: "Sum of coveredMemberCount across the scope's qualified EDE members — counts the subscriber plus every dependent on each policy. Per-month breakdown is by actual effective month (newly effective lives) so per-month numbers SUM to the total. Vix scope counts members whose AOR-of-record is Erica (the only Coverall_or_Vix AOR), matching Expected Enrollments — Coverall and Vix users will see different counts than the prior whole-batch number.",
+                    why: "Reflects the actual number of insured lives in the selected scope, not just policy holders. Use this when reporting total members served or comparing to per-life carrier metrics.",
+                  }}
+                />
+              );
+            })()}
             {/* #121: Found in Back Office / Eligible for Commission / Should Be Paid were
                 arithmetically identical for this cohort (EE universe ∩ Back Office ∩ eligible),
                 so they have been consolidated into a single Should Be Paid hero card. The
