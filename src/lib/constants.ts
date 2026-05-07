@@ -4,6 +4,27 @@ export const NPN_MAP = {
   '16531877': { name: 'Becky Shuta', expectedPayEntity: 'Coverall' },
 } as const;
 
+/**
+ * Writing-agent NPNs whose commissions are owned by Coverall even though the
+ * NPN is NOT one of our active AORs (Jason / Erica / Becky). Examples:
+ *  - Downline agents who write under our hierarchy
+ *  - Former Coverall AORs whose existing book still pays to Coverall
+ *  - Carrier service-desk NPNs labeled e.g. "Coverall Health Group Call Center"
+ *
+ * Use via `isCoverallOwnedWritingNPN(npn)`. This is intentionally SEPARATE
+ * from NPN_MAP so it does NOT change AOR-string resolution, scope semantics,
+ * or any predicate today. It is a metadata layer for ownership-attribution
+ * audits (e.g., classifying P4 leakage rows where current_policy_aor is
+ * blank/foreign but the writing agent is Coverall-owned).
+ *
+ * Add new NPNs here as they're verified (DOI lookup or Jason confirmation).
+ */
+export const COVERALL_OWNED_WRITING_NPNS: Record<string, { name: string; reason: string }> = {
+  '21077804': { name: 'Allen Ford', reason: 'Downline agent under Coverall hierarchy' },
+  '21574255': { name: 'Hantz Pierre', reason: 'Former Coverall agent; book still pays to Coverall' },
+  '15978551': { name: "Scott O'Toole", reason: "Verified via DOI lookup; carrier feed labels NPN as 'Coverall Health Group Call Center'" },
+};
+
 export const FILE_LABELS = [
   { label: 'EDE Summary', sourceType: 'EDE' as const, payEntity: null, aorBucket: null },
   { label: 'EDE Archived Enrolled', sourceType: 'EDE' as const, payEntity: null, aorBucket: null },

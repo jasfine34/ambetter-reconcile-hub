@@ -12,7 +12,24 @@
  * Phase 3's Commission Inquiry Form export (where we need per-state writing
  * agent IDs). That table does not drive the "ours?" check.
  */
-import { NPN_MAP } from './constants';
+import { NPN_MAP, COVERALL_OWNED_WRITING_NPNS } from './constants';
+
+/**
+ * True if the given writing-agent NPN is Coverall-owned business — either an
+ * active AOR (Jason/Erica/Becky in NPN_MAP) OR a downline / former / service-
+ * desk NPN listed in COVERALL_OWNED_WRITING_NPNS. Use this when attributing
+ * commission rows whose `current_policy_aor` is blank or foreign but whose
+ * writing-agent NPN is one we own.
+ *
+ * Does NOT affect AOR-string resolution or canonical scope semantics; this is
+ * an ownership-metadata helper for audits and future classification.
+ */
+export function isCoverallOwnedWritingNPN(npn: string | null | undefined): boolean {
+  if (!npn) return false;
+  const key = String(npn).trim();
+  if (!key) return false;
+  return COVERALL_NPN_SET.has(key) || Object.prototype.hasOwnProperty.call(COVERALL_OWNED_WRITING_NPNS, key);
+}
 
 /** Set of NPNs that are currently active Coverall AORs (Jason / Erica / Becky). */
 export const COVERALL_NPN_SET: ReadonlySet<string> = new Set(Object.keys(NPN_MAP));
