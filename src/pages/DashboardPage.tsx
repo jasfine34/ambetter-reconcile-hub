@@ -34,6 +34,8 @@ import {
   getNotInBackOfficeRows,
   getNetPaidCommission,
   getDirectVsDownlineSplit,
+  getTotalCoveredLives,
+  getMonthlyBreakdown,
   isActiveBackOfficeRecord,
 } from '@/lib/canonical';
 import { getIssueTypeLabel } from '@/lib/constants';
