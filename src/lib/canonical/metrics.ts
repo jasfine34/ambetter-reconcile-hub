@@ -305,7 +305,12 @@ export function getExpectedPaymentUniverse(
   const boOnly: any[] = [];
   const edeOnly: any[] = [];
   for (const r of inScope) {
-    const inEde = !!r.in_ede || eeUniverse.has(r.member_key);
+    // EDE evidence MUST be membership in current Expected Enrollments
+    // (filteredEde.uniqueMembers) only — same predicate used by the EE card.
+    // Using r.in_ede here would over-count rows whose EDE row didn't qualify
+    // for the current EE universe (status/effective span/scope), letting
+    // Matched exceed Expected Enrollments.
+    const inEde = eeUniverse.has(r.member_key);
     const inBoActive = !!r.in_back_office || confirmedUpgradeMemberKeys.has(r.member_key);
     const eligibleYes = r.eligible_for_commission === 'Yes';
     if (inEde && inBoActive && eligibleYes) {
@@ -433,7 +438,7 @@ export function getSourceCoverageBuckets(
   const universe = getExpectedPaymentUniverse(reconciled, scope, filteredEde, confirmedUpgradeMemberKeys);
   const eeUniverse = new Set(filteredEde.uniqueMembers.map((m) => m.member_key));
 
-  const isInEde = (r: any) => !!r.in_ede || eeUniverse.has(r.member_key);
+  const isInEde = (r: any) => eeUniverse.has(r.member_key);
   const isBoActive = (r: any) =>
     !!r.in_back_office || confirmedUpgradeMemberKeys.has(r.member_key);
 
