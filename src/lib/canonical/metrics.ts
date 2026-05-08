@@ -423,6 +423,17 @@ export interface PaidEdeOnlyRow {
   bo_reason: 'BO inactive/terminated' | 'BO absent';
 }
 
+export type BoActiveNonCurrentEdeReason =
+  | 'future-effective'
+  | 'non-qualified-status'
+  | 'aor-or-key-mismatch'
+  | 'unknown';
+
+export interface BoActiveNonCurrentEdeRow {
+  row: any;
+  reason: BoActiveNonCurrentEdeReason;
+}
+
 export interface SourceCoverageBuckets<T = any> {
   fullyMatchedPaid: { rows: T[]; count: number };
   paidBackOfficeOnly: { rows: T[]; count: number };
@@ -431,6 +442,18 @@ export interface SourceCoverageBuckets<T = any> {
   unpaidBackOfficeOnly: { rows: T[]; count: number };
   expectedButUnpaid: { rows: T[]; count: number };
   totalPoliciesPaid: { rows: T[]; count: number };
+  /**
+   * Diagnostic tile (Interpretation C): active BO + eligible Yes + raw
+   * r.in_ede=true + NOT in current EE. Excluded from Should Be Paid /
+   * Expected But Unpaid. Includes paid + unpaid; the paid subset still
+   * appears in totalPoliciesPaid so paid math reconciles.
+   */
+  boActiveNonCurrentEde: {
+    rows: BoActiveNonCurrentEdeRow[];
+    count: number;
+    paidCount: number;
+    unpaidCount: number;
+  };
 }
 
 /** YYYY-MM-DD → first-of-month for periodStart inputs. */
