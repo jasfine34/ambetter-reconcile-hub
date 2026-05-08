@@ -1,15 +1,23 @@
 /**
- * Phase 1: expected-payment universe + 4-bucket Source Coverage tests.
+ * Phase 1 (corrected): expected-payment universe + 4-bucket Source Coverage tests.
  *
- * These tests use synthetic fixtures (no real Feb 2026 batch fixtures
- * available in the test env). The math invariants assert correctness;
- * the Feb 2026 Ambetter All-scope visible targets are documented here:
+ * EDE evidence for the Expected Payment Universe is membership in
+ * filteredEde.uniqueMembers ONLY — the same predicate the Expected
+ * Enrollments card uses. r.in_ede is intentionally NOT consulted here:
+ * raw r.in_ede includes EDE rows that did not qualify for the current EE
+ * universe (status / effective span / scope), and using it lets Matched
+ * exceed Expected Enrollments — which is structurally impossible.
  *
- *   Should Be Paid               2,573
- *   Expected Payments Received   1,422
- *   Expected But Unpaid          1,151
- *   Total Policies Paid          1,519
- *   Paid: EDE Only                  12
+ * Required invariants (asserted below across All / Coverall / Vix):
+ *   Matched + EDE Only = Expected Enrollments
+ *   Should Be Paid    = Expected Enrollments + BO Only
+ *   Expected Payments Received + Expected But Unpaid = Should Be Paid
+ *
+ * NOTE: prior Feb 2026 Ambetter targets recorded here (Should Be Paid 2,573,
+ * Expected Payments Received 1,422, Expected But Unpaid 1,151) were computed
+ * against the OVER-COUNTING helper (r.in_ede || EE). They are stale and have
+ * been removed; recompute against the corrected helper before pinning new
+ * targets. Synthetic fixtures below assert the math invariants directly.
  */
 import { describe, it, expect } from 'vitest';
 import {
