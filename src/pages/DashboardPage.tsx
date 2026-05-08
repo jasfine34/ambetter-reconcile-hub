@@ -37,6 +37,8 @@ import {
   getTotalCoveredLives,
   getMonthlyBreakdown,
   isActiveBackOfficeRecord,
+  getExpectedPaymentBreakdown,
+  getSourceCoverageBuckets,
 } from '@/lib/canonical';
 import { getIssueTypeLabel } from '@/lib/constants';
 
