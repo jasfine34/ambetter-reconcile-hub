@@ -234,3 +234,274 @@ export function getDirectVsDownlineSplit(
   }
   return { coverallDirectNet, downlineNet, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
 }
+
+// ===========================================================================
+// Phase 1 (#X): expanded expected-payment universe + 4-bucket Source Coverage.
+//
+// `getEligibleCohort` (above) intentionally remains the NARROW legacy
+// definition (EE ∩ BO-active ∩ eligible='Yes'). The helpers below implement
+// the broader workflow universe Jason confirmed:
+//
+//   Should Be Paid = Matched + BO Only + EDE Only
+//
+// where:
+//   - Matched   = in_ede ∧ in_bo_active ∧ eligible='Yes'
+//   - BO Only   = !in_ede ∧ in_bo_active ∧ eligible='Yes'
+//   - EDE Only  = in_ede ∧ !in_bo_active                   (NO eligibility gate —
+//                 the BO record is missing or inactive, so its eligibility flag
+//                 is blank/stale; the audit's 12 trailing-payment rows have
+//                 eligible_for_commission='' and MUST be included)
+//
+// Source Coverage paid-bucket math (4 buckets, "Paid Outside Current EDE"
+// removed because it overlapped Expected Payments Received):
+//   Total Policies Paid =
+//     Fully Matched & Paid           (Matched ∩ in_commission)
+//   + Paid: Back Office Only         (BO Only ∩ in_commission)
+//   + Paid: EDE Only                 (EDE Only ∩ in_commission)
+//   + Paid: Commission Statement Only (!in_ede ∧ !in_bo_active ∧ in_commission)
+//
+// Drilldown rows for "Paid: EDE Only" carry a `bo_reason` field —
+// "BO inactive/terminated" if a BO record exists in normalizedRecords but
+// failed isActiveBackOfficeRecord for the period; "BO absent" if no BO row
+// was found for the member at all. This is computed against raw
+// normalizedRecords (not reconciled_members alone) because inactive BO rows
+// are filtered out before reconciled.in_back_office=true.
+// ===========================================================================
+
+export interface ExpectedPaymentUniverse<T = any> {
+  /** All rows in the universe (matched ∪ boOnly ∪ edeOnly). */
+  rows: T[];
+  /** in_ede ∧ in_bo_active ∧ eligible='Yes'. */
+  matched: T[];
+  /** !in_ede ∧ in_bo_active ∧ eligible='Yes'. */
+  boOnly: T[];
+  /** in_ede ∧ !in_bo_active (no eligibility gate). */
+  edeOnly: T[];
+  total: number;
+  matchedCount: number;
+  boOnlyCount: number;
+  edeOnlyCount: number;
+}
+
+/**
+ * Phase 1: broader Expected Payment Universe — the workflow-level
+ * "should-be-paid" definition. Replaces the narrow `getEligibleCohort`
+ * for the top expected-payment cards (Should Be Paid / Expected Payments
+ * Received / Expected But Unpaid). `getEligibleCohort` is preserved
+ * unchanged for legacy callers.
+ *
+ * Effective in-BO predicate: r.in_back_office (already gated through
+ * isActiveBackOfficeRecord upstream in reconcile) OR confirmed weak-match.
+ */
+export function getExpectedPaymentUniverse(
+  reconciled: any[],
+  scope: CanonicalScope,
+  filteredEde: FilteredEdeResult,
+  confirmedUpgradeMemberKeys: Set<string>,
+): ExpectedPaymentUniverse {
+  const inScope = filterReconciledByScope(reconciled, scope);
+  const eeUniverse = new Set(filteredEde.uniqueMembers.map((m) => m.member_key));
+  const matched: any[] = [];
+  const boOnly: any[] = [];
+  const edeOnly: any[] = [];
+  for (const r of inScope) {
+    const inEde = !!r.in_ede || eeUniverse.has(r.member_key);
+    const inBoActive = !!r.in_back_office || confirmedUpgradeMemberKeys.has(r.member_key);
+    const eligibleYes = r.eligible_for_commission === 'Yes';
+    if (inEde && inBoActive && eligibleYes) {
+      matched.push(r);
+    } else if (!inEde && inBoActive && eligibleYes) {
+      boOnly.push(r);
+    } else if (inEde && !inBoActive) {
+      edeOnly.push(r);
+    }
+  }
+  const rows = [...matched, ...boOnly, ...edeOnly];
+  return {
+    rows,
+    matched,
+    boOnly,
+    edeOnly,
+    total: rows.length,
+    matchedCount: matched.length,
+    boOnlyCount: boOnly.length,
+    edeOnlyCount: edeOnly.length,
+  };
+}
+
+export interface ExpectedPaymentBreakdown<T = any> {
+  /** All universe rows. */
+  universe: ExpectedPaymentUniverse<T>;
+  /** Rows in universe with in_commission=true (Expected Payments Received). */
+  paidRows: T[];
+  /** Rows in universe with in_commission=false (Expected But Unpaid). */
+  unpaidRows: T[];
+  paidCount: number;
+  unpaidCount: number;
+  /** Compact splits used by the bottom-of-card breakdowns. */
+  paidSplit: { matched: number; boOnly: number; edeOnly: number };
+  unpaidSplit: { matched: number; boOnly: number; edeOnly: number };
+}
+
+/**
+ * Paid vs unpaid decomposition of the Expected Payment Universe. Both
+ * "Expected Payments Received" and "Expected But Unpaid" cards consume from
+ * here; `Should Be Paid = paidCount + unpaidCount`.
+ */
+export function getExpectedPaymentBreakdown(
+  reconciled: any[],
+  scope: CanonicalScope,
+  filteredEde: FilteredEdeResult,
+  confirmedUpgradeMemberKeys: Set<string>,
+): ExpectedPaymentBreakdown {
+  const universe = getExpectedPaymentUniverse(reconciled, scope, filteredEde, confirmedUpgradeMemberKeys);
+  const paidRows: any[] = [];
+  const unpaidRows: any[] = [];
+  const paidSplit = { matched: 0, boOnly: 0, edeOnly: 0 };
+  const unpaidSplit = { matched: 0, boOnly: 0, edeOnly: 0 };
+  const tag = (r: any): 'matched' | 'boOnly' | 'edeOnly' => {
+    if (universe.matched.includes(r)) return 'matched';
+    if (universe.boOnly.includes(r)) return 'boOnly';
+    return 'edeOnly';
+  };
+  for (const r of universe.rows) {
+    const bucket = tag(r);
+    if (r.in_commission) {
+      paidRows.push(r);
+      paidSplit[bucket] += 1;
+    } else {
+      unpaidRows.push(r);
+      unpaidSplit[bucket] += 1;
+    }
+  }
+  return {
+    universe,
+    paidRows,
+    unpaidRows,
+    paidCount: paidRows.length,
+    unpaidCount: unpaidRows.length,
+    paidSplit,
+    unpaidSplit,
+  };
+}
+
+export interface PaidEdeOnlyRow {
+  row: any;
+  bo_reason: 'BO inactive/terminated' | 'BO absent';
+}
+
+export interface SourceCoverageBuckets<T = any> {
+  fullyMatchedPaid: { rows: T[]; count: number };
+  paidBackOfficeOnly: { rows: T[]; count: number };
+  paidEdeOnly: { rows: PaidEdeOnlyRow[]; count: number };
+  paidCommissionStatementOnly: { rows: T[]; count: number };
+  unpaidBackOfficeOnly: { rows: T[]; count: number };
+  expectedButUnpaid: { rows: T[]; count: number };
+  totalPoliciesPaid: { rows: T[]; count: number };
+}
+
+/** YYYY-MM-DD → first-of-month for periodStart inputs. */
+function periodStartIso(coveredMonths: string[] | string | undefined): string {
+  if (!coveredMonths) return '';
+  if (typeof coveredMonths === 'string') {
+    return coveredMonths.length >= 7 ? `${coveredMonths.substring(0, 7)}-01` : coveredMonths;
+  }
+  const sorted = coveredMonths.filter(Boolean).slice().sort();
+  const first = sorted[0];
+  if (!first) return '';
+  return `${first.substring(0, 7)}-01`;
+}
+
+/**
+ * Single-helper Source Coverage tile producer. Returns rows + counts for
+ * every Source Coverage tile so cards and drilldowns share one source.
+ *
+ * `coveredMonthsOrReconcileMonth` accepts either the Dashboard's covered-
+ * months array (e.g. ['2026-01','2026-02']) or a single 'YYYY-MM' string.
+ * It is used to drive the Paid: EDE Only bo_reason classification (against
+ * raw BO normalizedRecords via isActiveBackOfficeRecord), distinguishing
+ * "BO inactive/terminated" from "BO absent".
+ */
+export function getSourceCoverageBuckets(
+  reconciled: any[],
+  scope: CanonicalScope,
+  filteredEde: FilteredEdeResult,
+  normalizedRecords: any[],
+  coveredMonthsOrReconcileMonth: string[] | string | undefined,
+  confirmedUpgradeMemberKeys: Set<string>,
+): SourceCoverageBuckets {
+  const inScope = filterReconciledByScope(reconciled, scope);
+  const universe = getExpectedPaymentUniverse(reconciled, scope, filteredEde, confirmedUpgradeMemberKeys);
+  const eeUniverse = new Set(filteredEde.uniqueMembers.map((m) => m.member_key));
+
+  const isInEde = (r: any) => !!r.in_ede || eeUniverse.has(r.member_key);
+  const isBoActive = (r: any) =>
+    !!r.in_back_office || confirmedUpgradeMemberKeys.has(r.member_key);
+
+  // Index BO normalized records by every ID candidate so we can detect
+  // "BO row exists but inactive" vs "BO absent" for Paid: EDE Only rows.
+  const boByIssuer = new Map<string, any>();
+  const boByExch = new Map<string, any>();
+  const boByPolicy = new Map<string, any>();
+  const boByMemberKey = new Map<string, any>();
+  for (const rec of normalizedRecords) {
+    if (rec.source_type !== 'BACK_OFFICE') continue;
+    if (rec.issuer_subscriber_id && !boByIssuer.has(rec.issuer_subscriber_id)) boByIssuer.set(rec.issuer_subscriber_id, rec);
+    if (rec.exchange_subscriber_id && !boByExch.has(rec.exchange_subscriber_id)) boByExch.set(rec.exchange_subscriber_id, rec);
+    if (rec.policy_number && !boByPolicy.has(rec.policy_number)) boByPolicy.set(rec.policy_number, rec);
+    if (rec.member_key && !boByMemberKey.has(rec.member_key)) boByMemberKey.set(rec.member_key, rec);
+  }
+  const periodStart = periodStartIso(coveredMonthsOrReconcileMonth);
+  const findBoRecord = (m: any): any | null => {
+    return (
+      (m.issuer_subscriber_id && boByIssuer.get(m.issuer_subscriber_id)) ||
+      (m.exchange_subscriber_id && boByExch.get(m.exchange_subscriber_id)) ||
+      (m.policy_number && boByPolicy.get(m.policy_number)) ||
+      (m.member_key && boByMemberKey.get(m.member_key)) ||
+      null
+    );
+  };
+
+  // Fully Matched & Paid — universe.matched ∩ in_commission.
+  const fullyMatchedPaidRows = universe.matched.filter((r) => r.in_commission);
+  // Paid: Back Office Only — universe.boOnly ∩ in_commission.
+  const paidBackOfficeOnlyRows = universe.boOnly.filter((r) => r.in_commission);
+  // Paid: EDE Only — universe.edeOnly ∩ in_commission, with bo_reason.
+  const paidEdeOnlyRows: PaidEdeOnlyRow[] = [];
+  for (const r of universe.edeOnly) {
+    if (!r.in_commission) continue;
+    const boRec = findBoRecord(r);
+    let bo_reason: 'BO inactive/terminated' | 'BO absent';
+    if (boRec) {
+      const active = periodStart
+        ? isActiveBackOfficeRecord({ source_type: 'BACK_OFFICE', ...boRec }, periodStart)
+        : true;
+      bo_reason = active ? 'BO absent' : 'BO inactive/terminated';
+    } else {
+      bo_reason = 'BO absent';
+    }
+    paidEdeOnlyRows.push({ row: r, bo_reason });
+  }
+  // Paid: Commission Statement Only — paid, NOT in EDE, NOT BO-active.
+  const paidCommissionOnlyRows = inScope.filter(
+    (r) => !isInEde(r) && !isBoActive(r) && r.in_commission,
+  );
+  // Unpaid: Back Office Only — !in_ede ∧ in_bo_active ∧ !in_commission (any eligibility).
+  const unpaidBackOfficeOnlyRows = inScope.filter(
+    (r) => !isInEde(r) && isBoActive(r) && !r.in_commission,
+  );
+  // Expected But Unpaid — same as breakdown.unpaid (universe ∩ !in_commission).
+  const expectedButUnpaidRows = universe.rows.filter((r) => !r.in_commission);
+  // Total Policies Paid — every in-scope row with in_commission=true.
+  const totalPoliciesPaidRows = inScope.filter((r) => r.in_commission);
+
+  return {
+    fullyMatchedPaid: { rows: fullyMatchedPaidRows, count: fullyMatchedPaidRows.length },
+    paidBackOfficeOnly: { rows: paidBackOfficeOnlyRows, count: paidBackOfficeOnlyRows.length },
+    paidEdeOnly: { rows: paidEdeOnlyRows, count: paidEdeOnlyRows.length },
+    paidCommissionStatementOnly: { rows: paidCommissionOnlyRows, count: paidCommissionOnlyRows.length },
+    unpaidBackOfficeOnly: { rows: unpaidBackOfficeOnlyRows, count: unpaidBackOfficeOnlyRows.length },
+    expectedButUnpaid: { rows: expectedButUnpaidRows, count: expectedButUnpaidRows.length },
+    totalPoliciesPaid: { rows: totalPoliciesPaidRows, count: totalPoliciesPaidRows.length },
+  };
+}
