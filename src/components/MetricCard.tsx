@@ -75,6 +75,20 @@ export function MetricCard({ title, value, icon, variant = 'default', onClick, s
         {typeof value === 'number' ? value.toLocaleString() : value}
       </div>
       {subtitle && <div className="text-xs text-muted-foreground mt-1">{subtitle}</div>}
+      {splits && splits.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-border/40 flex flex-wrap gap-1.5" data-testid="metric-card-splits">
+          {splits.map((s) => (
+            <span
+              key={s.label}
+              data-testid={`metric-card-split-${s.label}`}
+              className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+            >
+              <span>{s.label}</span>
+              <span className="text-foreground font-semibold">{s.value.toLocaleString()}</span>
+            </span>
+          ))}
+        </div>
+      )}
     </button>
   );
 }
