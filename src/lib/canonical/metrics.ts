@@ -271,16 +271,35 @@ export function getDirectVsDownlineSplit(
 export interface ExpectedPaymentUniverse<T = any> {
   /** All rows in the universe (matched ∪ boOnly ∪ edeOnly). */
   rows: T[];
-  /** in_ede ∧ in_bo_active ∧ eligible='Yes'. */
+  /** in_ee_universe ∧ in_bo_active ∧ eligible='Yes'. */
   matched: T[];
-  /** !in_ede ∧ in_bo_active ∧ eligible='Yes'. */
+  /**
+   * TRUE BO Only (Interpretation C):
+   *   NOT in current EE universe
+   *   ∧ in_bo_active
+   *   ∧ eligible='Yes'
+   *   ∧ raw r.in_ede === false  ← excludes the "BO + non-current EDE" diagnostic
+   */
   boOnly: T[];
-  /** in_ede ∧ !in_bo_active (no eligibility gate). */
+  /** in_ee_universe ∧ !in_bo_active (no eligibility gate). */
   edeOnly: T[];
+  /**
+   * Diagnostic-only bucket (Interpretation C):
+   *   NOT in current EE universe
+   *   ∧ in_bo_active
+   *   ∧ eligible='Yes'
+   *   ∧ raw r.in_ede === true
+   * NOT counted in `rows` / `total` and NOT part of Should Be Paid.
+   * Most rows here are next-batch future-effective enrollments, AOR/key
+   * mismatches, or non-qualified EDE statuses — kept visible as a review
+   * tile rather than silently inflating the workflow universe.
+   */
+  boActiveNonCurrentEde: T[];
   total: number;
   matchedCount: number;
   boOnlyCount: number;
   edeOnlyCount: number;
+  boActiveNonCurrentEdeCount: number;
 }
 
 /**
