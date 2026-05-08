@@ -837,11 +837,14 @@ export default function DashboardPage() {
       case 'backOfficeOnly': return sc.unpaidBackOfficeOnly.rows;
       case 'unpaidExpected': return sc.expectedButUnpaid.rows;
       case 'totalPaidAll': return sc.totalPoliciesPaid.rows;
+      // Diagnostic-only: BO Active w/ Non-current EDE (Interpretation C).
+      // Excluded from Should Be Paid; visible separately for review.
+      case 'boActiveNonCurrentEde': return sc.boActiveNonCurrentEde.rows.map((x) => ({ ...x.row, diagnostic_reason: x.reason }));
       default: return filtered;
     }
   }, [drilldown, filtered, eeUniverseKeys, metrics.sourceCoverage, metrics.expectedPaymentBreakdown]);
 
-  const isCoverageDrilldown = ['fullyMatched', 'paidBackOfficeOnly', 'paidEdeOnly', 'commissionOnly', 'backOfficeOnly', 'unpaidExpected', 'totalPaidAll'].includes(drilldown || '');
+  const isCoverageDrilldown = ['fullyMatched', 'paidBackOfficeOnly', 'paidEdeOnly', 'commissionOnly', 'backOfficeOnly', 'unpaidExpected', 'totalPaidAll', 'boActiveNonCurrentEde'].includes(drilldown || '');
 
   return (
     <div className="space-y-6">
