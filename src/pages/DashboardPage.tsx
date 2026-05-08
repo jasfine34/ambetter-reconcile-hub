@@ -802,39 +802,35 @@ export default function DashboardPage() {
 
   const drilldownData = useMemo(() => {
     if (!drilldown) return null;
+    const sc = metrics.sourceCoverage;
+    const epb = metrics.expectedPaymentBreakdown;
     switch (drilldown) {
       case 'expected': return filtered.filter(r => eeUniverseKeys.has(r.member_key));
-      // 'foundBO' and 'eligible' drilldown cases removed: their hero cards
-      // were consolidated away in #121 and no setDrilldown(...) call site
-      // produces these keys anymore. metrics.foundBO / metrics.eligibleCohort
-      // remain — they still feed live cards (shouldPay, paidEligible, unpaid)
-      // and Reconciliation Validation invariants.
-      // #121: 'shouldPay' opens the consolidated card's underlying cohort.
-      // Source it directly from the canonical `eligibleCohort` (same array
-      // `metrics.shouldPay` counts) so the drilldown row count equals the
-      // card value exactly. Re-implementing the predicate against `filtered`
-      // diverged in practice (1,386 vs 1,271 for Apr Coverall) because of
-      // upstream confirmedUpgradeMemberKeys / member-key reconciliation that
-      // the canonical helper applies and the inline predicate did not.
-      case 'shouldPay': return metrics.eligibleCohort;
+      // Phase 1 (#X): top expected-payment cards now slice from the broader
+      // expected-payment universe. shouldPay / paidEligible / unpaid all
+      // come from the same getExpectedPaymentBreakdown so card values and
+      // drilldown row counts cannot drift.
+      case 'shouldPay': return epb.universe.rows;
       case 'paidComm': return filtered.filter(r => r.in_commission);
-      // D1 (PR2): drilldowns slice the canonical `eligibleCohort` so the
-      // row counts can never drift from `metrics.paidEligible` /
-      // `metrics.unpaid` (which are computed the same way).
-      case 'paidEligible': return metrics.eligibleCohort.filter(r => r.in_commission);
-      case 'unpaid': return metrics.eligibleCohort.filter(r => !r.in_commission);
-      case 'fullyMatched': return filtered.filter(r => r.in_ede && effInBO(r) && r.in_commission);
-      case 'paidOutsideEde': return filtered.filter(r => !r.in_ede && effInBO(r) && r.in_commission);
-      case 'commissionOnly': return filtered.filter(r => !r.in_ede && !effInBO(r) && r.in_commission);
-      case 'backOfficeOnly': return filtered.filter(r => !r.in_ede && effInBO(r) && !r.in_commission);
-      case 'unpaidExpected': return filtered.filter(r => r.in_ede && effInBO(r) && r.eligible_for_commission === 'Yes' && !r.in_commission);
-      case 'totalPaidAll': return filtered.filter(r => r.in_commission);
-      case 'paidOutsideExpected': return filtered.filter(r => !r.in_ede && r.in_commission);
+      case 'paidEligible': return epb.paidRows;
+      case 'unpaid': return epb.unpaidRows;
+      case 'fullyMatched': return sc.fullyMatchedPaid.rows;
+      // New Phase 1 tile: Paid: Back Office Only (was wrapped under
+      // "Paid but Missing from EDE" / paidOutsideEde — now 4-bucket math).
+      case 'paidBackOfficeOnly': return sc.paidBackOfficeOnly.rows;
+      // New Phase 1 tile: Paid: EDE Only (the 12-row residual). Each row is
+      // shaped { row, bo_reason } so the drilldown column can render the BO
+      // reason ("BO inactive/terminated" vs "BO absent") next to the data.
+      case 'paidEdeOnly': return sc.paidEdeOnly.rows.map((x) => ({ ...x.row, bo_reason: x.bo_reason }));
+      case 'commissionOnly': return sc.paidCommissionStatementOnly.rows;
+      case 'backOfficeOnly': return sc.unpaidBackOfficeOnly.rows;
+      case 'unpaidExpected': return sc.expectedButUnpaid.rows;
+      case 'totalPaidAll': return sc.totalPoliciesPaid.rows;
       default: return filtered;
     }
-  }, [drilldown, filtered, effInBO, eeUniverseKeys, metrics.eligibleCohort]);
+  }, [drilldown, filtered, eeUniverseKeys, metrics.sourceCoverage, metrics.expectedPaymentBreakdown]);
 
-  const isCoverageDrilldown = ['fullyMatched', 'paidOutsideEde', 'commissionOnly', 'backOfficeOnly', 'unpaidExpected', 'totalPaidAll', 'paidOutsideExpected'].includes(drilldown || '');
+  const isCoverageDrilldown = ['fullyMatched', 'paidBackOfficeOnly', 'paidEdeOnly', 'commissionOnly', 'backOfficeOnly', 'unpaidExpected', 'totalPaidAll'].includes(drilldown || '');
 
   return (
     <div className="space-y-6">
