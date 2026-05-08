@@ -323,6 +323,7 @@ export function getExpectedPaymentUniverse(
   const matched: any[] = [];
   const boOnly: any[] = [];
   const edeOnly: any[] = [];
+  const boActiveNonCurrentEde: any[] = [];
   for (const r of inScope) {
     // EDE evidence MUST be membership in current Expected Enrollments
     // (filteredEde.uniqueMembers) only — same predicate used by the EE card.
@@ -332,12 +333,19 @@ export function getExpectedPaymentUniverse(
     const inEde = eeUniverse.has(r.member_key);
     const inBoActive = !!r.in_back_office || confirmedUpgradeMemberKeys.has(r.member_key);
     const eligibleYes = r.eligible_for_commission === 'Yes';
+    const rawInEde = !!r.in_ede;
     if (inEde && inBoActive && eligibleYes) {
       matched.push(r);
-    } else if (!inEde && inBoActive && eligibleYes) {
+    } else if (!inEde && inBoActive && eligibleYes && !rawInEde) {
+      // TRUE BO Only — Interpretation C requires raw r.in_ede=false so we
+      // don't sweep up next-batch future-effective enrollments or AOR-
+      // mismatch rows that have raw EDE evidence elsewhere.
       boOnly.push(r);
     } else if (inEde && !inBoActive) {
       edeOnly.push(r);
+    } else if (!inEde && inBoActive && eligibleYes && rawInEde) {
+      // Diagnostic — visible separately, not counted toward Should Be Paid.
+      boActiveNonCurrentEde.push(r);
     }
   }
   const rows = [...matched, ...boOnly, ...edeOnly];
@@ -346,10 +354,12 @@ export function getExpectedPaymentUniverse(
     matched,
     boOnly,
     edeOnly,
+    boActiveNonCurrentEde,
     total: rows.length,
     matchedCount: matched.length,
     boOnlyCount: boOnly.length,
     edeOnlyCount: edeOnly.length,
+    boActiveNonCurrentEdeCount: boActiveNonCurrentEde.length,
   };
 }
 
