@@ -132,6 +132,14 @@ const PAID_EDE_ONLY_DRILLDOWN_COLUMNS = [
   { key: 'bo_reason', label: 'BO Reason' },
 ];
 
+// Diagnostic drilldown for "BO Active: Non-current EDE" (Interpretation C).
+// Adds a `diagnostic_reason` column showing future-effective /
+// non-qualified-status / aor-or-key-mismatch / unknown.
+const BO_ACTIVE_NON_CURRENT_EDE_COLUMNS = [
+  ...COVERAGE_DRILLDOWN_COLUMNS,
+  { key: 'diagnostic_reason', label: 'Reason' },
+];
+
 const NOT_IN_BO_COLUMNS = [
   { key: 'applicant_name', label: 'Full Name' },
   { key: 'policy_number', label: 'Policy # (EDE)' },
