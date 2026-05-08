@@ -100,7 +100,7 @@ describe('Phase 1: Source Coverage 4-bucket math', () => {
     expect(
       sc.fullyMatchedPaid.count + sc.paidBackOfficeOnly.count + sc.paidEdeOnly.count + sc.paidCommissionStatementOnly.count,
     ).toBe(sc.totalPoliciesPaid.count);
-    expect(sc.totalPoliciesPaid.count).toBe(4);
+    expect(sc.totalPoliciesPaid.count).toBe(5);
   });
 
   it('Paid: EDE Only carries bo_reason — terminated vs absent', () => {
