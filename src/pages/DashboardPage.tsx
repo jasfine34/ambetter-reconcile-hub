@@ -122,6 +122,16 @@ const COVERAGE_DRILLDOWN_COLUMNS = [
   { key: 'actual_commission', label: 'Commission $' },
 ];
 
+// Paid: EDE Only-specific drilldown columns. Identical to COVERAGE_DRILLDOWN_COLUMNS
+// but appends a `bo_reason` column so the BO inactive/terminated vs BO absent
+// classification surfaced by getSourceCoverageBuckets is visible. Other
+// Source Coverage drilldowns intentionally do NOT carry this column to avoid
+// noise where it doesn't apply.
+const PAID_EDE_ONLY_DRILLDOWN_COLUMNS = [
+  ...COVERAGE_DRILLDOWN_COLUMNS,
+  { key: 'bo_reason', label: 'BO Reason' },
+];
+
 const NOT_IN_BO_COLUMNS = [
   { key: 'applicant_name', label: 'Full Name' },
   { key: 'policy_number', label: 'Policy # (EDE)' },
@@ -1423,10 +1433,39 @@ export default function DashboardPage() {
                 text: "Members in the broader expected-payment universe: Matched (EDE ∩ active BO ∩ eligible) + BO Only (active BO + eligible, not in EDE) + EDE Only (in EDE, BO inactive/absent). Phase 1 expanded this from the narrow Matched-only cohort.",
                 why: "This is the full payable book of business including trailing/legacy and BO-only policies — the key number for identifying missing revenue.",
               }}
+              splits={[
+                { label: 'Matched', value: metrics.expectedPaymentBreakdown.universe.matchedCount },
+                { label: 'BO Only', value: metrics.expectedPaymentBreakdown.universe.boOnlyCount },
+                { label: 'EDE Only', value: metrics.expectedPaymentBreakdown.universe.edeOnlyCount },
+              ]}
             />
             <MetricCard title="Paid Commission Records" value={metrics.paidCommRecords} icon={<CheckCircle2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('paidComm')} tooltip={{ text: "These are all members that appear on the commission statements as having been paid, regardless of whether they match our expected book.", why: "This shows what the carrier actually paid, including payments that may not belong to your tracked enrollments." }} />
-            <MetricCard title="Expected Payments Received" value={metrics.paidEligible} icon={<CheckCircle2 className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('paidEligible')} tooltip={{ text: "Members in the expected-payment universe (Matched + BO Only + EDE Only) that received commission.", why: "True success rate — how much of the broader expected book was actually paid." }} />
-            <MetricCard title="Expected But Unpaid" value={metrics.unpaid} icon={<XCircle className="h-4 w-4" />} variant="destructive" onClick={() => setDrilldown('unpaid')} tooltip={{ text: "Members in the expected-payment universe (Matched + BO Only + EDE Only) that were not paid.", why: "Primary recovery target — expected revenue that was not received." }} />
+            <MetricCard
+              title="Expected Payments Received"
+              value={metrics.paidEligible}
+              icon={<CheckCircle2 className="h-4 w-4" />}
+              variant="success"
+              onClick={() => setDrilldown('paidEligible')}
+              tooltip={{ text: "Members in the expected-payment universe (Matched + BO Only + EDE Only) that received commission.", why: "True success rate — how much of the broader expected book was actually paid." }}
+              splits={[
+                { label: 'Matched', value: metrics.expectedPaymentBreakdown.paidSplit.matched },
+                { label: 'BO Only', value: metrics.expectedPaymentBreakdown.paidSplit.boOnly },
+                { label: 'EDE Only', value: metrics.expectedPaymentBreakdown.paidSplit.edeOnly },
+              ]}
+            />
+            <MetricCard
+              title="Expected But Unpaid"
+              value={metrics.unpaid}
+              icon={<XCircle className="h-4 w-4" />}
+              variant="destructive"
+              onClick={() => setDrilldown('unpaid')}
+              tooltip={{ text: "Members in the expected-payment universe (Matched + BO Only + EDE Only) that were not paid.", why: "Primary recovery target — expected revenue that was not received." }}
+              splits={[
+                { label: 'Matched', value: metrics.expectedPaymentBreakdown.unpaidSplit.matched },
+                { label: 'BO Only', value: metrics.expectedPaymentBreakdown.unpaidSplit.boOnly },
+                { label: 'EDE Only', value: metrics.expectedPaymentBreakdown.unpaidSplit.edeOnly },
+              ]}
+            />
             <div className="relative rounded-xl border p-5 text-left bg-success/10 border-success/30">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Net Paid Commission</span>
@@ -1621,7 +1660,7 @@ export default function DashboardPage() {
                 <h3 className="text-lg font-semibold capitalize">{drilldown} Details</h3>
                 <button onClick={() => setDrilldown(null)} className="text-sm text-primary hover:underline">Close</button>
               </div>
-              <DataTable data={drilldownData} columns={isCoverageDrilldown ? COVERAGE_DRILLDOWN_COLUMNS : RECON_COLUMNS} exportFileName={`${drilldown}_details.csv`} />
+              <DataTable data={drilldownData} columns={drilldown === 'paidEdeOnly' ? PAID_EDE_ONLY_DRILLDOWN_COLUMNS : (isCoverageDrilldown ? COVERAGE_DRILLDOWN_COLUMNS : RECON_COLUMNS)} exportFileName={`${drilldown}_details.csv`} />
             </div>
           )}
 
