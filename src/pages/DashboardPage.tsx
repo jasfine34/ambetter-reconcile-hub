@@ -122,6 +122,27 @@ const COVERAGE_DRILLDOWN_COLUMNS = [
   { key: 'actual_commission', label: 'Commission $' },
 ];
 
+// Paid: EDE Only-specific drilldown columns. Identical to COVERAGE_DRILLDOWN_COLUMNS
+// but appends a `bo_reason` column so the BO inactive/terminated vs BO absent
+// classification surfaced by getSourceCoverageBuckets is visible. Other
+// Source Coverage drilldowns intentionally do NOT carry this column to avoid
+// noise where it doesn't apply.
+const PAID_EDE_ONLY_DRILLDOWN_COLUMNS = [
+  ...[
+    { key: 'applicant_name', label: 'Name' },
+    { key: 'agent_npn', label: 'Agent NPN' },
+    { key: 'aor_bucket', label: 'AOR' },
+    { key: 'policy_number', label: 'Policy #' },
+    { key: 'issuer_subscriber_id', label: 'Issuer Sub ID' },
+    { key: 'in_ede', label: 'EDE' },
+    { key: 'in_back_office', label: 'Back Office' },
+    { key: 'in_commission', label: 'Commission' },
+    { key: 'eligible_for_commission', label: 'Eligible' },
+    { key: 'actual_commission', label: 'Commission $' },
+  ],
+  { key: 'bo_reason', label: 'BO Reason' },
+];
+
 const NOT_IN_BO_COLUMNS = [
   { key: 'applicant_name', label: 'Full Name' },
   { key: 'policy_number', label: 'Policy # (EDE)' },
