@@ -132,6 +132,14 @@ const PAID_EDE_ONLY_DRILLDOWN_COLUMNS = [
   { key: 'bo_reason', label: 'BO Reason' },
 ];
 
+// Diagnostic drilldown for "BO Active: Non-current EDE" (Interpretation C).
+// Adds a `diagnostic_reason` column showing future-effective /
+// non-qualified-status / aor-or-key-mismatch / unknown.
+const BO_ACTIVE_NON_CURRENT_EDE_COLUMNS = [
+  ...COVERAGE_DRILLDOWN_COLUMNS,
+  { key: 'diagnostic_reason', label: 'Reason' },
+];
+
 const NOT_IN_BO_COLUMNS = [
   { key: 'applicant_name', label: 'Full Name' },
   { key: 'policy_number', label: 'Policy # (EDE)' },
@@ -608,7 +616,8 @@ export default function DashboardPage() {
     const backOfficeOnly = sourceCoverage.unpaidBackOfficeOnly.count;
     const unpaidExpected = sourceCoverage.expectedButUnpaid.count;
     const totalPaidAll = sourceCoverage.totalPoliciesPaid.count;
-    return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, eligibleCohort, expectedPaymentBreakdown, sourceCoverage, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidBackOfficeOnly, paidEdeOnly, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, coverallDirectNet, downlineNet, netPaidTotal, splitDelta, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
+    const boActiveNonCurrentEde = sourceCoverage.boActiveNonCurrentEde.count;
+    return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, eligibleCohort, expectedPaymentBreakdown, sourceCoverage, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidBackOfficeOnly, paidEdeOnly, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, boActiveNonCurrentEde, coverallDirectNet, downlineNet, netPaidTotal, splitDelta, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
   }, [filtered, reconciled, normalizedRecords, payEntityFilter, filteredEde, eeUniverseKeys, priorMonth, statementMonth, effInBO, confirmedUpgradeMemberKeys, coveredMonths]);
 
   // Clawback rows — every commission row with amount < 0 within the current
@@ -836,11 +845,14 @@ export default function DashboardPage() {
       case 'backOfficeOnly': return sc.unpaidBackOfficeOnly.rows;
       case 'unpaidExpected': return sc.expectedButUnpaid.rows;
       case 'totalPaidAll': return sc.totalPoliciesPaid.rows;
+      // Diagnostic-only: BO Active w/ Non-current EDE (Interpretation C).
+      // Excluded from Should Be Paid; visible separately for review.
+      case 'boActiveNonCurrentEde': return sc.boActiveNonCurrentEde.rows.map((x) => ({ ...x.row, diagnostic_reason: x.reason }));
       default: return filtered;
     }
   }, [drilldown, filtered, eeUniverseKeys, metrics.sourceCoverage, metrics.expectedPaymentBreakdown]);
 
-  const isCoverageDrilldown = ['fullyMatched', 'paidBackOfficeOnly', 'paidEdeOnly', 'commissionOnly', 'backOfficeOnly', 'unpaidExpected', 'totalPaidAll'].includes(drilldown || '');
+  const isCoverageDrilldown = ['fullyMatched', 'paidBackOfficeOnly', 'paidEdeOnly', 'commissionOnly', 'backOfficeOnly', 'unpaidExpected', 'totalPaidAll', 'boActiveNonCurrentEde'].includes(drilldown || '');
 
   return (
     <div className="space-y-6">
@@ -1660,7 +1672,7 @@ export default function DashboardPage() {
                 <h3 className="text-lg font-semibold capitalize">{drilldown} Details</h3>
                 <button onClick={() => setDrilldown(null)} className="text-sm text-primary hover:underline">Close</button>
               </div>
-              <DataTable data={drilldownData} columns={drilldown === 'paidEdeOnly' ? PAID_EDE_ONLY_DRILLDOWN_COLUMNS : (isCoverageDrilldown ? COVERAGE_DRILLDOWN_COLUMNS : RECON_COLUMNS)} exportFileName={`${drilldown}_details.csv`} />
+              <DataTable data={drilldownData} columns={drilldown === 'paidEdeOnly' ? PAID_EDE_ONLY_DRILLDOWN_COLUMNS : drilldown === 'boActiveNonCurrentEde' ? BO_ACTIVE_NON_CURRENT_EDE_COLUMNS : (isCoverageDrilldown ? COVERAGE_DRILLDOWN_COLUMNS : RECON_COLUMNS)} exportFileName={`${drilldown}_details.csv`} />
             </div>
           )}
 
@@ -1675,6 +1687,7 @@ export default function DashboardPage() {
                 <MetricCard title="Unpaid: Back Office Only" value={metrics.backOfficeOnly} icon={<Building2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('backOfficeOnly')} tooltip={{ text: "Members active in Back Office, not in EDE, not yet paid.", why: "May represent missed enrollments or future revenue not yet realized." }} />
                 <MetricCard title="Expected But Unpaid" value={metrics.unpaidExpected} icon={<XCircle className="h-4 w-4" />} variant="destructive" onClick={() => setDrilldown('unpaidExpected')} tooltip={{ text: "Members in the expected-payment universe (Matched / BO Only / EDE Only) that were not paid.", why: "Primary recovery target — expected revenue that was not received." }} />
                 <MetricCard title="Total Policies Paid" value={metrics.totalPaidAll} icon={<DollarSign className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('totalPaidAll')} tooltip={{ text: "Count of all unique members where commission was paid, regardless of source.", why: "Total paid across Fully Matched, BO Only, EDE Only, and Commission Statement Only buckets." }} />
+                <MetricCard title="BO Active: Non-current EDE" value={metrics.boActiveNonCurrentEde} icon={<Info className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('boActiveNonCurrentEde')} tooltip={{ text: "Active eligible Back Office records that also have EDE evidence, but not in the current Expected Enrollments universe.", why: "Diagnostic only — typically next-batch future-effective enrollments, AOR/key mismatches, or non-qualified EDE statuses. Excluded from Should Be Paid." }} />
               </div>
             </div>
           )}

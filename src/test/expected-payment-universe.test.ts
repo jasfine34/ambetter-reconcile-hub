@@ -127,14 +127,14 @@ describe('Phase 1: Source Coverage 4-bucket math', () => {
   });
 });
 
-describe('Phase 1 (corrected): EDE evidence is filteredEde.uniqueMembers only', () => {
-  it('row with r.in_ede=true but NOT in filteredEde.uniqueMembers is excluded from Matched / EDE Only / Should Be Paid', () => {
-    // ghost: raw r.in_ede=true (an EDE row exists) but the row did NOT
-    // qualify for the current EE universe (e.g. wrong status / out of span).
+describe('Phase 1 (Interpretation C): true BO Only requires raw r.in_ede=false', () => {
+  it('row with raw r.in_ede=true + active BO + eligible Yes + NOT in EE goes to diagnostic, NOT BO Only', () => {
     const reconciled: any[] = [
-      { member_key: 'eeOk',  current_policy_aor: 'Jason Fine (21055210)', in_ede: true,  in_back_office: true,  eligible_for_commission: 'Yes', in_commission: true,  agent_npn: '21055210' },
-      { member_key: 'ghost', current_policy_aor: 'Jason Fine (21055210)', in_ede: true,  in_back_office: true,  eligible_for_commission: 'Yes', in_commission: true,  agent_npn: '21055210' },
-      { member_key: 'ghostEdeOnly', current_policy_aor: 'Jason Fine (21055210)', in_ede: true, in_back_office: false, eligible_for_commission: '', in_commission: true, agent_npn: '21055210' },
+      { member_key: 'eeOk',  in_ede: true,  in_back_office: true,  eligible_for_commission: 'Yes', in_commission: true,  current_policy_aor: 'Jason Fine (21055210)', agent_npn: '21055210' },
+      // ghost: raw EDE=true but EE filter rejected (e.g. future-effective)
+      { member_key: 'ghost', in_ede: true,  in_back_office: true,  eligible_for_commission: 'Yes', in_commission: false, current_policy_aor: 'Jason Fine (21055210)', agent_npn: '21055210', issuer_subscriber_id: 'G1' },
+      // true BO only: raw EDE=false
+      { member_key: 'tbo',   in_ede: false, in_back_office: true,  eligible_for_commission: 'Yes', in_commission: true,  current_policy_aor: 'Jason Fine (21055210)', agent_npn: '21055210' },
     ];
     const filteredEde: FilteredEdeResult = {
       uniqueMembers: [{
@@ -145,12 +145,57 @@ describe('Phase 1 (corrected): EDE evidence is filteredEde.uniqueMembers only', 
       uniqueKeys: 1, byMonth: { '2026-01': 1 }, inBOCount: 1, notInBOCount: 0, missingFromBO: [],
     };
     const u = getExpectedPaymentUniverse(reconciled, 'Coverall', filteredEde, new Set());
-    // ghost lands in BO Only (active BO + eligible Yes + NOT in EE).
-    // ghostEdeOnly is dropped (no active BO + NOT in EE).
-    expect(u.matched.map((r) => r.member_key)).toEqual(['eeOk']);
-    expect(u.edeOnly.map((r) => r.member_key)).toEqual([]);
-    expect(u.boOnly.map((r) => r.member_key)).toEqual(['ghost']);
-    expect(u.total).toBe(2);
+    expect(u.boOnly.map((r) => r.member_key)).toEqual(['tbo']);
+    expect(u.boActiveNonCurrentEde.map((r) => r.member_key)).toEqual(['ghost']);
+    // Diagnostic excluded from Should Be Paid
+    expect(u.total).toBe(2); // eeOk + tbo
+    // All true-BO-only rows have raw r.in_ede=false
+    expect(u.boOnly.every((r) => r.in_ede === false)).toBe(true);
+  });
+
+  it('Should Be Paid = Expected Enrollments + true BO Only (excludes diagnostic)', () => {
+    const reconciled: any[] = [
+      { member_key: 'a', in_ede: true,  in_back_office: true,  eligible_for_commission: 'Yes', in_commission: true,  current_policy_aor: 'Jason Fine (21055210)', agent_npn: '21055210' },
+      { member_key: 'b', in_ede: false, in_back_office: true,  eligible_for_commission: 'Yes', in_commission: false, current_policy_aor: 'Jason Fine (21055210)', agent_npn: '21055210' },
+      { member_key: 'c', in_ede: true,  in_back_office: true,  eligible_for_commission: 'Yes', in_commission: false, current_policy_aor: 'Jason Fine (21055210)', agent_npn: '21055210' }, // diagnostic
+    ];
+    const filteredEde: FilteredEdeResult = {
+      uniqueMembers: [{
+        member_key: 'a', applicant_name: '', policy_number: '', exchange_subscriber_id: '', issuer_subscriber_id: '',
+        current_policy_aor: '', effective_date: '2026-01-01', policy_status: 'Effectuated',
+        covered_member_count: 1, effective_month: '2026-01', active_months: ['2026-01'], in_back_office: true,
+      }],
+      uniqueKeys: 1, byMonth: { '2026-01': 1 }, inBOCount: 1, notInBOCount: 0, missingFromBO: [],
+    };
+    const u = getExpectedPaymentUniverse(reconciled, 'Coverall', filteredEde, new Set());
+    expect(u.total).toBe(filteredEde.uniqueKeys + u.boOnlyCount);
+    expect(u.boActiveNonCurrentEdeCount).toBe(1);
+  });
+
+  it('SourceCoverage diagnostic bucket exposes paid/unpaid + reason; paid rows still in totalPoliciesPaid', () => {
+    const reconciled: any[] = [
+      // Diagnostic, paid — future-effective EDE row
+      { member_key: 'fe', in_ede: true,  in_back_office: true,  eligible_for_commission: 'Yes', in_commission: true,  current_policy_aor: 'Jason Fine (21055210)', agent_npn: '21055210', issuer_subscriber_id: 'FE1' },
+      // Diagnostic, unpaid — non-qualified EDE
+      { member_key: 'nq', in_ede: true,  in_back_office: true,  eligible_for_commission: 'Yes', in_commission: false, current_policy_aor: 'Jason Fine (21055210)', agent_npn: '21055210', issuer_subscriber_id: 'NQ1' },
+    ];
+    const filteredEde: FilteredEdeResult = {
+      uniqueMembers: [], uniqueKeys: 0, byMonth: {}, inBOCount: 0, notInBOCount: 0, missingFromBO: [],
+    };
+    const normalizedRecords: any[] = [
+      { source_type: 'EDE', issuer_subscriber_id: 'FE1', effective_date: '2026-03-01', raw_json: { policyStatus: 'Effectuated' } },
+      { source_type: 'EDE', issuer_subscriber_id: 'NQ1', effective_date: '2026-01-01', raw_json: { policyStatus: 'Cancelled' } },
+    ];
+    const sc = getSourceCoverageBuckets(reconciled, 'Coverall', filteredEde, normalizedRecords, ['2026-01'], new Set());
+    expect(sc.boActiveNonCurrentEde.count).toBe(2);
+    expect(sc.boActiveNonCurrentEde.paidCount).toBe(1);
+    expect(sc.boActiveNonCurrentEde.unpaidCount).toBe(1);
+    const reasons = sc.boActiveNonCurrentEde.rows.map((x) => x.reason).sort();
+    expect(reasons).toEqual(['future-effective', 'non-qualified-status']);
+    // Paid diagnostic rows still appear in totalPoliciesPaid so paid math reconciles
+    expect(sc.totalPoliciesPaid.rows.some((r) => r.member_key === 'fe')).toBe(true);
+    // Diagnostic rows are NOT in expectedButUnpaid
+    expect(sc.expectedButUnpaid.rows.some((r) => r.member_key === 'nq')).toBe(false);
   });
 });
 
