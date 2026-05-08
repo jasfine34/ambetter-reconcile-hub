@@ -126,3 +126,121 @@ describe('Phase 1: Source Coverage 4-bucket math', () => {
     expect(sc.expectedButUnpaid.count).toBe(b.unpaidCount);
   });
 });
+
+describe('Phase 1 (corrected): EDE evidence is filteredEde.uniqueMembers only', () => {
+  it('row with r.in_ede=true but NOT in filteredEde.uniqueMembers is excluded from Matched / EDE Only / Should Be Paid', () => {
+    // ghost: raw r.in_ede=true (an EDE row exists) but the row did NOT
+    // qualify for the current EE universe (e.g. wrong status / out of span).
+    const reconciled: any[] = [
+      { member_key: 'eeOk',  current_policy_aor: 'Jason Fine (21055210)', in_ede: true,  in_back_office: true,  eligible_for_commission: 'Yes', in_commission: true,  agent_npn: '21055210' },
+      { member_key: 'ghost', current_policy_aor: 'Jason Fine (21055210)', in_ede: true,  in_back_office: true,  eligible_for_commission: 'Yes', in_commission: true,  agent_npn: '21055210' },
+      { member_key: 'ghostEdeOnly', current_policy_aor: 'Jason Fine (21055210)', in_ede: true, in_back_office: false, eligible_for_commission: '', in_commission: true, agent_npn: '21055210' },
+    ];
+    const filteredEde: FilteredEdeResult = {
+      uniqueMembers: [{
+        member_key: 'eeOk', applicant_name: '', policy_number: '', exchange_subscriber_id: '', issuer_subscriber_id: '',
+        current_policy_aor: '', effective_date: '2026-01-01', policy_status: 'Effectuated',
+        covered_member_count: 1, effective_month: '2026-01', active_months: ['2026-01'], in_back_office: true,
+      }],
+      uniqueKeys: 1, byMonth: { '2026-01': 1 }, inBOCount: 1, notInBOCount: 0, missingFromBO: [],
+    };
+    const u = getExpectedPaymentUniverse(reconciled, 'Coverall', filteredEde, new Set());
+    // ghost lands in BO Only (active BO + eligible Yes + NOT in EE).
+    // ghostEdeOnly is dropped (no active BO + NOT in EE).
+    expect(u.matched.map((r) => r.member_key)).toEqual(['eeOk']);
+    expect(u.edeOnly.map((r) => r.member_key)).toEqual([]);
+    expect(u.boOnly.map((r) => r.member_key)).toEqual(['ghost']);
+    expect(u.total).toBe(2);
+  });
+});
+
+describe('Phase 1 (corrected): invariants across scopes', () => {
+  // Cross-scope fixture: 5 Coverall EE members, 2 Vix EE members.
+  function multiScopeFixture() {
+    const reconciled: any[] = [
+      // Coverall
+      { member_key: 'c1', current_policy_aor: 'Jason Fine (21055210)', in_ede: true,  in_back_office: true,  eligible_for_commission: 'Yes', in_commission: true,  agent_npn: '21055210' }, // Matched paid
+      { member_key: 'c2', current_policy_aor: 'Jason Fine (21055210)', in_ede: true,  in_back_office: true,  eligible_for_commission: 'Yes', in_commission: false, agent_npn: '21055210' }, // Matched unpaid
+      { member_key: 'c3', current_policy_aor: 'Jason Fine (21055210)', in_ede: false, in_back_office: true,  eligible_for_commission: 'Yes', in_commission: true,  agent_npn: '21055210' }, // BO Only paid
+      { member_key: 'c4', current_policy_aor: 'Jason Fine (21055210)', in_ede: true,  in_back_office: false, eligible_for_commission: '',    in_commission: true,  agent_npn: '21055210' }, // EDE Only paid
+      { member_key: 'c5', current_policy_aor: 'Jason Fine (21055210)', in_ede: true,  in_back_office: false, eligible_for_commission: '',    in_commission: false, agent_npn: '21055210' }, // EDE Only unpaid
+      // Vix
+      { member_key: 'v1', current_policy_aor: 'Erica Fine (21277051)', in_ede: true,  in_back_office: true,  eligible_for_commission: 'Yes', in_commission: true,  agent_npn: '21277051', actual_pay_entity: 'Vix' }, // Matched paid (Vix)
+      { member_key: 'v2', current_policy_aor: 'Erica Fine (21277051)', in_ede: true,  in_back_office: false, eligible_for_commission: '',    in_commission: false, agent_npn: '21277051', actual_pay_entity: 'Vix' }, // EDE Only unpaid (Vix)
+      { member_key: 'v3', current_policy_aor: 'Erica Fine (21277051)', in_ede: false, in_back_office: true,  eligible_for_commission: 'Yes', in_commission: false, agent_npn: '21277051', actual_pay_entity: 'Vix' }, // BO Only unpaid (Vix)
+    ];
+    // EE universe = c1,c2,c4,c5 (Coverall) + v1,v2 (Vix). Note c3, v3 are
+    // in BO/eligible but NOT in EE — they should land in BO Only.
+    const eeKeys = ['c1','c2','c4','c5','v1','v2'];
+    const filteredEde: FilteredEdeResult = {
+      uniqueMembers: eeKeys.map((mk) => ({
+        member_key: mk, applicant_name: mk, policy_number: '', exchange_subscriber_id: '', issuer_subscriber_id: '',
+        current_policy_aor: '', effective_date: '2026-01-01', policy_status: 'Effectuated',
+        covered_member_count: 1, effective_month: '2026-01', active_months: ['2026-01'], in_back_office: true,
+      })),
+      uniqueKeys: eeKeys.length, byMonth: { '2026-01': eeKeys.length }, inBOCount: 0, notInBOCount: 0, missingFromBO: [],
+    };
+    return { reconciled, filteredEde, eeKeys };
+  }
+
+  // Per-scope expected EE = |filteredEde.uniqueMembers ∩ inScope|. Production
+  // computeFilteredEde already scopes by AOR; we mirror that here so the
+  // test's "EE" matches what the EE card would show in each scope.
+  function scopedEeCount(filteredEde: FilteredEdeResult, scope: 'All' | 'Coverall' | 'Vix') {
+    const isCoverall = (k: string) => k.startsWith('c');
+    const isVix = (k: string) => k.startsWith('v');
+    return filteredEde.uniqueMembers.filter((m) => {
+      if (scope === 'All') return isCoverall(m.member_key) || isVix(m.member_key);
+      if (scope === 'Coverall') return isCoverall(m.member_key);
+      return isVix(m.member_key);
+    }).length;
+  }
+
+  for (const scope of ['All', 'Coverall', 'Vix'] as const) {
+    it(`Matched + EDE Only = Expected Enrollments (${scope})`, () => {
+      const { reconciled, filteredEde } = multiScopeFixture();
+      // Build a scope-specific filteredEde to mirror production EE-card scoping.
+      const scopedEde: FilteredEdeResult = {
+        ...filteredEde,
+        uniqueMembers: filteredEde.uniqueMembers.filter((m) => {
+          if (scope === 'All') return true;
+          if (scope === 'Coverall') return m.member_key.startsWith('c');
+          return m.member_key.startsWith('v');
+        }),
+      };
+      const ee = scopedEeCount(scopedEde, scope);
+      const u = getExpectedPaymentUniverse(reconciled, scope, scopedEde, new Set());
+      expect(u.matchedCount + u.edeOnlyCount).toBe(ee);
+    });
+
+    it(`Should Be Paid = Expected Enrollments + BO Only (${scope})`, () => {
+      const { reconciled, filteredEde } = multiScopeFixture();
+      const scopedEde: FilteredEdeResult = {
+        ...filteredEde,
+        uniqueMembers: filteredEde.uniqueMembers.filter((m) => {
+          if (scope === 'All') return true;
+          if (scope === 'Coverall') return m.member_key.startsWith('c');
+          return m.member_key.startsWith('v');
+        }),
+      };
+      const ee = scopedEeCount(scopedEde, scope);
+      const u = getExpectedPaymentUniverse(reconciled, scope, scopedEde, new Set());
+      expect(u.total).toBe(ee + u.boOnlyCount);
+    });
+
+    it(`Matched cannot exceed Expected Enrollments (${scope})`, () => {
+      const { reconciled, filteredEde } = multiScopeFixture();
+      const scopedEde: FilteredEdeResult = {
+        ...filteredEde,
+        uniqueMembers: filteredEde.uniqueMembers.filter((m) => {
+          if (scope === 'All') return true;
+          if (scope === 'Coverall') return m.member_key.startsWith('c');
+          return m.member_key.startsWith('v');
+        }),
+      };
+      const ee = scopedEeCount(scopedEde, scope);
+      const u = getExpectedPaymentUniverse(reconciled, scope, scopedEde, new Set());
+      expect(u.matchedCount).toBeLessThanOrEqual(ee);
+    });
+  }
+});
