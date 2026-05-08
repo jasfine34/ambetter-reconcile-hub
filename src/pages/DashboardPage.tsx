@@ -540,27 +540,28 @@ export default function DashboardPage() {
     // EE universe (Mar Coverall: 1,297 vs 1,309 invariant).
     const scopeForCanonical = payEntityFilter === 'All' ? 'All' : payEntityFilter;
     const foundBO = getFoundInBackOffice(reconciled, scopeForCanonical, filteredEde, confirmedUpgradeMemberKeys);
+    // Legacy NARROW eligible-cohort (kept for invariant parity, validation
+    // sample, AgentSummary parity tests). Phase 1 expanded the top
+    // expected-payment cards to the broader workflow universe — see
+    // expectedPaymentBreakdown below.
     const eligibleCohort = getEligibleCohort(reconciled, scopeForCanonical, confirmedUpgradeMemberKeys, filteredEde);
     const eligible = eligibleCohort.length;
-    const shouldPay = eligible;
-    // Count distinct policies with positive payments
+
+    // Phase 1 expected-payment universe: Should Be Paid = Matched + BO Only + EDE Only.
+    const expectedPaymentBreakdown = getExpectedPaymentBreakdown(
+      reconciled,
+      scopeForCanonical,
+      filteredEde,
+      confirmedUpgradeMemberKeys,
+    );
+    const shouldPay = expectedPaymentBreakdown.universe.total;
+    const paidEligible = expectedPaymentBreakdown.paidCount;
+    const unpaid = expectedPaymentBreakdown.unpaidCount;
+
     const paidCommRecords = filtered.filter(r => r.in_commission).length;
-    // D1 (PR2): paidEligible / unpaid derived by slicing the canonical
-    // `eligibleCohort` array on `in_commission`, NOT by re-deriving the
-    // EE-universe ∩ BO ∩ eligible predicate inline. If `getEligibleCohort`
-    // gains another tiebreaker, both numbers move together automatically.
-    const paidEligible = eligibleCohort.filter(r => r.in_commission).length;
-    const unpaid = eligibleCohort.filter(r => !r.in_commission).length;
-    // D2 (PR2): Net Paid totals come from the canonical `getNetPaidCommission`
-    // helper. Same scope as the dashboard's pay_entity filter; matches every
-    // other surface (EntitySummary, AgentSummary). Replaces a hand-rolled
-    // commission-row loop that risked drifting from the helper.
     const netPaid = getNetPaidCommission(normalizedRecords, scopeForCanonical);
     const totalComm = netPaid.gross;
     const totalClawbacks = netPaid.clawbacks;
-    // D2 (PR2): Direct-vs-Downline split also delegates to the canonical
-    // helper. Bucketing rules live in one place and the Dashboard renders
-    // exactly what the helper returns.
     const split = getDirectVsDownlineSplit(normalizedRecords, scopeForCanonical, isCoverallAORByNPN);
     const coverallDirectNet = split.coverallDirectNet;
     const downlineNet = split.downlineNet;
@@ -577,15 +578,28 @@ export default function DashboardPage() {
     const hasAnyEde = filtered.filter(r => r.in_ede).length;
     const hasExpectedEde = filtered.filter(r => r.is_in_expected_ede_universe).length;
     const expectedWithBO = filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r)).length;
-    const fullyMatched = filtered.filter(r => r.in_ede && effInBO(r) && r.in_commission).length;
-    const paidOutsideEde = filtered.filter(r => !r.in_ede && effInBO(r) && r.in_commission).length;
-    const commissionOnly = filtered.filter(r => !r.in_ede && !effInBO(r) && r.in_commission).length;
-    const backOfficeOnly = filtered.filter(r => !r.in_ede && effInBO(r) && !r.in_commission).length;
-    const unpaidExpected = filtered.filter(r => r.in_ede && effInBO(r) && r.eligible_for_commission === 'Yes' && !r.in_commission).length;
-    const totalPaidAll = filtered.filter(r => r.in_commission).length;
-    const paidOutsideExpected = filtered.filter(r => !r.in_ede && r.in_commission).length;
-    return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, eligibleCohort, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidOutsideEde, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, paidOutsideExpected, coverallDirectNet, downlineNet, netPaidTotal, splitDelta, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
-  }, [filtered, reconciled, normalizedRecords, payEntityFilter, filteredEde, eeUniverseKeys, priorMonth, statementMonth, effInBO, confirmedUpgradeMemberKeys]);
+
+    // Phase 1 Source Coverage — single helper for all paid/unpaid coverage tiles.
+    // "Paid Outside Current EDE" tile removed (overlapped Expected Payments
+    // Received; Jason Option B). New tile: "Paid: EDE Only" (12 rows on
+    // Feb 2026 Ambetter All scope) with bo_reason drilldown classification.
+    const sourceCoverage = getSourceCoverageBuckets(
+      reconciled,
+      scopeForCanonical,
+      filteredEde,
+      normalizedRecords,
+      coveredMonths,
+      confirmedUpgradeMemberKeys,
+    );
+    const fullyMatched = sourceCoverage.fullyMatchedPaid.count;
+    const paidBackOfficeOnly = sourceCoverage.paidBackOfficeOnly.count;
+    const paidEdeOnly = sourceCoverage.paidEdeOnly.count;
+    const commissionOnly = sourceCoverage.paidCommissionStatementOnly.count;
+    const backOfficeOnly = sourceCoverage.unpaidBackOfficeOnly.count;
+    const unpaidExpected = sourceCoverage.expectedButUnpaid.count;
+    const totalPaidAll = sourceCoverage.totalPoliciesPaid.count;
+    return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, eligibleCohort, expectedPaymentBreakdown, sourceCoverage, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidBackOfficeOnly, paidEdeOnly, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, coverallDirectNet, downlineNet, netPaidTotal, splitDelta, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
+  }, [filtered, reconciled, normalizedRecords, payEntityFilter, filteredEde, eeUniverseKeys, priorMonth, statementMonth, effInBO, confirmedUpgradeMemberKeys, coveredMonths]);
 
   // Clawback rows — every commission row with amount < 0 within the current
   // pay-entity scope. Derived from RAW normalized commission records (same
