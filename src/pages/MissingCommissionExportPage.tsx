@@ -568,6 +568,9 @@ export default function MissingCommissionExportPage() {
       return out;
     })();
 
+    // TODO Phase 1.5 — broaden to expected-payment universe to match Dashboard
+    // Expected But Unpaid (Matched + BO Only + EDE Only). Phase 1 keeps this
+    // export on the narrow getEligibleCohort definition (Matched only).
     const eligible = getEligibleCohort(reconciled, f.scope, confirmedUpgradeMemberKeys, ranFilteredEde);
     const missingMembers = eligible.filter((r) => !r.in_commission);
 
