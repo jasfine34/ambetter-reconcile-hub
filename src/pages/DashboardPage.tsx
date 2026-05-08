@@ -1420,8 +1420,8 @@ export default function DashboardPage() {
               icon={<DollarSign className="h-4 w-4" />}
               onClick={() => setDrilldown('shouldPay')}
               tooltip={{
-                text: "Members in the EE universe who are found in Back Office and eligible for commission. This is the canonical should-be-paid cohort. The prior Found in Back Office, Eligible for Commission, and Should Be Paid cards were arithmetically identical for this cohort, so they have been consolidated.",
-                why: "This represents your true payable book of business and is the key number for identifying missing revenue.",
+                text: "Members in the broader expected-payment universe: Matched (EDE ∩ active BO ∩ eligible) + BO Only (active BO + eligible, not in EDE) + EDE Only (in EDE, BO inactive/absent). Phase 1 expanded this from the narrow Matched-only cohort.",
+                why: "This is the full payable book of business including trailing/legacy and BO-only policies — the key number for identifying missing revenue.",
               }}
             />
             <MetricCard title="Paid Commission Records" value={metrics.paidCommRecords} icon={<CheckCircle2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('paidComm')} tooltip={{ text: "These are all members that appear on the commission statements as having been paid, regardless of whether they match our expected book.", why: "This shows what the carrier actually paid, including payments that may not belong to your tracked enrollments." }} />
