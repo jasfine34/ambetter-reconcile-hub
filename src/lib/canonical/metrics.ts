@@ -359,13 +359,12 @@ export function getExpectedPaymentBreakdown(
   const unpaidRows: any[] = [];
   const paidSplit = { matched: 0, boOnly: 0, edeOnly: 0 };
   const unpaidSplit = { matched: 0, boOnly: 0, edeOnly: 0 };
-  const tag = (r: any): 'matched' | 'boOnly' | 'edeOnly' => {
-    if (universe.matched.includes(r)) return 'matched';
-    if (universe.boOnly.includes(r)) return 'boOnly';
-    return 'edeOnly';
-  };
+  const bucketFor = new Map<any, 'matched' | 'boOnly' | 'edeOnly'>();
+  for (const r of universe.matched) bucketFor.set(r, 'matched');
+  for (const r of universe.boOnly) bucketFor.set(r, 'boOnly');
+  for (const r of universe.edeOnly) bucketFor.set(r, 'edeOnly');
   for (const r of universe.rows) {
-    const bucket = tag(r);
+    const bucket = bucketFor.get(r) ?? 'matched';
     if (r.in_commission) {
       paidRows.push(r);
       paidSplit[bucket] += 1;
