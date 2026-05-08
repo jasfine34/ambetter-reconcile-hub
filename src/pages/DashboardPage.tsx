@@ -128,18 +128,7 @@ const COVERAGE_DRILLDOWN_COLUMNS = [
 // Source Coverage drilldowns intentionally do NOT carry this column to avoid
 // noise where it doesn't apply.
 const PAID_EDE_ONLY_DRILLDOWN_COLUMNS = [
-  ...[
-    { key: 'applicant_name', label: 'Name' },
-    { key: 'agent_npn', label: 'Agent NPN' },
-    { key: 'aor_bucket', label: 'AOR' },
-    { key: 'policy_number', label: 'Policy #' },
-    { key: 'issuer_subscriber_id', label: 'Issuer Sub ID' },
-    { key: 'in_ede', label: 'EDE' },
-    { key: 'in_back_office', label: 'Back Office' },
-    { key: 'in_commission', label: 'Commission' },
-    { key: 'eligible_for_commission', label: 'Eligible' },
-    { key: 'actual_commission', label: 'Commission $' },
-  ],
+  ...COVERAGE_DRILLDOWN_COLUMNS,
   { key: 'bo_reason', label: 'BO Reason' },
 ];
 
