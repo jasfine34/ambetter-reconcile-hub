@@ -438,7 +438,7 @@ export function getSourceCoverageBuckets(
   const universe = getExpectedPaymentUniverse(reconciled, scope, filteredEde, confirmedUpgradeMemberKeys);
   const eeUniverse = new Set(filteredEde.uniqueMembers.map((m) => m.member_key));
 
-  const isInEde = (r: any) => !!r.in_ede || eeUniverse.has(r.member_key);
+  const isInEde = (r: any) => eeUniverse.has(r.member_key);
   const isBoActive = (r: any) =>
     !!r.in_back_office || confirmedUpgradeMemberKeys.has(r.member_key);
 
