@@ -542,14 +542,86 @@ export function getSourceCoverageBuckets(
   const paidCommissionOnlyRows = inScope.filter(
     (r) => !isInEde(r) && !isBoActive(r) && r.in_commission,
   );
-  // Unpaid: Back Office Only — !in_ede ∧ in_bo_active ∧ !in_commission (any eligibility).
-  const unpaidBackOfficeOnlyRows = inScope.filter(
-    (r) => !isInEde(r) && isBoActive(r) && !r.in_commission,
-  );
+  // Unpaid: Back Office Only — TRUE BO-only unpaid (universe.boOnly ∩ !in_commission).
+  // Interpretation C: rows with raw r.in_ede=true that fall outside the
+  // current EE universe live in the diagnostic bucket, not here.
+  const unpaidBackOfficeOnlyRows = universe.boOnly.filter((r) => !r.in_commission);
   // Expected But Unpaid — same as breakdown.unpaid (universe ∩ !in_commission).
   const expectedButUnpaidRows = universe.rows.filter((r) => !r.in_commission);
   // Total Policies Paid — every in-scope row with in_commission=true.
   const totalPoliciesPaidRows = inScope.filter((r) => r.in_commission);
+
+  // ----- Diagnostic: BO Active w/ Non-current EDE -----
+  // Index EDE normalized rows by every member-id candidate so we can attempt
+  // a reason classification (future-effective / non-qualified / mismatch).
+  const edeByIssuer = new Map<string, any[]>();
+  const edeByExch = new Map<string, any[]>();
+  const edeByPolicy = new Map<string, any[]>();
+  const edeByMemberKey = new Map<string, any[]>();
+  const pushIdx = (m: Map<string, any[]>, k: string | undefined | null, v: any) => {
+    if (!k) return;
+    const arr = m.get(k); if (arr) arr.push(v); else m.set(k, [v]);
+  };
+  for (const rec of normalizedRecords) {
+    if (rec.source_type !== 'EDE') continue;
+    pushIdx(edeByIssuer, rec.issuer_subscriber_id, rec);
+    pushIdx(edeByExch, rec.exchange_subscriber_id, rec);
+    pushIdx(edeByPolicy, rec.policy_number, rec);
+    pushIdx(edeByMemberKey, rec.member_key, rec);
+  }
+  const findEdeRows = (m: any): any[] => {
+    const acc: any[] = [];
+    const seen = new Set<any>();
+    const push = (rows?: any[]) => {
+      if (!rows) return;
+      for (const r of rows) { if (!seen.has(r)) { seen.add(r); acc.push(r); } }
+    };
+    push(edeByIssuer.get(m.issuer_subscriber_id));
+    push(edeByExch.get(m.exchange_subscriber_id));
+    push(edeByPolicy.get(m.policy_number));
+    push(edeByMemberKey.get(m.member_key));
+    return acc;
+  };
+  const QUALIFIED_RAW_STATUSES = new Set(['effectuated', 'pendingeffectuation', 'pendingtermination']);
+  const earliestCovered = (() => {
+    if (!coveredMonthsOrReconcileMonth) return '';
+    if (typeof coveredMonthsOrReconcileMonth === 'string') return coveredMonthsOrReconcileMonth.substring(0, 7);
+    const sorted = coveredMonthsOrReconcileMonth.filter(Boolean).slice().sort();
+    return (sorted[0] || '').substring(0, 7);
+  })();
+  const latestCovered = (() => {
+    if (!coveredMonthsOrReconcileMonth) return '';
+    if (typeof coveredMonthsOrReconcileMonth === 'string') return coveredMonthsOrReconcileMonth.substring(0, 7);
+    const sorted = coveredMonthsOrReconcileMonth.filter(Boolean).slice().sort();
+    return (sorted[sorted.length - 1] || '').substring(0, 7);
+  })();
+  const classifyReason = (m: any): BoActiveNonCurrentEdeReason => {
+    const edeRows = findEdeRows(m);
+    if (edeRows.length === 0) return 'aor-or-key-mismatch';
+    let sawFutureEffective = false;
+    let sawNonQualified = false;
+    let sawAnyQualified = false;
+    for (const er of edeRows) {
+      const raw = (er.raw_json || {}) as Record<string, any>;
+      const status = String(raw.policyStatus ?? er.status ?? '').toLowerCase().replace(/\s+/g, '');
+      const qualified = QUALIFIED_RAW_STATUSES.has(status);
+      if (!qualified) { sawNonQualified = true; continue; }
+      sawAnyQualified = true;
+      const eff = String(er.effective_date || '').substring(0, 7);
+      if (latestCovered && eff && eff > latestCovered) sawFutureEffective = true;
+    }
+    if (sawFutureEffective) return 'future-effective';
+    if (!sawAnyQualified && sawNonQualified) return 'non-qualified-status';
+    // Qualified EDE evidence exists in scope but didn't land in this batch's
+    // EE universe — most often AOR routing or member-key resolution issue.
+    if (sawAnyQualified) return 'aor-or-key-mismatch';
+    return 'unknown';
+  };
+  const boActiveNonCurrentEdeRows: BoActiveNonCurrentEdeRow[] = universe.boActiveNonCurrentEde.map(
+    (r) => ({ row: r, reason: classifyReason(r) }),
+  );
+  const boActiveNonCurrentEdePaidCount = boActiveNonCurrentEdeRows.filter((x) => x.row.in_commission).length;
+  const boActiveNonCurrentEdeUnpaidCount = boActiveNonCurrentEdeRows.length - boActiveNonCurrentEdePaidCount;
 
   return {
     fullyMatchedPaid: { rows: fullyMatchedPaidRows, count: fullyMatchedPaidRows.length },
@@ -559,5 +631,11 @@ export function getSourceCoverageBuckets(
     unpaidBackOfficeOnly: { rows: unpaidBackOfficeOnlyRows, count: unpaidBackOfficeOnlyRows.length },
     expectedButUnpaid: { rows: expectedButUnpaidRows, count: expectedButUnpaidRows.length },
     totalPoliciesPaid: { rows: totalPoliciesPaidRows, count: totalPoliciesPaidRows.length },
+    boActiveNonCurrentEde: {
+      rows: boActiveNonCurrentEdeRows,
+      count: boActiveNonCurrentEdeRows.length,
+      paidCount: boActiveNonCurrentEdePaidCount,
+      unpaidCount: boActiveNonCurrentEdeUnpaidCount,
+    },
   };
 }
