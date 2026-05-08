@@ -1566,11 +1566,11 @@ export default function DashboardPage() {
                   <strong className="text-foreground text-lg">{metrics.shouldPay}</strong>
                 </div>
                 <div>
-                  <span className="text-muted-foreground block">Paid Within Eligible</span>
+                  <span className="text-muted-foreground block">Expected Payments Received</span>
                   <strong className="text-foreground text-lg">{metrics.paidEligible}</strong>
                 </div>
                 <div>
-                  <span className="text-muted-foreground block">Unpaid Policies</span>
+                  <span className="text-muted-foreground block">Expected But Unpaid</span>
                   <strong className="text-foreground text-lg">{metrics.unpaid}</strong>
                 </div>
                 <div>
