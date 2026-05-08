@@ -156,6 +156,33 @@ const topB = Object.entries(aorTallyB).sort((a,b)=>b[1]-a[1]).slice(0,10);
 console.log('\nTop AOR bucket A:'); for (const [k,v] of topA) console.log(`  ${v}\t${k}`);
 console.log('\nTop AOR bucket B:'); for (const [k,v] of topB) console.log(`  ${v}\t${k}`);
 
+// Show the 10 "unknown" — qualified but filtered; likely AOR scope or member_key dedupe
+console.log('\n10 unknown-bucket-B detailed:');
+let shown = 0;
+for (const m of bucketB) {
+  const edeRows = findEdeRowsForMember(m);
+  if (edeRows.length === 0) continue;
+  let anyStatusOk=false, anyEffOk=false, anyTermOk=false;
+  for (const r of edeRows) {
+    const raw = r.raw_json || {};
+    const status = String(raw.policyStatus ?? r.status ?? '').toLowerCase().replace(/\s+/g,'');
+    if (QUALIFIED.has(status)) anyStatusOk = true;
+    const effDate = r.effective_date;
+    if (!effDate) continue;
+    const effMonth = String(effDate).substring(0,7);
+    const termRaw = String(raw.policyTermDate ?? raw.policy_term_date ?? r.policy_term_date ?? '').trim();
+    const termMonth = termRaw ? termRaw.substring(0,7) : '';
+    if (effMonth <= latestCovered) anyEffOk = true;
+    if (!termMonth || termMonth > earliestCovered) anyTermOk = true;
+  }
+  if (anyStatusOk && anyEffOk && anyTermOk) {
+    if (shown++ >= 10) break;
+    const ede = edeRows[0];
+    const aor = ede.raw_json?.currentPolicyAOR;
+    console.log(`  ${m.applicant_name}\tpol=${m.policy_number}\tEDE.eff=${ede.effective_date}\tEDE.status=${ede.raw_json?.policyStatus}\tEDE.AOR="${aor}"\tBO.AOR=${m.aor_bucket}\tmember_key=${m.member_key}\tede_mk=${ede.member_key}`);
+  }
+}
+
 console.log('\n10 sample rows from Bucket B:');
 for (const m of bucketB.slice(0,10)) {
   const edeRows = findEdeRowsForMember(m);
