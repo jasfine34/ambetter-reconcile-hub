@@ -10,6 +10,13 @@ interface MetricCardProps {
   onClick?: () => void;
   subtitle?: string;
   tooltip?: string | { text: string; why: string };
+  /**
+   * Optional compact bottom split-chips. Renders a row of small label/value
+   * pills below the main value. Used by the expected-payment cards (Should
+   * Be Paid / Expected Payments Received / Expected But Unpaid) to show the
+   * Matched / BO Only / EDE Only decomposition.
+   */
+  splits?: Array<{ label: string; value: number }>;
 }
 
 const variantStyles = {
