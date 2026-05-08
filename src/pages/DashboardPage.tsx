@@ -37,6 +37,8 @@ import {
   getTotalCoveredLives,
   getMonthlyBreakdown,
   isActiveBackOfficeRecord,
+  getExpectedPaymentBreakdown,
+  getSourceCoverageBuckets,
 } from '@/lib/canonical';
 import { getIssueTypeLabel } from '@/lib/constants';
 
@@ -538,27 +540,28 @@ export default function DashboardPage() {
     // EE universe (Mar Coverall: 1,297 vs 1,309 invariant).
     const scopeForCanonical = payEntityFilter === 'All' ? 'All' : payEntityFilter;
     const foundBO = getFoundInBackOffice(reconciled, scopeForCanonical, filteredEde, confirmedUpgradeMemberKeys);
+    // Legacy NARROW eligible-cohort (kept for invariant parity, validation
+    // sample, AgentSummary parity tests). Phase 1 expanded the top
+    // expected-payment cards to the broader workflow universe — see
+    // expectedPaymentBreakdown below.
     const eligibleCohort = getEligibleCohort(reconciled, scopeForCanonical, confirmedUpgradeMemberKeys, filteredEde);
     const eligible = eligibleCohort.length;
-    const shouldPay = eligible;
-    // Count distinct policies with positive payments
+
+    // Phase 1 expected-payment universe: Should Be Paid = Matched + BO Only + EDE Only.
+    const expectedPaymentBreakdown = getExpectedPaymentBreakdown(
+      reconciled,
+      scopeForCanonical,
+      filteredEde,
+      confirmedUpgradeMemberKeys,
+    );
+    const shouldPay = expectedPaymentBreakdown.universe.total;
+    const paidEligible = expectedPaymentBreakdown.paidCount;
+    const unpaid = expectedPaymentBreakdown.unpaidCount;
+
     const paidCommRecords = filtered.filter(r => r.in_commission).length;
-    // D1 (PR2): paidEligible / unpaid derived by slicing the canonical
-    // `eligibleCohort` array on `in_commission`, NOT by re-deriving the
-    // EE-universe ∩ BO ∩ eligible predicate inline. If `getEligibleCohort`
-    // gains another tiebreaker, both numbers move together automatically.
-    const paidEligible = eligibleCohort.filter(r => r.in_commission).length;
-    const unpaid = eligibleCohort.filter(r => !r.in_commission).length;
-    // D2 (PR2): Net Paid totals come from the canonical `getNetPaidCommission`
-    // helper. Same scope as the dashboard's pay_entity filter; matches every
-    // other surface (EntitySummary, AgentSummary). Replaces a hand-rolled
-    // commission-row loop that risked drifting from the helper.
     const netPaid = getNetPaidCommission(normalizedRecords, scopeForCanonical);
     const totalComm = netPaid.gross;
     const totalClawbacks = netPaid.clawbacks;
-    // D2 (PR2): Direct-vs-Downline split also delegates to the canonical
-    // helper. Bucketing rules live in one place and the Dashboard renders
-    // exactly what the helper returns.
     const split = getDirectVsDownlineSplit(normalizedRecords, scopeForCanonical, isCoverallAORByNPN);
     const coverallDirectNet = split.coverallDirectNet;
     const downlineNet = split.downlineNet;
@@ -575,15 +578,28 @@ export default function DashboardPage() {
     const hasAnyEde = filtered.filter(r => r.in_ede).length;
     const hasExpectedEde = filtered.filter(r => r.is_in_expected_ede_universe).length;
     const expectedWithBO = filtered.filter(r => r.is_in_expected_ede_universe && effInBO(r)).length;
-    const fullyMatched = filtered.filter(r => r.in_ede && effInBO(r) && r.in_commission).length;
-    const paidOutsideEde = filtered.filter(r => !r.in_ede && effInBO(r) && r.in_commission).length;
-    const commissionOnly = filtered.filter(r => !r.in_ede && !effInBO(r) && r.in_commission).length;
-    const backOfficeOnly = filtered.filter(r => !r.in_ede && effInBO(r) && !r.in_commission).length;
-    const unpaidExpected = filtered.filter(r => r.in_ede && effInBO(r) && r.eligible_for_commission === 'Yes' && !r.in_commission).length;
-    const totalPaidAll = filtered.filter(r => r.in_commission).length;
-    const paidOutsideExpected = filtered.filter(r => !r.in_ede && r.in_commission).length;
-    return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, eligibleCohort, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidOutsideEde, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, paidOutsideExpected, coverallDirectNet, downlineNet, netPaidTotal, splitDelta, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
-  }, [filtered, reconciled, normalizedRecords, payEntityFilter, filteredEde, eeUniverseKeys, priorMonth, statementMonth, effInBO, confirmedUpgradeMemberKeys]);
+
+    // Phase 1 Source Coverage — single helper for all paid/unpaid coverage tiles.
+    // "Paid Outside Current EDE" tile removed (overlapped Expected Payments
+    // Received; Jason Option B). New tile: "Paid: EDE Only" (12 rows on
+    // Feb 2026 Ambetter All scope) with bo_reason drilldown classification.
+    const sourceCoverage = getSourceCoverageBuckets(
+      reconciled,
+      scopeForCanonical,
+      filteredEde,
+      normalizedRecords,
+      coveredMonths,
+      confirmedUpgradeMemberKeys,
+    );
+    const fullyMatched = sourceCoverage.fullyMatchedPaid.count;
+    const paidBackOfficeOnly = sourceCoverage.paidBackOfficeOnly.count;
+    const paidEdeOnly = sourceCoverage.paidEdeOnly.count;
+    const commissionOnly = sourceCoverage.paidCommissionStatementOnly.count;
+    const backOfficeOnly = sourceCoverage.unpaidBackOfficeOnly.count;
+    const unpaidExpected = sourceCoverage.expectedButUnpaid.count;
+    const totalPaidAll = sourceCoverage.totalPoliciesPaid.count;
+    return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, eligibleCohort, expectedPaymentBreakdown, sourceCoverage, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidBackOfficeOnly, paidEdeOnly, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, coverallDirectNet, downlineNet, netPaidTotal, splitDelta, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
+  }, [filtered, reconciled, normalizedRecords, payEntityFilter, filteredEde, eeUniverseKeys, priorMonth, statementMonth, effInBO, confirmedUpgradeMemberKeys, coveredMonths]);
 
   // Clawback rows — every commission row with amount < 0 within the current
   // pay-entity scope. Derived from RAW normalized commission records (same
@@ -786,39 +802,35 @@ export default function DashboardPage() {
 
   const drilldownData = useMemo(() => {
     if (!drilldown) return null;
+    const sc = metrics.sourceCoverage;
+    const epb = metrics.expectedPaymentBreakdown;
     switch (drilldown) {
       case 'expected': return filtered.filter(r => eeUniverseKeys.has(r.member_key));
-      // 'foundBO' and 'eligible' drilldown cases removed: their hero cards
-      // were consolidated away in #121 and no setDrilldown(...) call site
-      // produces these keys anymore. metrics.foundBO / metrics.eligibleCohort
-      // remain — they still feed live cards (shouldPay, paidEligible, unpaid)
-      // and Reconciliation Validation invariants.
-      // #121: 'shouldPay' opens the consolidated card's underlying cohort.
-      // Source it directly from the canonical `eligibleCohort` (same array
-      // `metrics.shouldPay` counts) so the drilldown row count equals the
-      // card value exactly. Re-implementing the predicate against `filtered`
-      // diverged in practice (1,386 vs 1,271 for Apr Coverall) because of
-      // upstream confirmedUpgradeMemberKeys / member-key reconciliation that
-      // the canonical helper applies and the inline predicate did not.
-      case 'shouldPay': return metrics.eligibleCohort;
+      // Phase 1 (#X): top expected-payment cards now slice from the broader
+      // expected-payment universe. shouldPay / paidEligible / unpaid all
+      // come from the same getExpectedPaymentBreakdown so card values and
+      // drilldown row counts cannot drift.
+      case 'shouldPay': return epb.universe.rows;
       case 'paidComm': return filtered.filter(r => r.in_commission);
-      // D1 (PR2): drilldowns slice the canonical `eligibleCohort` so the
-      // row counts can never drift from `metrics.paidEligible` /
-      // `metrics.unpaid` (which are computed the same way).
-      case 'paidEligible': return metrics.eligibleCohort.filter(r => r.in_commission);
-      case 'unpaid': return metrics.eligibleCohort.filter(r => !r.in_commission);
-      case 'fullyMatched': return filtered.filter(r => r.in_ede && effInBO(r) && r.in_commission);
-      case 'paidOutsideEde': return filtered.filter(r => !r.in_ede && effInBO(r) && r.in_commission);
-      case 'commissionOnly': return filtered.filter(r => !r.in_ede && !effInBO(r) && r.in_commission);
-      case 'backOfficeOnly': return filtered.filter(r => !r.in_ede && effInBO(r) && !r.in_commission);
-      case 'unpaidExpected': return filtered.filter(r => r.in_ede && effInBO(r) && r.eligible_for_commission === 'Yes' && !r.in_commission);
-      case 'totalPaidAll': return filtered.filter(r => r.in_commission);
-      case 'paidOutsideExpected': return filtered.filter(r => !r.in_ede && r.in_commission);
+      case 'paidEligible': return epb.paidRows;
+      case 'unpaid': return epb.unpaidRows;
+      case 'fullyMatched': return sc.fullyMatchedPaid.rows;
+      // New Phase 1 tile: Paid: Back Office Only (was wrapped under
+      // "Paid but Missing from EDE" / paidOutsideEde — now 4-bucket math).
+      case 'paidBackOfficeOnly': return sc.paidBackOfficeOnly.rows;
+      // New Phase 1 tile: Paid: EDE Only (the 12-row residual). Each row is
+      // shaped { row, bo_reason } so the drilldown column can render the BO
+      // reason ("BO inactive/terminated" vs "BO absent") next to the data.
+      case 'paidEdeOnly': return sc.paidEdeOnly.rows.map((x) => ({ ...x.row, bo_reason: x.bo_reason }));
+      case 'commissionOnly': return sc.paidCommissionStatementOnly.rows;
+      case 'backOfficeOnly': return sc.unpaidBackOfficeOnly.rows;
+      case 'unpaidExpected': return sc.expectedButUnpaid.rows;
+      case 'totalPaidAll': return sc.totalPoliciesPaid.rows;
       default: return filtered;
     }
-  }, [drilldown, filtered, effInBO, eeUniverseKeys, metrics.eligibleCohort]);
+  }, [drilldown, filtered, eeUniverseKeys, metrics.sourceCoverage, metrics.expectedPaymentBreakdown]);
 
-  const isCoverageDrilldown = ['fullyMatched', 'paidOutsideEde', 'commissionOnly', 'backOfficeOnly', 'unpaidExpected', 'totalPaidAll', 'paidOutsideExpected'].includes(drilldown || '');
+  const isCoverageDrilldown = ['fullyMatched', 'paidBackOfficeOnly', 'paidEdeOnly', 'commissionOnly', 'backOfficeOnly', 'unpaidExpected', 'totalPaidAll'].includes(drilldown || '');
 
   return (
     <div className="space-y-6">
@@ -1408,13 +1420,13 @@ export default function DashboardPage() {
               icon={<DollarSign className="h-4 w-4" />}
               onClick={() => setDrilldown('shouldPay')}
               tooltip={{
-                text: "Members in the EE universe who are found in Back Office and eligible for commission. This is the canonical should-be-paid cohort. The prior Found in Back Office, Eligible for Commission, and Should Be Paid cards were arithmetically identical for this cohort, so they have been consolidated.",
-                why: "This represents your true payable book of business and is the key number for identifying missing revenue.",
+                text: "Members in the broader expected-payment universe: Matched (EDE ∩ active BO ∩ eligible) + BO Only (active BO + eligible, not in EDE) + EDE Only (in EDE, BO inactive/absent). Phase 1 expanded this from the narrow Matched-only cohort.",
+                why: "This is the full payable book of business including trailing/legacy and BO-only policies — the key number for identifying missing revenue.",
               }}
             />
             <MetricCard title="Paid Commission Records" value={metrics.paidCommRecords} icon={<CheckCircle2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('paidComm')} tooltip={{ text: "These are all members that appear on the commission statements as having been paid, regardless of whether they match our expected book.", why: "This shows what the carrier actually paid, including payments that may not belong to your tracked enrollments." }} />
-            <MetricCard title="Paid Within Eligible Cohort" value={metrics.paidEligible} icon={<CheckCircle2 className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('paidEligible')} tooltip={{ text: "These are members we expected to be paid on AND actually received commission for.", why: "This is your true success rate — how much of your expected revenue you actually collected." }} />
-            <MetricCard title="Unpaid Policies" value={metrics.unpaid} icon={<XCircle className="h-4 w-4" />} variant="destructive" onClick={() => setDrilldown('unpaid')} tooltip={{ text: "These are members we expected to be paid on but did not receive commission for.", why: "This is your potential revenue loss and the most important number for recovery and escalation." }} />
+            <MetricCard title="Expected Payments Received" value={metrics.paidEligible} icon={<CheckCircle2 className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('paidEligible')} tooltip={{ text: "Members in the expected-payment universe (Matched + BO Only + EDE Only) that received commission.", why: "True success rate — how much of the broader expected book was actually paid." }} />
+            <MetricCard title="Expected But Unpaid" value={metrics.unpaid} icon={<XCircle className="h-4 w-4" />} variant="destructive" onClick={() => setDrilldown('unpaid')} tooltip={{ text: "Members in the expected-payment universe (Matched + BO Only + EDE Only) that were not paid.", why: "Primary recovery target — expected revenue that was not received." }} />
             <div className="relative rounded-xl border p-5 text-left bg-success/10 border-success/30">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Net Paid Commission</span>
@@ -1554,11 +1566,11 @@ export default function DashboardPage() {
                   <strong className="text-foreground text-lg">{metrics.shouldPay}</strong>
                 </div>
                 <div>
-                  <span className="text-muted-foreground block">Paid Within Eligible</span>
+                  <span className="text-muted-foreground block">Expected Payments Received</span>
                   <strong className="text-foreground text-lg">{metrics.paidEligible}</strong>
                 </div>
                 <div>
-                  <span className="text-muted-foreground block">Unpaid Policies</span>
+                  <span className="text-muted-foreground block">Expected But Unpaid</span>
                   <strong className="text-foreground text-lg">{metrics.unpaid}</strong>
                 </div>
                 <div>
@@ -1617,13 +1629,13 @@ export default function DashboardPage() {
             <div>
               <h3 className="text-lg font-semibold mb-3">Source Coverage Analysis</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                <MetricCard title="Fully Matched & Paid" value={metrics.fullyMatched} icon={<CheckCircle2 className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('fullyMatched')} tooltip={{ text: "These members exist in all systems and were paid correctly.", why: "This represents clean, correctly tracked and paid business." }} />
-                <MetricCard title="Paid but Missing from EDE" value={metrics.paidOutsideEde} icon={<AlertTriangle className="h-4 w-4" />} variant="warning" onClick={() => setDrilldown('paidOutsideEde')} tooltip={{ text: "These members exist in Ambetter's system and were paid, but are not in your EDE data.", why: "This may represent state-based exchange enrollments or other production not captured in your system, meaning your true book may be larger than expected." }} />
-                <MetricCard title="Commission Statement Only" value={metrics.commissionOnly} icon={<FileText className="h-4 w-4" />} variant="warning" onClick={() => setDrilldown('commissionOnly')} tooltip={{ text: "These members appear only on commission statements and are not found in EDE or back office data.", why: "This may indicate mismatches, legacy payments, or data issues that need investigation." }} />
-                <MetricCard title="Back Office Only (Not Paid)" value={metrics.backOfficeOnly} icon={<Building2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('backOfficeOnly')} tooltip={{ text: "These members exist in the carrier system but are not in EDE and have not generated commission.", why: "This may represent missed enrollments, incomplete data feeds, or potential future revenue not yet realized." }} />
-                <MetricCard title="Unpaid Expected Policies" value={metrics.unpaidExpected} icon={<XCircle className="h-4 w-4" />} variant="destructive" onClick={() => setDrilldown('unpaidExpected')} tooltip={{ text: "These are members in EDE and back office, eligible for commission, but not paid.", why: "This is your primary recovery target — expected revenue that was not received." }} />
-                <MetricCard title="Total Paid (All Sources)" value={metrics.totalPaidAll} icon={<DollarSign className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('totalPaidAll')} tooltip={{ text: "Count of all unique members where commission was paid, regardless of source.", why: "This shows the full scope of what the carrier actually paid across all systems." }} />
-                <MetricCard title="Paid Outside Expected Universe" value={metrics.paidOutsideExpected} icon={<ShieldAlert className="h-4 w-4" />} variant="warning" onClick={() => setDrilldown('paidOutsideExpected')} tooltip={{ text: "These are paid policies that are not part of your expected EDE-based book.", why: "This highlights production that exists outside your current tracking system and may indicate missing data sources such as state-based exchanges." }} />
+                <MetricCard title="Fully Matched & Paid" value={metrics.fullyMatched} icon={<CheckCircle2 className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('fullyMatched')} tooltip={{ text: "These members exist in EDE and Back Office and were paid.", why: "This represents clean, correctly tracked and paid business." }} />
+                <MetricCard title="Paid: Back Office Only" value={metrics.paidBackOfficeOnly} icon={<Building2 className="h-4 w-4" />} variant="warning" onClick={() => setDrilldown('paidBackOfficeOnly')} tooltip={{ text: "Members paid and active in Back Office but not in current EDE.", why: "Coverall-owned business that pays through but isn't in the current EDE snapshot." }} />
+                <MetricCard title="Paid: EDE Only" value={metrics.paidEdeOnly} icon={<AlertTriangle className="h-4 w-4" />} variant="warning" onClick={() => setDrilldown('paidEdeOnly')} tooltip={{ text: "Members in EDE and paid, where the Back Office record is inactive/terminated or absent.", why: "Trailing or re-enrolled commissions on policies whose BO record was terminated or never imported." }} />
+                <MetricCard title="Paid: Commission Statement Only" value={metrics.commissionOnly} icon={<FileText className="h-4 w-4" />} variant="warning" onClick={() => setDrilldown('commissionOnly')} tooltip={{ text: "Members appearing only on commission statements (no EDE, no active BO).", why: "Commission-only ghosts — typically trailing $1 retention payments on legacy books." }} />
+                <MetricCard title="Unpaid: Back Office Only" value={metrics.backOfficeOnly} icon={<Building2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('backOfficeOnly')} tooltip={{ text: "Members active in Back Office, not in EDE, not yet paid.", why: "May represent missed enrollments or future revenue not yet realized." }} />
+                <MetricCard title="Expected But Unpaid" value={metrics.unpaidExpected} icon={<XCircle className="h-4 w-4" />} variant="destructive" onClick={() => setDrilldown('unpaidExpected')} tooltip={{ text: "Members in the expected-payment universe (Matched / BO Only / EDE Only) that were not paid.", why: "Primary recovery target — expected revenue that was not received." }} />
+                <MetricCard title="Total Policies Paid" value={metrics.totalPaidAll} icon={<DollarSign className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('totalPaidAll')} tooltip={{ text: "Count of all unique members where commission was paid, regardless of source.", why: "Total paid across Fully Matched, BO Only, EDE Only, and Commission Statement Only buckets." }} />
               </div>
             </div>
           )}

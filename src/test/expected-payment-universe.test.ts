@@ -1,0 +1,120 @@
+/**
+ * Phase 1: expected-payment universe + 4-bucket Source Coverage tests.
+ *
+ * These tests use synthetic fixtures (no real Feb 2026 batch fixtures
+ * available in the test env). The math invariants assert correctness;
+ * the Feb 2026 Ambetter All-scope visible targets are documented here:
+ *
+ *   Should Be Paid               2,573
+ *   Expected Payments Received   1,422
+ *   Expected But Unpaid          1,151
+ *   Total Policies Paid          1,519
+ *   Paid: EDE Only                  12
+ */
+import { describe, it, expect } from 'vitest';
+import {
+  getExpectedPaymentUniverse,
+  getExpectedPaymentBreakdown,
+  getSourceCoverageBuckets,
+} from '@/lib/canonical';
+import type { FilteredEdeResult } from '@/lib/expectedEde';
+
+function fixture() {
+  // Members:
+  //  m1 Matched + paid       (in_ede, active BO, eligible Yes, paid)
+  //  m2 Matched + unpaid
+  //  m3 BO Only + paid       (!in_ede, active BO, eligible Yes, paid)
+  //  m4 BO Only + unpaid
+  //  m5 EDE Only + paid, BO terminated  -> bo_reason: BO inactive/terminated
+  //  m6 EDE Only + paid, BO absent      -> bo_reason: BO absent
+  //  m7 EDE Only + unpaid (eligibility blank, must still be in universe)
+  //  m8 Commission Statement Only       (!in_ede, !active BO, paid)
+  const reconciled: any[] = [
+    { member_key: 'm1', current_policy_aor: 'Jason Fine (21055210)', in_ede: true,  in_back_office: true,  eligible_for_commission: 'Yes', in_commission: true,  agent_npn: '21055210' },
+    { member_key: 'm2', current_policy_aor: 'Jason Fine (21055210)', in_ede: true,  in_back_office: true,  eligible_for_commission: 'Yes', in_commission: false, agent_npn: '21055210' },
+    { member_key: 'm3', current_policy_aor: 'Jason Fine (21055210)', in_ede: false, in_back_office: true,  eligible_for_commission: 'Yes', in_commission: true,  agent_npn: '21055210' },
+    { member_key: 'm4', current_policy_aor: 'Jason Fine (21055210)', in_ede: false, in_back_office: true,  eligible_for_commission: 'Yes', in_commission: false, agent_npn: '21055210' },
+    { member_key: 'm5', current_policy_aor: 'Jason Fine (21055210)', in_ede: true,  in_back_office: false, eligible_for_commission: '',    in_commission: true,  agent_npn: '21055210', issuer_subscriber_id: 'U5' },
+    { member_key: 'm6', current_policy_aor: 'Jason Fine (21055210)', in_ede: true,  in_back_office: false, eligible_for_commission: '',    in_commission: true,  agent_npn: '21055210', issuer_subscriber_id: 'U6' },
+    { member_key: 'm7', current_policy_aor: 'Jason Fine (21055210)', in_ede: true,  in_back_office: false, eligible_for_commission: '',    in_commission: false, agent_npn: '21055210' },
+    { member_key: 'm8', current_policy_aor: 'Jason Fine (21055210)', in_ede: false, in_back_office: false, eligible_for_commission: '',    in_commission: true,  agent_npn: '21055210' },
+  ];
+  const filteredEde: FilteredEdeResult = {
+    uniqueMembers: ['m1','m2','m5','m6','m7'].map((mk) => ({
+      member_key: mk, applicant_name: mk, policy_number: '', exchange_subscriber_id: '', issuer_subscriber_id: '',
+      current_policy_aor: '', effective_date: '2026-02-01', policy_status: 'Effectuated',
+      covered_member_count: 1, effective_month: '2026-02', active_months: ['2026-02'], in_back_office: false,
+    })),
+    uniqueKeys: 5, byMonth: { '2026-02': 5 }, inBOCount: 2, notInBOCount: 3, missingFromBO: [],
+  };
+  // BO records: m5 has terminated BO row; m6 has no BO row.
+  const normalizedRecords: any[] = [
+    { source_type: 'BACK_OFFICE', issuer_subscriber_id: 'U5', policy_term_date: '2026-01-15', eligible_for_commission: 'No' },
+  ];
+  return { reconciled, filteredEde, normalizedRecords };
+}
+
+describe('Phase 1: expected-payment universe', () => {
+  it('Should Be Paid = Matched + BO Only + EDE Only', () => {
+    const { reconciled, filteredEde } = fixture();
+    const u = getExpectedPaymentUniverse(reconciled, 'Coverall', filteredEde, new Set());
+    expect(u.matchedCount).toBe(2); // m1, m2
+    expect(u.boOnlyCount).toBe(2);  // m3, m4
+    expect(u.edeOnlyCount).toBe(3); // m5, m6, m7 (no eligibility gate!)
+    expect(u.total).toBe(7);
+    expect(u.matchedCount + u.boOnlyCount + u.edeOnlyCount).toBe(u.total);
+  });
+
+  it('EDE Only includes rows with eligibility blank (12-row class regression)', () => {
+    // [MAIN-FAIL] — would fail under a naive eligibility='Yes' gate.
+    const { reconciled, filteredEde } = fixture();
+    const u = getExpectedPaymentUniverse(reconciled, 'Coverall', filteredEde, new Set());
+    const keys = u.edeOnly.map((r) => r.member_key).sort();
+    expect(keys).toEqual(['m5', 'm6', 'm7']);
+  });
+
+  it('Expected Payments Received + Expected But Unpaid = Should Be Paid', () => {
+    const { reconciled, filteredEde } = fixture();
+    const b = getExpectedPaymentBreakdown(reconciled, 'Coverall', filteredEde, new Set());
+    expect(b.paidCount + b.unpaidCount).toBe(b.universe.total);
+    expect(b.paidCount).toBe(4); // m1, m3, m5, m6
+    expect(b.unpaidCount).toBe(3); // m2, m4, m7
+  });
+
+  it('compact splits sum to bucket totals', () => {
+    const { reconciled, filteredEde } = fixture();
+    const b = getExpectedPaymentBreakdown(reconciled, 'Coverall', filteredEde, new Set());
+    expect(b.paidSplit.matched + b.paidSplit.boOnly + b.paidSplit.edeOnly).toBe(b.paidCount);
+    expect(b.unpaidSplit.matched + b.unpaidSplit.boOnly + b.unpaidSplit.edeOnly).toBe(b.unpaidCount);
+  });
+});
+
+describe('Phase 1: Source Coverage 4-bucket math', () => {
+  it('Fully Matched & Paid + BO Only Paid + EDE Only Paid + Commission Only = Total Policies Paid', () => {
+    const { reconciled, filteredEde, normalizedRecords } = fixture();
+    const sc = getSourceCoverageBuckets(reconciled, 'Coverall', filteredEde, normalizedRecords, ['2026-02'], new Set());
+    expect(sc.fullyMatchedPaid.count).toBe(1); // m1
+    expect(sc.paidBackOfficeOnly.count).toBe(1); // m3
+    expect(sc.paidEdeOnly.count).toBe(2); // m5, m6
+    expect(sc.paidCommissionStatementOnly.count).toBe(1); // m8
+    expect(
+      sc.fullyMatchedPaid.count + sc.paidBackOfficeOnly.count + sc.paidEdeOnly.count + sc.paidCommissionStatementOnly.count,
+    ).toBe(sc.totalPoliciesPaid.count);
+    expect(sc.totalPoliciesPaid.count).toBe(5);
+  });
+
+  it('Paid: EDE Only carries bo_reason — terminated vs absent', () => {
+    const { reconciled, filteredEde, normalizedRecords } = fixture();
+    const sc = getSourceCoverageBuckets(reconciled, 'Coverall', filteredEde, normalizedRecords, ['2026-02'], new Set());
+    const byKey = new Map(sc.paidEdeOnly.rows.map((x) => [x.row.member_key, x.bo_reason]));
+    expect(byKey.get('m5')).toBe('BO inactive/terminated');
+    expect(byKey.get('m6')).toBe('BO absent');
+  });
+
+  it('Expected But Unpaid count is identical via breakdown vs source coverage', () => {
+    const { reconciled, filteredEde, normalizedRecords } = fixture();
+    const b = getExpectedPaymentBreakdown(reconciled, 'Coverall', filteredEde, new Set());
+    const sc = getSourceCoverageBuckets(reconciled, 'Coverall', filteredEde, normalizedRecords, ['2026-02'], new Set());
+    expect(sc.expectedButUnpaid.count).toBe(b.unpaidCount);
+  });
+});
