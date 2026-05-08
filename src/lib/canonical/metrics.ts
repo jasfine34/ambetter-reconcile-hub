@@ -23,6 +23,7 @@ import {
   filterReconciledByScope,
   filterCommissionRowsByScope,
 } from './scope';
+import { isActiveBackOfficeRecord } from './isActiveBackOfficeRecord';
 
 export interface NetPaidBreakdown {
   net: number;
