@@ -847,6 +847,15 @@ export default function DashboardPage() {
     if (!drilldown) return null;
     const sc = metrics.sourceCoverage;
     const epb = metrics.expectedPaymentBreakdown;
+    // Phase 1.5 — annotate unpaid drilldown rows with the canonical
+    // `_sourceType` (Matched / BO Only / EDE Only) sourced from the same
+    // breakdown universe buckets used elsewhere. Same classification the
+    // Missing Commission Export page emits — no new predicate.
+    const sourceTypeForUnpaid = (r: any): 'Matched' | 'BO Only' | 'EDE Only' => {
+      if (epb.universe.boOnly.includes(r)) return 'BO Only';
+      if (epb.universe.edeOnly.includes(r)) return 'EDE Only';
+      return 'Matched';
+    };
     switch (drilldown) {
       case 'expected': return filtered.filter(r => eeUniverseKeys.has(r.member_key));
       // Phase 1 (#X): top expected-payment cards now slice from the broader
@@ -856,7 +865,7 @@ export default function DashboardPage() {
       case 'shouldPay': return epb.universe.rows;
       case 'paidComm': return filtered.filter(r => r.in_commission);
       case 'paidEligible': return epb.paidRows;
-      case 'unpaid': return epb.unpaidRows;
+      case 'unpaid': return epb.unpaidRows.map((r) => ({ ...r, _sourceType: sourceTypeForUnpaid(r) }));
       case 'fullyMatched': return sc.fullyMatchedPaid.rows;
       // New Phase 1 tile: Paid: Back Office Only (was wrapped under
       // "Paid but Missing from EDE" / paidOutsideEde — now 4-bucket math).
