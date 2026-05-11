@@ -162,8 +162,10 @@ beforeEach(() => {
   mockUseBatch.mockReset();
   mockGetAll.mockReset();
   mockGetEligible.mockReset();
+  mockGetBreakdown.mockReset();
   mockGetAll.mockResolvedValue([]);
   mockGetEligible.mockReturnValue([]);
+  mockGetBreakdown.mockReturnValue(buildBreakdownStub([]));
   setBatchContext();
 });
 
