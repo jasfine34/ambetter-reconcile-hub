@@ -39,7 +39,6 @@ import {
   isActiveBackOfficeRecord,
   getExpectedPaymentBreakdown,
   getSourceCoverageBuckets,
-  getEdeConsumersNeverFoundInBackOffice,
 } from '@/lib/canonical';
 import { getIssueTypeLabel } from '@/lib/constants';
 
@@ -150,21 +149,6 @@ const NOT_IN_BO_COLUMNS = [
   { key: 'effective_date', label: 'Effective Date' },
   { key: 'policy_status', label: 'Policy Status' },
   { key: 'covered_member_count', label: 'Covered Members' },
-];
-
-// Phase 1.8 drilldown for the "EDE Consumers Never Found in Back Office"
-// Exception Summary card. Sourced from getEdeConsumersNeverFoundInBackOffice
-// — strictly disjoint from the top NotInBO card and from the diagnostic
-// BO Active: Non-current EDE bucket.
-const EDE_CONSUMERS_NEVER_IN_BO_COLUMNS = [
-  { key: 'applicant_name', label: 'Full Name' },
-  { key: 'policy_number', label: 'Policy #' },
-  { key: 'exchange_subscriber_id', label: 'Exchange Sub ID' },
-  { key: 'issuer_subscriber_id', label: 'Issuer Sub ID' },
-  { key: 'current_policy_aor', label: 'Current Policy AOR' },
-  { key: 'effective_date', label: 'Effective Date' },
-  { key: 'effective_month', label: 'Eff. Month' },
-  { key: 'policy_status', label: 'Policy Status' },
 ];
 
 // NOTE: Pay-entity scope state moved to the shared `usePayEntityScope` hook
@@ -536,11 +520,6 @@ export default function DashboardPage() {
           expectedPaymentBreakdown: m?.expectedPaymentBreakdown,
           expectedPaymentUniverse: m?.expectedPaymentBreakdown?.universe,
           sourceCoverage: m?.sourceCoverage,
-          // Phase 1.8: pass the already-computed helper rows + the canonical
-          // Not-in-BO row set so the disjointness invariant checks the SAME
-          // data the Exception Summary card rendered.
-          edeConsumersNeverFoundInBackOffice: m?.edeConsumersNeverInBo,
-          notInBackOfficeRows: filteredMissingFromBO,
         });
         setInvariantResults(results);
         setInvariantsLastRunAt(new Date());
@@ -649,26 +628,7 @@ export default function DashboardPage() {
     const totalPaidAll = sourceCoverage.totalPoliciesPaid.count;
     const boActiveNonCurrentEde = sourceCoverage.boActiveNonCurrentEde.count;
 
-    // Phase 1.8: canonical "EDE Consumers Never Found in Back Office" — the
-    // Exception Summary card formerly powered by issue_type='Missing from
-    // Back Office'. The persisted issue_type predicate is too loose (gates
-    // on raw any-EDE + ACTIVE BO only), so this helper enforces the strict
-    // reading: qualified Ambetter EDE under our AOR + ZERO BO record
-    // anywhere in normalizedRecords (active OR historical). Disjoint from
-    // the top Not-in-BO card by construction.
-    const edeConsumersNeverInBo = getEdeConsumersNeverFoundInBackOffice(
-      normalizedRecords,
-      reconciled,
-      scopeForCanonical,
-      // Phase 1.8 fix: pass ONLY the current Dashboard Not-in-BO row set
-      // (single source: filteredMissingFromBO). Previously we passed the
-      // full FilteredEdeResult and the helper subtracted the entire EE
-      // universe, which zeroed the card.
-      new Set(filteredMissingFromBO.map((r) => r.member_key)),
-      confirmedUpgradeMemberKeys,
-      coveredMonths,
-    );
-    return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, eligibleCohort, expectedPaymentBreakdown, sourceCoverage, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidBackOfficeOnly, paidEdeOnly, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, boActiveNonCurrentEde, edeConsumersNeverInBo, coverallDirectNet, downlineNet, netPaidTotal, splitDelta, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
+    return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, eligibleCohort, expectedPaymentBreakdown, sourceCoverage, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidBackOfficeOnly, paidEdeOnly, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, boActiveNonCurrentEde, coverallDirectNet, downlineNet, netPaidTotal, splitDelta, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
   }, [filtered, reconciled, normalizedRecords, payEntityFilter, filteredEde, eeUniverseKeys, priorMonth, statementMonth, effInBO, confirmedUpgradeMemberKeys, coveredMonths]);
 
   // Phase 1.7: keep metricsRef in sync so executeInvariants reads the latest.
