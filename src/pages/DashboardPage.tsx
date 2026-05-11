@@ -851,11 +851,7 @@ export default function DashboardPage() {
     // `_sourceType` (Matched / BO Only / EDE Only) sourced from the same
     // breakdown universe buckets used elsewhere. Same classification the
     // Missing Commission Export page emits — no new predicate.
-    const sourceTypeForUnpaid = (r: any): 'Matched' | 'BO Only' | 'EDE Only' => {
-      if (epb.universe.boOnly.includes(r)) return 'BO Only';
-      if (epb.universe.edeOnly.includes(r)) return 'EDE Only';
-      return 'Matched';
-    };
+    const sourceTypeForUnpaid = (r: any) => classifySourceTypeForRow(r, epb.universe);
     switch (drilldown) {
       case 'expected': return filtered.filter(r => eeUniverseKeys.has(r.member_key));
       // Phase 1 (#X): top expected-payment cards now slice from the broader
