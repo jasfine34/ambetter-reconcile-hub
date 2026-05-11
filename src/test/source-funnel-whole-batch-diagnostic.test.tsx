@@ -60,7 +60,7 @@ describe('SourceFunnelCard — whole-batch diagnostic labels', () => {
   it('renders the not-scope-filtered explanatory copy', () => {
     render(<SourceFunnelCard normalizedRecords={records} coveredMonths={coveredMonths} />);
     const subtitle = screen.getByTestId('source-funnel-subtitle');
-    expect(subtitle.textContent || '').toMatch(/whole batch/i);
+    expect(subtitle.textContent || '').toMatch(/full batch/i);
     expect(subtitle.textContent || '').toMatch(/not filtered by All \/ Coverall \/ Vix/i);
   });
 
