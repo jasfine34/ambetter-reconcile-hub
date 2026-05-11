@@ -407,7 +407,8 @@ export function serializeErrorMessage(err: unknown): string {
       /* circular — fall through */
     }
   }
-  const s = String(err);
+  let s: string;
+  try { s = String(err); } catch { return 'Unknown error'; }
   return s === '[object Object]' ? 'Unknown error' : s;
 }
 
