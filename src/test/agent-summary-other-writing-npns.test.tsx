@@ -15,15 +15,7 @@ import { resolve } from 'node:path';
 import { render, screen, within } from '@testing-library/react';
 import React from 'react';
 
-// Synthetic fixture: two displayed-NPN unpaid rows + three "Other" unpaid
-// rows (NPNs not in NPN_MAP). We expect the aggregate row to show 3.
-const FAKE_UNPAID = [
-  { member_key: 'a', agent_npn: '21055210', estimated_missing_commission: 100 }, // Jason
-  { member_key: 'b', agent_npn: '21277051', estimated_missing_commission: 200 }, // Erica
-  { member_key: 'c', agent_npn: '99999991', estimated_missing_commission: 50 },
-  { member_key: 'd', agent_npn: '99999992', estimated_missing_commission: 25 },
-  { member_key: 'e', agent_npn: '99999993', estimated_missing_commission: 0 },
-];
+
 
 vi.mock('@/contexts/BatchContext', () => ({
   useBatch: () => ({
