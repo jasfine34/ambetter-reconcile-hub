@@ -65,7 +65,7 @@ export type IssueType = (typeof ISSUE_TYPES)[number];
  * in any user-facing context.
  */
 export const ISSUE_TYPE_LABELS: Record<IssueType, string> = {
-  'Missing from Back Office': 'Has EDE Row but Not in Back Office',
+  'Missing from Back Office': 'EDE Consumers Never Found in Back Office',
   'Missing from Commission': 'Eligible & In BO but No Commission Row',
   'Paid but Missing from EDE': 'Paid but Missing from EDE',
   'SBA Enrollment (no FFM EDE expected)': 'SBA Enrollment (no FFM EDE expected)',
