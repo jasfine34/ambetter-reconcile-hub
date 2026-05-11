@@ -660,7 +660,11 @@ export default function DashboardPage() {
       normalizedRecords,
       reconciled,
       scopeForCanonical,
-      filteredEde,
+      // Phase 1.8 fix: pass ONLY the current Dashboard Not-in-BO row set
+      // (single source: filteredMissingFromBO). Previously we passed the
+      // full FilteredEdeResult and the helper subtracted the entire EE
+      // universe, which zeroed the card.
+      new Set(filteredMissingFromBO.map((r) => r.member_key)),
       confirmedUpgradeMemberKeys,
       coveredMonths,
     );
