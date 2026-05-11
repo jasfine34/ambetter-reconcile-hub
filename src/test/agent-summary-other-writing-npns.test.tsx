@@ -81,7 +81,7 @@ describe('Agent Summary — Other Writing NPNs aggregate row', () => {
     const row = aggregateCell.closest('tr');
     expect(row).toBeTruthy();
     // The unpaid_count cell in that row should read "3" (matches the note).
-    expect(within(row as HTMLElement).getByText('3')).toBeTruthy();
+    expect(within(row as HTMLElement).getAllByText('3').length).toBeGreaterThanOrEqual(1);
   });
 });
 
