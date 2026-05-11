@@ -387,3 +387,101 @@ describe('page wiring — #118 EE-universe canonical migration', () => {
     expect(jasonExpected).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 1.7 static guard — consumer pages must not use raw `r.in_ede` as a
+// positive boolean predicate inside .filter/.find/.some/.every callbacks.
+// EDE membership goes through filteredEde.uniqueMembers (the canonical EE
+// universe) and the canonical helpers (getExpectedPaymentBreakdown, etc.).
+//
+// Whitelist (documented):
+//   1. Stripped comments (// and /* … */) — legacy predicate text in docs
+//      must not trip the guard.
+//   2. DataTable column definitions: `key: 'in_ede'` / `'in_ede':` literal
+//      column keys are presentation, not predicate use.
+//   3. Dashboard diagnostic raw counts (`totalEdeRaw`, `hasAnyEde`) at
+//      DashboardPage.tsx:595-596 — these intentionally expose the RAW EDE
+//      column for QA. Out-of-scope for Phase 1.7.
+//   4. The helper module itself (src/lib/canonical/metrics.ts) — canonical
+//      classifier consults raw r.in_ede to separate true BO Only from the
+//      diagnostic bucket; that's the source of truth.
+// ---------------------------------------------------------------------------
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+
+/** Strip // line comments and /* … * / block comments from a TS source. */
+function stripComments(src: string): string {
+  // Remove /* ... */ block comments (non-greedy, multi-line).
+  let out = src.replace(/\/\*[\s\S]*?\*\//g, '');
+  // Remove // line comments. Avoid stripping inside string/template
+  // literals heuristically: we only care that legacy predicate text in
+  // comments isn't matched, and consumer pages don't embed predicate-shaped
+  // strings inside string literals. A line-anchored strip is sufficient.
+  out = out.replace(/(^|[^:"'`])\/\/[^\n]*/g, '$1');
+  return out;
+}
+
+/** Whitelisted line patterns — see Whitelist (2) and (3) above. */
+const WHITELIST_LINE_PATTERNS: RegExp[] = [
+  /key:\s*['"]in_ede['"]/,                      // column def
+  /['"]in_ede['"]\s*:/,                          // object key form
+  /\btotalEdeRaw\b/,                             // Dashboard diagnostic raw count
+  /\bhasAnyEde\b/,                               // Dashboard diagnostic raw count
+];
+
+/** Positive-predicate shapes for raw r.in_ede inside callbacks. */
+const PREDICATE_REGEXES: RegExp[] = [
+  /\br\.in_ede\s*&&/,
+  /\br\.in_ede\s*===\s*(true|false)\b/,
+  /!\s*r\.in_ede\b/,
+  /\br\.in_ede\s*\)\s*\.(?:filter|find|some|every|map|reduce)\b/,
+  // Inline arrow predicates: `(r) => r.in_ede` at end-of-arrow.
+  /=>\s*r\.in_ede\b/,
+];
+
+const CONSUMER_PAGES = [
+  'src/pages/DashboardPage.tsx',
+  'src/pages/AgentSummaryPage.tsx',
+  'src/pages/MissingCommissionExportPage.tsx',
+  'src/pages/EntitySummaryPage.tsx',
+  'src/pages/ExceptionsPage.tsx',
+];
+
+describe('Phase 1.7 static guard — no raw r.in_ede predicate in consumer pages', () => {
+  for (const rel of CONSUMER_PAGES) {
+    it(`${rel} contains no raw r.in_ede predicate outside whitelisted lines`, () => {
+      const abs = resolve(__dirname, '..', '..', rel);
+      let src: string;
+      try {
+        src = readFileSync(abs, 'utf8');
+      } catch {
+        // Page may not exist in some builds; skip gracefully.
+        return;
+      }
+      const stripped = stripComments(src);
+      const offenders: Array<{ line: number; text: string }> = [];
+      stripped.split('\n').forEach((line, idx) => {
+        // Skip whitelisted lines (column defs, Dashboard diagnostic counts).
+        if (WHITELIST_LINE_PATTERNS.some((re) => re.test(line))) return;
+        for (const re of PREDICATE_REGEXES) {
+          if (re.test(line)) {
+            offenders.push({ line: idx + 1, text: line.trim() });
+            break;
+          }
+        }
+      });
+      expect(
+        offenders,
+        `Found raw r.in_ede predicate usage in ${rel}:\n${offenders
+          .map((o) => `  L${o.line}: ${o.text}`)
+          .join('\n')}\n\nUse filteredEde.uniqueMembers or a canonical helper instead.`,
+      ).toEqual([]);
+    });
+  }
+
+  it('stripComments removes // line and /* */ block comments', () => {
+    expect(stripComments('a // r.in_ede && x\nb')).not.toMatch(/r\.in_ede/);
+    expect(stripComments('a /* r.in_ede && x */ b')).not.toMatch(/r\.in_ede/);
+  });
+});
+
