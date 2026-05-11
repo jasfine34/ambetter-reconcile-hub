@@ -113,6 +113,11 @@ function FunnelRow({ month, funnel, isPriorCarryover }: { month: string; funnel:
           EDE eligible: <strong className="text-foreground">{funnel.edeEligible}</strong>
         </span>
       </div>
+      {isPriorCarryover && (
+        <p className="text-xs italic text-muted-foreground" data-testid={`carryover-label-${month}`}>
+          Prior month carryover — current batch as-of view
+        </p>
+      )}
 
       {/* EDE-driven lane */}
       <div className="flex items-stretch gap-1 flex-wrap">
