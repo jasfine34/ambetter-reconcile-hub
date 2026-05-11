@@ -475,6 +475,12 @@ export interface SourceCoverageBuckets<T = any> {
     count: number;
     paidCount: number;
     unpaidCount: number;
+    /**
+     * Aggregation of `rows[].reason` — one entry per BoActiveNonCurrentEdeReason
+     * key. Cards consume these counts directly rather than re-reducing `rows`
+     * inline. Keys mirror the reason classifier exactly.
+     */
+    reasonCounts: Record<BoActiveNonCurrentEdeReason, number>;
   };
 }
 
