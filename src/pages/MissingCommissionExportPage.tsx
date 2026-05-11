@@ -109,6 +109,7 @@ const INTERNAL_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
   { key: '_netPremiumBucket', label: 'Net premium bucket' },
   { key: '_missingReason', label: 'Missing reason' },
   { key: '_estimatedMissingCommission', label: 'Est. missing commission' },
+  { key: '_sourceType', label: 'Source Type' },
 ];
 
 // ---------------------------------------------------------------------------
