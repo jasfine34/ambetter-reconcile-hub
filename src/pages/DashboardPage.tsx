@@ -152,6 +152,21 @@ const NOT_IN_BO_COLUMNS = [
   { key: 'covered_member_count', label: 'Covered Members' },
 ];
 
+// Phase 1.8 drilldown for the "EDE Consumers Never Found in Back Office"
+// Exception Summary card. Sourced from getEdeConsumersNeverFoundInBackOffice
+// — strictly disjoint from the top NotInBO card and from the diagnostic
+// BO Active: Non-current EDE bucket.
+const EDE_CONSUMERS_NEVER_IN_BO_COLUMNS = [
+  { key: 'applicant_name', label: 'Full Name' },
+  { key: 'policy_number', label: 'Policy #' },
+  { key: 'exchange_subscriber_id', label: 'Exchange Sub ID' },
+  { key: 'issuer_subscriber_id', label: 'Issuer Sub ID' },
+  { key: 'current_policy_aor', label: 'Current Policy AOR' },
+  { key: 'effective_date', label: 'Effective Date' },
+  { key: 'effective_month', label: 'Eff. Month' },
+  { key: 'policy_status', label: 'Policy Status' },
+];
+
 // NOTE: Pay-entity scope state moved to the shared `usePayEntityScope` hook
 // (src/hooks/usePayEntityScope.ts) so other pages (Agent Summary, etc.) react
 // to the same dropdown selection. The localStorage key is re-exported from
