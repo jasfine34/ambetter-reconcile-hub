@@ -26,6 +26,7 @@ import {
   type ExpectedPaymentUniverse,
   type SourceCoverageBuckets,
 } from './metrics';
+import type { EdeConsumersNeverInBoResult } from './edeConsumersNeverInBo';
 
 const DOLLAR_TOLERANCE = 0.01;
 
