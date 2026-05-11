@@ -674,6 +674,22 @@ export default function DashboardPage() {
   // Phase 1.7: keep metricsRef in sync so executeInvariants reads the latest.
   useEffect(() => { metricsRef.current = metrics; }, [metrics]);
 
+  // TEMP Phase 1.8 diagnostic — remove after Jason reports values.
+  useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.log('[Phase1.8 diag]', {
+      statementMonth: currentBatch?.statement_month,
+      coveredMonths,
+      scope: payEntityFilter,
+      filteredEdeUniqueMembersSize: filteredEde.uniqueMembers.length,
+      filteredMissingFromBOLength: filteredMissingFromBO.length,
+      currentNotInBoMemberKeysSize: new Set(filteredMissingFromBO.map(r => r.member_key)).size,
+      edeConsumersNeverInBoCount: metrics.edeConsumersNeverInBo.count,
+      edeConsumersNeverInBoRowsLength: metrics.edeConsumersNeverInBo.rows.length,
+      firstRows: metrics.edeConsumersNeverInBo.rows.slice(0, 3),
+    });
+  }, [currentBatch?.statement_month, coveredMonths, payEntityFilter, filteredEde, filteredMissingFromBO, metrics]);
+
   // Clawback rows — every commission row with amount < 0 within the current
   // pay-entity scope. Derived from RAW normalized commission records (same
   // source as the totalClawbacks aggregate on the Net Paid card) so the rows
