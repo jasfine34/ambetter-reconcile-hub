@@ -634,22 +634,6 @@ export default function DashboardPage() {
   // Phase 1.7: keep metricsRef in sync so executeInvariants reads the latest.
   useEffect(() => { metricsRef.current = metrics; }, [metrics]);
 
-  // TEMP Phase 1.8 diagnostic — remove after Jason reports values.
-  useEffect(() => {
-    // eslint-disable-next-line no-console
-    console.log('[Phase1.8 diag]', {
-      statementMonth: currentBatch?.statement_month,
-      coveredMonths,
-      scope: payEntityFilter,
-      filteredEdeUniqueMembersSize: filteredEde.uniqueMembers.length,
-      filteredMissingFromBOLength: filteredMissingFromBO.length,
-      currentNotInBoMemberKeysSize: new Set(filteredMissingFromBO.map(r => r.member_key)).size,
-      edeConsumersNeverInBoCount: metrics.edeConsumersNeverInBo.count,
-      edeConsumersNeverInBoRowsLength: metrics.edeConsumersNeverInBo.rows.length,
-      firstRows: metrics.edeConsumersNeverInBo.rows.slice(0, 3),
-    });
-  }, [currentBatch?.statement_month, coveredMonths, payEntityFilter, filteredEde, filteredMissingFromBO, metrics]);
-
   // Clawback rows — every commission row with amount < 0 within the current
   // pay-entity scope. Derived from RAW normalized commission records (same
   // source as the totalClawbacks aggregate on the Net Paid card) so the rows
@@ -878,13 +862,9 @@ export default function DashboardPage() {
       // Diagnostic-only: BO Active w/ Non-current EDE (Interpretation C).
       // Excluded from Should Be Paid; visible separately for review.
       case 'boActiveNonCurrentEde': return sc.boActiveNonCurrentEde.rows.map((x) => ({ ...x.row, diagnostic_reason: x.reason }));
-      // Phase 1.8: EDE Consumers Never Found in Back Office. Sourced from
-      // the canonical helper rows (already strict-disjoint from the top
-      // Not-in-BO card).
-      case 'edeConsumersNeverInBo': return metrics.edeConsumersNeverInBo.rows;
       default: return filtered;
     }
-  }, [drilldown, filtered, eeUniverseKeys, metrics.sourceCoverage, metrics.expectedPaymentBreakdown, metrics.edeConsumersNeverInBo]);
+  }, [drilldown, filtered, eeUniverseKeys, metrics.sourceCoverage, metrics.expectedPaymentBreakdown]);
 
   const isCoverageDrilldown = ['fullyMatched', 'paidBackOfficeOnly', 'paidEdeOnly', 'commissionOnly', 'backOfficeOnly', 'unpaidExpected', 'totalPaidAll', 'boActiveNonCurrentEde'].includes(drilldown || '');
 
@@ -1706,7 +1686,7 @@ export default function DashboardPage() {
                 <h3 className="text-lg font-semibold capitalize">{drilldown} Details</h3>
                 <button onClick={() => setDrilldown(null)} className="text-sm text-primary hover:underline">Close</button>
               </div>
-              <DataTable data={drilldownData} columns={drilldown === 'paidEdeOnly' ? PAID_EDE_ONLY_DRILLDOWN_COLUMNS : drilldown === 'boActiveNonCurrentEde' ? BO_ACTIVE_NON_CURRENT_EDE_COLUMNS : drilldown === 'edeConsumersNeverInBo' ? EDE_CONSUMERS_NEVER_IN_BO_COLUMNS : (isCoverageDrilldown ? COVERAGE_DRILLDOWN_COLUMNS : RECON_COLUMNS)} exportFileName={`${drilldown}_details.csv`} />
+              <DataTable data={drilldownData} columns={drilldown === 'paidEdeOnly' ? PAID_EDE_ONLY_DRILLDOWN_COLUMNS : drilldown === 'boActiveNonCurrentEde' ? BO_ACTIVE_NON_CURRENT_EDE_COLUMNS : (isCoverageDrilldown ? COVERAGE_DRILLDOWN_COLUMNS : RECON_COLUMNS)} exportFileName={`${drilldown}_details.csv`} />
             </div>
           )}
 
@@ -1730,41 +1710,6 @@ export default function DashboardPage() {
             <div>
               <h3 className="text-lg font-semibold mb-3">Exception Summary</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {/* Phase 1.8: "EDE Consumers Never Found in Back Office" —
-                    canonical helper replaces the persisted issue_type
-                    predicate (`r.issue_type === 'Missing from Back Office'`)
-                    which over-counted by including historical-but-inactive
-                    BO records, non-qualified statuses, future-effective
-                    rows, and AOR-out-of-scope members. The persisted
-                    issue_type enum value is unchanged; only this card's
-                    source-of-truth changed. */}
-                {metrics.edeConsumersNeverInBo.count > 0 && (
-                  <MetricCard
-                    title="EDE Consumers Never Found in Back Office"
-                    value={metrics.edeConsumersNeverInBo.count}
-                    variant="warning"
-                    onClick={() => setDrilldown('edeConsumersNeverInBo')}
-                    tooltip={{
-                      text: "Qualified Ambetter EDE consumers under our AOR with no usable Back Office record found in the available data. Excludes current Expected Enrollment Not-in-BO rows and members with historical Back Office records that later became inactive or terminated.",
-                      why: "Recovery target — these enrollments never made it into the carrier's Back Office and won't pay commission until they do.",
-                    }}
-                  />
-                )}
-                {([
-                  { issue: 'Wrong Pay Entity', tip: { text: "These members were paid, but under the wrong entity (for example, Vix instead of Coverall).", why: "Revenue may be going to the wrong account and may need to be corrected." } },
-                  { issue: 'Not Eligible for Commission', tip: { text: "These members exist but are not marked as eligible for commission by the carrier.", why: "These policies will not generate revenue unless eligibility is corrected." } },
-                ] as const).map(({ issue, tip }) => {
-                  const count = filtered.filter(r => r.issue_type === issue).length;
-                  return count > 0 ? (
-                    <MetricCard key={issue} title={getIssueTypeLabel(issue)} value={count} variant={issue.includes('Wrong') ? 'destructive' : 'warning'} tooltip={tip} />
-                  ) : null;
-                })}
-              </div>
-            </div>
-          )}
-        </>
-      )}
-
       {/* Clawbacks drilldown — opened from the Net Paid Commission card. */}
       <Dialog open={clawbacksOpen} onOpenChange={setClawbacksOpen}>
         <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
