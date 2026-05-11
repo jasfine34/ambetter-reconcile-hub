@@ -57,6 +57,16 @@ export interface InvariantInputs {
   scope: CanonicalScope;
   pickStableKey: (r: { issuer_subscriber_id?: string | null; exchange_subscriber_id?: string | null; policy_number?: string | null }) => string;
   isCoverallNpn: (npn: string | null | undefined) => boolean;
+  /**
+   * Phase 1.7: already-computed Dashboard objects. Passed through so the
+   * cross-page contract invariants below check the SAME data the cards
+   * rendered, instead of recomputing from raw inputs. Optional for
+   * backward-compatibility with existing callers; the Phase 1.7 checks
+   * skip with status='pass' detail='skipped' when absent.
+   */
+  expectedPaymentBreakdown?: ExpectedPaymentBreakdown;
+  expectedPaymentUniverse?: ExpectedPaymentUniverse;
+  sourceCoverage?: SourceCoverageBuckets;
 }
 
 /** Helper: dollar equality within tolerance. */
