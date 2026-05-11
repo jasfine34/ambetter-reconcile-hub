@@ -396,7 +396,26 @@ function checkBoIneligibleFallThroughEmpty(inp: InvariantInputs): InvariantResul
 }
 
 /**
- * Run the full invariant suite for the given scope. Returns one result per
+ * Phase 1.8: EDE Consumers Never Found in Back Office must be disjoint from
+ * the current top "Not in Back Office" card row set. Catches a regression
+ * that would re-overlap the two cards.
+ */
+function checkEdeConsumersNeverInBoDisjointFromCurrentNotInBo(inp: InvariantInputs): InvariantResult {
+  const id = 'ede-consumers-never-in-bo-disjoint-from-current-not-in-bo';
+  const label = 'EDE Consumers Never Found in BO is disjoint from current Not-in-BO';
+  if (!inp.edeConsumersNeverFoundInBackOffice || !inp.notInBackOfficeRows) return skipped(id, label, inp.scope);
+  const notInBoKeys = new Set(inp.notInBackOfficeRows.map((r) => r.member_key));
+  const violators = inp.edeConsumersNeverFoundInBackOffice.rows.filter((r) => notInBoKeys.has(r.member_key));
+  return {
+    id, label, scope: inp.scope,
+    status: violators.length === 0 ? 'pass' : 'fail',
+    detail: violators.length === 0
+      ? `No overlap between EDE Consumers Never in BO (${inp.edeConsumersNeverFoundInBackOffice.count}) and current Not-in-BO (${notInBoKeys.size}).`
+      : `${violators.length} members appear in BOTH the EDE Consumers Never in BO card and the current Not-in-BO card.`,
+    expected: 0, actual: violators.length, delta: violators.length,
+  };
+}
+
  * check, in display order. Each check is wrapped in try/catch so a runtime
  * exception in one check surfaces as an `error` status (distinct from a
  * logical `fail`) without aborting the rest of the suite. #125.
