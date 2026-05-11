@@ -476,14 +476,14 @@ describe('MissingCommissionExportPage — Phase 1.5 expected-payment alignment',
     (URL as any).createObjectURL = vi.fn(() => 'blob://x');
     (URL as any).revokeObjectURL = vi.fn();
     const realCreate = document.createElement.bind(document);
-    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+    const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
       const el = realCreate(tag) as any;
       if (tag === 'a') el.click = () => {};
       return el;
     });
     fireEvent.click(screen.getByTestId('messer-download'));
     (global as any).Blob = realBlob;
-    vi.restoreAllMocks();
+    createSpy.mockRestore();
 
     // CSV must NOT contain Source Type header or the bucket labels.
     expect(csvText).not.toMatch(/Source Type/i);
