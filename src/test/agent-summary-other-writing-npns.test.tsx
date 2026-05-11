@@ -49,15 +49,24 @@ vi.mock('@/lib/expectedEde', () => ({
 }));
 vi.mock('@/lib/canonical', async (importOriginal) => {
   const actual: any = await importOriginal();
+  // Synthetic fixture: two displayed-NPN unpaid rows + three "Other" unpaid
+  // rows (NPNs not in NPN_MAP). We expect the aggregate row to show 3.
+  const fakeUnpaid = [
+    { member_key: 'a', agent_npn: '21055210', estimated_missing_commission: 100 },
+    { member_key: 'b', agent_npn: '21277051', estimated_missing_commission: 200 },
+    { member_key: 'c', agent_npn: '99999991', estimated_missing_commission: 50 },
+    { member_key: 'd', agent_npn: '99999992', estimated_missing_commission: 25 },
+    { member_key: 'e', agent_npn: '99999993', estimated_missing_commission: 0 },
+  ];
   return {
     ...actual,
     filterCommissionRowsByScope: vi.fn().mockReturnValue([]),
     getExpectedPaymentBreakdown: vi.fn().mockReturnValue({
       universe: { matched: [], boOnly: [], edeOnly: [], rows: [], total: 0, matchedCount: 0, boOnlyCount: 0, edeOnlyCount: 0, boActiveNonCurrentEde: [], boIneligible: [], boActiveNonCurrentEdeCount: 0, boIneligibleCount: 0 },
       paidRows: [],
-      unpaidRows: FAKE_UNPAID,
+      unpaidRows: fakeUnpaid,
       paidCount: 0,
-      unpaidCount: FAKE_UNPAID.length,
+      unpaidCount: fakeUnpaid.length,
       paidSplit: { matched: 0, boOnly: 0, edeOnly: 0 },
       unpaidSplit: { matched: 0, boOnly: 0, edeOnly: 0 },
     }),
