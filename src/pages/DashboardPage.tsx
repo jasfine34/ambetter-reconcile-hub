@@ -1710,6 +1710,21 @@ export default function DashboardPage() {
             <div>
               <h3 className="text-lg font-semibold mb-3">Exception Summary</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {([
+                  { issue: 'Wrong Pay Entity', tip: { text: "These members were paid, but under the wrong entity (for example, Vix instead of Coverall).", why: "Revenue may be going to the wrong account and may need to be corrected." } },
+                  { issue: 'Not Eligible for Commission', tip: { text: "These members exist but are not marked as eligible for commission by the carrier.", why: "These policies will not generate revenue unless eligibility is corrected." } },
+                ] as const).map(({ issue, tip }) => {
+                  const count = filtered.filter(r => r.issue_type === issue).length;
+                  return count > 0 ? (
+                    <MetricCard key={issue} title={getIssueTypeLabel(issue)} value={count} variant={issue.includes('Wrong') ? 'destructive' : 'warning'} tooltip={tip} />
+                  ) : null;
+                })}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
       {/* Clawbacks drilldown — opened from the Net Paid Commission card. */}
       <Dialog open={clawbacksOpen} onOpenChange={setClawbacksOpen}>
         <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
