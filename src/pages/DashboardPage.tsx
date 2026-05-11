@@ -122,6 +122,16 @@ const COVERAGE_DRILLDOWN_COLUMNS = [
   { key: 'actual_commission', label: 'Commission $' },
 ];
 
+// Unpaid Details drilldown columns — Coverage columns + the canonical
+// Phase 1.5 Source Type (`Matched` / `BO Only` / `EDE Only`) so operators
+// can see at a glance which evidence side is unpaid. Field is annotated
+// onto each drilldown row in `drilldownData` from the same
+// `getExpectedPaymentBreakdown` universe buckets that drive the card splits.
+const UNPAID_DETAILS_DRILLDOWN_COLUMNS = [
+  ...COVERAGE_DRILLDOWN_COLUMNS,
+  { key: '_sourceType', label: 'Source Type' },
+];
+
 // Paid: EDE Only-specific drilldown columns. Identical to COVERAGE_DRILLDOWN_COLUMNS
 // but appends a `bo_reason` column so the BO inactive/terminated vs BO absent
 // classification surfaced by getSourceCoverageBuckets is visible. Other
