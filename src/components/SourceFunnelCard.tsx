@@ -60,9 +60,10 @@ export function SourceFunnelCard({ normalizedRecords, coveredMonths, carrierKey 
   }, [normalizedRecords, resolverIndex]);
 
   const funnelsByMonth = useMemo(() => {
-    return coveredMonths.map(m => ({
+    return coveredMonths.map((m, idx) => ({
       month: m,
       funnel: computeFunnelForMonth(recordsByMember, m, carrierKey),
+      isPriorCarryover: idx === 0 && coveredMonths.length > 1,
     }));
   }, [recordsByMember, coveredMonths, carrierKey]);
 
