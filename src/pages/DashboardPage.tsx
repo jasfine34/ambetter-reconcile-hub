@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useEffect } from 'react';
+import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useBatch } from '@/contexts/BatchContext';
 import { MetricCard } from '@/components/MetricCard';
@@ -493,6 +493,10 @@ export default function DashboardPage() {
    * timestamp captured at completion so operators can confirm the click
    * actually executed even when results are unchanged.
    */
+  // Phase 1.7: keep a ref to the latest `metrics` so executeInvariants can
+  // pass the already-computed expectedPaymentBreakdown / sourceCoverage
+  // without forming a forward reference at declaration time.
+  const metricsRef = useRef<any>(null);
   const executeInvariants = useCallback(() => {
     if (invariantsRunning) return;
     setInvariantsRunning(true);
@@ -500,6 +504,7 @@ export default function DashboardPage() {
     // computation blocks the main thread on large batches.
     setTimeout(() => {
       try {
+        const m = metricsRef.current;
         const results = runInvariants({
           reconciled,
           normalizedRecords,
@@ -510,6 +515,11 @@ export default function DashboardPage() {
           scope: payEntityFilter === 'All' ? 'All' : payEntityFilter,
           pickStableKey,
           isCoverallNpn: isCoverallAORByNPN,
+          // Phase 1.7: pass already-computed Dashboard objects so cross-page
+          // contract invariants check the SAME data the cards rendered.
+          expectedPaymentBreakdown: m?.expectedPaymentBreakdown,
+          expectedPaymentUniverse: m?.expectedPaymentBreakdown?.universe,
+          sourceCoverage: m?.sourceCoverage,
         });
         setInvariantResults(results);
         setInvariantsLastRunAt(new Date());
@@ -619,6 +629,9 @@ export default function DashboardPage() {
     const boActiveNonCurrentEde = sourceCoverage.boActiveNonCurrentEde.count;
     return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, eligibleCohort, expectedPaymentBreakdown, sourceCoverage, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidBackOfficeOnly, paidEdeOnly, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, boActiveNonCurrentEde, coverallDirectNet, downlineNet, netPaidTotal, splitDelta, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
   }, [filtered, reconciled, normalizedRecords, payEntityFilter, filteredEde, eeUniverseKeys, priorMonth, statementMonth, effInBO, confirmedUpgradeMemberKeys, coveredMonths]);
+
+  // Phase 1.7: keep metricsRef in sync so executeInvariants reads the latest.
+  useEffect(() => { metricsRef.current = metrics; }, [metrics]);
 
   // Clawback rows — every commission row with amount < 0 within the current
   // pay-entity scope. Derived from RAW normalized commission records (same

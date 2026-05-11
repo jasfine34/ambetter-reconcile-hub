@@ -22,6 +22,9 @@ import {
   getEligibleCohort,
   getNotInBackOffice,
   getExpectedEnrollments,
+  type ExpectedPaymentBreakdown,
+  type ExpectedPaymentUniverse,
+  type SourceCoverageBuckets,
 } from './metrics';
 
 const DOLLAR_TOLERANCE = 0.01;
@@ -54,6 +57,16 @@ export interface InvariantInputs {
   scope: CanonicalScope;
   pickStableKey: (r: { issuer_subscriber_id?: string | null; exchange_subscriber_id?: string | null; policy_number?: string | null }) => string;
   isCoverallNpn: (npn: string | null | undefined) => boolean;
+  /**
+   * Phase 1.7: already-computed Dashboard objects. Passed through so the
+   * cross-page contract invariants below check the SAME data the cards
+   * rendered, instead of recomputing from raw inputs. Optional for
+   * backward-compatibility with existing callers; the Phase 1.7 checks
+   * skip with status='pass' detail='skipped' when absent.
+   */
+  expectedPaymentBreakdown?: ExpectedPaymentBreakdown;
+  expectedPaymentUniverse?: ExpectedPaymentUniverse;
+  sourceCoverage?: SourceCoverageBuckets;
 }
 
 /** Helper: dollar equality within tolerance. */
@@ -269,6 +282,109 @@ function checkUnpaidAndPaidDisjoint(inp: InvariantInputs): InvariantResult {
   };
 }
 
+// ===========================================================================
+// Phase 1.7: cross-page contract invariants over already-computed Dashboard
+// objects (expectedPaymentBreakdown, expectedPaymentUniverse, sourceCoverage).
+// Skip with status='pass' detail='skipped' when the optional inputs are
+// absent so existing callers (and existing tests) keep their result shape.
+// ===========================================================================
+
+function skipped(id: string, label: string, scope: CanonicalScope | 'All'): InvariantResult {
+  return { id, label, scope, status: 'pass', detail: 'Skipped (Phase 1.7 inputs not provided).' };
+}
+
+/** Matched + EDE Only == Expected Enrollments (cross-checks the helper). */
+function checkMatchedPlusEdeOnlyEqualsEe(inp: InvariantInputs): InvariantResult {
+  const id = 'matched-plus-ede-only-equals-ee';
+  const label = 'Matched + EDE Only equals Expected Enrollments';
+  if (!inp.expectedPaymentUniverse) return skipped(id, label, inp.scope);
+  const u = inp.expectedPaymentUniverse;
+  const expected = getExpectedEnrollments(inp.filteredEde);
+  const actual = u.matchedCount + u.edeOnlyCount;
+  return {
+    id, label, scope: inp.scope,
+    status: actual === expected ? 'pass' : 'fail',
+    detail: actual === expected
+      ? `Matched ${u.matchedCount} + EDE Only ${u.edeOnlyCount} = ${actual} = EE ${expected}.`
+      : `Matched ${u.matchedCount} + EDE Only ${u.edeOnlyCount} = ${actual} ≠ EE ${expected}.`,
+    expected, actual, delta: actual - expected,
+  };
+}
+
+/** Should Be Paid == Expected Enrollments + BO Only. */
+function checkShouldBePaidEqualsEePlusBoOnly(inp: InvariantInputs): InvariantResult {
+  const id = 'should-be-paid-equals-ee-plus-bo-only';
+  const label = 'Should Be Paid equals Expected Enrollments + BO Only';
+  if (!inp.expectedPaymentUniverse) return skipped(id, label, inp.scope);
+  const u = inp.expectedPaymentUniverse;
+  const ee = getExpectedEnrollments(inp.filteredEde);
+  const expected = ee + u.boOnlyCount;
+  const actual = u.total;
+  return {
+    id, label, scope: inp.scope,
+    status: actual === expected ? 'pass' : 'fail',
+    detail: actual === expected
+      ? `Should Be Paid ${actual} = EE ${ee} + BO Only ${u.boOnlyCount}.`
+      : `Should Be Paid ${actual} ≠ EE ${ee} + BO Only ${u.boOnlyCount} (${expected}).`,
+    expected, actual, delta: actual - expected,
+  };
+}
+
+/** Expected Payments Received + Expected But Unpaid == Should Be Paid. */
+function checkPaidPlusUnpaidEqualsShouldBePaid(inp: InvariantInputs): InvariantResult {
+  const id = 'paid-plus-unpaid-equals-should-be-paid';
+  const label = 'Expected Payments Received + Expected But Unpaid = Should Be Paid';
+  if (!inp.expectedPaymentBreakdown) return skipped(id, label, inp.scope);
+  const epb = inp.expectedPaymentBreakdown;
+  const expected = epb.universe.total;
+  const actual = epb.paidCount + epb.unpaidCount;
+  return {
+    id, label, scope: inp.scope,
+    status: actual === expected ? 'pass' : 'fail',
+    detail: actual === expected
+      ? `Paid ${epb.paidCount} + Unpaid ${epb.unpaidCount} = ${actual} = Should Be Paid ${expected}.`
+      : `Paid ${epb.paidCount} + Unpaid ${epb.unpaidCount} = ${actual} ≠ Should Be Paid ${expected}.`,
+    expected, actual, delta: actual - expected,
+  };
+}
+
+/** Expected But Unpaid ∩ BO Active: Non-current EDE == ∅ (diagnostic must not leak). */
+function checkUnpaidDisjointFromBoActiveNonCurrentEde(inp: InvariantInputs): InvariantResult {
+  const id = 'unpaid-disjoint-from-bo-active-non-current-ede';
+  const label = 'Expected But Unpaid is disjoint from BO Active: Non-current EDE diagnostic';
+  if (!inp.expectedPaymentBreakdown || !inp.expectedPaymentUniverse) return skipped(id, label, inp.scope);
+  const diag = new Set(inp.expectedPaymentUniverse.boActiveNonCurrentEde.map((r: any) => r.member_key));
+  const violators = inp.expectedPaymentBreakdown.unpaidRows.filter((r: any) => diag.has(r.member_key));
+  return {
+    id, label, scope: inp.scope,
+    status: violators.length === 0 ? 'pass' : 'fail',
+    detail: violators.length === 0
+      ? `No overlap between Expected But Unpaid (${inp.expectedPaymentBreakdown.unpaidCount}) and diagnostic bucket (${inp.expectedPaymentUniverse.boActiveNonCurrentEdeCount}).`
+      : `${violators.length} unpaid rows also appear in the BO Active: Non-current EDE diagnostic bucket.`,
+    expected: 0, actual: violators.length, delta: violators.length,
+  };
+}
+
+/**
+ * Phase 1.7 defensive: EE ∩ active BO ∩ eligible != 'Yes' must be 0 on every
+ * scope. Non-zero means BO marked an EE member ineligible and the row is
+ * currently dropped from Should Be Paid (no UI surface yet).
+ */
+function checkBoIneligibleFallThroughEmpty(inp: InvariantInputs): InvariantResult {
+  const id = 'bo-ineligible-fall-through-empty';
+  const label = 'BO-ineligible fall-through bucket is empty (EE ∩ active BO ∩ eligible≠Yes)';
+  if (!inp.expectedPaymentUniverse) return skipped(id, label, inp.scope);
+  const count = inp.expectedPaymentUniverse.boIneligibleCount;
+  return {
+    id, label, scope: inp.scope,
+    status: count === 0 ? 'pass' : 'fail',
+    detail: count === 0
+      ? 'No EE members are active in BO and flagged not eligible for commission.'
+      : `${count} EE members are active in BO but eligible_for_commission != 'Yes'. These rows currently fall outside Should Be Paid — review for routing.`,
+    expected: 0, actual: count, delta: count,
+  };
+}
+
 /**
  * Run the full invariant suite for the given scope. Returns one result per
  * check, in display order. Each check is wrapped in try/catch so a runtime
@@ -283,6 +399,11 @@ export function runInvariants(inp: InvariantInputs): InvariantResult[] {
     { id: 'eligible-helper-vs-direct', label: 'Eligible canonical helper matches direct predicate filter', fn: checkEligibleHelperConsistency },
     { id: 'unpaid-paid-disjoint', label: 'No member is simultaneously fully paid and unpaid', fn: checkUnpaidAndPaidDisjoint },
     { id: 'agent-sum-equals-direct', label: 'Per-agent commission sum equals Coverall (Direct) total', fn: checkAgentSumEqualsDirect },
+    { id: 'matched-plus-ede-only-equals-ee', label: 'Matched + EDE Only equals Expected Enrollments', fn: checkMatchedPlusEdeOnlyEqualsEe },
+    { id: 'should-be-paid-equals-ee-plus-bo-only', label: 'Should Be Paid equals Expected Enrollments + BO Only', fn: checkShouldBePaidEqualsEePlusBoOnly },
+    { id: 'paid-plus-unpaid-equals-should-be-paid', label: 'Expected Payments Received + Expected But Unpaid = Should Be Paid', fn: checkPaidPlusUnpaidEqualsShouldBePaid },
+    { id: 'unpaid-disjoint-from-bo-active-non-current-ede', label: 'Expected But Unpaid is disjoint from BO Active: Non-current EDE diagnostic', fn: checkUnpaidDisjointFromBoActiveNonCurrentEde },
+    { id: 'bo-ineligible-fall-through-empty', label: 'BO-ineligible fall-through bucket is empty (EE ∩ active BO ∩ eligible≠Yes)', fn: checkBoIneligibleFallThroughEmpty },
   ];
   return checks.map(({ id, label, fn }) => {
     try {

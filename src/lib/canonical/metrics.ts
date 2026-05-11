@@ -295,11 +295,25 @@ export interface ExpectedPaymentUniverse<T = any> {
    * tile rather than silently inflating the workflow universe.
    */
   boActiveNonCurrentEde: T[];
+  /**
+   * Phase 1.7 defensive fall-through bucket (additive return-shape field):
+   *   in_ee_universe ∧ in_bo_active ∧ eligible_for_commission !== 'Yes'
+   * These rows were silently dropped by the original 4-branch classifier
+   * (EE ∩ active BO ∩ eligibility='No'/blank). Surfacing them prevents
+   * silent loss when BO marks an EE member as not eligible.
+   *
+   * NOT counted in `rows` / `total`, NOT routed to Should Be Paid in
+   * Phase 1.7. Future routing decision deferred. `boIneligibleCount` MUST
+   * be 0 on canonical fixtures and live data; if it ever goes non-zero the
+   * runtime invariant `bo-ineligible-fall-through-empty` fails loudly.
+   */
+  boIneligible: T[];
   total: number;
   matchedCount: number;
   boOnlyCount: number;
   edeOnlyCount: number;
   boActiveNonCurrentEdeCount: number;
+  boIneligibleCount: number;
 }
 
 /**
@@ -324,6 +338,7 @@ export function getExpectedPaymentUniverse(
   const boOnly: any[] = [];
   const edeOnly: any[] = [];
   const boActiveNonCurrentEde: any[] = [];
+  const boIneligible: any[] = [];
   for (const r of inScope) {
     // EDE evidence MUST be membership in current Expected Enrollments
     // (filteredEde.uniqueMembers) only — same predicate used by the EE card.
@@ -346,6 +361,11 @@ export function getExpectedPaymentUniverse(
     } else if (!inEde && inBoActive && eligibleYes && rawInEde) {
       // Diagnostic — visible separately, not counted toward Should Be Paid.
       boActiveNonCurrentEde.push(r);
+    } else if (inEde && inBoActive && !eligibleYes) {
+      // Phase 1.7 fall-through (additive): EE member, active BO, but BO
+      // flags eligible_for_commission != 'Yes'. Surfaces silently-dropped
+      // rows; NOT counted in Should Be Paid.
+      boIneligible.push(r);
     }
   }
   const rows = [...matched, ...boOnly, ...edeOnly];
@@ -355,11 +375,13 @@ export function getExpectedPaymentUniverse(
     boOnly,
     edeOnly,
     boActiveNonCurrentEde,
+    boIneligible,
     total: rows.length,
     matchedCount: matched.length,
     boOnlyCount: boOnly.length,
     edeOnlyCount: edeOnly.length,
     boActiveNonCurrentEdeCount: boActiveNonCurrentEde.length,
+    boIneligibleCount: boIneligible.length,
   };
 }
 

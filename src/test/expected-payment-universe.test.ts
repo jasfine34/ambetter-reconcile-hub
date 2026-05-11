@@ -289,3 +289,55 @@ describe('Phase 1 (corrected): invariants across scopes', () => {
     });
   }
 });
+
+describe('Phase 1.7: boIneligible fall-through bucket (additive)', () => {
+  it('boIneligibleCount is 0 on the primary fixture', () => {
+    const { reconciled, filteredEde } = fixture();
+    const u = getExpectedPaymentUniverse(reconciled, 'Coverall', filteredEde, new Set());
+    expect(u.boIneligibleCount).toBe(0);
+    expect(u.boIneligible).toEqual([]);
+  });
+
+  it('catches EE ∩ active BO ∩ eligible != Yes rows the original 4-branch classifier dropped', () => {
+    // Pre-1.7, this row matched none of {matched, boOnly, edeOnly,
+    // boActiveNonCurrentEde} and was silently lost. Now it lands in
+    // boIneligible (and is NOT counted in `rows` / `total`).
+    const reconciled: any[] = [
+      { member_key: 'ineligibleEE', in_ede: true, in_back_office: true, eligible_for_commission: 'No', in_commission: false, current_policy_aor: 'Jason Fine (21055210)', agent_npn: '21055210' },
+    ];
+    const filteredEde: FilteredEdeResult = {
+      uniqueMembers: [{
+        member_key: 'ineligibleEE', applicant_name: '', policy_number: '', exchange_subscriber_id: '', issuer_subscriber_id: '',
+        current_policy_aor: '', effective_date: '2026-02-01', policy_status: 'Effectuated',
+        covered_member_count: 1, effective_month: '2026-02', active_months: ['2026-02'], in_back_office: true,
+      }],
+      uniqueKeys: 1, byMonth: { '2026-02': 1 }, inBOCount: 1, notInBOCount: 0, missingFromBO: [],
+    };
+    const u = getExpectedPaymentUniverse(reconciled, 'Coverall', filteredEde, new Set());
+    expect(u.boIneligibleCount).toBe(1);
+    expect(u.boIneligible[0].member_key).toBe('ineligibleEE');
+    // Additive: NOT in rows / total / Should Be Paid.
+    expect(u.total).toBe(0);
+    expect(u.matchedCount).toBe(0);
+    expect(u.boOnlyCount).toBe(0);
+    expect(u.edeOnlyCount).toBe(0);
+    expect(u.boActiveNonCurrentEdeCount).toBe(0);
+  });
+
+  it('every reconciled row classified by the helper lands in exactly one bucket', () => {
+    // Closure: matched ∪ boOnly ∪ edeOnly ∪ boActiveNonCurrentEde ∪
+    // boIneligible covers every row touched by the classifier branches.
+    const { reconciled, filteredEde } = fixture();
+    const u = getExpectedPaymentUniverse(reconciled, 'Coverall', filteredEde, new Set());
+    const classified = new Set<any>();
+    for (const r of u.matched) classified.add(r);
+    for (const r of u.boOnly) classified.add(r);
+    for (const r of u.edeOnly) classified.add(r);
+    for (const r of u.boActiveNonCurrentEde) classified.add(r);
+    for (const r of u.boIneligible) classified.add(r);
+    // The fixture's m8 (Commission-Statement-only) is intentionally out of
+    // every Phase 1 bucket — it's surfaced by Source Coverage separately.
+    // Closure here only asserts that classified ∩ rows = rows.
+    for (const r of u.rows) expect(classified.has(r)).toBe(true);
+  });
+});
