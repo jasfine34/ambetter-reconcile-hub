@@ -221,7 +221,7 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
   });
 
   it('error state: shows error UI on simulated failure, never blank', async () => {
-    mockGetEligible.mockImplementation(() => {
+    mockGetBreakdown.mockImplementation(() => {
       throw new Error('simulated compute failure');
     });
     render(<MissingCommissionExportPage />);
