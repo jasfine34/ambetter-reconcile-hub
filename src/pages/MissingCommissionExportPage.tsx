@@ -703,7 +703,7 @@ export default function MissingCommissionExportPage() {
         _estimatedMissingCommission: estMissing,
         _profile: profile,
         _hasConflict: hasConflict,
-        _sourceType: sourceTypeByRow.get(m) ?? 'Matched',
+        _sourceType: classifySourceTypeForRow(m, breakdown.universe),
       });
     }
 
