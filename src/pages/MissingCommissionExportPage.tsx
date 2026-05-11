@@ -444,7 +444,7 @@ export default function MissingCommissionExportPage() {
         }
       } catch (err) {
         if (!cancelled) {
-          setSourceError(err instanceof Error ? err : new Error(String(err)));
+          setSourceError(err instanceof Error ? err : new Error(serializeErrorMessage(err)));
         }
       } finally {
         if (!cancelled) setSourceLoading(false);
