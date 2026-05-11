@@ -164,7 +164,7 @@ beforeEach(() => {
   mockGetEligible.mockReset();
   mockGetBreakdown.mockReset();
   mockGetAll.mockResolvedValue([]);
-  mockGetEligible.mockReturnValue([]);
+  mockGetEligible.mockReturnValue([]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([]));
   mockGetBreakdown.mockReturnValue(buildBreakdownStub([]));
   setBatchContext();
 });
@@ -193,7 +193,7 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
     // await — that won't work either. The reliable approach: assert
     // synchronously between the click (which commits setStatus('loading'))
     // and the next microtask flush (which resolves the async runner body).
-    mockGetEligible.mockReturnValue([]);
+    mockGetEligible.mockReturnValue([]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([]));
     render(<MissingCommissionExportPage />);
     await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
 
@@ -210,7 +210,7 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
   });
 
   it('empty state: shows explicit "No records found" when query returns zero rows', async () => {
-    mockGetEligible.mockReturnValue([]); // no eligible → no missing
+    mockGetEligible.mockReturnValue([]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([])); // no eligible → no missing
     render(<MissingCommissionExportPage />);
     await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
 
@@ -236,7 +236,7 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
   });
 
   it('populated state: renders table with rows after successful run', async () => {
-    mockGetEligible.mockReturnValue([makeMissingMember('m-1'), makeMissingMember('m-2')]);
+    mockGetEligible.mockReturnValue([makeMissingMember('m-1'), makeMissingMember('m-2')]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([makeMissingMember('m-1'), makeMissingMember('m-2')]));
     render(<MissingCommissionExportPage />);
     await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
 
@@ -247,7 +247,7 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
   });
 
   it('stale-filter state: changing filters after a run shows stale banner; old rows remain visible', async () => {
-    mockGetEligible.mockReturnValue([makeMissingMember('m-1')]);
+    mockGetEligible.mockReturnValue([makeMissingMember('m-1')]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([makeMissingMember('m-1')]));
     // Render once to capture props, then we'll re-render with a mutated currentBatchId.
     setBatchContext({ currentBatchId: BATCH_JAN.id });
     const { rerender } = render(<MissingCommissionExportPage />);
@@ -267,7 +267,7 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
   });
 
   it('download uses last-run snapshot, not current edited filters', async () => {
-    mockGetEligible.mockReturnValue([makeMissingMember('m-1')]);
+    mockGetEligible.mockReturnValue([makeMissingMember('m-1')]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([makeMissingMember('m-1')]));
     setBatchContext({ currentBatchId: BATCH_JAN.id });
     const { rerender } = render(<MissingCommissionExportPage />);
     await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
@@ -315,7 +315,7 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
 // ---------------------------------------------------------------------------
 describe('MissingCommissionExportPage — FFM ID front column', () => {
   it('renders FFM ID as the first column header with the right label', async () => {
-    mockGetEligible.mockReturnValue([makeMissingMember('m-1')]);
+    mockGetEligible.mockReturnValue([makeMissingMember('m-1')]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([makeMissingMember('m-1')]));
     render(<MissingCommissionExportPage />);
     await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('run-report'));
@@ -333,7 +333,7 @@ describe('MissingCommissionExportPage — FFM ID front column', () => {
   });
 
   it('renders the row issuer_subscriber_id in the FFM ID cell', async () => {
-    mockGetEligible.mockReturnValue([makeMissingMember('m-1'), makeMissingMember('m-2')]);
+    mockGetEligible.mockReturnValue([makeMissingMember('m-1'), makeMissingMember('m-2')]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([makeMissingMember('m-1'), makeMissingMember('m-2')]));
     render(<MissingCommissionExportPage />);
     await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('run-report'));
@@ -349,7 +349,7 @@ describe('MissingCommissionExportPage — FFM ID front column', () => {
   it('renders "—" when issuer_subscriber_id is blank (never an empty cell)', async () => {
     const m = makeMissingMember('m-blank');
     m.issuer_subscriber_id = '';
-    mockGetEligible.mockReturnValue([m]);
+    mockGetEligible.mockReturnValue([m]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([m]));
     render(<MissingCommissionExportPage />);
     await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('run-report'));
@@ -363,7 +363,7 @@ describe('MissingCommissionExportPage — FFM ID front column', () => {
     // resolveMemberId prefers issuer_subscriber_id; verify a populated row
     // still yields that value in the Messer Member ID CSV column.
     const m = makeMissingMember('m-csv');
-    mockGetEligible.mockReturnValue([m]);
+    mockGetEligible.mockReturnValue([m]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([m]));
     render(<MissingCommissionExportPage />);
     await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('run-report'));
