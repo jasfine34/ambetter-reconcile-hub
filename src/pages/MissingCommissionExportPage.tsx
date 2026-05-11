@@ -571,11 +571,18 @@ export default function MissingCommissionExportPage() {
       return out;
     })();
 
-    // TODO Phase 1.5 — broaden to expected-payment universe to match Dashboard
-    // Expected But Unpaid (Matched + BO Only + EDE Only). Phase 1 keeps this
-    // export on the narrow getEligibleCohort definition (Matched only).
-    const eligible = getEligibleCohort(reconciled, f.scope, confirmedUpgradeMemberKeys, ranFilteredEde);
-    const missingMembers = eligible.filter((r) => !r.in_commission);
+    // Phase 1.5 — align with Dashboard "Expected But Unpaid". The export now
+    // pulls unpaid rows from the corrected expected-payment universe
+    // (Matched + true BO Only + EDE Only). Diagnostic rows (BO Active:
+    // Non-current EDE) are excluded by the universe helper. getEligibleCohort
+    // is retained for other callers but no longer drives this export.
+    void getEligibleCohort; // keep import live; intentionally unused here
+    const breakdown = getExpectedPaymentBreakdown(reconciled, f.scope, ranFilteredEde, confirmedUpgradeMemberKeys);
+    const sourceTypeByRow = new Map<any, 'Matched' | 'BO Only' | 'EDE Only'>();
+    for (const r of breakdown.universe.matched) sourceTypeByRow.set(r, 'Matched');
+    for (const r of breakdown.universe.boOnly) sourceTypeByRow.set(r, 'BO Only');
+    for (const r of breakdown.universe.edeOnly) sourceTypeByRow.set(r, 'EDE Only');
+    const missingMembers = breakdown.unpaidRows;
 
     const allBeforeBucket: ExportRow[] = [];
     for (const m of missingMembers) {
