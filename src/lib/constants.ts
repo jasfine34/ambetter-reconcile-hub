@@ -71,7 +71,7 @@ export const ISSUE_TYPE_LABELS: Record<IssueType, string> = {
   'SBA Enrollment (no FFM EDE expected)': 'SBA Enrollment (no FFM EDE expected)',
   'Back Office but Missing from EDE': 'Back Office but Missing from EDE',
   'Not Eligible for Commission': 'Not Eligible for Commission',
-  'Wrong Pay Entity': 'Wrong Pay Entity',
+  'Wrong Pay Entity': 'Paid to Wrong Entity',
   'Erica Paid Under Coverall': 'Erica Paid Under Coverall',
   'Erica Paid Under Vix': 'Erica Paid Under Vix',
   'Fully Matched': 'Fully Matched',
