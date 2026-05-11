@@ -299,7 +299,7 @@ export default function AgentSummaryPage() {
           />
         ))}
       </div>
-      <DataTable data={agentData} columns={columns} exportFileName="agent_summary.csv" />
+      <DataTable data={tableData} columns={columns} exportFileName="agent_summary.csv" />
     </div>
   );
 }
