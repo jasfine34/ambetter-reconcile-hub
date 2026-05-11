@@ -650,6 +650,15 @@ export function getSourceCoverageBuckets(
   );
   const boActiveNonCurrentEdePaidCount = boActiveNonCurrentEdeRows.filter((x) => x.row.in_commission).length;
   const boActiveNonCurrentEdeUnpaidCount = boActiveNonCurrentEdeRows.length - boActiveNonCurrentEdePaidCount;
+  const reasonCounts: Record<BoActiveNonCurrentEdeReason, number> = {
+    'future-effective': 0,
+    'non-qualified-status': 0,
+    'aor-or-key-mismatch': 0,
+    'unknown': 0,
+  };
+  for (const r of boActiveNonCurrentEdeRows) {
+    reasonCounts[r.reason] = (reasonCounts[r.reason] ?? 0) + 1;
+  }
 
   return {
     fullyMatchedPaid: { rows: fullyMatchedPaidRows, count: fullyMatchedPaidRows.length },
@@ -664,6 +673,7 @@ export function getSourceCoverageBuckets(
       count: boActiveNonCurrentEdeRows.length,
       paidCount: boActiveNonCurrentEdePaidCount,
       unpaidCount: boActiveNonCurrentEdeUnpaidCount,
+      reasonCounts,
     },
   };
 }
