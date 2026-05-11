@@ -536,6 +536,11 @@ export default function DashboardPage() {
           expectedPaymentBreakdown: m?.expectedPaymentBreakdown,
           expectedPaymentUniverse: m?.expectedPaymentBreakdown?.universe,
           sourceCoverage: m?.sourceCoverage,
+          // Phase 1.8: pass the already-computed helper rows + the canonical
+          // Not-in-BO row set so the disjointness invariant checks the SAME
+          // data the Exception Summary card rendered.
+          edeConsumersNeverFoundInBackOffice: m?.edeConsumersNeverInBo,
+          notInBackOfficeRows: filteredMissingFromBO,
         });
         setInvariantResults(results);
         setInvariantsLastRunAt(new Date());
