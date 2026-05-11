@@ -249,7 +249,8 @@ describe('Phase 1.8 — EDE Consumers Never Found in BO cross-page parity', () =
       uniqueKeys: 1, byMonth: { '2026-02': 1 }, inBOCount: 0, notInBOCount: 1,
       missingFromBO: [{ member_key: 'mEE', applicant_name: 'EE', policy_number: '', exchange_subscriber_id: '', issuer_subscriber_id: 'UEE', current_policy_aor: '', effective_date: '2026-02-01', policy_status: 'Effectuated', covered_member_count: 1, effective_month: '2026-02', active_months: ['2026-02'], in_back_office: false }],
     };
-    const res = getEdeConsumersNeverFoundInBackOffice(normalizedRecords, [], 'Coverall', filteredEde, new Set(), ['2026-02']);
+    const currentNotInBo = new Set(filteredEde.missingFromBO.map((r) => r.member_key));
+    const res = getEdeConsumersNeverFoundInBackOffice(normalizedRecords, [], 'Coverall', currentNotInBo, new Set(), ['2026-02']);
     expect(res.count).toBe(1);
     // Disjoint from top Not-in-BO.
     const notInBoKeys = new Set(filteredEde.missingFromBO.map((r) => r.member_key));
