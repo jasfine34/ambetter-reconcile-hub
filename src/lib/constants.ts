@@ -65,7 +65,7 @@ export type IssueType = (typeof ISSUE_TYPES)[number];
  * in any user-facing context.
  */
 export const ISSUE_TYPE_LABELS: Record<IssueType, string> = {
-  'Missing from Back Office': 'Has EDE Row but Not in Back Office',
+  'Missing from Back Office': 'EDE Consumers Never Found in Back Office',
   'Missing from Commission': 'Eligible & In BO but No Commission Row',
   'Paid but Missing from EDE': 'Paid but Missing from EDE',
   'SBA Enrollment (no FFM EDE expected)': 'SBA Enrollment (no FFM EDE expected)',
@@ -85,7 +85,7 @@ export const ISSUE_TYPE_LABELS: Record<IssueType, string> = {
  */
 export const ISSUE_TYPE_TOOLTIPS: Partial<Record<IssueType, string>> = {
   'Missing from Back Office':
-    'Members with an EDE row whose policy is NOT present in any Back Office export. Distinct from Dashboard "Not in BO" (which is scoped to the current EE universe).',
+    'Qualified Ambetter EDE consumers under our AOR with no usable Back Office record found in the available data. Excludes current Expected Enrollment Not-in-BO rows and members with historical Back Office records that later became inactive or terminated.',
   'Missing from Commission':
     'Members eligible for commission AND found in Back Office, but with no matching commission row. Mutually exclusive with Wrong Pay Entity / Erica Paid Under Coverall / Erica Paid Under Vix.',
 };

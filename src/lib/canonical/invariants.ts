@@ -26,6 +26,7 @@ import {
   type ExpectedPaymentUniverse,
   type SourceCoverageBuckets,
 } from './metrics';
+import type { EdeConsumersNeverInBoResult } from './edeConsumersNeverInBo';
 
 const DOLLAR_TOLERANCE = 0.01;
 
@@ -67,6 +68,15 @@ export interface InvariantInputs {
   expectedPaymentBreakdown?: ExpectedPaymentBreakdown;
   expectedPaymentUniverse?: ExpectedPaymentUniverse;
   sourceCoverage?: SourceCoverageBuckets;
+  /**
+   * Phase 1.8: already-computed
+   * `getEdeConsumersNeverFoundInBackOffice` result + the canonical
+   * Not-in-BO row set. Consumed by the
+   * `ede-consumers-never-in-bo-disjoint-from-current-not-in-bo` check
+   * without recomputing. Optional for backward-compat.
+   */
+  edeConsumersNeverFoundInBackOffice?: EdeConsumersNeverInBoResult;
+  notInBackOfficeRows?: Array<{ member_key: string }>;
 }
 
 /** Helper: dollar equality within tolerance. */
@@ -386,6 +396,27 @@ function checkBoIneligibleFallThroughEmpty(inp: InvariantInputs): InvariantResul
 }
 
 /**
+ * Phase 1.8: EDE Consumers Never Found in Back Office must be disjoint from
+ * the current top "Not in Back Office" card row set. Catches a regression
+ * that would re-overlap the two cards.
+ */
+function checkEdeConsumersNeverInBoDisjointFromCurrentNotInBo(inp: InvariantInputs): InvariantResult {
+  const id = 'ede-consumers-never-in-bo-disjoint-from-current-not-in-bo';
+  const label = 'EDE Consumers Never Found in BO is disjoint from current Not-in-BO';
+  if (!inp.edeConsumersNeverFoundInBackOffice || !inp.notInBackOfficeRows) return skipped(id, label, inp.scope);
+  const notInBoKeys = new Set(inp.notInBackOfficeRows.map((r) => r.member_key));
+  const violators = inp.edeConsumersNeverFoundInBackOffice.rows.filter((r) => notInBoKeys.has(r.member_key));
+  return {
+    id, label, scope: inp.scope,
+    status: violators.length === 0 ? 'pass' : 'fail',
+    detail: violators.length === 0
+      ? `No overlap between EDE Consumers Never in BO (${inp.edeConsumersNeverFoundInBackOffice.count}) and current Not-in-BO (${notInBoKeys.size}).`
+      : `${violators.length} members appear in BOTH the EDE Consumers Never in BO card and the current Not-in-BO card.`,
+    expected: 0, actual: violators.length, delta: violators.length,
+  };
+}
+
+/**
  * Run the full invariant suite for the given scope. Returns one result per
  * check, in display order. Each check is wrapped in try/catch so a runtime
  * exception in one check surfaces as an `error` status (distinct from a
@@ -404,6 +435,7 @@ export function runInvariants(inp: InvariantInputs): InvariantResult[] {
     { id: 'paid-plus-unpaid-equals-should-be-paid', label: 'Expected Payments Received + Expected But Unpaid = Should Be Paid', fn: checkPaidPlusUnpaidEqualsShouldBePaid },
     { id: 'unpaid-disjoint-from-bo-active-non-current-ede', label: 'Expected But Unpaid is disjoint from BO Active: Non-current EDE diagnostic', fn: checkUnpaidDisjointFromBoActiveNonCurrentEde },
     { id: 'bo-ineligible-fall-through-empty', label: 'BO-ineligible fall-through bucket is empty (EE ∩ active BO ∩ eligible≠Yes)', fn: checkBoIneligibleFallThroughEmpty },
+    { id: 'ede-consumers-never-in-bo-disjoint-from-current-not-in-bo', label: 'EDE Consumers Never Found in BO is disjoint from current Not-in-BO', fn: checkEdeConsumersNeverInBoDisjointFromCurrentNotInBo },
   ];
   return checks.map(({ id, label, fn }) => {
     try {

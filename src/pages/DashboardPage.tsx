@@ -39,6 +39,7 @@ import {
   isActiveBackOfficeRecord,
   getExpectedPaymentBreakdown,
   getSourceCoverageBuckets,
+  getEdeConsumersNeverFoundInBackOffice,
 } from '@/lib/canonical';
 import { getIssueTypeLabel } from '@/lib/constants';
 
@@ -149,6 +150,21 @@ const NOT_IN_BO_COLUMNS = [
   { key: 'effective_date', label: 'Effective Date' },
   { key: 'policy_status', label: 'Policy Status' },
   { key: 'covered_member_count', label: 'Covered Members' },
+];
+
+// Phase 1.8 drilldown for the "EDE Consumers Never Found in Back Office"
+// Exception Summary card. Sourced from getEdeConsumersNeverFoundInBackOffice
+// — strictly disjoint from the top NotInBO card and from the diagnostic
+// BO Active: Non-current EDE bucket.
+const EDE_CONSUMERS_NEVER_IN_BO_COLUMNS = [
+  { key: 'applicant_name', label: 'Full Name' },
+  { key: 'policy_number', label: 'Policy #' },
+  { key: 'exchange_subscriber_id', label: 'Exchange Sub ID' },
+  { key: 'issuer_subscriber_id', label: 'Issuer Sub ID' },
+  { key: 'current_policy_aor', label: 'Current Policy AOR' },
+  { key: 'effective_date', label: 'Effective Date' },
+  { key: 'effective_month', label: 'Eff. Month' },
+  { key: 'policy_status', label: 'Policy Status' },
 ];
 
 // NOTE: Pay-entity scope state moved to the shared `usePayEntityScope` hook
@@ -520,6 +536,11 @@ export default function DashboardPage() {
           expectedPaymentBreakdown: m?.expectedPaymentBreakdown,
           expectedPaymentUniverse: m?.expectedPaymentBreakdown?.universe,
           sourceCoverage: m?.sourceCoverage,
+          // Phase 1.8: pass the already-computed helper rows + the canonical
+          // Not-in-BO row set so the disjointness invariant checks the SAME
+          // data the Exception Summary card rendered.
+          edeConsumersNeverFoundInBackOffice: m?.edeConsumersNeverInBo,
+          notInBackOfficeRows: filteredMissingFromBO,
         });
         setInvariantResults(results);
         setInvariantsLastRunAt(new Date());
@@ -627,7 +648,23 @@ export default function DashboardPage() {
     const unpaidExpected = sourceCoverage.expectedButUnpaid.count;
     const totalPaidAll = sourceCoverage.totalPoliciesPaid.count;
     const boActiveNonCurrentEde = sourceCoverage.boActiveNonCurrentEde.count;
-    return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, eligibleCohort, expectedPaymentBreakdown, sourceCoverage, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidBackOfficeOnly, paidEdeOnly, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, boActiveNonCurrentEde, coverallDirectNet, downlineNet, netPaidTotal, splitDelta, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
+
+    // Phase 1.8: canonical "EDE Consumers Never Found in Back Office" — the
+    // Exception Summary card formerly powered by issue_type='Missing from
+    // Back Office'. The persisted issue_type predicate is too loose (gates
+    // on raw any-EDE + ACTIVE BO only), so this helper enforces the strict
+    // reading: qualified Ambetter EDE under our AOR + ZERO BO record
+    // anywhere in normalizedRecords (active OR historical). Disjoint from
+    // the top Not-in-BO card by construction.
+    const edeConsumersNeverInBo = getEdeConsumersNeverFoundInBackOffice(
+      normalizedRecords,
+      reconciled,
+      scopeForCanonical,
+      filteredEde,
+      confirmedUpgradeMemberKeys,
+      coveredMonths,
+    );
+    return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, eligibleCohort, expectedPaymentBreakdown, sourceCoverage, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidBackOfficeOnly, paidEdeOnly, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, boActiveNonCurrentEde, edeConsumersNeverInBo, coverallDirectNet, downlineNet, netPaidTotal, splitDelta, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
   }, [filtered, reconciled, normalizedRecords, payEntityFilter, filteredEde, eeUniverseKeys, priorMonth, statementMonth, effInBO, confirmedUpgradeMemberKeys, coveredMonths]);
 
   // Phase 1.7: keep metricsRef in sync so executeInvariants reads the latest.
@@ -861,9 +898,13 @@ export default function DashboardPage() {
       // Diagnostic-only: BO Active w/ Non-current EDE (Interpretation C).
       // Excluded from Should Be Paid; visible separately for review.
       case 'boActiveNonCurrentEde': return sc.boActiveNonCurrentEde.rows.map((x) => ({ ...x.row, diagnostic_reason: x.reason }));
+      // Phase 1.8: EDE Consumers Never Found in Back Office. Sourced from
+      // the canonical helper rows (already strict-disjoint from the top
+      // Not-in-BO card).
+      case 'edeConsumersNeverInBo': return metrics.edeConsumersNeverInBo.rows;
       default: return filtered;
     }
-  }, [drilldown, filtered, eeUniverseKeys, metrics.sourceCoverage, metrics.expectedPaymentBreakdown]);
+  }, [drilldown, filtered, eeUniverseKeys, metrics.sourceCoverage, metrics.expectedPaymentBreakdown, metrics.edeConsumersNeverInBo]);
 
   const isCoverageDrilldown = ['fullyMatched', 'paidBackOfficeOnly', 'paidEdeOnly', 'commissionOnly', 'backOfficeOnly', 'unpaidExpected', 'totalPaidAll', 'boActiveNonCurrentEde'].includes(drilldown || '');
 
@@ -1685,7 +1726,7 @@ export default function DashboardPage() {
                 <h3 className="text-lg font-semibold capitalize">{drilldown} Details</h3>
                 <button onClick={() => setDrilldown(null)} className="text-sm text-primary hover:underline">Close</button>
               </div>
-              <DataTable data={drilldownData} columns={drilldown === 'paidEdeOnly' ? PAID_EDE_ONLY_DRILLDOWN_COLUMNS : drilldown === 'boActiveNonCurrentEde' ? BO_ACTIVE_NON_CURRENT_EDE_COLUMNS : (isCoverageDrilldown ? COVERAGE_DRILLDOWN_COLUMNS : RECON_COLUMNS)} exportFileName={`${drilldown}_details.csv`} />
+              <DataTable data={drilldownData} columns={drilldown === 'paidEdeOnly' ? PAID_EDE_ONLY_DRILLDOWN_COLUMNS : drilldown === 'boActiveNonCurrentEde' ? BO_ACTIVE_NON_CURRENT_EDE_COLUMNS : drilldown === 'edeConsumersNeverInBo' ? EDE_CONSUMERS_NEVER_IN_BO_COLUMNS : (isCoverageDrilldown ? COVERAGE_DRILLDOWN_COLUMNS : RECON_COLUMNS)} exportFileName={`${drilldown}_details.csv`} />
             </div>
           )}
 
@@ -1709,8 +1750,27 @@ export default function DashboardPage() {
             <div>
               <h3 className="text-lg font-semibold mb-3">Exception Summary</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {/* Phase 1.8: "EDE Consumers Never Found in Back Office" —
+                    canonical helper replaces the persisted issue_type
+                    predicate (`r.issue_type === 'Missing from Back Office'`)
+                    which over-counted by including historical-but-inactive
+                    BO records, non-qualified statuses, future-effective
+                    rows, and AOR-out-of-scope members. The persisted
+                    issue_type enum value is unchanged; only this card's
+                    source-of-truth changed. */}
+                {metrics.edeConsumersNeverInBo.count > 0 && (
+                  <MetricCard
+                    title="EDE Consumers Never Found in Back Office"
+                    value={metrics.edeConsumersNeverInBo.count}
+                    variant="warning"
+                    onClick={() => setDrilldown('edeConsumersNeverInBo')}
+                    tooltip={{
+                      text: "Qualified Ambetter EDE consumers under our AOR with no usable Back Office record found in the available data. Excludes current Expected Enrollment Not-in-BO rows and members with historical Back Office records that later became inactive or terminated.",
+                      why: "Recovery target — these enrollments never made it into the carrier's Back Office and won't pay commission until they do.",
+                    }}
+                  />
+                )}
                 {([
-                  { issue: 'Missing from Back Office', tip: { text: "Members with an EDE row whose policy is NOT present in any Back Office export. Distinct from \"Not in BO\" (which is scoped to the current EE universe).", why: "If the carrier's back office doesn't have the policy, commission cannot be paid on it." } },
                   { issue: 'Wrong Pay Entity', tip: { text: "These members were paid, but under the wrong entity (for example, Vix instead of Coverall).", why: "Revenue may be going to the wrong account and may need to be corrected." } },
                   { issue: 'Not Eligible for Commission', tip: { text: "These members exist but are not marked as eligible for commission by the carrier.", why: "These policies will not generate revenue unless eligibility is corrected." } },
                 ] as const).map(({ issue, tip }) => {

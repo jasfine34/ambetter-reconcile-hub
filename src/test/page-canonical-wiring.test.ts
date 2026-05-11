@@ -485,3 +485,23 @@ describe('Phase 1.7 static guard — no raw r.in_ede predicate in consumer pages
   });
 });
 
+// ---------------------------------------------------------------------------
+// Phase 1.8 static guard — DashboardPage.tsx must not derive the "EDE
+// Consumers Never Found in Back Office" Exception Summary card from the
+// persisted `issue_type === 'Missing from Back Office'` predicate. The
+// canonical helper `getEdeConsumersNeverFoundInBackOffice` is the source of
+// truth.
+//
+// Whitelist (documented): the persisted enum string may still appear in
+// reconcile.ts (assigner), ExceptionsPage (chip iteration via ISSUE_TYPES),
+// constants.ts (label/tooltip maps), and tests that explicitly guard
+// persisted enum behavior. Those files are NOT scanned here.
+// ---------------------------------------------------------------------------
+describe('Phase 1.8 static guard — Dashboard no longer uses issue_type === "Missing from Back Office"', () => {
+  it('DashboardPage.tsx contains no `issue_type === \'Missing from Back Office\'` predicate', () => {
+    const src = readFileSync(resolve(__dirname, '..', 'pages', 'DashboardPage.tsx'), 'utf8');
+    const stripped = stripComments(src);
+    expect(stripped).not.toMatch(/issue_type\s*===\s*['"]Missing from Back Office['"]/);
+  });
+});
+

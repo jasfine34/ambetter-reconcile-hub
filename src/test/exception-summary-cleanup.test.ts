@@ -62,8 +62,15 @@ describe("getIssueTypeLabel UI rename", () => {
     expect(getIssueTypeLabel('Not Eligible for Commission')).toBe(
       'Not Eligible for Commission',
     );
+    // Phase 1.8: label renamed to reflect canonical helper semantics.
     expect(getIssueTypeLabel('Missing from Back Office')).toBe(
-      'Has EDE Row but Not in Back Office',
+      'EDE Consumers Never Found in Back Office',
     );
+  });
+});
+
+describe('Phase 1.8 — persisted enum unchanged', () => {
+  it('underlying ISSUE_TYPES enum still contains the persisted "Missing from Back Office" string', () => {
+    expect(ISSUE_TYPES).toContain('Missing from Back Office');
   });
 });
