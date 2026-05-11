@@ -893,9 +893,13 @@ export default function DashboardPage() {
       // Diagnostic-only: BO Active w/ Non-current EDE (Interpretation C).
       // Excluded from Should Be Paid; visible separately for review.
       case 'boActiveNonCurrentEde': return sc.boActiveNonCurrentEde.rows.map((x) => ({ ...x.row, diagnostic_reason: x.reason }));
+      // Phase 1.8: EDE Consumers Never Found in Back Office. Sourced from
+      // the canonical helper rows (already strict-disjoint from the top
+      // Not-in-BO card).
+      case 'edeConsumersNeverInBo': return metrics.edeConsumersNeverInBo.rows;
       default: return filtered;
     }
-  }, [drilldown, filtered, eeUniverseKeys, metrics.sourceCoverage, metrics.expectedPaymentBreakdown]);
+  }, [drilldown, filtered, eeUniverseKeys, metrics.sourceCoverage, metrics.expectedPaymentBreakdown, metrics.edeConsumersNeverInBo]);
 
   const isCoverageDrilldown = ['fullyMatched', 'paidBackOfficeOnly', 'paidEdeOnly', 'commissionOnly', 'backOfficeOnly', 'unpaidExpected', 'totalPaidAll', 'boActiveNonCurrentEde'].includes(drilldown || '');
 
