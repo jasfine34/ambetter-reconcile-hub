@@ -101,7 +101,7 @@ export function SourceFunnelCard({ normalizedRecords, coveredMonths, carrierKey 
   );
 }
 
-function FunnelRow({ month, funnel }: { month: string; funnel: FunnelCounts }) {
+function FunnelRow({ month, funnel, isPriorCarryover }: { month: string; funnel: FunnelCounts; isPriorCarryover?: boolean }) {
   const edeToBoGap = funnel.edeOnly;
   const boToCommGap = funnel.edeAndBo - funnel.edeAndBoAndCommission;
 
