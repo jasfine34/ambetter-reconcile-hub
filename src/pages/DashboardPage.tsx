@@ -1745,8 +1745,27 @@ export default function DashboardPage() {
             <div>
               <h3 className="text-lg font-semibold mb-3">Exception Summary</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {/* Phase 1.8: "EDE Consumers Never Found in Back Office" —
+                    canonical helper replaces the persisted issue_type
+                    predicate (`r.issue_type === 'Missing from Back Office'`)
+                    which over-counted by including historical-but-inactive
+                    BO records, non-qualified statuses, future-effective
+                    rows, and AOR-out-of-scope members. The persisted
+                    issue_type enum value is unchanged; only this card's
+                    source-of-truth changed. */}
+                {metrics.edeConsumersNeverInBo.count > 0 && (
+                  <MetricCard
+                    title="EDE Consumers Never Found in Back Office"
+                    value={metrics.edeConsumersNeverInBo.count}
+                    variant="warning"
+                    onClick={() => setDrilldown('edeConsumersNeverInBo')}
+                    tooltip={{
+                      text: "Qualified Ambetter EDE consumers under our AOR with no usable Back Office record found in the available data. Excludes current Expected Enrollment Not-in-BO rows and members with historical Back Office records that later became inactive or terminated.",
+                      why: "Recovery target — these enrollments never made it into the carrier's Back Office and won't pay commission until they do.",
+                    }}
+                  />
+                )}
                 {([
-                  { issue: 'Missing from Back Office', tip: { text: "Members with an EDE row whose policy is NOT present in any Back Office export. Distinct from \"Not in BO\" (which is scoped to the current EE universe).", why: "If the carrier's back office doesn't have the policy, commission cannot be paid on it." } },
                   { issue: 'Wrong Pay Entity', tip: { text: "These members were paid, but under the wrong entity (for example, Vix instead of Coverall).", why: "Revenue may be going to the wrong account and may need to be corrected." } },
                   { issue: 'Not Eligible for Commission', tip: { text: "These members exist but are not marked as eligible for commission by the carrier.", why: "These policies will not generate revenue unless eligibility is corrected." } },
                 ] as const).map(({ issue, tip }) => {
