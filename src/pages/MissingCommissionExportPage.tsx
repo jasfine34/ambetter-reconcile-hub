@@ -41,6 +41,7 @@ import { extractNpnFromAorString } from '@/lib/agents';
 import { NPN_MAP, DEFAULT_COMMISSION_ESTIMATE } from '@/lib/constants';
 import { computeFilteredEde } from '@/lib/expectedEde';
 import { getEligibleCohort, getExpectedPaymentBreakdown } from '@/lib/canonical/metrics';
+import { classifySourceTypeForRow } from '@/lib/canonical/sourceTypeForRow';
 import { getCoveredMonths } from '@/lib/dateRange';
 import {
   findWeakMatches,
