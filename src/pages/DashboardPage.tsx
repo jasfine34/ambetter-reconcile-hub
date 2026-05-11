@@ -630,6 +630,9 @@ export default function DashboardPage() {
     return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, eligibleCohort, expectedPaymentBreakdown, sourceCoverage, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidBackOfficeOnly, paidEdeOnly, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, boActiveNonCurrentEde, coverallDirectNet, downlineNet, netPaidTotal, splitDelta, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
   }, [filtered, reconciled, normalizedRecords, payEntityFilter, filteredEde, eeUniverseKeys, priorMonth, statementMonth, effInBO, confirmedUpgradeMemberKeys, coveredMonths]);
 
+  // Phase 1.7: keep metricsRef in sync so executeInvariants reads the latest.
+  useEffect(() => { metricsRef.current = metrics; }, [metrics]);
+
   // Clawback rows — every commission row with amount < 0 within the current
   // pay-entity scope. Derived from RAW normalized commission records (same
   // source as the totalClawbacks aggregate on the Net Paid card) so the rows
