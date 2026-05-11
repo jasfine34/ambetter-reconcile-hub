@@ -536,7 +536,7 @@ export default function DashboardPage() {
         setInvariantsRunning(false);
       }
     }, 0);
-  }, [invariantsRunning, reconciled, normalizedRecords, filteredEde, confirmedUpgradeMemberKeys, weakMatchResult, payEntityFilter]);
+  }, [invariantsRunning, reconciled, normalizedRecords, filteredEde, confirmedUpgradeMemberKeys, weakMatchResult, payEntityFilter, metrics]);
 
   const dashboardTitle = useMemo(() => {
     switch (payEntityFilter) {
