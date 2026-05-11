@@ -1700,8 +1700,29 @@ export default function DashboardPage() {
                 <MetricCard title="Paid: Commission Statement Only" value={metrics.commissionOnly} icon={<FileText className="h-4 w-4" />} variant="warning" onClick={() => setDrilldown('commissionOnly')} tooltip={{ text: "Members appearing only on commission statements (no EDE, no active BO).", why: "Commission-only ghosts — typically trailing $1 retention payments on legacy books." }} />
                 <MetricCard title="Unpaid: Back Office Only" value={metrics.backOfficeOnly} icon={<Building2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('backOfficeOnly')} tooltip={{ text: "Members active in Back Office, not in EDE, not yet paid.", why: "May represent missed enrollments or future revenue not yet realized." }} />
                 <MetricCard title="Expected But Unpaid" value={metrics.unpaidExpected} icon={<XCircle className="h-4 w-4" />} variant="destructive" onClick={() => setDrilldown('unpaidExpected')} tooltip={{ text: "Members in the expected-payment universe (Matched / BO Only / EDE Only) that were not paid.", why: "Primary recovery target — expected revenue that was not received." }} />
-                <MetricCard title="Total Policies Paid" value={metrics.totalPaidAll} icon={<DollarSign className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('totalPaidAll')} tooltip={{ text: "Count of all unique members where commission was paid, regardless of source.", why: "Total paid across Fully Matched, BO Only, EDE Only, and Commission Statement Only buckets." }} />
-                <MetricCard title="BO Active: Non-current EDE" value={metrics.boActiveNonCurrentEde} icon={<Info className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('boActiveNonCurrentEde')} tooltip={{ text: "Active eligible Back Office records that also have EDE evidence, but not in the current Expected Enrollments universe.", why: "Diagnostic only — typically next-batch future-effective enrollments, AOR/key mismatches, or non-qualified EDE statuses. Excluded from Should Be Paid." }} />
+                <MetricCard title="Total Policies Paid" value={metrics.totalPaidAll} icon={<DollarSign className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('totalPaidAll')} tooltip={{ text: "Count of all unique members where commission was paid, regardless of source.", why: "Total paid = Fully Matched & Paid + Paid: BO Only + Paid: EDE Only + Paid: Commission Statement Only + the paid subset of BO Active: Non-current EDE (Phase 1.7 diagnostic). All five paid buckets are summed here." }} />
+                <MetricCard
+                  title="BO Active: Non-current EDE"
+                  value={metrics.boActiveNonCurrentEde}
+                  icon={<Info className="h-4 w-4" />}
+                  variant="info"
+                  onClick={() => setDrilldown('boActiveNonCurrentEde')}
+                  tooltip={{ text: "Active eligible Back Office records that also have EDE evidence, but not in the current Expected Enrollments universe.", why: "Diagnostic only — typically next-batch future-effective enrollments, AOR/key mismatches, or non-qualified EDE statuses. Excluded from Should Be Paid." }}
+                  splits={(() => {
+                    const b = metrics.sourceCoverage.boActiveNonCurrentEde;
+                    const reasonCounts = { 'future-effective': 0, 'non-qualified-status': 0, 'aor-or-key-mismatch': 0, 'unknown': 0 } as Record<string, number>;
+                    for (const r of b.rows) reasonCounts[r.reason] = (reasonCounts[r.reason] ?? 0) + 1;
+                    return [
+                      { label: 'Paid', value: b.paidCount },
+                      { label: 'Unpaid', value: b.unpaidCount },
+                      { label: 'Future-eff', value: reasonCounts['future-effective'] },
+                      { label: 'Non-qualified', value: reasonCounts['non-qualified-status'] },
+                      { label: 'AOR/key mismatch', value: reasonCounts['aor-or-key-mismatch'] },
+                      { label: 'Unknown', value: reasonCounts['unknown'] },
+                    ].filter((s) => s.value > 0);
+                  })()}
+                />
+
               </div>
             </div>
           )}
