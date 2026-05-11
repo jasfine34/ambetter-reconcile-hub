@@ -46,7 +46,6 @@ import {
   type PayEntityScope,
   QUALIFIED_RAW_STATUSES,
   isAorInScope,
-  type FilteredEdeResult,
 } from '../expectedEde';
 import { pickCurrentPolicyAor } from '../aorPicker';
 import type { NormalizedRecord } from '../normalize';
@@ -80,7 +79,15 @@ export function getEdeConsumersNeverFoundInBackOffice(
   normalizedRecords: any[],
   reconciled: any[],
   scope: PayEntityScope,
-  filteredEde: FilteredEdeResult,
+  /**
+   * Phase 1.8 fix: ONLY the current Dashboard "Not in Back Office" row set
+   * (i.e. `filteredMissingFromBO` from `getNotInBackOfficeRows`). Previously
+   * this parameter was the full `FilteredEdeResult.uniqueMembers`, which
+   * over-subtracted every Expected-Enrollment member regardless of BO
+   * presence and zeroed the card. The caller is the single source for the
+   * current Not-in-BO row set — we do NOT recompute it here.
+   */
+  currentNotInBoMemberKeys: Set<string>,
   confirmedUpgradeMemberKeys: Set<string>,
   coveredMonths: string[],
 ): EdeConsumersNeverInBoResult {
@@ -174,14 +181,13 @@ export function getEdeConsumersNeverFoundInBackOffice(
     }
   }
 
-  // Current EE universe members are owned by the top NotInBO card; exclude
-  // them here so the two cards are disjoint by construction.
-  const eeUniverse = new Set(filteredEde.uniqueMembers.map((m) => m.member_key));
-
+  // Current Not-in-BO members are owned by the top NotInBO card; exclude
+  // ONLY those (not the full EE universe) so the two cards are disjoint by
+  // construction. Caller is the single source — no parallel predicate here.
   const rows: EdeConsumerNeverInBoRow[] = [];
   for (const [memberKey, group] of groups) {
     if (group.hasBoRecord) continue;
-    if (eeUniverse.has(memberKey)) continue;
+    if (currentNotInBoMemberKeys.has(memberKey)) continue;
     if (confirmedUpgradeMemberKeys.has(memberKey)) continue;
 
     // Canonical AOR pick over the member's EDE rows (same picker reconcile
