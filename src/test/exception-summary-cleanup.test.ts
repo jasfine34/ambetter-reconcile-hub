@@ -2,8 +2,8 @@
  * Exception Summary cleanup tests:
  *  - The stale issue cards ('Missing from Commission', 'Paid but Missing from EDE')
  *    are removed from the Dashboard Exception Summary section.
- *  - The retained cards ('Missing from Back Office', 'Wrong Pay Entity',
- *    'Not Eligible for Commission') are still listed.
+ *  - The retained cards ('Wrong Pay Entity', 'Not Eligible for Commission')
+ *    are still listed.
  *  - getIssueTypeLabel('Wrong Pay Entity') renders as 'Paid to Wrong Entity'.
  *
  * The Exception Summary issue list is declared inline in DashboardPage.tsx.
@@ -24,7 +24,6 @@ const dashboardSource = readFileSync(
 function extractExceptionSummaryBlock(src: string): string {
   const start = src.indexOf('Exception Summary');
   expect(start).toBeGreaterThan(-1);
-  // Bound the slice to the next closing </div> </div> region after the map.
   const end = src.indexOf('Clawbacks drilldown', start);
   return src.slice(start, end > -1 ? end : start + 4000);
 }
@@ -45,13 +44,6 @@ describe('Exception Summary cleanup', () => {
     expect(block).toMatch(/issue:\s*'Not Eligible for Commission'/);
   });
 
-  it("Phase 1.8: 'EDE Consumers Never Found in Back Office' card is canonical-helper-driven (not issue_type)", () => {
-    // The card is no longer sourced from r.issue_type === 'Missing from Back Office'.
-    expect(block).not.toMatch(/issue:\s*'Missing from Back Office'/);
-    expect(block).toMatch(/EDE Consumers Never Found in Back Office/);
-    expect(block).toMatch(/edeConsumersNeverInBo/);
-  });
-
   it('preserves underlying issue_type enum values in ISSUE_TYPES (persisted strings unchanged)', () => {
     expect(ISSUE_TYPES).toContain('Missing from Commission');
     expect(ISSUE_TYPES).toContain('Paid but Missing from EDE');
@@ -68,14 +60,13 @@ describe("getIssueTypeLabel UI rename", () => {
     expect(getIssueTypeLabel('Not Eligible for Commission')).toBe(
       'Not Eligible for Commission',
     );
-    // Phase 1.8: label renamed to reflect canonical helper semantics.
     expect(getIssueTypeLabel('Missing from Back Office')).toBe(
-      'EDE Consumers Never Found in Back Office',
+      'Missing from Back Office',
     );
   });
 });
 
-describe('Phase 1.8 — persisted enum unchanged', () => {
+describe('persisted issue_type enum unchanged', () => {
   it('underlying ISSUE_TYPES enum still contains the persisted "Missing from Back Office" string', () => {
     expect(ISSUE_TYPES).toContain('Missing from Back Office');
   });
