@@ -416,6 +416,8 @@ function checkEdeConsumersNeverInBoDisjointFromCurrentNotInBo(inp: InvariantInpu
   };
 }
 
+/**
+ * Run the full invariant suite for the given scope. Returns one result per
  * check, in display order. Each check is wrapped in try/catch so a runtime
  * exception in one check surfaces as an `error` status (distinct from a
  * logical `fail`) without aborting the rest of the suite. #125.
@@ -433,6 +435,7 @@ export function runInvariants(inp: InvariantInputs): InvariantResult[] {
     { id: 'paid-plus-unpaid-equals-should-be-paid', label: 'Expected Payments Received + Expected But Unpaid = Should Be Paid', fn: checkPaidPlusUnpaidEqualsShouldBePaid },
     { id: 'unpaid-disjoint-from-bo-active-non-current-ede', label: 'Expected But Unpaid is disjoint from BO Active: Non-current EDE diagnostic', fn: checkUnpaidDisjointFromBoActiveNonCurrentEde },
     { id: 'bo-ineligible-fall-through-empty', label: 'BO-ineligible fall-through bucket is empty (EE ∩ active BO ∩ eligible≠Yes)', fn: checkBoIneligibleFallThroughEmpty },
+    { id: 'ede-consumers-never-in-bo-disjoint-from-current-not-in-bo', label: 'EDE Consumers Never Found in BO is disjoint from current Not-in-BO', fn: checkEdeConsumersNeverInBoDisjointFromCurrentNotInBo },
   ];
   return checks.map(({ id, label, fn }) => {
     try {
