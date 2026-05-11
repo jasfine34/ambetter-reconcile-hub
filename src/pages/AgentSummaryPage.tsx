@@ -7,10 +7,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { NPN_MAP } from '@/lib/constants';
 import { extractNpnFromAorString } from '@/lib/agents';
 import { getNormalizedRecords } from '@/lib/persistence';
-import { filterCommissionRowsByScope } from '@/lib/canonical';
+import { filterCommissionRowsByScope, getExpectedPaymentBreakdown } from '@/lib/canonical';
 import { computeFilteredEde } from '@/lib/expectedEde';
 import { getCoveredMonths } from '@/lib/dateRange';
 import { usePayEntityScope, type PayEntityScope } from '@/hooks/usePayEntityScope';
+import {
+  findWeakMatches,
+  loadWeakMatchOverrides,
+  applyOverrides,
+  pickStableKey,
+  type WeakMatchOverride,
+} from '@/lib/weakMatch';
 
 const AGENTS = Object.entries(NPN_MAP).map(([npn, info]) => ({ npn, ...info }));
 
@@ -35,28 +42,26 @@ function aorMatchesAgent(currentPolicyAor: string | null | undefined, agent: { n
 /**
  * Agent Summary — per-agent breakdown.
  *
+ * UNPAID ALIGNMENT (Phase 1.6, 2026-05-11): the Unpaid column previously
+ * used the narrow legacy predicate
+ *   r.in_ede && r.in_back_office && eligible='Yes' && !r.in_commission
+ * which excluded BO Only and EDE Only unpaid rows (Becky=0 on Jan 2026 All;
+ * canonical=75). Unpaid now derives from
+ * `getExpectedPaymentBreakdown(...).unpaidRows` so each agent's count
+ * reflects Matched + BO Only + EDE Only unpaid (paid rows and the
+ * "BO Active: Non-current EDE" diagnostic remain excluded by helper
+ * contract). Est. Missing is summed over the SAME canonical unpaid rows,
+ * keeping count and dollars on one definition.
+ *
  * SCOPE-AWARE (#65 fix, 2026-04-28): the per-agent commission $ column was
- * previously aggregated with hard-coded scope='All', which silently leaked
- * Vix dollars into a Coverall view (+$463.50 over-count on Mar 2026
- * Coverall). The page now reads the SAME `usePayEntityScope` hook the
- * Dashboard writes to, so the scope dropdown is shared across both pages and
- * the per-agent sum ties to the canonical Coverall (Direct) total exactly.
- *
- * Two distinct attributions per agent (see ARCHITECTURE_PLAN.md):
- *   - **Expected (AOR)**: members whose canonical `current_policy_aor` matches
- *     this agent. This is the EE-universe ownership count.
- *   - **Written by**: reconciled members where this agent's NPN appears as the
- *     writing agent. Drives the historical paid / unpaid / commission columns
- *     (commission flows through writing-agent NPN on Ambetter statements).
- *
- * Commission dollar totals are sourced from RAW commission rows via the
- * canonical `filterCommissionRowsByScope` helper, then grouped by writing-agent
- * NPN. This guarantees the per-agent "Total Commission" column ties out to
- * the Dashboard's Coverall (Direct) total at the same scope (within $0.01).
+ * previously aggregated with hard-coded scope='All'. The page now reads the
+ * SAME `usePayEntityScope` hook the Dashboard writes to, so the scope
+ * dropdown is shared across both pages.
  */
 export default function AgentSummaryPage() {
   const { reconciled, currentBatchId, batches, resolverIndex } = useBatch();
   const [normalizedRecords, setNormalizedRecords] = useState<any[]>([]);
+  const [weakOverrides, setWeakOverrides] = useState<Map<string, WeakMatchOverride>>(new Map());
   const [scope, setScope] = usePayEntityScope();
 
   const currentBatch = useMemo(
@@ -75,27 +80,24 @@ export default function AgentSummaryPage() {
       .then((recs) => {
         if (cancelled) return;
         setNormalizedRecords(recs as any[]);
-        if (typeof console !== 'undefined') {
-          const comm = (recs as any[]).filter((r) => r.source_type === 'COMMISSION');
-          const peSamples = Array.from(new Set(comm.slice(0, 50).map((r) => r.pay_entity)));
-          // eslint-disable-next-line no-console
-          console.debug('[AgentSummary] normalizedRecords loaded', {
-            batchId: currentBatchId,
-            total: (recs as any[]).length,
-            commissionRows: comm.length,
-            payEntitySamples: peSamples,
-          });
-        }
       })
       .catch(() => { if (!cancelled) setNormalizedRecords([]); });
     return () => { cancelled = true; };
   }, [currentBatchId, reconciled.length]);
 
+  // Mirror Dashboard's weak-match override hydration so the canonical
+  // unpaid helper sees the same confirmedUpgradeMemberKeys set.
+  useEffect(() => {
+    let cancelled = false;
+    loadWeakMatchOverrides()
+      .then((map) => { if (!cancelled) setWeakOverrides(map); })
+      .catch(() => { if (!cancelled) setWeakOverrides(new Map()); });
+    return () => { cancelled = true; };
+  }, [currentBatchId]);
+
   /**
    * Per-agent commission totals from raw commission rows, scoped by the
-   * active pay-entity dropdown (Coverall / Vix / All). The scope arg MUST
-   * mirror the Dashboard's selection — failing to pass it was the root
-   * cause of #65.
+   * active pay-entity dropdown (Coverall / Vix / All).
    */
   const commissionByNpn = useMemo(() => {
     const map = new Map<string, number>();
@@ -109,27 +111,63 @@ export default function AgentSummaryPage() {
     return map;
   }, [normalizedRecords, scope]);
 
-  /**
-   * Canonical EE universe (#118 migration, 2026-05-06): "Expected (AOR)"
-   * now reads from `computeFilteredEde` (the AOR-based current-batch span)
-   * instead of the persistent `is_in_expected_ede_universe` flag. The
-   * persistent flag bakes in pay-entity match and carries across batches,
-   * which produced the Vix structural under-count documented in #118
-   * (0 persistent vs 244 canonical for Apr 2026 Vix).
-   */
   const filteredEde = useMemo(
     () => computeFilteredEde(normalizedRecords, reconciled, scope, coveredMonths, resolverIndex),
     [normalizedRecords, reconciled, scope, coveredMonths, resolverIndex],
   );
 
+  // Replicate Dashboard's weak-match resolution → confirmed upgrade keys so
+  // the canonical unpaid breakdown matches Dashboard exactly.
+  const confirmedUpgradeMemberKeys = useMemo(() => {
+    const out = new Set<string>();
+    if (!filteredEde.uniqueMembers.length || !normalizedRecords.length || !weakOverrides.size) {
+      return out;
+    }
+    const periodStart = currentBatch?.statement_month ?? null;
+    const candidates = findWeakMatches(filteredEde.uniqueMembers, normalizedRecords, { periodStart });
+    const { confirmedKeys } = applyOverrides(candidates, weakOverrides);
+    if (!confirmedKeys.size) return out;
+    for (const r of reconciled) {
+      if (r.in_back_office) continue;
+      const key = pickStableKey({
+        issuer_subscriber_id: r.issuer_subscriber_id,
+        exchange_subscriber_id: r.exchange_subscriber_id,
+        policy_number: r.policy_number,
+      });
+      if (key && confirmedKeys.has(key)) out.add(r.member_key);
+    }
+    return out;
+  }, [filteredEde, normalizedRecords, weakOverrides, reconciled, currentBatch?.statement_month]);
+
+  /**
+   * Canonical Expected But Unpaid universe (Matched + BO Only + EDE Only
+   * unpaid). Diagnostic "BO Active: Non-current EDE" rows are excluded by
+   * the helper contract.
+   */
+  const canonicalUnpaidRows = useMemo(
+    () => getExpectedPaymentBreakdown(reconciled, scope, filteredEde, confirmedUpgradeMemberKeys).unpaidRows,
+    [reconciled, scope, filteredEde, confirmedUpgradeMemberKeys],
+  );
+
+  // Group canonical unpaid rows by writing-agent NPN once so the per-row
+  // table can read off count + summed estimated_missing_commission in O(1).
+  const unpaidByNpn = useMemo(() => {
+    const m = new Map<string, { count: number; estMissing: number }>();
+    for (const r of canonicalUnpaidRows) {
+      const npn = String((r as any).agent_npn || '').trim();
+      if (!npn) continue;
+      const entry = m.get(npn) ?? { count: 0, estMissing: 0 };
+      entry.count += 1;
+      entry.estMissing += Number((r as any).estimated_missing_commission) || 0;
+      m.set(npn, entry);
+    }
+    return m;
+  }, [canonicalUnpaidRows]);
+
   const agentData = useMemo(() =>
     AGENTS.map(agent => {
-      // Writing-agent scoped reconciled rows (drives BO / eligible / paid /
-      // unpaid / est-missing). Commission $ comes from raw rows above.
       const writingRecs = reconciled.filter(r => r.agent_npn === agent.npn);
 
-      // Canonical "Expected (AOR)" — count EE-universe members (current
-      // batch span, AOR-based) whose current_policy_aor matches this agent.
       const expected = filteredEde.uniqueMembers.filter(m =>
         aorMatchesAgent(m.current_policy_aor, agent),
       ).length;
@@ -138,12 +176,15 @@ export default function AgentSummaryPage() {
       const bo = writingRecs.filter(r => r.in_back_office).length;
       const eligible = writingRecs.filter(r => r.eligible_for_commission === 'Yes').length;
       const paid = writingRecs.filter(r => r.in_commission).length;
-      const unpaid = writingRecs.filter(r =>
-        r.in_ede && r.in_back_office && r.eligible_for_commission === 'Yes' && !r.in_commission,
-      ).length;
-      // CANONICAL: from raw commission rows, scoped by active pay-entity.
+      // CANONICAL Unpaid (Phase 1.6): Matched + BO Only + EDE Only unpaid
+      // for this writing-agent NPN. Replaces the legacy narrow predicate
+      // (in_ede ∧ in_back_office ∧ eligible='Yes' ∧ !in_commission).
+      const unpaidEntry = unpaidByNpn.get(agent.npn);
+      const unpaid = unpaidEntry?.count ?? 0;
       const totalComm = commissionByNpn.get(agent.npn) || 0;
-      const estMissing = writingRecs.reduce((s, r) => s + (r.estimated_missing_commission || 0), 0);
+      // Est. Missing now sums ONLY canonical unpaid rows for this agent,
+      // matching the count above (single definition for count + dollars).
+      const estMissing = unpaidEntry?.estMissing ?? 0;
       return {
         agent_name: agent.name,
         agent_npn: agent.npn,
@@ -157,7 +198,7 @@ export default function AgentSummaryPage() {
         estimated_missing_commission: estMissing,
       };
     }),
-  [reconciled, commissionByNpn, filteredEde]);
+  [reconciled, commissionByNpn, filteredEde, unpaidByNpn]);
 
   const columns = [
     { key: 'agent_name', label: 'Agent' },
@@ -171,6 +212,16 @@ export default function AgentSummaryPage() {
     { key: 'total_paid_commission', label: 'Total Commission' },
     { key: 'estimated_missing_commission', label: 'Est. Missing' },
   ];
+
+  // Disclose attribution scope: Unpaid totals across this table sum only
+  // the displayed AOR agents' writing-NPNs. Any Expected But Unpaid rows
+  // written by other NPNs are excluded from this view (future ticket may
+  // add an aggregated "Other Writing NPNs" row).
+  const displayedNpns = useMemo(() => new Set(AGENTS.map((a) => a.npn)), []);
+  const otherUnpaidCount = useMemo(
+    () => canonicalUnpaidRows.filter((r: any) => !displayedNpns.has(String(r.agent_npn || '').trim())).length,
+    [canonicalUnpaidRows, displayedNpns],
+  );
 
   return (
     <div className="space-y-6">
@@ -195,8 +246,24 @@ export default function AgentSummaryPage() {
         matches this agent — the canonical "ownership" definition.{' '}
         <strong className="text-foreground">Written by</strong> counts members whose writing-agent NPN matches this agent.
         Commission dollar totals come from <code className="font-mono">filterCommissionRowsByScope</code> at the active{' '}
-        <strong className="text-foreground">{scope}</strong> scope and tie to the Dashboard's Coverall (Direct) total at
-        the same scope.
+        <strong className="text-foreground">{scope}</strong> scope.
+      </div>
+      <div
+        data-testid="agent-summary-attribution-note"
+        className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground"
+      >
+        <strong className="text-foreground">Unpaid</strong> and <strong className="text-foreground">Est. Missing</strong>{' '}
+        use the canonical Expected But Unpaid universe (Matched + BO Only + EDE Only unpaid), grouped by writing-agent
+        NPN. This table only displays the active AOR agents in NPN_MAP (Jason, Erica, Becky); Expected But Unpaid rows
+        written by other NPNs are not included here
+        {otherUnpaidCount > 0 ? (
+          <>
+            {' '}— <strong className="text-foreground">{otherUnpaidCount.toLocaleString()}</strong> such row
+            {otherUnpaidCount === 1 ? '' : 's'} at the current scope.
+          </>
+        ) : (
+          <>.</>
+        )}
       </div>
       <div className="grid grid-cols-3 gap-4">
         {agentData.map(a => (
