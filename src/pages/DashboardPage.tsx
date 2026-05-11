@@ -39,6 +39,7 @@ import {
   isActiveBackOfficeRecord,
   getExpectedPaymentBreakdown,
   getSourceCoverageBuckets,
+  classifySourceTypeForRow,
 } from '@/lib/canonical';
 import { getIssueTypeLabel } from '@/lib/constants';
 
