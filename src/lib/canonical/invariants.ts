@@ -68,6 +68,15 @@ export interface InvariantInputs {
   expectedPaymentBreakdown?: ExpectedPaymentBreakdown;
   expectedPaymentUniverse?: ExpectedPaymentUniverse;
   sourceCoverage?: SourceCoverageBuckets;
+  /**
+   * Phase 1.8: already-computed
+   * `getEdeConsumersNeverFoundInBackOffice` result + the canonical
+   * Not-in-BO row set. Consumed by the
+   * `ede-consumers-never-in-bo-disjoint-from-current-not-in-bo` check
+   * without recomputing. Optional for backward-compat.
+   */
+  edeConsumersNeverFoundInBackOffice?: EdeConsumersNeverInBoResult;
+  notInBackOfficeRows?: Array<{ member_key: string }>;
 }
 
 /** Helper: dollar equality within tolerance. */
