@@ -41,6 +41,7 @@ import { extractNpnFromAorString } from '@/lib/agents';
 import { NPN_MAP, DEFAULT_COMMISSION_ESTIMATE } from '@/lib/constants';
 import { computeFilteredEde } from '@/lib/expectedEde';
 import { getEligibleCohort, getExpectedPaymentBreakdown } from '@/lib/canonical/metrics';
+import { classifySourceTypeForRow } from '@/lib/canonical/sourceTypeForRow';
 import { getCoveredMonths } from '@/lib/dateRange';
 import {
   findWeakMatches,
@@ -602,10 +603,6 @@ export default function MissingCommissionExportPage() {
     // is retained for other callers but no longer drives this export.
     void getEligibleCohort; // keep import live; intentionally unused here
     const breakdown = getExpectedPaymentBreakdown(reconciled, f.scope, ranFilteredEde, confirmedUpgradeMemberKeys);
-    const sourceTypeByRow = new Map<any, 'Matched' | 'BO Only' | 'EDE Only'>();
-    for (const r of breakdown.universe.matched) sourceTypeByRow.set(r, 'Matched');
-    for (const r of breakdown.universe.boOnly) sourceTypeByRow.set(r, 'BO Only');
-    for (const r of breakdown.universe.edeOnly) sourceTypeByRow.set(r, 'EDE Only');
     const missingMembers = breakdown.unpaidRows;
 
     const allBeforeBucket: ExportRow[] = [];
@@ -706,7 +703,7 @@ export default function MissingCommissionExportPage() {
         _estimatedMissingCommission: estMissing,
         _profile: profile,
         _hasConflict: hasConflict,
-        _sourceType: sourceTypeByRow.get(m) ?? 'Matched',
+        _sourceType: classifySourceTypeForRow(m, breakdown.universe),
       });
     }
 

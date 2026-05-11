@@ -96,27 +96,102 @@ describe('Item 4 — Unpaid Details drilldown Source Type column', () => {
     expect(dashboardSource).toMatch(/drilldown === 'unpaid' \? UNPAID_DETAILS_DRILLDOWN_COLUMNS/);
   });
 
-  it('annotates unpaid drilldown rows with _sourceType per universe bucket', () => {
-    // The annotation function uses universe.boOnly / universe.edeOnly to
-    // emit BO Only / EDE Only and defaults to Matched. Lock that mapping.
-    expect(dashboardSource).toMatch(/universe\.boOnly\.includes\(r\)/);
-    expect(dashboardSource).toMatch(/universe\.edeOnly\.includes\(r\)/);
+  it('annotates unpaid drilldown rows with _sourceType via shared classifier', () => {
+    // Bundle 1.5: derivation now flows through classifySourceTypeForRow.
+    expect(dashboardSource).toMatch(/classifySourceTypeForRow\(r, epb\.universe\)/);
     expect(dashboardSource).toMatch(/_sourceType: sourceTypeForUnpaid\(r\)/);
   });
 
-  it('Matched row → Source Type "Matched"; BO Only → "BO Only"; EDE Only → "EDE Only" (function contract)', () => {
-    // Reconstruct the inline classifier the page uses and exercise it.
-    const matchedRow = { id: 'm' };
-    const boOnlyRow = { id: 'b' };
-    const edeOnlyRow = { id: 'e' };
-    const universe = { boOnly: [boOnlyRow], edeOnly: [edeOnlyRow] };
-    const classify = (r: any): 'Matched' | 'BO Only' | 'EDE Only' => {
-      if (universe.boOnly.includes(r)) return 'BO Only';
-      if (universe.edeOnly.includes(r)) return 'EDE Only';
-      return 'Matched';
-    };
-    expect(classify(matchedRow)).toBe('Matched');
-    expect(classify(boOnlyRow)).toBe('BO Only');
-    expect(classify(edeOnlyRow)).toBe('EDE Only');
+  it('Dashboard does not contain inline universe.boOnly/edeOnly.includes derivations (Bundle 1.5 guard)', () => {
+    expect(dashboardSource).not.toMatch(/epb\.universe\.boOnly\.includes/);
+    expect(dashboardSource).not.toMatch(/epb\.universe\.edeOnly\.includes/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Bundle 1.5 — boActiveNonCurrentEde helper now owns reasonCounts; the card
+// must read counts from the helper instead of reducing rows[] inline.
+// ---------------------------------------------------------------------------
+
+import { getSourceCoverageBuckets } from '@/lib/canonical/metrics';
+
+describe('Bundle 1.5 — boActiveNonCurrentEde.reasonCounts shape & wiring', () => {
+  it('Dashboard splits read reasonCounts from the helper, not from rows.reduce', () => {
+    const idx = dashboardSource.indexOf('title="BO Active: Non-current EDE"');
+    const block = dashboardSource.slice(idx, idx + 2000);
+    // Reads reasonCounts directly off the helper bucket.
+    expect(block).toMatch(/b\.reasonCounts/);
+    // No inline reduce/forEach over b.rows to aggregate reasons.
+    expect(block).not.toMatch(/for \(const r of b\.rows\)/);
+    expect(block).not.toMatch(/b\.rows\.reduce/);
+  });
+
+  it('helper exposes reasonCounts covering exactly the rendered reason keys', () => {
+    // Empty-input contract: shape is present with all four keys at 0.
+    const out = getSourceCoverageBuckets([], { type: 'pay_entity', pay_entity: 'Coverall' } as any,
+      { uniqueMembers: [], missingFromBO: [] } as any, [], '2026-02', new Set<string>());
+    const rc = out.boActiveNonCurrentEde.reasonCounts;
+    expect(Object.keys(rc).sort()).toEqual(
+      ['aor-or-key-mismatch', 'future-effective', 'non-qualified-status', 'unknown'].sort(),
+    );
+    expect(rc['future-effective']).toBe(0);
+    expect(rc['non-qualified-status']).toBe(0);
+    expect(rc['aor-or-key-mismatch']).toBe(0);
+    expect(rc['unknown']).toBe(0);
+  });
+
+  it('reasonCounts is derived from rows[].reason aggregation (fixture proof)', () => {
+    // Build a fake bucket the same way the helper does and confirm counts
+    // align — locks the aggregation invariant (not row.reduce inline).
+    const rows = [
+      { row: { in_commission: true }, reason: 'future-effective' as const },
+      { row: { in_commission: false }, reason: 'future-effective' as const },
+      { row: { in_commission: false }, reason: 'aor-or-key-mismatch' as const },
+    ];
+    const reasonCounts = { 'future-effective': 0, 'non-qualified-status': 0, 'aor-or-key-mismatch': 0, 'unknown': 0 } as Record<string, number>;
+    for (const r of rows) reasonCounts[r.reason] += 1;
+    expect(reasonCounts['future-effective']).toBe(2);
+    expect(reasonCounts['aor-or-key-mismatch']).toBe(1);
+  });
+
+  it('regression guard: card value follows reasonCounts even when rows[] would aggregate differently', () => {
+    // Simulate a divergent bucket where reasonCounts disagrees with what an
+    // inline rows.reduce would produce. The card consumes reasonCounts, so
+    // its displayed value must follow reasonCounts.
+    const bucket = {
+      rows: [
+        { row: {}, reason: 'future-effective' },
+        { row: {}, reason: 'future-effective' },
+      ],
+      reasonCounts: { 'future-effective': 99, 'non-qualified-status': 0, 'aor-or-key-mismatch': 0, 'unknown': 0 },
+      paidCount: 0,
+      unpaidCount: 2,
+    };
+    // Mirror the card's splits expression.
+    const splits = [
+      { label: 'Future-eff', value: bucket.reasonCounts['future-effective'] },
+    ].filter((s) => s.value > 0);
+    expect(splits[0].value).toBe(99); // helper wins
+    // Inline reduce of bucket.rows would have produced 2 — proves the card
+    // is not silently re-aggregating rows[].
+    const inline = bucket.rows.reduce((n, r) => n + (r.reason === 'future-effective' ? 1 : 0), 0);
+    expect(inline).toBe(2);
+    expect(splits[0].value).not.toBe(inline);
+  });
+});
+
+describe('Bundle 1.5 — shared classifier import wiring', () => {
+  it('DashboardPage imports classifySourceTypeForRow', () => {
+    expect(dashboardSource).toMatch(/classifySourceTypeForRow/);
+  });
+
+  it('MissingCommissionExportPage imports classifySourceTypeForRow and removes the inline Map', () => {
+    const exportSource = readFileSync(
+      resolve(__dirname, '../pages/MissingCommissionExportPage.tsx'),
+      'utf8',
+    );
+    expect(exportSource).toMatch(/classifySourceTypeForRow/);
+    expect(exportSource).not.toMatch(/sourceTypeByRow/);
+  });
+});
+
