@@ -338,6 +338,7 @@ export function getExpectedPaymentUniverse(
   const boOnly: any[] = [];
   const edeOnly: any[] = [];
   const boActiveNonCurrentEde: any[] = [];
+  const boIneligible: any[] = [];
   for (const r of inScope) {
     // EDE evidence MUST be membership in current Expected Enrollments
     // (filteredEde.uniqueMembers) only — same predicate used by the EE card.
@@ -360,6 +361,11 @@ export function getExpectedPaymentUniverse(
     } else if (!inEde && inBoActive && eligibleYes && rawInEde) {
       // Diagnostic — visible separately, not counted toward Should Be Paid.
       boActiveNonCurrentEde.push(r);
+    } else if (inEde && inBoActive && !eligibleYes) {
+      // Phase 1.7 fall-through (additive): EE member, active BO, but BO
+      // flags eligible_for_commission != 'Yes'. Surfaces silently-dropped
+      // rows; NOT counted in Should Be Paid.
+      boIneligible.push(r);
     }
   }
   const rows = [...matched, ...boOnly, ...edeOnly];
@@ -369,11 +375,13 @@ export function getExpectedPaymentUniverse(
     boOnly,
     edeOnly,
     boActiveNonCurrentEde,
+    boIneligible,
     total: rows.length,
     matchedCount: matched.length,
     boOnlyCount: boOnly.length,
     edeOnlyCount: edeOnly.length,
     boActiveNonCurrentEdeCount: boActiveNonCurrentEde.length,
+    boIneligibleCount: boIneligible.length,
   };
 }
 
