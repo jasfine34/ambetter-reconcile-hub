@@ -40,10 +40,16 @@ describe('Exception Summary cleanup', () => {
     expect(block).not.toMatch(/issue:\s*'Paid but Missing from EDE'/);
   });
 
-  it("retains 'Missing from Back Office', 'Wrong Pay Entity', and 'Not Eligible for Commission'", () => {
-    expect(block).toMatch(/issue:\s*'Missing from Back Office'/);
+  it("retains 'Wrong Pay Entity' and 'Not Eligible for Commission' issue_type-driven cards", () => {
     expect(block).toMatch(/issue:\s*'Wrong Pay Entity'/);
     expect(block).toMatch(/issue:\s*'Not Eligible for Commission'/);
+  });
+
+  it("Phase 1.8: 'EDE Consumers Never Found in Back Office' card is canonical-helper-driven (not issue_type)", () => {
+    // The card is no longer sourced from r.issue_type === 'Missing from Back Office'.
+    expect(block).not.toMatch(/issue:\s*'Missing from Back Office'/);
+    expect(block).toMatch(/EDE Consumers Never Found in Back Office/);
+    expect(block).toMatch(/edeConsumersNeverInBo/);
   });
 
   it('preserves underlying issue_type enum values in ISSUE_TYPES (persisted strings unchanged)', () => {
