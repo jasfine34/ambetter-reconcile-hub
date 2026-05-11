@@ -23,10 +23,7 @@ import type { NormalizedRecord } from './normalize';
 
 /**
  * Statuses that qualify an EDE row as "consumer evidence" for the
- * Expected-Enrollments universe AND for derived helpers (e.g.
- * `getEdeConsumersNeverFoundInBackOffice`). Phase 1.8 extraction — used to
- * be a private constant; exposed so downstream canonical helpers share the
- * single source of truth instead of re-defining their own list.
+ * Expected-Enrollments universe.
  */
 export const QUALIFIED_RAW_STATUSES: ReadonlySet<string> = new Set([
   'effectuated',
@@ -51,9 +48,7 @@ function npnSetForScope(scope: PayEntityScope): ReadonlySet<string> {
 }
 
 /**
- * True if the raw AOR string belongs in the given scope. Phase 1.8: exported
- * so canonical helpers that gate by canonical-picked AOR can share the same
- * scope rule.
+ * True if the raw AOR string belongs in the given scope.
  */
 export function isAorInScope(rawAor: string, scope: PayEntityScope): boolean {
   if (!rawAor) return false;
