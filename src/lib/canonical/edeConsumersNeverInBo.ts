@@ -79,7 +79,15 @@ export function getEdeConsumersNeverFoundInBackOffice(
   normalizedRecords: any[],
   reconciled: any[],
   scope: PayEntityScope,
-  filteredEde: FilteredEdeResult,
+  /**
+   * Phase 1.8 fix: ONLY the current Dashboard "Not in Back Office" row set
+   * (i.e. `filteredMissingFromBO` from `getNotInBackOfficeRows`). Previously
+   * this parameter was the full `FilteredEdeResult.uniqueMembers`, which
+   * over-subtracted every Expected-Enrollment member regardless of BO
+   * presence and zeroed the card. The caller is the single source for the
+   * current Not-in-BO row set — we do NOT recompute it here.
+   */
+  currentNotInBoMemberKeys: Set<string>,
   confirmedUpgradeMemberKeys: Set<string>,
   coveredMonths: string[],
 ): EdeConsumersNeverInBoResult {
