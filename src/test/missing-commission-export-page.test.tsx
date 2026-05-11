@@ -393,3 +393,121 @@ describe('MissingCommissionExportPage — FFM ID front column', () => {
     expect(csvText).toMatch(/iss-m-csv/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 1.5 — Export aligns with Expected But Unpaid (Matched + BO Only +
+// EDE Only). The page now sources rows from getExpectedPaymentBreakdown
+// .unpaidRows, not getEligibleCohort. Paid rows and the BO-Active-Non-Current-
+// EDE diagnostic bucket are excluded by the helper.
+// ---------------------------------------------------------------------------
+describe('MissingCommissionExportPage — Phase 1.5 expected-payment alignment', () => {
+  it('export rows come from getExpectedPaymentBreakdown.unpaidRows (all three buckets)', async () => {
+    const matched = { ...makeMissingMember('m-matched'), _bucket: 'matched' };
+    const boOnly = { ...makeMissingMember('m-bo'), _bucket: 'boOnly' };
+    const edeOnly = { ...makeMissingMember('m-ede'), _bucket: 'edeOnly' };
+    mockGetBreakdown.mockReturnValue(buildBreakdownStub([matched, boOnly, edeOnly]));
+
+    render(<MissingCommissionExportPage />);
+    await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('run-report'));
+    await waitFor(() => expect(screen.getByTestId('results-table')).toBeInTheDocument());
+
+    expect(screen.getByTestId('report-count')).toHaveTextContent(/3 members/);
+    // Source Type column renders in the internal/preview table.
+    const tbody = screen.getByTestId('results-table');
+    expect(tbody).toHaveTextContent('Matched');
+    expect(tbody).toHaveTextContent('BO Only');
+    expect(tbody).toHaveTextContent('EDE Only');
+  });
+
+  it('paid rows (in_commission=true) are excluded from export', async () => {
+    const unpaid = { ...makeMissingMember('m-unpaid'), _bucket: 'matched' };
+    const paid = { ...makeMissingMember('m-paid'), in_commission: true, _bucket: 'matched' };
+    mockGetBreakdown.mockReturnValue(buildBreakdownStub([unpaid, paid]));
+
+    render(<MissingCommissionExportPage />);
+    await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('run-report'));
+    await waitFor(() => expect(screen.getByTestId('results-table')).toBeInTheDocument());
+
+    expect(screen.getByTestId('report-count')).toHaveTextContent(/1 member/);
+    expect(screen.getByTestId('results-table')).toHaveTextContent('iss-m-unpaid');
+    expect(screen.getByTestId('results-table')).not.toHaveTextContent('iss-m-paid');
+  });
+
+  it('BO Active: Non-current EDE diagnostic rows are excluded (not in universe.rows / unpaidRows)', async () => {
+    // The helper places these rows in boActiveNonCurrentEde only; they are NOT
+    // in universe.rows nor in unpaidRows. buildBreakdownStub mirrors that
+    // contract — passing only Matched + BO Only + EDE Only here proves the
+    // export never sees diagnostic rows.
+    const matched = { ...makeMissingMember('m-1'), _bucket: 'matched' };
+    mockGetBreakdown.mockReturnValue(buildBreakdownStub([matched]));
+
+    render(<MissingCommissionExportPage />);
+    await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('run-report'));
+    await waitFor(() => expect(screen.getByTestId('results-table')).toBeInTheDocument());
+
+    expect(screen.getByTestId('report-count')).toHaveTextContent(/1 member/);
+  });
+
+  it('Source Type renders in the preview table but is NOT in the Messer CSV', async () => {
+    const matched = { ...makeMissingMember('m-matched'), _bucket: 'matched' };
+    const boOnly = { ...makeMissingMember('m-bo'), _bucket: 'boOnly' };
+    const edeOnly = { ...makeMissingMember('m-ede'), _bucket: 'edeOnly' };
+    mockGetBreakdown.mockReturnValue(buildBreakdownStub([matched, boOnly, edeOnly]));
+
+    render(<MissingCommissionExportPage />);
+    await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('run-report'));
+    await waitFor(() => expect(screen.getByTestId('results-table')).toBeInTheDocument());
+
+    // Header present in preview table.
+    const headers = Array.from(document.querySelectorAll('th')).map((h) => h.textContent || '');
+    expect(headers.some((h) => /Source Type/i.test(h))).toBe(true);
+
+    // CSV download
+    let csvText = '';
+    const realBlob = global.Blob;
+    (global as any).Blob = function (parts: any[]) {
+      csvText = parts.join('');
+      return new realBlob(parts, { type: 'text/csv' });
+    };
+    (URL as any).createObjectURL = vi.fn(() => 'blob://x');
+    (URL as any).revokeObjectURL = vi.fn();
+    const realCreate = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      const el = realCreate(tag) as any;
+      if (tag === 'a') el.click = () => {};
+      return el;
+    });
+    fireEvent.click(screen.getByTestId('messer-download'));
+    (global as any).Blob = realBlob;
+    vi.restoreAllMocks();
+
+    // CSV must NOT contain Source Type header or the bucket labels.
+    expect(csvText).not.toMatch(/Source Type/i);
+    // Header row is the first line — confirm bucket labels don't appear at all.
+    const firstLine = csvText.split('\n')[0];
+    expect(firstLine).not.toMatch(/Source Type/i);
+  });
+
+  it('premium bucket filter still applies to expected-payment unpaid rows', async () => {
+    const hasPrem = { ...makeMissingMember('m-prem'), net_premium: 100, _bucket: 'matched' };
+    const zeroPrem = { ...makeMissingMember('m-zero'), net_premium: 0, _bucket: 'boOnly' };
+    mockGetBreakdown.mockReturnValue(buildBreakdownStub([hasPrem, zeroPrem]));
+
+    render(<MissingCommissionExportPage />);
+    await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
+
+    // Default bucket = 'all' → 2 rows
+    fireEvent.click(screen.getByTestId('run-report'));
+    await waitFor(() => expect(screen.getByTestId('results-table')).toBeInTheDocument());
+    expect(screen.getByTestId('report-count')).toHaveTextContent(/2 members/);
+
+    // Switch to has_premium → re-run → 1 row
+    fireEvent.click(document.querySelector('[data-bucket="has_premium"]') as HTMLElement);
+    fireEvent.click(screen.getByTestId('run-report'));
+    await waitFor(() => expect(screen.getByTestId('report-count')).toHaveTextContent(/1 member/));
+  });
+});
