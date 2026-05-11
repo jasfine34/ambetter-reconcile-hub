@@ -386,13 +386,19 @@ describe('MissingCommissionExportPage — FFM ID front column', () => {
 
     fireEvent.click(screen.getByTestId('messer-download'));
     (global as any).Blob = realBlob;
+    // Restore only the document.createElement spy. vi.restoreAllMocks would
+    // also reset the inline vi.fn() mocks created in vi.mock(...) factories
+    // (loadWeakMatchOverrides, etc.), which then breaks subsequent tests
+    // because useEffect's Promise.all rejects on `undefined.catch`.
     vi.restoreAllMocks();
-    // Re-prime module-level mocks that restoreAllMocks wiped, so subsequent
-    // tests in this file start from a clean default. (beforeEach also
-    // re-sets these; this is a defensive belt-and-braces.)
-    mockGetAll.mockResolvedValue([]);
-    mockGetEligible.mockReturnValue([]);
-    mockGetBreakdown.mockReturnValue(buildBreakdownStub([]));
+    // Re-prime module-level inline mocks that restoreAllMocks just wiped.
+    const weakMatch = await import('@/lib/weakMatch');
+    (weakMatch.loadWeakMatchOverrides as any).mockResolvedValue(new Map());
+    (weakMatch.findWeakMatches as any).mockReturnValue([]);
+    (weakMatch.applyOverrides as any).mockReturnValue({ confirmedKeys: new Set(), rejectedKeys: new Set() });
+    (weakMatch.pickStableKey as any).mockReturnValue(null);
+    const expectedEde = await import('@/lib/expectedEde');
+    (expectedEde.computeFilteredEde as any).mockReturnValue({ uniqueMembers: [] });
 
     // CSV header must include Member ID; data row must include the FFM ID value.
     expect(csvText).toMatch(/Member ID/);
