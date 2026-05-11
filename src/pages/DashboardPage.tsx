@@ -493,6 +493,10 @@ export default function DashboardPage() {
    * timestamp captured at completion so operators can confirm the click
    * actually executed even when results are unchanged.
    */
+  // Phase 1.7: keep a ref to the latest `metrics` so executeInvariants can
+  // pass the already-computed expectedPaymentBreakdown / sourceCoverage
+  // without forming a forward reference at declaration time.
+  const metricsRef = useRef<any>(null);
   const executeInvariants = useCallback(() => {
     if (invariantsRunning) return;
     setInvariantsRunning(true);
@@ -500,6 +504,7 @@ export default function DashboardPage() {
     // computation blocks the main thread on large batches.
     setTimeout(() => {
       try {
+        const m = metricsRef.current;
         const results = runInvariants({
           reconciled,
           normalizedRecords,
@@ -512,9 +517,9 @@ export default function DashboardPage() {
           isCoverallNpn: isCoverallAORByNPN,
           // Phase 1.7: pass already-computed Dashboard objects so cross-page
           // contract invariants check the SAME data the cards rendered.
-          expectedPaymentBreakdown: metrics.expectedPaymentBreakdown,
-          expectedPaymentUniverse: metrics.expectedPaymentBreakdown.universe,
-          sourceCoverage: metrics.sourceCoverage,
+          expectedPaymentBreakdown: m?.expectedPaymentBreakdown,
+          expectedPaymentUniverse: m?.expectedPaymentBreakdown?.universe,
+          sourceCoverage: m?.sourceCoverage,
         });
         setInvariantResults(results);
         setInvariantsLastRunAt(new Date());
@@ -536,7 +541,7 @@ export default function DashboardPage() {
         setInvariantsRunning(false);
       }
     }, 0);
-  }, [invariantsRunning, reconciled, normalizedRecords, filteredEde, confirmedUpgradeMemberKeys, weakMatchResult, payEntityFilter, metrics]);
+  }, [invariantsRunning, reconciled, normalizedRecords, filteredEde, confirmedUpgradeMemberKeys, weakMatchResult, payEntityFilter]);
 
   const dashboardTitle = useMemo(() => {
     switch (payEntityFilter) {
