@@ -35,9 +35,40 @@ vi.mock('@/lib/expectedEde', () => ({
 }));
 
 const mockGetEligible = vi.fn();
+const mockGetBreakdown = vi.fn();
 vi.mock('@/lib/canonical/metrics', () => ({
   getEligibleCohort: (...a: any[]) => mockGetEligible(...a),
+  getExpectedPaymentBreakdown: (...a: any[]) => mockGetBreakdown(...a),
 }));
+
+/** Build a breakdown stub from a flat row list. Each row may set _bucket
+ *  ('matched' | 'boOnly' | 'edeOnly'); defaults to 'matched'. Rows with
+ *  in_commission=true land in paidRows; false → unpaidRows. */
+function buildBreakdownStub(rows: any[]) {
+  const matched: any[] = [];
+  const boOnly: any[] = [];
+  const edeOnly: any[] = [];
+  for (const r of rows) {
+    if (r._bucket === 'boOnly') boOnly.push(r);
+    else if (r._bucket === 'edeOnly') edeOnly.push(r);
+    else matched.push(r);
+  }
+  const universe = {
+    rows: [...matched, ...boOnly, ...edeOnly],
+    matched, boOnly, edeOnly, boActiveNonCurrentEde: [],
+    total: rows.length,
+    matchedCount: matched.length, boOnlyCount: boOnly.length,
+    edeOnlyCount: edeOnly.length, boActiveNonCurrentEdeCount: 0,
+  };
+  const paidRows = rows.filter((r) => r.in_commission);
+  const unpaidRows = rows.filter((r) => !r.in_commission);
+  return {
+    universe, paidRows, unpaidRows,
+    paidCount: paidRows.length, unpaidCount: unpaidRows.length,
+    paidSplit: { matched: 0, boOnly: 0, edeOnly: 0 },
+    unpaidSplit: { matched: 0, boOnly: 0, edeOnly: 0 },
+  };
+}
 
 vi.mock('@/lib/canonical/memberProfileView', () => {
   const blank = (v = '') => ({
@@ -131,8 +162,10 @@ beforeEach(() => {
   mockUseBatch.mockReset();
   mockGetAll.mockReset();
   mockGetEligible.mockReset();
+  mockGetBreakdown.mockReset();
   mockGetAll.mockResolvedValue([]);
-  mockGetEligible.mockReturnValue([]);
+  mockGetEligible.mockReturnValue([]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([]));
+  mockGetBreakdown.mockReturnValue(buildBreakdownStub([]));
   setBatchContext();
 });
 
@@ -160,7 +193,7 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
     // await — that won't work either. The reliable approach: assert
     // synchronously between the click (which commits setStatus('loading'))
     // and the next microtask flush (which resolves the async runner body).
-    mockGetEligible.mockReturnValue([]);
+    mockGetEligible.mockReturnValue([]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([]));
     render(<MissingCommissionExportPage />);
     await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
 
@@ -177,7 +210,7 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
   });
 
   it('empty state: shows explicit "No records found" when query returns zero rows', async () => {
-    mockGetEligible.mockReturnValue([]); // no eligible → no missing
+    mockGetEligible.mockReturnValue([]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([])); // no eligible → no missing
     render(<MissingCommissionExportPage />);
     await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
 
@@ -188,7 +221,7 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
   });
 
   it('error state: shows error UI on simulated failure, never blank', async () => {
-    mockGetEligible.mockImplementation(() => {
+    mockGetBreakdown.mockImplementation(() => {
       throw new Error('simulated compute failure');
     });
     render(<MissingCommissionExportPage />);
@@ -203,7 +236,7 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
   });
 
   it('populated state: renders table with rows after successful run', async () => {
-    mockGetEligible.mockReturnValue([makeMissingMember('m-1'), makeMissingMember('m-2')]);
+    mockGetEligible.mockReturnValue([makeMissingMember('m-1'), makeMissingMember('m-2')]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([makeMissingMember('m-1'), makeMissingMember('m-2')]));
     render(<MissingCommissionExportPage />);
     await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
 
@@ -214,7 +247,7 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
   });
 
   it('stale-filter state: changing filters after a run shows stale banner; old rows remain visible', async () => {
-    mockGetEligible.mockReturnValue([makeMissingMember('m-1')]);
+    mockGetEligible.mockReturnValue([makeMissingMember('m-1')]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([makeMissingMember('m-1')]));
     // Render once to capture props, then we'll re-render with a mutated currentBatchId.
     setBatchContext({ currentBatchId: BATCH_JAN.id });
     const { rerender } = render(<MissingCommissionExportPage />);
@@ -234,7 +267,7 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
   });
 
   it('download uses last-run snapshot, not current edited filters', async () => {
-    mockGetEligible.mockReturnValue([makeMissingMember('m-1')]);
+    mockGetEligible.mockReturnValue([makeMissingMember('m-1')]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([makeMissingMember('m-1')]));
     setBatchContext({ currentBatchId: BATCH_JAN.id });
     const { rerender } = render(<MissingCommissionExportPage />);
     await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
@@ -282,7 +315,7 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
 // ---------------------------------------------------------------------------
 describe('MissingCommissionExportPage — FFM ID front column', () => {
   it('renders FFM ID as the first column header with the right label', async () => {
-    mockGetEligible.mockReturnValue([makeMissingMember('m-1')]);
+    mockGetEligible.mockReturnValue([makeMissingMember('m-1')]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([makeMissingMember('m-1')]));
     render(<MissingCommissionExportPage />);
     await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('run-report'));
@@ -300,7 +333,7 @@ describe('MissingCommissionExportPage — FFM ID front column', () => {
   });
 
   it('renders the row issuer_subscriber_id in the FFM ID cell', async () => {
-    mockGetEligible.mockReturnValue([makeMissingMember('m-1'), makeMissingMember('m-2')]);
+    mockGetEligible.mockReturnValue([makeMissingMember('m-1'), makeMissingMember('m-2')]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([makeMissingMember('m-1'), makeMissingMember('m-2')]));
     render(<MissingCommissionExportPage />);
     await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('run-report'));
@@ -316,7 +349,7 @@ describe('MissingCommissionExportPage — FFM ID front column', () => {
   it('renders "—" when issuer_subscriber_id is blank (never an empty cell)', async () => {
     const m = makeMissingMember('m-blank');
     m.issuer_subscriber_id = '';
-    mockGetEligible.mockReturnValue([m]);
+    mockGetEligible.mockReturnValue([m]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([m]));
     render(<MissingCommissionExportPage />);
     await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('run-report'));
@@ -330,7 +363,7 @@ describe('MissingCommissionExportPage — FFM ID front column', () => {
     // resolveMemberId prefers issuer_subscriber_id; verify a populated row
     // still yields that value in the Messer Member ID CSV column.
     const m = makeMissingMember('m-csv');
-    mockGetEligible.mockReturnValue([m]);
+    mockGetEligible.mockReturnValue([m]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([m]));
     render(<MissingCommissionExportPage />);
     await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('run-report'));
@@ -353,10 +386,140 @@ describe('MissingCommissionExportPage — FFM ID front column', () => {
 
     fireEvent.click(screen.getByTestId('messer-download'));
     (global as any).Blob = realBlob;
+    // Restore only the document.createElement spy. vi.restoreAllMocks would
+    // also reset the inline vi.fn() mocks created in vi.mock(...) factories
+    // (loadWeakMatchOverrides, etc.), which then breaks subsequent tests
+    // because useEffect's Promise.all rejects on `undefined.catch`.
     vi.restoreAllMocks();
+    // Re-prime module-level inline mocks that restoreAllMocks just wiped.
+    const weakMatch = await import('@/lib/weakMatch');
+    (weakMatch.loadWeakMatchOverrides as any).mockResolvedValue(new Map());
+    (weakMatch.findWeakMatches as any).mockReturnValue([]);
+    (weakMatch.applyOverrides as any).mockReturnValue({ confirmedKeys: new Set(), rejectedKeys: new Set() });
+    (weakMatch.pickStableKey as any).mockReturnValue(null);
+    const expectedEde = await import('@/lib/expectedEde');
+    (expectedEde.computeFilteredEde as any).mockReturnValue({ uniqueMembers: [] });
 
     // CSV header must include Member ID; data row must include the FFM ID value.
     expect(csvText).toMatch(/Member ID/);
     expect(csvText).toMatch(/iss-m-csv/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 1.5 — Export aligns with Expected But Unpaid (Matched + BO Only +
+// EDE Only). The page now sources rows from getExpectedPaymentBreakdown
+// .unpaidRows, not getEligibleCohort. Paid rows and the BO-Active-Non-Current-
+// EDE diagnostic bucket are excluded by the helper.
+// ---------------------------------------------------------------------------
+describe('MissingCommissionExportPage — Phase 1.5 expected-payment alignment', () => {
+  it('export rows come from getExpectedPaymentBreakdown.unpaidRows (all three buckets)', async () => {
+    const matched = { ...makeMissingMember('m-matched'), _bucket: 'matched' };
+    const boOnly = { ...makeMissingMember('m-bo'), _bucket: 'boOnly' };
+    const edeOnly = { ...makeMissingMember('m-ede'), _bucket: 'edeOnly' };
+    mockGetBreakdown.mockReturnValue(buildBreakdownStub([matched, boOnly, edeOnly]));
+
+    render(<MissingCommissionExportPage />);
+    await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('run-report'));
+    await waitFor(() => expect(screen.getByTestId('results-table')).toBeInTheDocument());
+
+    expect(screen.getByTestId('report-count')).toHaveTextContent(/3 members/);
+    // Source Type column renders in the internal/preview table.
+    const tbody = screen.getByTestId('results-table');
+    expect(tbody).toHaveTextContent('Matched');
+    expect(tbody).toHaveTextContent('BO Only');
+    expect(tbody).toHaveTextContent('EDE Only');
+  });
+
+  it('paid rows (in_commission=true) are excluded from export', async () => {
+    const unpaid = { ...makeMissingMember('m-unpaid'), _bucket: 'matched' };
+    const paid = { ...makeMissingMember('m-paid'), in_commission: true, _bucket: 'matched' };
+    mockGetBreakdown.mockReturnValue(buildBreakdownStub([unpaid, paid]));
+
+    render(<MissingCommissionExportPage />);
+    await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('run-report'));
+    await waitFor(() => expect(screen.getByTestId('results-table')).toBeInTheDocument());
+
+    expect(screen.getByTestId('report-count')).toHaveTextContent(/1 member/);
+    expect(screen.getByTestId('results-table')).toHaveTextContent('iss-m-unpaid');
+    expect(screen.getByTestId('results-table')).not.toHaveTextContent('iss-m-paid');
+  });
+
+  it('BO Active: Non-current EDE diagnostic rows are excluded (not in universe.rows / unpaidRows)', async () => {
+    // The helper places these rows in boActiveNonCurrentEde only; they are NOT
+    // in universe.rows nor in unpaidRows. buildBreakdownStub mirrors that
+    // contract — passing only Matched + BO Only + EDE Only here proves the
+    // export never sees diagnostic rows.
+    const matched = { ...makeMissingMember('m-1'), _bucket: 'matched' };
+    mockGetBreakdown.mockReturnValue(buildBreakdownStub([matched]));
+
+    render(<MissingCommissionExportPage />);
+    await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('run-report'));
+    await waitFor(() => expect(screen.getByTestId('results-table')).toBeInTheDocument());
+
+    expect(screen.getByTestId('report-count')).toHaveTextContent(/1 member/);
+  });
+
+  it('Source Type renders in the preview table but is NOT in the Messer CSV', async () => {
+    const matched = { ...makeMissingMember('m-matched'), _bucket: 'matched' };
+    const boOnly = { ...makeMissingMember('m-bo'), _bucket: 'boOnly' };
+    const edeOnly = { ...makeMissingMember('m-ede'), _bucket: 'edeOnly' };
+    mockGetBreakdown.mockReturnValue(buildBreakdownStub([matched, boOnly, edeOnly]));
+
+    render(<MissingCommissionExportPage />);
+    await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('run-report'));
+    await waitFor(() => expect(screen.getByTestId('results-table')).toBeInTheDocument());
+
+    // Header present in preview table.
+    const headers = Array.from(document.querySelectorAll('th')).map((h) => h.textContent || '');
+    expect(headers.some((h) => /Source Type/i.test(h))).toBe(true);
+
+    // CSV download
+    let csvText = '';
+    const realBlob = global.Blob;
+    (global as any).Blob = function (parts: any[]) {
+      csvText = parts.join('');
+      return new realBlob(parts, { type: 'text/csv' });
+    };
+    (URL as any).createObjectURL = vi.fn(() => 'blob://x');
+    (URL as any).revokeObjectURL = vi.fn();
+    const realCreate = document.createElement.bind(document);
+    const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      const el = realCreate(tag) as any;
+      if (tag === 'a') el.click = () => {};
+      return el;
+    });
+    fireEvent.click(screen.getByTestId('messer-download'));
+    (global as any).Blob = realBlob;
+    createSpy.mockRestore();
+
+    // CSV must NOT contain Source Type header or the bucket labels.
+    expect(csvText).not.toMatch(/Source Type/i);
+    // Header row is the first line — confirm bucket labels don't appear at all.
+    const firstLine = csvText.split('\n')[0];
+    expect(firstLine).not.toMatch(/Source Type/i);
+  });
+
+  it('premium bucket filter still applies to expected-payment unpaid rows', async () => {
+    const hasPrem = { ...makeMissingMember('m-prem'), net_premium: 100, _bucket: 'matched' };
+    const zeroPrem = { ...makeMissingMember('m-zero'), net_premium: 0, _bucket: 'boOnly' };
+    mockGetBreakdown.mockReturnValue(buildBreakdownStub([hasPrem, zeroPrem]));
+
+    render(<MissingCommissionExportPage />);
+    await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
+
+    // Default bucket = 'all' → 2 rows
+    fireEvent.click(screen.getByTestId('run-report'));
+    await waitFor(() => expect(screen.getByTestId('results-table')).toBeInTheDocument());
+    expect(screen.getByTestId('report-count')).toHaveTextContent(/2 members/);
+
+    // Switch to has_premium → re-run → 1 row
+    fireEvent.click(document.querySelector('[data-bucket="has_premium"]') as HTMLElement);
+    fireEvent.click(screen.getByTestId('run-report'));
+    await waitFor(() => expect(screen.getByTestId('report-count')).toHaveTextContent(/1 member/));
   });
 });
