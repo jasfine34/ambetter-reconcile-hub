@@ -22,6 +22,9 @@ import {
   getEligibleCohort,
   getNotInBackOffice,
   getExpectedEnrollments,
+  type ExpectedPaymentBreakdown,
+  type ExpectedPaymentUniverse,
+  type SourceCoverageBuckets,
 } from './metrics';
 
 const DOLLAR_TOLERANCE = 0.01;
