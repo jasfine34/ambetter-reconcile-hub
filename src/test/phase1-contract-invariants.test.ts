@@ -234,3 +234,27 @@ describe('Phase 1.7 runInvariants — already-computed inputs are consumed', () 
     expect(r.actual).toBe(1);
   });
 });
+
+describe('Phase 1.8 — EDE Consumers Never Found in BO cross-page parity', () => {
+  it('Dashboard Exception Summary card count === helper rows length, disjoint from top Not-in-BO', async () => {
+    const { getEdeConsumersNeverFoundInBackOffice } = await import('@/lib/canonical/edeConsumersNeverInBo');
+    // EDE row, no BO record anywhere → eligible for new card.
+    const normalizedRecords: any[] = [{
+      source_type: 'EDE', carrier: 'Ambetter', applicant_name: 'NewGuy', effective_date: '2026-02-01',
+      member_key: 'mNew', issuer_subscriber_id: 'UNEW', policy_number: 'PNEW',
+      raw_json: { issuer: 'Ambetter', policyStatus: 'Effectuated', effectiveDate: '2026-02-01', currentPolicyAOR: 'Jason Fine (21055210)', issuerSubscriberId: 'UNEW', exchangePolicyId: 'PNEW' },
+    }];
+    const filteredEde: FilteredEdeResult = {
+      uniqueMembers: [{ member_key: 'mEE', applicant_name: 'EE', policy_number: '', exchange_subscriber_id: '', issuer_subscriber_id: 'UEE', current_policy_aor: '', effective_date: '2026-02-01', policy_status: 'Effectuated', covered_member_count: 1, effective_month: '2026-02', active_months: ['2026-02'], in_back_office: false }],
+      uniqueKeys: 1, byMonth: { '2026-02': 1 }, inBOCount: 0, notInBOCount: 1,
+      missingFromBO: [{ member_key: 'mEE', applicant_name: 'EE', policy_number: '', exchange_subscriber_id: '', issuer_subscriber_id: 'UEE', current_policy_aor: '', effective_date: '2026-02-01', policy_status: 'Effectuated', covered_member_count: 1, effective_month: '2026-02', active_months: ['2026-02'], in_back_office: false }],
+    };
+    const res = getEdeConsumersNeverFoundInBackOffice(normalizedRecords, [], 'Coverall', filteredEde, new Set(), ['2026-02']);
+    expect(res.count).toBe(1);
+    // Disjoint from top Not-in-BO.
+    const notInBoKeys = new Set(filteredEde.missingFromBO.map((r) => r.member_key));
+    const overlap = res.rows.filter((r) => notInBoKeys.has(r.member_key));
+    expect(overlap).toEqual([]);
+  });
+});
+
