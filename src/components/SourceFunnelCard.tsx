@@ -75,7 +75,7 @@ export function SourceFunnelCard({ normalizedRecords, coveredMonths, carrierKey 
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <TrendingDown className="h-4 w-4" />
-            Source Funnel
+            Source Funnel — Whole Batch Diagnostic
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="cursor-help inline-flex">
@@ -83,16 +83,17 @@ export function SourceFunnelCard({ normalizedRecords, coveredMonths, carrierKey 
                 </span>
               </TooltipTrigger>
               <TooltipContent side="top" className="max-w-[320px] text-xs leading-relaxed">
-                Tracks the EDE → Back Office → Commission pipeline per service month.
-                Gaps between stages are the operational signal: EDE→BO gaps become BO
-                attribution alerts; BO→Commission gaps become dispute candidates.
+                Shows Ambetter source flow by service month across the full batch. This diagnostic is not filtered by All / Coverall / Vix scope.
               </TooltipContent>
             </Tooltip>
           </CardTitle>
+          <p className="text-xs text-muted-foreground mt-1" data-testid="source-funnel-subtitle">
+            Shows Ambetter source flow by service month across the full batch. This diagnostic is not filtered by All / Coverall / Vix scope.
+          </p>
         </CardHeader>
         <CardContent className="space-y-4">
-          {funnelsByMonth.map(({ month, funnel }) => (
-            <FunnelRow key={month} month={month} funnel={funnel} />
+          {funnelsByMonth.map(({ month, funnel, isPriorCarryover }) => (
+            <FunnelRow key={month} month={month} funnel={funnel} isPriorCarryover={isPriorCarryover} />
           ))}
         </CardContent>
       </Card>
