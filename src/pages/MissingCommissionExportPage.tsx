@@ -79,6 +79,8 @@ interface ExportRow {
   _hasConflict: boolean;
   _phone: EnrichedField<string>;
   _email: EnrichedField<string>;
+  /** Phase 1.5 — Source/Evidence Type for the unpaid expected-payment row. */
+  _sourceType: 'Matched' | 'BO Only' | 'EDE Only';
 }
 
 const MESSER_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
