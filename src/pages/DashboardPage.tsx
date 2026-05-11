@@ -510,6 +510,11 @@ export default function DashboardPage() {
           scope: payEntityFilter === 'All' ? 'All' : payEntityFilter,
           pickStableKey,
           isCoverallNpn: isCoverallAORByNPN,
+          // Phase 1.7: pass already-computed Dashboard objects so cross-page
+          // contract invariants check the SAME data the cards rendered.
+          expectedPaymentBreakdown: metrics.expectedPaymentBreakdown,
+          expectedPaymentUniverse: metrics.expectedPaymentBreakdown.universe,
+          sourceCoverage: metrics.sourceCoverage,
         });
         setInvariantResults(results);
         setInvariantsLastRunAt(new Date());
