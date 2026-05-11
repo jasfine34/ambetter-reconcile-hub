@@ -603,10 +603,6 @@ export default function MissingCommissionExportPage() {
     // is retained for other callers but no longer drives this export.
     void getEligibleCohort; // keep import live; intentionally unused here
     const breakdown = getExpectedPaymentBreakdown(reconciled, f.scope, ranFilteredEde, confirmedUpgradeMemberKeys);
-    const sourceTypeByRow = new Map<any, 'Matched' | 'BO Only' | 'EDE Only'>();
-    for (const r of breakdown.universe.matched) sourceTypeByRow.set(r, 'Matched');
-    for (const r of breakdown.universe.boOnly) sourceTypeByRow.set(r, 'BO Only');
-    for (const r of breakdown.universe.edeOnly) sourceTypeByRow.set(r, 'EDE Only');
     const missingMembers = breakdown.unpaidRows;
 
     const allBeforeBucket: ExportRow[] = [];
