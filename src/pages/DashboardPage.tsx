@@ -643,7 +643,23 @@ export default function DashboardPage() {
     const unpaidExpected = sourceCoverage.expectedButUnpaid.count;
     const totalPaidAll = sourceCoverage.totalPoliciesPaid.count;
     const boActiveNonCurrentEde = sourceCoverage.boActiveNonCurrentEde.count;
-    return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, eligibleCohort, expectedPaymentBreakdown, sourceCoverage, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidBackOfficeOnly, paidEdeOnly, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, boActiveNonCurrentEde, coverallDirectNet, downlineNet, netPaidTotal, splitDelta, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
+
+    // Phase 1.8: canonical "EDE Consumers Never Found in Back Office" — the
+    // Exception Summary card formerly powered by issue_type='Missing from
+    // Back Office'. The persisted issue_type predicate is too loose (gates
+    // on raw any-EDE + ACTIVE BO only), so this helper enforces the strict
+    // reading: qualified Ambetter EDE under our AOR + ZERO BO record
+    // anywhere in normalizedRecords (active OR historical). Disjoint from
+    // the top Not-in-BO card by construction.
+    const edeConsumersNeverInBo = getEdeConsumersNeverFoundInBackOffice(
+      normalizedRecords,
+      reconciled,
+      scopeForCanonical,
+      filteredEde,
+      confirmedUpgradeMemberKeys,
+      coveredMonths,
+    );
+    return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, eligibleCohort, expectedPaymentBreakdown, sourceCoverage, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidBackOfficeOnly, paidEdeOnly, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, boActiveNonCurrentEde, edeConsumersNeverInBo, coverallDirectNet, downlineNet, netPaidTotal, splitDelta, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
   }, [filtered, reconciled, normalizedRecords, payEntityFilter, filteredEde, eeUniverseKeys, priorMonth, statementMonth, effInBO, confirmedUpgradeMemberKeys, coveredMonths]);
 
   // Phase 1.7: keep metricsRef in sync so executeInvariants reads the latest.
