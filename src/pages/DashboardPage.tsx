@@ -1726,8 +1726,7 @@ export default function DashboardPage() {
                   tooltip={{ text: "Active eligible Back Office records that also have EDE evidence, but not in the current Expected Enrollments universe.", why: "Diagnostic only — typically next-batch future-effective enrollments, AOR/key mismatches, or non-qualified EDE statuses. Excluded from Should Be Paid." }}
                   splits={(() => {
                     const b = metrics.sourceCoverage.boActiveNonCurrentEde;
-                    const reasonCounts = { 'future-effective': 0, 'non-qualified-status': 0, 'aor-or-key-mismatch': 0, 'unknown': 0 } as Record<string, number>;
-                    for (const r of b.rows) reasonCounts[r.reason] = (reasonCounts[r.reason] ?? 0) + 1;
+                    const reasonCounts = b.reasonCounts;
                     return [
                       { label: 'Paid', value: b.paidCount },
                       { label: 'Unpaid', value: b.unpaidCount },
