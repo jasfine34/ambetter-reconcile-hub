@@ -214,14 +214,38 @@ export default function AgentSummaryPage() {
   ];
 
   // Disclose attribution scope: Unpaid totals across this table sum only
-  // the displayed AOR agents' writing-NPNs. Any Expected But Unpaid rows
-  // written by other NPNs are excluded from this view (future ticket may
-  // add an aggregated "Other Writing NPNs" row).
+  // the displayed AOR agents' writing-NPNs. The aggregate row below
+  // surfaces the remaining canonical Expected But Unpaid rows using THE
+  // SAME filtered set the attribution-scope note counts — no second
+  // predicate, no re-classification.
   const displayedNpns = useMemo(() => new Set(AGENTS.map((a) => a.npn)), []);
-  const otherUnpaidCount = useMemo(
-    () => canonicalUnpaidRows.filter((r: any) => !displayedNpns.has(String(r.agent_npn || '').trim())).length,
+  const otherUnpaidRows = useMemo(
+    () => canonicalUnpaidRows.filter((r: any) => !displayedNpns.has(String(r.agent_npn || '').trim())),
     [canonicalUnpaidRows, displayedNpns],
   );
+  const otherUnpaidCount = otherUnpaidRows.length;
+  const otherEstMissing = useMemo(
+    () => otherUnpaidRows.reduce((sum: number, r: any) => sum + (Number(r.estimated_missing_commission) || 0), 0),
+    [otherUnpaidRows],
+  );
+  const tableData = useMemo(() => {
+    if (otherUnpaidCount === 0) return agentData;
+    return [
+      ...agentData,
+      {
+        agent_name: 'Other Writing NPNs (Aggregate)',
+        agent_npn: '—',
+        expected_count: 0,
+        written_by_count: otherUnpaidCount,
+        back_office_count: 0,
+        eligible_count: 0,
+        paid_count: 0,
+        unpaid_count: otherUnpaidCount,
+        total_paid_commission: 0,
+        estimated_missing_commission: otherEstMissing,
+      },
+    ];
+  }, [agentData, otherUnpaidCount, otherEstMissing]);
 
   return (
     <div className="space-y-6">
@@ -275,7 +299,7 @@ export default function AgentSummaryPage() {
           />
         ))}
       </div>
-      <DataTable data={agentData} columns={columns} exportFileName="agent_summary.csv" />
+      <DataTable data={tableData} columns={columns} exportFileName="agent_summary.csv" />
     </div>
   );
 }

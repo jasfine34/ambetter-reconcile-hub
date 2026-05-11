@@ -388,6 +388,30 @@ export function buildMesserCsvFilename(opts: {
 export const stripExcelTextMarker = (value: unknown): string =>
   (value == null ? '' : String(value)).replace(/^'/, '');
 
+/**
+ * Serialize an unknown caught value into a human-readable message string so
+ * error UIs never render the literal text "[object Object]". Prefers a
+ * non-empty `.message`, falls back to JSON, then to String(err).
+ */
+export function serializeErrorMessage(err: unknown): string {
+  if (err == null) return 'Unknown error';
+  if (typeof err === 'string') return err;
+  if (err instanceof Error) return err.message || err.name || 'Error';
+  if (typeof err === 'object') {
+    const maybeMsg = (err as { message?: unknown }).message;
+    if (typeof maybeMsg === 'string' && maybeMsg.trim()) return maybeMsg;
+    try {
+      const s = JSON.stringify(err);
+      if (s && s !== '{}') return s;
+    } catch {
+      /* circular — fall through */
+    }
+  }
+  let s: string;
+  try { s = String(err); } catch { return 'Unknown error'; }
+  return s === '[object Object]' ? 'Unknown error' : s;
+}
+
 /** Convert ExportRow[] → CSV with EXACTLY the Messer column order (no internals). */
 export function buildMesserCsv(rows: ExportRow[]): string {
   const data = rows.map((r) => {
@@ -444,7 +468,7 @@ export default function MissingCommissionExportPage() {
         }
       } catch (err) {
         if (!cancelled) {
-          setSourceError(err instanceof Error ? err : new Error(String(err)));
+          setSourceError(err instanceof Error ? err : new Error(serializeErrorMessage(err)));
         }
       } finally {
         if (!cancelled) setSourceLoading(false);

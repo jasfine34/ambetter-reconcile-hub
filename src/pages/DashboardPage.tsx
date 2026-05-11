@@ -122,6 +122,16 @@ const COVERAGE_DRILLDOWN_COLUMNS = [
   { key: 'actual_commission', label: 'Commission $' },
 ];
 
+// Unpaid Details drilldown columns — Coverage columns + the canonical
+// Phase 1.5 Source Type (`Matched` / `BO Only` / `EDE Only`) so operators
+// can see at a glance which evidence side is unpaid. Field is annotated
+// onto each drilldown row in `drilldownData` from the same
+// `getExpectedPaymentBreakdown` universe buckets that drive the card splits.
+const UNPAID_DETAILS_DRILLDOWN_COLUMNS = [
+  ...COVERAGE_DRILLDOWN_COLUMNS,
+  { key: '_sourceType', label: 'Source Type' },
+];
+
 // Paid: EDE Only-specific drilldown columns. Identical to COVERAGE_DRILLDOWN_COLUMNS
 // but appends a `bo_reason` column so the BO inactive/terminated vs BO absent
 // classification surfaced by getSourceCoverageBuckets is visible. Other
@@ -837,6 +847,15 @@ export default function DashboardPage() {
     if (!drilldown) return null;
     const sc = metrics.sourceCoverage;
     const epb = metrics.expectedPaymentBreakdown;
+    // Phase 1.5 — annotate unpaid drilldown rows with the canonical
+    // `_sourceType` (Matched / BO Only / EDE Only) sourced from the same
+    // breakdown universe buckets used elsewhere. Same classification the
+    // Missing Commission Export page emits — no new predicate.
+    const sourceTypeForUnpaid = (r: any): 'Matched' | 'BO Only' | 'EDE Only' => {
+      if (epb.universe.boOnly.includes(r)) return 'BO Only';
+      if (epb.universe.edeOnly.includes(r)) return 'EDE Only';
+      return 'Matched';
+    };
     switch (drilldown) {
       case 'expected': return filtered.filter(r => eeUniverseKeys.has(r.member_key));
       // Phase 1 (#X): top expected-payment cards now slice from the broader
@@ -846,7 +865,7 @@ export default function DashboardPage() {
       case 'shouldPay': return epb.universe.rows;
       case 'paidComm': return filtered.filter(r => r.in_commission);
       case 'paidEligible': return epb.paidRows;
-      case 'unpaid': return epb.unpaidRows;
+      case 'unpaid': return epb.unpaidRows.map((r) => ({ ...r, _sourceType: sourceTypeForUnpaid(r) }));
       case 'fullyMatched': return sc.fullyMatchedPaid.rows;
       // New Phase 1 tile: Paid: Back Office Only (was wrapped under
       // "Paid but Missing from EDE" / paidOutsideEde — now 4-bucket math).
@@ -1686,7 +1705,7 @@ export default function DashboardPage() {
                 <h3 className="text-lg font-semibold capitalize">{drilldown} Details</h3>
                 <button onClick={() => setDrilldown(null)} className="text-sm text-primary hover:underline">Close</button>
               </div>
-              <DataTable data={drilldownData} columns={drilldown === 'paidEdeOnly' ? PAID_EDE_ONLY_DRILLDOWN_COLUMNS : drilldown === 'boActiveNonCurrentEde' ? BO_ACTIVE_NON_CURRENT_EDE_COLUMNS : (isCoverageDrilldown ? COVERAGE_DRILLDOWN_COLUMNS : RECON_COLUMNS)} exportFileName={`${drilldown}_details.csv`} />
+              <DataTable data={drilldownData} columns={drilldown === 'paidEdeOnly' ? PAID_EDE_ONLY_DRILLDOWN_COLUMNS : drilldown === 'boActiveNonCurrentEde' ? BO_ACTIVE_NON_CURRENT_EDE_COLUMNS : drilldown === 'unpaid' ? UNPAID_DETAILS_DRILLDOWN_COLUMNS : (isCoverageDrilldown ? COVERAGE_DRILLDOWN_COLUMNS : RECON_COLUMNS)} exportFileName={`${drilldown}_details.csv`} />
             </div>
           )}
 
@@ -1700,8 +1719,29 @@ export default function DashboardPage() {
                 <MetricCard title="Paid: Commission Statement Only" value={metrics.commissionOnly} icon={<FileText className="h-4 w-4" />} variant="warning" onClick={() => setDrilldown('commissionOnly')} tooltip={{ text: "Members appearing only on commission statements (no EDE, no active BO).", why: "Commission-only ghosts — typically trailing $1 retention payments on legacy books." }} />
                 <MetricCard title="Unpaid: Back Office Only" value={metrics.backOfficeOnly} icon={<Building2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('backOfficeOnly')} tooltip={{ text: "Members active in Back Office, not in EDE, not yet paid.", why: "May represent missed enrollments or future revenue not yet realized." }} />
                 <MetricCard title="Expected But Unpaid" value={metrics.unpaidExpected} icon={<XCircle className="h-4 w-4" />} variant="destructive" onClick={() => setDrilldown('unpaidExpected')} tooltip={{ text: "Members in the expected-payment universe (Matched / BO Only / EDE Only) that were not paid.", why: "Primary recovery target — expected revenue that was not received." }} />
-                <MetricCard title="Total Policies Paid" value={metrics.totalPaidAll} icon={<DollarSign className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('totalPaidAll')} tooltip={{ text: "Count of all unique members where commission was paid, regardless of source.", why: "Total paid across Fully Matched, BO Only, EDE Only, and Commission Statement Only buckets." }} />
-                <MetricCard title="BO Active: Non-current EDE" value={metrics.boActiveNonCurrentEde} icon={<Info className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('boActiveNonCurrentEde')} tooltip={{ text: "Active eligible Back Office records that also have EDE evidence, but not in the current Expected Enrollments universe.", why: "Diagnostic only — typically next-batch future-effective enrollments, AOR/key mismatches, or non-qualified EDE statuses. Excluded from Should Be Paid." }} />
+                <MetricCard title="Total Policies Paid" value={metrics.totalPaidAll} icon={<DollarSign className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('totalPaidAll')} tooltip={{ text: "Count of all unique members where commission was paid, regardless of source.", why: "Total paid = Fully Matched & Paid + Paid: BO Only + Paid: EDE Only + Paid: Commission Statement Only + the paid subset of BO Active: Non-current EDE (Phase 1.7 diagnostic). All five paid buckets are summed here." }} />
+                <MetricCard
+                  title="BO Active: Non-current EDE"
+                  value={metrics.boActiveNonCurrentEde}
+                  icon={<Info className="h-4 w-4" />}
+                  variant="info"
+                  onClick={() => setDrilldown('boActiveNonCurrentEde')}
+                  tooltip={{ text: "Active eligible Back Office records that also have EDE evidence, but not in the current Expected Enrollments universe.", why: "Diagnostic only — typically next-batch future-effective enrollments, AOR/key mismatches, or non-qualified EDE statuses. Excluded from Should Be Paid." }}
+                  splits={(() => {
+                    const b = metrics.sourceCoverage.boActiveNonCurrentEde;
+                    const reasonCounts = { 'future-effective': 0, 'non-qualified-status': 0, 'aor-or-key-mismatch': 0, 'unknown': 0 } as Record<string, number>;
+                    for (const r of b.rows) reasonCounts[r.reason] = (reasonCounts[r.reason] ?? 0) + 1;
+                    return [
+                      { label: 'Paid', value: b.paidCount },
+                      { label: 'Unpaid', value: b.unpaidCount },
+                      { label: 'Future-eff', value: reasonCounts['future-effective'] },
+                      { label: 'Non-qualified', value: reasonCounts['non-qualified-status'] },
+                      { label: 'AOR/key mismatch', value: reasonCounts['aor-or-key-mismatch'] },
+                      { label: 'Unknown', value: reasonCounts['unknown'] },
+                    ].filter((s) => s.value > 0);
+                  })()}
+                />
+
               </div>
             </div>
           )}
