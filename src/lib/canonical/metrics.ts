@@ -295,11 +295,25 @@ export interface ExpectedPaymentUniverse<T = any> {
    * tile rather than silently inflating the workflow universe.
    */
   boActiveNonCurrentEde: T[];
+  /**
+   * Phase 1.7 defensive fall-through bucket (additive return-shape field):
+   *   in_ee_universe ∧ in_bo_active ∧ eligible_for_commission !== 'Yes'
+   * These rows were silently dropped by the original 4-branch classifier
+   * (EE ∩ active BO ∩ eligibility='No'/blank). Surfacing them prevents
+   * silent loss when BO marks an EE member as not eligible.
+   *
+   * NOT counted in `rows` / `total`, NOT routed to Should Be Paid in
+   * Phase 1.7. Future routing decision deferred. `boIneligibleCount` MUST
+   * be 0 on canonical fixtures and live data; if it ever goes non-zero the
+   * runtime invariant `bo-ineligible-fall-through-empty` fails loudly.
+   */
+  boIneligible: T[];
   total: number;
   matchedCount: number;
   boOnlyCount: number;
   edeOnlyCount: number;
   boActiveNonCurrentEdeCount: number;
+  boIneligibleCount: number;
 }
 
 /**
