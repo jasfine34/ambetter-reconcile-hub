@@ -35,9 +35,40 @@ vi.mock('@/lib/expectedEde', () => ({
 }));
 
 const mockGetEligible = vi.fn();
+const mockGetBreakdown = vi.fn();
 vi.mock('@/lib/canonical/metrics', () => ({
   getEligibleCohort: (...a: any[]) => mockGetEligible(...a),
+  getExpectedPaymentBreakdown: (...a: any[]) => mockGetBreakdown(...a),
 }));
+
+/** Build a breakdown stub from a flat row list. Each row may set _bucket
+ *  ('matched' | 'boOnly' | 'edeOnly'); defaults to 'matched'. Rows with
+ *  in_commission=true land in paidRows; false → unpaidRows. */
+function buildBreakdownStub(rows: any[]) {
+  const matched: any[] = [];
+  const boOnly: any[] = [];
+  const edeOnly: any[] = [];
+  for (const r of rows) {
+    if (r._bucket === 'boOnly') boOnly.push(r);
+    else if (r._bucket === 'edeOnly') edeOnly.push(r);
+    else matched.push(r);
+  }
+  const universe = {
+    rows: [...matched, ...boOnly, ...edeOnly],
+    matched, boOnly, edeOnly, boActiveNonCurrentEde: [],
+    total: rows.length,
+    matchedCount: matched.length, boOnlyCount: boOnly.length,
+    edeOnlyCount: edeOnly.length, boActiveNonCurrentEdeCount: 0,
+  };
+  const paidRows = rows.filter((r) => r.in_commission);
+  const unpaidRows = rows.filter((r) => !r.in_commission);
+  return {
+    universe, paidRows, unpaidRows,
+    paidCount: paidRows.length, unpaidCount: unpaidRows.length,
+    paidSplit: { matched: 0, boOnly: 0, edeOnly: 0 },
+    unpaidSplit: { matched: 0, boOnly: 0, edeOnly: 0 },
+  };
+}
 
 vi.mock('@/lib/canonical/memberProfileView', () => {
   const blank = (v = '') => ({
