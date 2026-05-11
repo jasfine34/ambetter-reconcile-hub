@@ -181,14 +181,13 @@ export function getEdeConsumersNeverFoundInBackOffice(
     }
   }
 
-  // Current EE universe members are owned by the top NotInBO card; exclude
-  // them here so the two cards are disjoint by construction.
-  const eeUniverse = new Set(filteredEde.uniqueMembers.map((m) => m.member_key));
-
+  // Current Not-in-BO members are owned by the top NotInBO card; exclude
+  // ONLY those (not the full EE universe) so the two cards are disjoint by
+  // construction. Caller is the single source — no parallel predicate here.
   const rows: EdeConsumerNeverInBoRow[] = [];
   for (const [memberKey, group] of groups) {
     if (group.hasBoRecord) continue;
-    if (eeUniverse.has(memberKey)) continue;
+    if (currentNotInBoMemberKeys.has(memberKey)) continue;
     if (confirmedUpgradeMemberKeys.has(memberKey)) continue;
 
     // Canonical AOR pick over the member's EDE rows (same picker reconcile
