@@ -9,3 +9,4 @@ export * from './scope';
 export * from './metrics';
 export * from './invariants';
 export * from './isActiveBackOfficeRecord';
+export * from './sourceTypeForRow';
