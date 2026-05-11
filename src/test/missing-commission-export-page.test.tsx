@@ -387,6 +387,12 @@ describe('MissingCommissionExportPage — FFM ID front column', () => {
     fireEvent.click(screen.getByTestId('messer-download'));
     (global as any).Blob = realBlob;
     vi.restoreAllMocks();
+    // Re-prime module-level mocks that restoreAllMocks wiped, so subsequent
+    // tests in this file start from a clean default. (beforeEach also
+    // re-sets these; this is a defensive belt-and-braces.)
+    mockGetAll.mockResolvedValue([]);
+    mockGetEligible.mockReturnValue([]);
+    mockGetBreakdown.mockReturnValue(buildBreakdownStub([]));
 
     // CSV header must include Member ID; data row must include the FFM ID value.
     expect(csvText).toMatch(/Member ID/);
