@@ -616,7 +616,9 @@ export default function DashboardPage() {
     const paidEligible = expectedPaymentBreakdown.paidCount;
     const unpaid = expectedPaymentBreakdown.unpaidCount;
 
-    const paidCommRecords = filtered.filter(r => r.in_commission).length;
+    // Bundle 3: canonicalized — sources from sourceCoverage.totalPoliciesPaid
+    // (same row set powering the "Total Policies Paid" card and drilldown).
+    const paidCommRecords = sourceCoverage.totalPoliciesPaid.count;
     const netPaid = getNetPaidCommission(normalizedRecords, scopeForCanonical);
     const totalComm = netPaid.gross;
     const totalClawbacks = netPaid.clawbacks;
