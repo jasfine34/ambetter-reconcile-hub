@@ -1,12 +1,13 @@
 /**
  * #104 — Best Known Member Profile + Messer Missing Commission Export.
  *
- * Read-only enrichment + new export workflow:
+ * Read-only enrichment + export workflow:
  *   1. Pulls reconciled members for the active batch (or any selected month).
- *   2. Identifies the "missing commission" cohort: members in the canonical
- *      eligible cohort (EE-universe ∩ in_back_office ∩ eligible=Yes) who are
- *      NOT in the commission file (`!in_commission`).
- *   3. For each missing member, builds a {@link MemberProfile} live from
+ *   2. Identifies the canonical Expected But Unpaid cohort: the
+ *      Matched + BO Only + EDE Only unpaid rows returned by
+ *      `getExpectedPaymentBreakdown(...).unpaidRows`. This matches the
+ *      Dashboard "Expected But Unpaid" card exactly.
+ *   3. For each unpaid member, builds a {@link MemberProfile} live from
  *      ALL normalized records across ALL batches — so a Jan record's blank
  *      Address 1 picks up the value from a Mar BO row.
  *   4. Lets the user filter by pay-entity scope and net-premium bucket, and
@@ -40,7 +41,7 @@ import {
 import { extractNpnFromAorString } from '@/lib/agents';
 import { NPN_MAP, DEFAULT_COMMISSION_ESTIMATE } from '@/lib/constants';
 import { computeFilteredEde } from '@/lib/expectedEde';
-import { getEligibleCohort, getExpectedPaymentBreakdown } from '@/lib/canonical/metrics';
+import { getExpectedPaymentBreakdown } from '@/lib/canonical/metrics';
 import { classifySourceTypeForRow } from '@/lib/canonical/sourceTypeForRow';
 import { getCoveredMonths } from '@/lib/dateRange';
 import {
@@ -596,12 +597,10 @@ export default function MissingCommissionExportPage() {
       return out;
     })();
 
-    // Phase 1.5 — align with Dashboard "Expected But Unpaid". The export now
-    // pulls unpaid rows from the corrected expected-payment universe
+    // Phase 1.5 — align with Dashboard "Expected But Unpaid". The export
+    // pulls unpaid rows from the canonical expected-payment universe
     // (Matched + true BO Only + EDE Only). Diagnostic rows (BO Active:
-    // Non-current EDE) are excluded by the universe helper. getEligibleCohort
-    // is retained for other callers but no longer drives this export.
-    void getEligibleCohort; // keep import live; intentionally unused here
+    // Non-current EDE) are excluded by the universe helper.
     const breakdown = getExpectedPaymentBreakdown(reconciled, f.scope, ranFilteredEde, confirmedUpgradeMemberKeys);
     const missingMembers = breakdown.unpaidRows;
 

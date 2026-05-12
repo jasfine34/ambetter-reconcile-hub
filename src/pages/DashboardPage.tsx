@@ -40,6 +40,7 @@ import {
   getExpectedPaymentBreakdown,
   getSourceCoverageBuckets,
   classifySourceTypeForRow,
+  filterCommissionRowsByScope,
 } from '@/lib/canonical';
 import { getIssueTypeLabel } from '@/lib/constants';
 
@@ -78,6 +79,24 @@ const EDE_RAW_DRILLDOWN_COLUMNS = [
   { key: 'issuerSubscriberId', label: 'Issuer Sub ID' },
   { key: 'applicant_name', label: 'Applicant' },
   { key: 'source_file_label', label: 'Source File' },
+];
+
+// Expected Enrollments drilldown columns — matches the FilteredEdeRow shape
+// returned by computeFilteredEde.uniqueMembers (the canonical EE universe).
+// This carveout exists ONLY for the Expected drilldown so the row count and
+// the card value (filteredEde.uniqueKeys) are sourced from the same data.
+// Reconciled-member-only fields (issue_type, actual_commission, in_commission)
+// are intentionally omitted; FilteredEdeRow does not carry them.
+const EXPECTED_DRILLDOWN_COLUMNS = [
+  { key: 'applicant_name', label: 'Name' },
+  { key: 'policy_number', label: 'Policy #' },
+  { key: 'issuer_subscriber_id', label: 'Issuer Sub ID' },
+  { key: 'exchange_subscriber_id', label: 'Exchange Sub ID' },
+  { key: 'current_policy_aor', label: 'Current Policy AOR' },
+  { key: 'policy_status', label: 'Policy Status' },
+  { key: 'effective_date', label: 'Effective Date' },
+  { key: 'effective_month', label: 'Effective Month' },
+  { key: 'in_back_office', label: 'Back Office' },
 ];
 
 const RECON_COLUMNS = [
@@ -664,12 +683,14 @@ export default function DashboardPage() {
       _statement_sort: number;
       member_key: string;
     }> = [];
-    for (const rec of normalizedRecords) {
-      if (rec.source_type !== 'COMMISSION') continue;
+    // Bundle 2 — consume the canonical scope helper for COMMISSION +
+    // pay_entity filtering instead of re-implementing it inline. Then apply
+    // the clawback-specific predicate (amount < 0). No math change.
+    const scopeForCanonical = payEntityFilter === 'All' ? 'All' : payEntityFilter;
+    const scopedComm = filterCommissionRowsByScope(normalizedRecords, scopeForCanonical);
+    for (const rec of scopedComm) {
       const amt = Number(rec.commission_amount) || 0;
       if (amt >= 0) continue;
-      if (payEntityFilter === 'Coverall' && rec.pay_entity !== 'Coverall') continue;
-      if (payEntityFilter === 'Vix' && rec.pay_entity !== 'Vix') continue;
       const raw = rec.raw_json || {};
       const stmtRaw = String(
         rec.raw_json?.['Accounting Cycle'] ??
@@ -854,7 +875,12 @@ export default function DashboardPage() {
     // Missing Commission Export page emits — no new predicate.
     const sourceTypeForUnpaid = (r: any) => classifySourceTypeForRow(r, epb.universe);
     switch (drilldown) {
-      case 'expected': return filtered.filter(r => eeUniverseKeys.has(r.member_key));
+      // Bundle 2 — source rows directly from filteredEde.uniqueMembers so
+      // the drilldown row count matches the Expected Enrollments card value
+      // (filteredEde.uniqueKeys) exactly. Previously this filtered the
+      // legacy `filtered` reconciled array through eeUniverseKeys, which
+      // could drift if the reconciled set was stale or out of sync.
+      case 'expected': return filteredEde.uniqueMembers;
       // Phase 1 (#X): top expected-payment cards now slice from the broader
       // expected-payment universe. shouldPay / paidEligible / unpaid all
       // come from the same getExpectedPaymentBreakdown so card values and
@@ -1398,7 +1424,7 @@ export default function DashboardPage() {
                 <h3 className="text-lg font-semibold capitalize">{drilldown} Details</h3>
                 <button onClick={() => setDrilldown(null)} className="text-sm text-primary hover:underline">Close</button>
               </div>
-              <DataTable data={drilldownData} columns={drilldown === 'paidEdeOnly' ? PAID_EDE_ONLY_DRILLDOWN_COLUMNS : drilldown === 'boActiveNonCurrentEde' ? BO_ACTIVE_NON_CURRENT_EDE_COLUMNS : drilldown === 'unpaid' ? UNPAID_DETAILS_DRILLDOWN_COLUMNS : (isCoverageDrilldown ? COVERAGE_DRILLDOWN_COLUMNS : RECON_COLUMNS)} exportFileName={`${drilldown}_details.csv`} />
+              <DataTable data={drilldownData} columns={drilldown === 'expected' ? EXPECTED_DRILLDOWN_COLUMNS : drilldown === 'paidEdeOnly' ? PAID_EDE_ONLY_DRILLDOWN_COLUMNS : drilldown === 'boActiveNonCurrentEde' ? BO_ACTIVE_NON_CURRENT_EDE_COLUMNS : drilldown === 'unpaid' ? UNPAID_DETAILS_DRILLDOWN_COLUMNS : (isCoverageDrilldown ? COVERAGE_DRILLDOWN_COLUMNS : RECON_COLUMNS)} exportFileName={`${drilldown}_details.csv`} />
             </div>
           )}
 
