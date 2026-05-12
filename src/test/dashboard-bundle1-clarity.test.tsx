@@ -283,6 +283,8 @@ describe('Bundle 4 — Total Policies Paid attribution + unpaid premium chips wi
     expect(block).toMatch(/label: 'BS'/);
     expect(block).toMatch(/label: 'Downlines'/);
     expect(block).toMatch(/label: 'Vix'/);
+    // Bundle 4.5: Unattributed chip is wired so visible chips can sum to Total Policies Paid.
+    expect(block).toMatch(/label: 'Unattributed'/);
   });
 
   it('Top KPI Expected But Unpaid card renders both source-type splits and premium splits2', () => {
