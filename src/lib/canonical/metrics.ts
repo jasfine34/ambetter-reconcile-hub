@@ -397,6 +397,28 @@ export interface ExpectedPaymentBreakdown<T = any> {
   /** Compact splits used by the bottom-of-card breakdowns. */
   paidSplit: { matched: number; boOnly: number; edeOnly: number };
   unpaidSplit: { matched: number; boOnly: number; edeOnly: number };
+  /**
+   * Bundle 4: premium-evidence split of Expected But Unpaid. Classification
+   * uses `net_premium ?? premium`:
+   *   - `zeroNetPremium`: value is null/undefined/blank/non-numeric/0/negative
+   *   - `hasPremium`:     parsed numeric value > 0
+   * Counts sum exactly to `unpaidCount` for every scope.
+   */
+  unpaidPremiumSplit: { zeroNetPremium: number; hasPremium: number };
+}
+
+/**
+ * Bundle 4: classify a row's premium evidence as zero-net-premium vs
+ * has-premium. Centralized so dashboards / cards / tests share one rule.
+ * Aligned with current MCE semantics (net_premium ?? premium).
+ */
+export function classifyUnpaidPremium(row: any): 'zeroNetPremium' | 'hasPremium' {
+  const raw = row?.net_premium ?? row?.premium ?? null;
+  if (raw === null || raw === undefined) return 'zeroNetPremium';
+  if (typeof raw === 'string' && raw.trim() === '') return 'zeroNetPremium';
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  if (!Number.isFinite(n)) return 'zeroNetPremium';
+  return n > 0 ? 'hasPremium' : 'zeroNetPremium';
 }
 
 /**
@@ -415,6 +437,7 @@ export function getExpectedPaymentBreakdown(
   const unpaidRows: any[] = [];
   const paidSplit = { matched: 0, boOnly: 0, edeOnly: 0 };
   const unpaidSplit = { matched: 0, boOnly: 0, edeOnly: 0 };
+  const unpaidPremiumSplit = { zeroNetPremium: 0, hasPremium: 0 };
   const bucketFor = new Map<any, 'matched' | 'boOnly' | 'edeOnly'>();
   for (const r of universe.matched) bucketFor.set(r, 'matched');
   for (const r of universe.boOnly) bucketFor.set(r, 'boOnly');
@@ -427,6 +450,7 @@ export function getExpectedPaymentBreakdown(
     } else {
       unpaidRows.push(r);
       unpaidSplit[bucket] += 1;
+      unpaidPremiumSplit[classifyUnpaidPremium(r)] += 1;
     }
   }
   return {
@@ -437,6 +461,7 @@ export function getExpectedPaymentBreakdown(
     unpaidCount: unpaidRows.length,
     paidSplit,
     unpaidSplit,
+    unpaidPremiumSplit,
   };
 }
 
@@ -703,4 +728,87 @@ export function getSourceCoverageBuckets(
       reasonCounts,
     },
   };
+}
+
+// ===========================================================================
+// Bundle 4 — Total Policies Paid attribution split (JF/EF/BS/Downlines/Vix).
+//
+// Maps each Total Policies Paid policy back to its positive normalized
+// commission-row evidence and assigns ONE bucket per policy via priority:
+//   Vix  > EF > JF > BS > Downlines
+// (Erica's Vix-statement activity belongs under Vix, not EF — Vix wins by
+// pay_entity regardless of agent NPN.) Counts sum exactly to the parent
+// totalPoliciesPaid count under All / Coverall scopes when commission
+// evidence exists for every paid row, which is the canonical invariant
+// (a row only enters totalPoliciesPaid when in_commission=true).
+// ===========================================================================
+
+export type PaidAttributionBucket = 'JF' | 'EF' | 'BS' | 'Downlines' | 'Vix';
+
+export interface PaidAttributionSplitCounts {
+  JF: number;
+  EF: number;
+  BS: number;
+  Downlines: number;
+  Vix: number;
+  /** Rows with no positive commission evidence — should be 0; surfaced for diagnostics. */
+  unattributed: number;
+}
+
+const ATTRIBUTION_NPN_JF = '21055210';
+const ATTRIBUTION_NPN_EF = '21277051';
+const ATTRIBUTION_NPN_BS = '16531877';
+
+function recHasNpn(rec: any, npn: string): boolean {
+  return (
+    String(rec?.agent_npn ?? '').trim() === npn ||
+    String(rec?.writing_agent_carrier_id ?? '').trim() === npn
+  );
+}
+
+/**
+ * Classify one paid policy into a single attribution bucket given its
+ * positive commission evidence rows. Priority: Vix > EF > JF > BS > Downlines.
+ * Returns null when no positive evidence exists.
+ */
+export function classifyPaidAttribution(
+  positiveEvidence: any[],
+): PaidAttributionBucket | null {
+  if (!positiveEvidence || positiveEvidence.length === 0) return null;
+  if (positiveEvidence.some((r) => r.pay_entity === 'Vix')) return 'Vix';
+  if (positiveEvidence.some((r) => r.pay_entity === 'Coverall' && recHasNpn(r, ATTRIBUTION_NPN_EF))) return 'EF';
+  if (positiveEvidence.some((r) => r.pay_entity === 'Coverall' && recHasNpn(r, ATTRIBUTION_NPN_JF))) return 'JF';
+  if (positiveEvidence.some((r) => r.pay_entity === 'Coverall' && recHasNpn(r, ATTRIBUTION_NPN_BS))) return 'BS';
+  if (positiveEvidence.some((r) => r.pay_entity === 'Coverall')) return 'Downlines';
+  return null;
+}
+
+/**
+ * For each Total Policies Paid policy, find its positive commission rows in
+ * `normalizedRecords` (joined by member_key) and assign one bucket per
+ * priority order. Returns split counts.
+ */
+export function getTotalPoliciesPaidAttribution(
+  totalPoliciesPaidRows: any[],
+  normalizedRecords: any[],
+): PaidAttributionSplitCounts {
+  const positiveByMember = new Map<string, any[]>();
+  for (const rec of normalizedRecords) {
+    if (rec.source_type !== 'COMMISSION') continue;
+    if (!(Number(rec.commission_amount) > 0)) continue;
+    const key = rec.member_key;
+    if (!key) continue;
+    const arr = positiveByMember.get(key);
+    if (arr) arr.push(rec); else positiveByMember.set(key, [rec]);
+  }
+  const out: PaidAttributionSplitCounts = {
+    JF: 0, EF: 0, BS: 0, Downlines: 0, Vix: 0, unattributed: 0,
+  };
+  for (const r of totalPoliciesPaidRows) {
+    const evidence = positiveByMember.get(r.member_key) || [];
+    const bucket = classifyPaidAttribution(evidence);
+    if (bucket) out[bucket] += 1;
+    else out.unattributed += 1;
+  }
+  return out;
 }

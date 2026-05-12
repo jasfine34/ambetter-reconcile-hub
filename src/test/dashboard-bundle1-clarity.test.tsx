@@ -262,3 +262,48 @@ describe('Bundle 3 — P4 KPI canonicalization wiring', () => {
     expect(dashboardSource).toMatch(/getExpectedMissingCommissionSum/);
   });
 });
+
+describe('Bundle 4 — Total Policies Paid attribution + unpaid premium chips wiring', () => {
+  it('DashboardPage imports getTotalPoliciesPaidAttribution from canonical barrel', () => {
+    expect(dashboardSource).toMatch(/getTotalPoliciesPaidAttribution/);
+  });
+
+  it('paidAttribution sources from sourceCoverage.totalPoliciesPaid.rows + normalizedRecords (not inline)', () => {
+    expect(dashboardSource).toMatch(
+      /const paidAttribution = getTotalPoliciesPaidAttribution\(\s*sourceCoverage\.totalPoliciesPaid\.rows,\s*normalizedRecords,\s*\)/,
+    );
+  });
+
+  it('Source Coverage Total Policies Paid card renders JF/EF/BS/Downlines/Vix splits from paidAttribution', () => {
+    const idx = dashboardSource.indexOf("setDrilldown('totalPaidAll')");
+    const block = dashboardSource.slice(dashboardSource.lastIndexOf('<MetricCard', idx), idx + 800);
+    expect(block).toMatch(/metrics\.paidAttribution/);
+    expect(block).toMatch(/label: 'JF'/);
+    expect(block).toMatch(/label: 'EF'/);
+    expect(block).toMatch(/label: 'BS'/);
+    expect(block).toMatch(/label: 'Downlines'/);
+    expect(block).toMatch(/label: 'Vix'/);
+  });
+
+  it('Top KPI Expected But Unpaid card renders both source-type splits and premium splits2', () => {
+    // Find the top KPI card (the one that uses metrics.unpaid + setDrilldown('unpaid')).
+    const idx = dashboardSource.indexOf("setDrilldown('unpaid')");
+    const block = dashboardSource.slice(dashboardSource.lastIndexOf('<MetricCard', idx), idx + 1200);
+    // Existing source-type chips preserved.
+    expect(block).toMatch(/unpaidSplit\.matched/);
+    expect(block).toMatch(/unpaidSplit\.boOnly/);
+    expect(block).toMatch(/unpaidSplit\.edeOnly/);
+    // New premium chips wired to canonical helper output.
+    expect(block).toMatch(/unpaidPremiumSplit\.zeroNetPremium/);
+    expect(block).toMatch(/unpaidPremiumSplit\.hasPremium/);
+    expect(block).toMatch(/Zero Net Premium/);
+    expect(block).toMatch(/Has Premium/);
+  });
+
+  it('Source Coverage Analysis "Expected But Unpaid" tile is unchanged (no premium chips, deferred D-01)', () => {
+    const idx = dashboardSource.indexOf("setDrilldown('unpaidExpected')");
+    const block = dashboardSource.slice(dashboardSource.lastIndexOf('<MetricCard', idx), idx + 600);
+    expect(block).not.toMatch(/Zero Net Premium/);
+    expect(block).not.toMatch(/Has Premium/);
+  });
+});

@@ -40,6 +40,7 @@ import {
   getExpectedPaymentBreakdown,
   getExpectedMissingCommissionSum,
   getSourceCoverageBuckets,
+  getTotalPoliciesPaidAttribution,
   classifySourceTypeForRow,
   filterCommissionRowsByScope,
 } from '@/lib/canonical';
@@ -656,11 +657,17 @@ export default function DashboardPage() {
     const backOfficeOnly = sourceCoverage.unpaidBackOfficeOnly.count;
     const unpaidExpected = sourceCoverage.expectedButUnpaid.count;
     const totalPaidAll = sourceCoverage.totalPoliciesPaid.count;
+    // Bundle 4: paid-attribution split (JF/EF/BS/Downlines/Vix) computed via
+    // canonical helper — DashboardPage MUST NOT inline-classify.
+    const paidAttribution = getTotalPoliciesPaidAttribution(
+      sourceCoverage.totalPoliciesPaid.rows,
+      normalizedRecords,
+    );
     // Bundle 3: paidCommRecords sourced from the same canonical totalPoliciesPaid set.
     const paidCommRecords = sourceCoverage.totalPoliciesPaid.count;
     const boActiveNonCurrentEde = sourceCoverage.boActiveNonCurrentEde.count;
 
-    return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, eligibleCohort, expectedPaymentBreakdown, sourceCoverage, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidBackOfficeOnly, paidEdeOnly, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, boActiveNonCurrentEde, coverallDirectNet, downlineNet, netPaidTotal, splitDelta, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
+    return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, eligibleCohort, expectedPaymentBreakdown, sourceCoverage, paidAttribution, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidBackOfficeOnly, paidEdeOnly, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, boActiveNonCurrentEde, coverallDirectNet, downlineNet, netPaidTotal, splitDelta, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
   }, [filtered, reconciled, normalizedRecords, payEntityFilter, filteredEde, eeUniverseKeys, priorMonth, statementMonth, effInBO, confirmedUpgradeMemberKeys, coveredMonths]);
 
   // Phase 1.7: keep metricsRef in sync so executeInvariants reads the latest.
@@ -1231,6 +1238,10 @@ export default function DashboardPage() {
                 { label: 'BO Only', value: metrics.expectedPaymentBreakdown.unpaidSplit.boOnly },
                 { label: 'EDE Only', value: metrics.expectedPaymentBreakdown.unpaidSplit.edeOnly },
               ]}
+              splits2={[
+                { label: 'Zero Net Premium', value: metrics.expectedPaymentBreakdown.unpaidPremiumSplit.zeroNetPremium },
+                { label: 'Has Premium', value: metrics.expectedPaymentBreakdown.unpaidPremiumSplit.hasPremium },
+              ]}
             />
             <div className="relative rounded-xl border p-5 text-left bg-success/10 border-success/30">
               <div className="flex items-center justify-between mb-2">
@@ -1440,7 +1451,24 @@ export default function DashboardPage() {
                 <MetricCard title="Paid: Commission Statement Only" value={metrics.commissionOnly} icon={<FileText className="h-4 w-4" />} variant="warning" onClick={() => setDrilldown('commissionOnly')} tooltip={{ text: "Members appearing only on commission statements (no EDE, no active BO).", why: "Commission-only ghosts — typically trailing $1 retention payments on legacy books." }} />
                 <MetricCard title="Unpaid: Back Office Only" value={metrics.backOfficeOnly} icon={<Building2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('backOfficeOnly')} tooltip={{ text: "Members active in Back Office, not in EDE, not yet paid.", why: "May represent missed enrollments or future revenue not yet realized." }} />
                 <MetricCard title="Expected But Unpaid" value={metrics.unpaidExpected} icon={<XCircle className="h-4 w-4" />} variant="destructive" onClick={() => setDrilldown('unpaidExpected')} tooltip={{ text: "Members in the expected-payment universe (Matched / BO Only / EDE Only) that were not paid.", why: "Primary recovery target — expected revenue that was not received." }} />
-                <MetricCard title="Total Policies Paid" value={metrics.totalPaidAll} icon={<DollarSign className="h-4 w-4" />} variant="success" onClick={() => setDrilldown('totalPaidAll')} tooltip={{ text: "Count of all unique members where commission was paid, regardless of source.", why: "Total paid = Fully Matched & Paid + Paid: BO Only + Paid: EDE Only + Paid: Commission Statement Only + the paid subset of BO Active: Non-current EDE (Phase 1.7 diagnostic). All five paid buckets are summed here." }} />
+                <MetricCard
+                  title="Total Policies Paid"
+                  value={metrics.totalPaidAll}
+                  icon={<DollarSign className="h-4 w-4" />}
+                  variant="success"
+                  onClick={() => setDrilldown('totalPaidAll')}
+                  tooltip={{ text: "Count of all unique members where commission was paid, regardless of source.", why: "Total paid = Fully Matched & Paid + Paid: BO Only + Paid: EDE Only + Paid: Commission Statement Only + the paid subset of BO Active: Non-current EDE (Phase 1.7 diagnostic). All five paid buckets are summed here." }}
+                  splits={(() => {
+                    const a = metrics.paidAttribution;
+                    return [
+                      { label: 'JF', value: a.JF },
+                      { label: 'EF', value: a.EF },
+                      { label: 'BS', value: a.BS },
+                      { label: 'Downlines', value: a.Downlines },
+                      { label: 'Vix', value: a.Vix },
+                    ].filter((s) => s.value > 0);
+                  })()}
+                />
                 <MetricCard
                   title="BO Active: Non-current EDE"
                   value={metrics.boActiveNonCurrentEde}

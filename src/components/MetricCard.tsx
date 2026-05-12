@@ -17,6 +17,13 @@ interface MetricCardProps {
    * Matched / BO Only / EDE Only decomposition.
    */
   splits?: Array<{ label: string; value: number }>;
+  /**
+   * Optional second row of compact split-chips, rendered below `splits`.
+   * Used by the top-KPI Expected But Unpaid card to show a premium-evidence
+   * group (Zero Net Premium / Has Premium) alongside the existing source-type
+   * group (Matched / BO Only / EDE Only).
+   */
+  splits2?: Array<{ label: string; value: number }>;
 }
 
 const variantStyles = {
@@ -35,7 +42,7 @@ const valueStyles = {
   info: 'text-info',
 };
 
-export function MetricCard({ title, value, icon, variant = 'default', onClick, subtitle, tooltip, splits }: MetricCardProps) {
+export function MetricCard({ title, value, icon, variant = 'default', onClick, subtitle, tooltip, splits, splits2 }: MetricCardProps) {
   const tooltipContent = tooltip ? (
     typeof tooltip === 'string' ? tooltip : (
       <div className="space-y-1.5">
@@ -81,6 +88,20 @@ export function MetricCard({ title, value, icon, variant = 'default', onClick, s
             <span
               key={s.label}
               data-testid={`metric-card-split-${s.label}`}
+              className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+            >
+              <span>{s.label}</span>
+              <span className="text-foreground font-semibold">{s.value.toLocaleString()}</span>
+            </span>
+          ))}
+        </div>
+      )}
+      {splits2 && splits2.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5" data-testid="metric-card-splits-2">
+          {splits2.map((s) => (
+            <span
+              key={s.label}
+              data-testid={`metric-card-split2-${s.label}`}
               className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
             >
               <span>{s.label}</span>
