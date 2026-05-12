@@ -597,12 +597,10 @@ export default function MissingCommissionExportPage() {
       return out;
     })();
 
-    // Phase 1.5 — align with Dashboard "Expected But Unpaid". The export now
-    // pulls unpaid rows from the corrected expected-payment universe
+    // Phase 1.5 — align with Dashboard "Expected But Unpaid". The export
+    // pulls unpaid rows from the canonical expected-payment universe
     // (Matched + true BO Only + EDE Only). Diagnostic rows (BO Active:
-    // Non-current EDE) are excluded by the universe helper. getEligibleCohort
-    // is retained for other callers but no longer drives this export.
-    void getEligibleCohort; // keep import live; intentionally unused here
+    // Non-current EDE) are excluded by the universe helper.
     const breakdown = getExpectedPaymentBreakdown(reconciled, f.scope, ranFilteredEde, confirmedUpgradeMemberKeys);
     const missingMembers = breakdown.unpaidRows;
 
