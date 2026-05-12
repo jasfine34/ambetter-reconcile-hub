@@ -172,6 +172,22 @@ const BO_ACTIVE_NON_CURRENT_EDE_COLUMNS = [
   { key: 'diagnostic_reason', label: 'Reason' },
 ];
 
+// Bundle 6 — Exception Summary drilldown columns. Reused for both
+// "Wrong Pay Entity" and "Not Eligible for Commission" cards.
+const EXCEPTION_DRILLDOWN_COLUMNS = [
+  { key: 'applicant_name', label: 'Name' },
+  { key: 'policy_number', label: 'Policy #' },
+  { key: 'agent_npn', label: 'Agent NPN' },
+  { key: 'agent_name', label: 'Agent' },
+  { key: 'aor_bucket', label: 'AOR' },
+  { key: 'expected_pay_entity', label: 'Expected Entity' },
+  { key: 'actual_pay_entity', label: 'Actual Entity' },
+  { key: 'eligible_for_commission', label: 'Eligible' },
+  { key: 'actual_commission', label: 'Commission $' },
+  { key: 'issue_type', label: 'Issue' },
+  { key: 'issue_notes', label: 'Notes' },
+];
+
 const NOT_IN_BO_COLUMNS = [
   { key: 'applicant_name', label: 'Full Name' },
   { key: 'policy_number', label: 'Policy # (EDE)' },
@@ -874,6 +890,14 @@ export default function DashboardPage() {
     return metrics.eligibleCohort.filter(r => !r.in_commission).slice(0, 50);
   }, [metrics.eligibleCohort]);
 
+  // Bundle 6 — single-source rows for Exception Summary cards. The same
+  // array drives both the card count and the drilldown payload, so they
+  // can never drift. Keyed by the exact persisted issue_type string.
+  const exceptionRowsByIssue = useMemo(() => ({
+    'Wrong Pay Entity': filtered.filter((r) => r.issue_type === 'Wrong Pay Entity'),
+    'Not Eligible for Commission': filtered.filter((r) => r.issue_type === 'Not Eligible for Commission'),
+  }), [filtered]);
+
   const drilldownData = useMemo(() => {
     if (!drilldown) return null;
     const sc = metrics.sourceCoverage;
@@ -913,11 +937,16 @@ export default function DashboardPage() {
       // Diagnostic-only: BO Active w/ Non-current EDE (Interpretation C).
       // Excluded from Should Be Paid; visible separately for review.
       case 'boActiveNonCurrentEde': return sc.boActiveNonCurrentEde.rows.map((x) => ({ ...x.row, diagnostic_reason: x.reason }));
+      // Bundle 6 — Exception Summary drilldowns. Same rows array used for
+      // the card count, guaranteeing parity.
+      case 'exceptionWrongPayEntity': return exceptionRowsByIssue['Wrong Pay Entity'];
+      case 'exceptionNotEligible': return exceptionRowsByIssue['Not Eligible for Commission'];
       default: return filtered;
     }
-  }, [drilldown, filtered, eeUniverseKeys, metrics.sourceCoverage, metrics.expectedPaymentBreakdown]);
+  }, [drilldown, filtered, eeUniverseKeys, metrics.sourceCoverage, metrics.expectedPaymentBreakdown, exceptionRowsByIssue]);
 
   const isCoverageDrilldown = ['fullyMatched', 'paidBackOfficeOnly', 'paidEdeOnly', 'commissionOnly', 'backOfficeOnly', 'unpaidExpected', 'totalPaidAll', 'boActiveNonCurrentEde'].includes(drilldown || '');
+  const isExceptionDrilldown = drilldown === 'exceptionWrongPayEntity' || drilldown === 'exceptionNotEligible';
 
   return (
     <div className="space-y-6">
@@ -1437,7 +1466,7 @@ export default function DashboardPage() {
                 <h3 className="text-lg font-semibold capitalize">{drilldown} Details</h3>
                 <button onClick={() => setDrilldown(null)} className="text-sm text-primary hover:underline">Close</button>
               </div>
-              <DataTable data={drilldownData} columns={drilldown === 'expected' ? EXPECTED_DRILLDOWN_COLUMNS : drilldown === 'paidEdeOnly' ? PAID_EDE_ONLY_DRILLDOWN_COLUMNS : drilldown === 'boActiveNonCurrentEde' ? BO_ACTIVE_NON_CURRENT_EDE_COLUMNS : drilldown === 'unpaid' ? UNPAID_DETAILS_DRILLDOWN_COLUMNS : (isCoverageDrilldown ? COVERAGE_DRILLDOWN_COLUMNS : RECON_COLUMNS)} exportFileName={`${drilldown}_details.csv`} />
+              <DataTable data={drilldownData} columns={drilldown === 'expected' ? EXPECTED_DRILLDOWN_COLUMNS : drilldown === 'paidEdeOnly' ? PAID_EDE_ONLY_DRILLDOWN_COLUMNS : drilldown === 'boActiveNonCurrentEde' ? BO_ACTIVE_NON_CURRENT_EDE_COLUMNS : drilldown === 'unpaid' ? UNPAID_DETAILS_DRILLDOWN_COLUMNS : isExceptionDrilldown ? EXCEPTION_DRILLDOWN_COLUMNS : (isCoverageDrilldown ? COVERAGE_DRILLDOWN_COLUMNS : RECON_COLUMNS)} exportFileName={`${drilldown}_details.csv`} />
             </div>
           )}
 
@@ -1500,12 +1529,14 @@ export default function DashboardPage() {
               <h3 className="text-lg font-semibold mb-3">Exception Summary</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {([
-                  { issue: 'Wrong Pay Entity', tip: { text: "These members were paid, but under the wrong entity (for example, Vix instead of Coverall).", why: "Revenue may be going to the wrong account and may need to be corrected." } },
-                  { issue: 'Not Eligible for Commission', tip: { text: "These members exist but are not marked as eligible for commission by the carrier.", why: "These policies will not generate revenue unless eligibility is corrected." } },
-                ] as const).map(({ issue, tip }) => {
-                  const count = filtered.filter(r => r.issue_type === issue).length;
+                  { issue: 'Wrong Pay Entity', drillKey: 'exceptionWrongPayEntity', tip: { text: "These members were paid, but under the wrong entity (for example, Vix instead of Coverall).", why: "Revenue may be going to the wrong account and may need to be corrected." } },
+                  { issue: 'Not Eligible for Commission', drillKey: 'exceptionNotEligible', tip: { text: "These members exist but are not marked as eligible for commission by the carrier.", why: "These policies will not generate revenue unless eligibility is corrected." } },
+                ] as const).map(({ issue, drillKey, tip }) => {
+                  // Bundle 6 — single-source: same array drives count and drilldown.
+                  const rows = exceptionRowsByIssue[issue];
+                  const count = rows.length;
                   return count > 0 ? (
-                    <MetricCard key={issue} title={getIssueTypeLabel(issue)} value={count} variant={issue.includes('Wrong') ? 'destructive' : 'warning'} tooltip={tip} />
+                    <MetricCard key={issue} title={getIssueTypeLabel(issue)} value={count} variant={issue.includes('Wrong') ? 'destructive' : 'warning'} tooltip={tip} onClick={() => setDrilldown(drillKey)} />
                   ) : null;
                 })}
               </div>
