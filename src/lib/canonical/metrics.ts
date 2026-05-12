@@ -397,6 +397,28 @@ export interface ExpectedPaymentBreakdown<T = any> {
   /** Compact splits used by the bottom-of-card breakdowns. */
   paidSplit: { matched: number; boOnly: number; edeOnly: number };
   unpaidSplit: { matched: number; boOnly: number; edeOnly: number };
+  /**
+   * Bundle 4: premium-evidence split of Expected But Unpaid. Classification
+   * uses `net_premium ?? premium`:
+   *   - `zeroNetPremium`: value is null/undefined/blank/non-numeric/0/negative
+   *   - `hasPremium`:     parsed numeric value > 0
+   * Counts sum exactly to `unpaidCount` for every scope.
+   */
+  unpaidPremiumSplit: { zeroNetPremium: number; hasPremium: number };
+}
+
+/**
+ * Bundle 4: classify a row's premium evidence as zero-net-premium vs
+ * has-premium. Centralized so dashboards / cards / tests share one rule.
+ * Aligned with current MCE semantics (net_premium ?? premium).
+ */
+export function classifyUnpaidPremium(row: any): 'zeroNetPremium' | 'hasPremium' {
+  const raw = row?.net_premium ?? row?.premium ?? null;
+  if (raw === null || raw === undefined) return 'zeroNetPremium';
+  if (typeof raw === 'string' && raw.trim() === '') return 'zeroNetPremium';
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  if (!Number.isFinite(n)) return 'zeroNetPremium';
+  return n > 0 ? 'hasPremium' : 'zeroNetPremium';
 }
 
 /**
