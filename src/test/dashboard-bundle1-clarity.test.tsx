@@ -226,3 +226,37 @@ describe('Bundle 2 — Expected drilldown + clawback canonical wiring', () => {
   });
 });
 
+
+describe('Bundle 3 — P4 KPI canonicalization wiring', () => {
+  it('paidCommRecords sources from sourceCoverage.totalPoliciesPaid (not filtered.filter in_commission)', () => {
+    expect(dashboardSource).toMatch(/const paidCommRecords = sourceCoverage\.totalPoliciesPaid\.count/);
+    expect(dashboardSource).not.toMatch(/const paidCommRecords = filtered\.filter\(r => r\.in_commission\)\.length/);
+  });
+
+  it('Total Policies Paid card (Bundle 3 rename) is wired to paidComm drilldown and metrics.paidCommRecords', () => {
+    const idx = dashboardSource.indexOf("setDrilldown('paidComm')");
+    const start = dashboardSource.lastIndexOf('<MetricCard', idx);
+    const block = dashboardSource.slice(start, idx + 200);
+    expect(block).toMatch(/title="Total Policies Paid"/);
+    expect(block).toMatch(/value=\{metrics\.paidCommRecords\}/);
+    expect(block).not.toMatch(/title="Paid Commission Records"/);
+  });
+
+  it('paidComm drilldown sources from canonical totalPoliciesPaid.rows (not filtered in_commission)', () => {
+    expect(dashboardSource).toMatch(/case 'paidComm':\s*return sc\.totalPoliciesPaid\.rows/);
+    expect(dashboardSource).not.toMatch(/case 'paidComm':\s*return filtered\.filter\(r => r\.in_commission\)/);
+  });
+
+  it('estMissing consumes getExpectedMissingCommissionSum (not inline reduce over estimated_missing_commission)', () => {
+    expect(dashboardSource).toMatch(
+      /const estMissing = getExpectedMissingCommissionSum\(reconciled,\s*scopeForCanonical,\s*filteredEde,\s*confirmedUpgradeMemberKeys\)/,
+    );
+    expect(dashboardSource).not.toMatch(
+      /const estMissing = filtered\.reduce\(\(s, r\) => s \+ \(r\.estimated_missing_commission \|\| 0\), 0\)/,
+    );
+  });
+
+  it('DashboardPage imports getExpectedMissingCommissionSum from canonical barrel', () => {
+    expect(dashboardSource).toMatch(/getExpectedMissingCommissionSum/);
+  });
+});
