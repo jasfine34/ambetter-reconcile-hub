@@ -17,6 +17,13 @@ interface MetricCardProps {
    * Matched / BO Only / EDE Only decomposition.
    */
   splits?: Array<{ label: string; value: number }>;
+  /**
+   * Optional second row of compact split-chips, rendered below `splits`.
+   * Used by the top-KPI Expected But Unpaid card to show a premium-evidence
+   * group (Zero Net Premium / Has Premium) alongside the existing source-type
+   * group (Matched / BO Only / EDE Only).
+   */
+  splits2?: Array<{ label: string; value: number }>;
 }
 
 const variantStyles = {
