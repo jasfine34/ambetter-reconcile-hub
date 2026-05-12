@@ -405,6 +405,15 @@ export interface ExpectedPaymentBreakdown<T = any> {
    * Counts sum exactly to `unpaidCount` for every scope.
    */
   unpaidPremiumSplit: { zeroNetPremium: number; hasPremium: number };
+  /**
+   * Bundle 8 — ownership split of Expected But Unpaid by EDE
+   * `current_policy_aor` via the canonical `classifyPolicyOwnerFromCurrentAor`
+   * helper. Mirrors `getTotalPoliciesPaidAttribution` on the paid side so the
+   * Source Coverage Analysis "Expected But Unpaid" tile can render JF / EF /
+   * BS / Other ownership chips. Counts sum exactly to `unpaidCount` for
+   * every scope.
+   */
+  unpaidOwnerSplit: { JF: number; EF: number; BS: number; Other: number };
 }
 
 /**
