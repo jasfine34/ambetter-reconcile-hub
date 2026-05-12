@@ -337,7 +337,7 @@ describe('Bundle 6 — Exception Summary drilldowns wiring', () => {
   });
 
   it('Exception Summary cards consume exceptionRowsByIssue (no parallel inline filter for count)', () => {
-    const idx = dashboardSource.indexOf('Exception Summary');
+    const idx = dashboardSource.indexOf('>Exception Summary<');
     const block = dashboardSource.slice(idx, idx + 1500);
     // Single-source: rows = exceptionRowsByIssue[issue]; count = rows.length
     expect(block).toMatch(/exceptionRowsByIssue\[issue\]/);
