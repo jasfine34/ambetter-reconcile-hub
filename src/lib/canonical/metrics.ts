@@ -415,13 +415,17 @@ export interface ExpectedPaymentBreakdown<T = any> {
  * even when gross premium is positive. Upstream zero-vs-null collapse fix
  * remains queued for Bundle 5.
  */
-export function classifyUnpaidPremium(row: any): 'zeroNetPremium' | 'hasPremium' {
+export function isZeroNetPremium(row: any): boolean {
   const raw = row?.net_premium ?? null;
-  if (raw === null || raw === undefined) return 'zeroNetPremium';
-  if (typeof raw === 'string' && raw.trim() === '') return 'zeroNetPremium';
+  if (raw === null || raw === undefined) return true;
+  if (typeof raw === 'string' && raw.trim() === '') return true;
   const n = typeof raw === 'number' ? raw : Number(raw);
-  if (!Number.isFinite(n)) return 'zeroNetPremium';
-  return n > 0 ? 'hasPremium' : 'zeroNetPremium';
+  if (!Number.isFinite(n)) return true;
+  return !(n > 0);
+}
+
+export function classifyUnpaidPremium(row: any): 'zeroNetPremium' | 'hasPremium' {
+  return isZeroNetPremium(row) ? 'zeroNetPremium' : 'hasPremium';
 }
 
 /**
