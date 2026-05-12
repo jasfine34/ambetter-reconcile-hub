@@ -888,7 +888,7 @@ export default function DashboardPage() {
       // come from the same getExpectedPaymentBreakdown so card values and
       // drilldown row counts cannot drift.
       case 'shouldPay': return epb.universe.rows;
-      case 'paidComm': return filtered.filter(r => r.in_commission);
+      case 'paidComm': return sc.totalPoliciesPaid.rows;
       case 'paidEligible': return epb.paidRows;
       case 'unpaid': return epb.unpaidRows.map((r) => ({ ...r, _sourceType: sourceTypeForUnpaid(r) }));
       case 'fullyMatched': return sc.fullyMatchedPaid.rows;
