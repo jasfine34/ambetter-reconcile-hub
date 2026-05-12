@@ -683,12 +683,14 @@ export default function DashboardPage() {
       _statement_sort: number;
       member_key: string;
     }> = [];
-    for (const rec of normalizedRecords) {
-      if (rec.source_type !== 'COMMISSION') continue;
+    // Bundle 2 — consume the canonical scope helper for COMMISSION +
+    // pay_entity filtering instead of re-implementing it inline. Then apply
+    // the clawback-specific predicate (amount < 0). No math change.
+    const scopeForCanonical = payEntityFilter === 'All' ? 'All' : payEntityFilter;
+    const scopedComm = filterCommissionRowsByScope(normalizedRecords, scopeForCanonical);
+    for (const rec of scopedComm) {
       const amt = Number(rec.commission_amount) || 0;
       if (amt >= 0) continue;
-      if (payEntityFilter === 'Coverall' && rec.pay_entity !== 'Coverall') continue;
-      if (payEntityFilter === 'Vix' && rec.pay_entity !== 'Vix') continue;
       const raw = rec.raw_json || {};
       const stmtRaw = String(
         rec.raw_json?.['Accounting Cycle'] ??
