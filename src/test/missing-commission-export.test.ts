@@ -450,3 +450,51 @@ describe('non-blank guards: Address / FFM ID / Policy Effective Date', () => {
     expect(resolvePolicyEffectiveDate({ records, reconciledEffectiveDate: null })).toBe('2026-02-01');
   });
 });
+
+// ---------------------------------------------------------------------------
+// 10. Bundle 4.6 — canonical predicate wiring + cross-surface parity
+// ---------------------------------------------------------------------------
+
+import * as fs from 'fs';
+import * as path from 'path';
+import { isZeroNetPremium, classifyUnpaidPremium } from '@/lib/canonical/metrics';
+
+describe('Bundle 4.6 wiring guard', () => {
+  it('MissingCommissionExportPage.tsx has no inline net_premium ?? premium fallback', () => {
+    const src = fs.readFileSync(
+      path.resolve(__dirname, '../pages/MissingCommissionExportPage.tsx'),
+      'utf8',
+    );
+    expect(/\.net_premium\s*\?\?\s*[A-Za-z_$][\w$]*\.?premium/.test(src)).toBe(false);
+  });
+  it('MissingCommissionExportPage.tsx imports canonical isZeroNetPremium', () => {
+    const src = fs.readFileSync(
+      path.resolve(__dirname, '../pages/MissingCommissionExportPage.tsx'),
+      'utf8',
+    );
+    expect(src).toMatch(/isZeroNetPremium/);
+    expect(src).toMatch(/from '@\/lib\/canonical\/metrics'/);
+  });
+});
+
+describe('Bundle 4.6 cross-surface parity (Dashboard ↔ MCE)', () => {
+  const cases: any[] = [
+    { net_premium: null, premium: 500 },
+    { net_premium: undefined, premium: 999 },
+    { net_premium: 0, premium: 250 },
+    { net_premium: null, premium: null },
+    { net_premium: 100 },
+    { net_premium: 0.01 },
+    { net_premium: '   ' },
+    { net_premium: 'abc' },
+    { net_premium: -5 },
+  ];
+  it('zero-vs-has classification agrees on every fixture', () => {
+    for (const row of cases) {
+      const dashZero = classifyUnpaidPremium(row) === 'zeroNetPremium';
+      const mceZero = classifyNetPremium(row) === 'zero_premium';
+      expect(mceZero).toBe(dashZero);
+      expect(dashZero).toBe(isZeroNetPremium(row));
+    }
+  });
+});
