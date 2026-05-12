@@ -440,6 +440,33 @@ export function getExpectedPaymentBreakdown(
   };
 }
 
+/**
+ * Sum `estimated_missing_commission` across the canonical Expected But Unpaid
+ * row set produced by {@link getExpectedPaymentBreakdown}. Null/undefined or
+ * missing per-row estimates contribute 0 — commission-less batches
+ * intentionally suppress phantom estimates and we do not fall back to a
+ * computed value here. Mirrors `getExpectedPaymentBreakdown`'s input shape.
+ */
+export function getExpectedMissingCommissionSum(
+  reconciled: any[],
+  scope: CanonicalScope,
+  filteredEde: FilteredEdeResult,
+  confirmedUpgradeMemberKeys: Set<string>,
+): number {
+  const breakdown = getExpectedPaymentBreakdown(
+    reconciled,
+    scope,
+    filteredEde,
+    confirmedUpgradeMemberKeys,
+  );
+  let total = 0;
+  for (const r of breakdown.unpaidRows) {
+    const v = (r as any)?.estimated_missing_commission;
+    if (typeof v === 'number' && Number.isFinite(v)) total += v;
+  }
+  return total;
+}
+
 export interface PaidEdeOnlyRow {
   row: any;
   bo_reason: 'BO inactive/terminated' | 'BO absent';
