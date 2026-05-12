@@ -276,7 +276,7 @@ describe('Bundle 4 — Total Policies Paid attribution + unpaid premium chips wi
 
   it('Source Coverage Total Policies Paid card renders JF/EF/BS/Downlines/Vix splits from paidAttribution', () => {
     const idx = dashboardSource.indexOf("setDrilldown('totalPaidAll')");
-    const block = dashboardSource.slice(dashboardSource.lastIndexOf('<MetricCard', idx), idx + 800);
+    const block = dashboardSource.slice(dashboardSource.lastIndexOf('<MetricCard', idx), idx + 1200);
     expect(block).toMatch(/metrics\.paidAttribution/);
     expect(block).toMatch(/label: 'JF'/);
     expect(block).toMatch(/label: 'EF'/);
