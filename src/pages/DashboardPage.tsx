@@ -40,6 +40,7 @@ import {
   getExpectedPaymentBreakdown,
   getExpectedMissingCommissionSum,
   getSourceCoverageBuckets,
+  getTotalPoliciesPaidAttribution,
   classifySourceTypeForRow,
   filterCommissionRowsByScope,
 } from '@/lib/canonical';
