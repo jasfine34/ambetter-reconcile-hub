@@ -10,3 +10,4 @@ export * from './metrics';
 export * from './invariants';
 export * from './isActiveBackOfficeRecord';
 export * from './sourceTypeForRow';
+export * from './policyOwner';
