@@ -1466,6 +1466,7 @@ export default function DashboardPage() {
                       { label: 'BS', value: a.BS },
                       { label: 'Downlines', value: a.Downlines },
                       { label: 'Vix', value: a.Vix },
+                      { label: 'Unattributed', value: a.unattributed },
                     ].filter((s) => s.value > 0);
                   })()}
                 />

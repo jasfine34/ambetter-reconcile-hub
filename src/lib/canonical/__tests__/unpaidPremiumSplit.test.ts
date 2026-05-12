@@ -22,8 +22,14 @@ describe('classifyUnpaidPremium edge cases', () => {
   it('negative → zeroNetPremium', () => expect(Z(-5)).toBe('zeroNetPremium'));
   it('positive number → hasPremium', () => expect(Z(123.45)).toBe('hasPremium'));
   it('positive numeric string → hasPremium', () => expect(Z('123.45')).toBe('hasPremium'));
-  it('falls back to premium when net_premium is null', () => {
-    expect(classifyUnpaidPremium({ net_premium: null, premium: 50 })).toBe('hasPremium');
+  it('Bundle 4.5: net_premium null with positive gross premium → zeroNetPremium (no fallback)', () => {
+    expect(classifyUnpaidPremium({ net_premium: null, premium: 500 })).toBe('zeroNetPremium');
+  });
+  it('Bundle 4.5: net_premium undefined with positive gross premium → zeroNetPremium (no fallback)', () => {
+    expect(classifyUnpaidPremium({ premium: 999 })).toBe('zeroNetPremium');
+  });
+  it('Bundle 4.5: net_premium 0 with positive gross premium → zeroNetPremium', () => {
+    expect(classifyUnpaidPremium({ net_premium: 0, premium: 250 })).toBe('zeroNetPremium');
   });
 });
 
