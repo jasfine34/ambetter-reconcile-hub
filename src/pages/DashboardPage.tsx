@@ -1015,310 +1015,6 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      {/* Debug Counts */}
-      <CollapsibleDebugCard
-        title="Debug Counts (Selected Batch)"
-        icon={<Database className="h-4 w-4" />}
-        summary={`${counts.uploadedFiles} files · ${counts.normalizedRecords} normalized · ${counts.reconciledMembers} members`}
-      >
-          <div className="flex flex-wrap gap-6 text-sm">
-            <span className="text-muted-foreground">Uploaded Files: <strong className="text-foreground">{counts.uploadedFiles}</strong></span>
-            <span className="text-muted-foreground">Normalized Records: <strong className="text-foreground">{counts.normalizedRecords}</strong></span>
-            <span className="text-muted-foreground">Reconciled Members: <strong className="text-foreground">{counts.reconciledMembers}</strong></span>
-            <span className="text-muted-foreground">Filtered Members: <strong className="text-foreground">{filtered.length}</strong></span>
-          </div>
-          {debugStats && (
-            <div className="flex flex-wrap gap-6 text-sm border-t pt-2 mt-2">
-              <span className="text-muted-foreground">Raw Records: <strong className="text-foreground">{debugStats.totalRawRecords}</strong></span>
-              <span className="text-muted-foreground">EDE rows: <strong className="text-foreground">{debugStats.totalEDE}</strong></span>
-              <span className="text-muted-foreground">Back Office rows: <strong className="text-foreground">{debugStats.totalBO}</strong></span>
-              <span className="text-muted-foreground">Commission rows: <strong className="text-foreground">{debugStats.totalComm}</strong></span>
-              <span className="text-muted-foreground">Unique Member Keys: <strong className="text-foreground">{debugStats.uniqueMemberKeys}</strong></span>
-              <span className="text-muted-foreground">Avg Records/Key: <strong className="text-foreground">{debugStats.avgRecordsPerKey}</strong></span>
-            </div>
-          )}
-          {debugStats && (
-            <div className="flex flex-wrap gap-6 text-sm border-t pt-2 mt-2">
-              <span className="text-muted-foreground">EDE w/ issuerSubId: <strong className="text-foreground">{debugStats.edeWithIssuerSubId}</strong></span>
-              <span className="text-muted-foreground">EDE missing issuerSubId: <strong className="text-foreground">{debugStats.edeMissingIssuerSubId}</strong></span>
-              <span className="text-muted-foreground">…of which have exchangeSubId: <strong className="text-foreground">{debugStats.edeMissingIssuerSubIdWithExchange}</strong></span>
-              <span className="text-muted-foreground">Promoted from sibling: <strong className="text-foreground">{debugStats.edePromotedIssuerSubIdFromExchange}</strong></span>
-              <span className="text-muted-foreground">BO starting "U": <strong className="text-foreground">{debugStats.boStartingWithU}</strong></span>
-              <span className="text-muted-foreground">Comm starting "U": <strong className="text-foreground">{debugStats.commStartingWithU}</strong></span>
-              <span className="text-muted-foreground">BO Active (in period): <strong className="text-foreground">{debugStats.boActiveCount}</strong></span>
-              <span className="text-muted-foreground">BO Excluded (expired term): <strong className="text-foreground">{debugStats.boExcludedCount}</strong></span>
-              <span className="text-muted-foreground">BO No Term Date (assumed active): <strong className="text-foreground">{debugStats.boMissingTermDate}</strong></span>
-            </div>
-          )}
-          {debugStats && debugStats.edeMissingIssuerSubIdSamples.length > 0 && (
-            <div className="border-t pt-2 mt-2 text-xs">
-              <div className="text-muted-foreground font-medium mb-1">
-                Sample EDE rows missing issuerSubId (with exchangeSubId):
-              </div>
-              <div className="space-y-1 font-mono">
-                {debugStats.edeMissingIssuerSubIdSamples.map((s, i) => (
-                  <div key={i} className="text-foreground">
-                    {s.applicant_name} — exchSub: {s.exchange_subscriber_id} — exchPol: {s.exchange_policy_id || '—'} — file: {s.source_file_label}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {debugStats && (
-            <div className="flex flex-wrap gap-6 text-sm border-t pt-2 mt-2">
-              <span className="text-muted-foreground">Match by issuer_sub_id: <strong className="text-foreground">{debugStats.matchByIssuerSubId}</strong></span>
-              <span className="text-muted-foreground">Match by exchange_sub_id: <strong className="text-foreground">{debugStats.matchByExchangeSubId}</strong></span>
-              <span className="text-muted-foreground">Match by policy_number: <strong className="text-foreground">{debugStats.matchByPolicyNumber}</strong></span>
-              <span className="text-muted-foreground">Match by name: <strong className="text-foreground">{debugStats.matchByName}</strong></span>
-              <span className="text-muted-foreground">Match by fallback: <strong className="text-foreground">{debugStats.matchByFallback}</strong></span>
-            </div>
-          )}
-      </CollapsibleDebugCard>
-
-      {/* EDE Enrollment Debug */}
-      {debugStats && (
-        <CollapsibleDebugCard
-          title="EDE Expected Enrollment Debug"
-          icon={<Users className="h-4 w-4" />}
-          summary={`${debugStats.edeAfterFilter} qualified · ${formatMonthBreakdown(filteredEde.byMonth) || 'no months'}`}
-        >
-            <div className="flex flex-wrap gap-6 text-sm">
-              <span className="text-muted-foreground">Total Raw EDE rows: <strong className="text-foreground">{debugStats.edeRawTotal}</strong></span>
-              <span className="text-muted-foreground">After filter (eff. date + status): <strong className="text-foreground">{debugStats.edeAfterFilter}</strong></span>
-              <span className="text-muted-foreground">Unique member_keys after filter: <strong className="text-foreground">{debugStats.edeUniqueKeysAfterFilter}</strong></span>
-              <span className="text-muted-foreground">Expected Enrollments (reconciled): <strong className="text-foreground">{metrics.expected}</strong></span>
-              <span className="text-muted-foreground">All EDE unfiltered: <strong className="text-foreground">{metrics.totalEdeRaw}</strong></span>
-              <span className="text-muted-foreground">Invalid date rows: <strong className="text-foreground">{debugStats.edeInvalidDateCount}</strong></span>
-            </div>
-            <div className="flex flex-wrap gap-6 text-sm border-t pt-2 items-center">
-              <span className="text-muted-foreground font-medium">Expected by month (newly effective):</span>
-              {Object.entries(filteredEde.byMonth)
-                .filter(([m, c]) => m && (c ?? 0) > 0)
-                .sort(([a], [b]) => a.localeCompare(b))
-                .map(([m, c]) => (
-                  <button
-                    key={m}
-                    onClick={() => loadEdeRawDrilldown(m)}
-                    className="text-muted-foreground hover:text-primary underline-offset-4 hover:underline"
-                  >
-                    {formatMonthStart(m)}: <strong className="text-foreground">{c.toLocaleString()}</strong>
-                  </button>
-                ))}
-              <span className="text-xs text-muted-foreground italic">(click a count to drilldown into raw EDE rows)</span>
-            </div>
-            <div className="flex flex-wrap gap-4 text-sm border-t pt-2">
-              <span className="text-muted-foreground font-medium">Status breakdown:</span>
-              {Object.entries(debugStats.edeStatusBreakdown).sort((a, b) => b[1] - a[1]).map(([status, count]) => (
-                <span key={status} className="text-muted-foreground">
-                  {status}: <strong className="text-foreground">{count as number}</strong>
-                </span>
-              ))}
-            </div>
-            {debugStats.edeEffDateSamples.length > 0 && (
-              <div className="flex flex-wrap gap-4 text-sm border-t pt-2">
-                <span className="text-muted-foreground font-medium">Effective date samples:</span>
-                {debugStats.edeEffDateSamples.map((d, i) => (
-                  <span key={i} className="text-muted-foreground font-mono">{d}</span>
-                ))}
-              </div>
-            )}
-            {edeRawDrilldown && (
-              <div className="border-t pt-3 mt-2 space-y-2">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-semibold">
-                    Raw EDE rows for {formatMonthStart(edeRawDrilldown ?? '')}
-                    {!edeRawLoading && ` (${edeRawRows.length} rows)`}
-                  </h4>
-                  <button onClick={() => { setEdeRawDrilldown(null); setEdeRawRows([]); }} className="text-sm text-primary hover:underline">Close</button>
-                </div>
-                {edeRawLoading ? (
-                  <div className="text-sm text-muted-foreground py-4">Loading raw EDE rows...</div>
-                ) : (
-                  <DataTable
-                    data={edeRawRows}
-                    columns={EDE_RAW_DRILLDOWN_COLUMNS}
-                    exportFileName={`ede_raw_${edeRawDrilldown}.csv`}
-                    pageSize={25}
-                  />
-                )}
-              </div>
-            )}
-        </CollapsibleDebugCard>
-      )}
-
-      {/* Commission Aggregation Debug */}
-      {debugStats && (
-        <CollapsibleDebugCard
-          title="Commission Aggregation Debug"
-          icon={<DollarSign className="h-4 w-4" />}
-          summary={`${debugStats.commRawRows} rows · +$${debugStats.commTotalPositive.toLocaleString(undefined, { minimumFractionDigits: 2 })} / −$${Math.abs(debugStats.commTotalNegative).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
-        >
-            <div className="flex flex-wrap gap-6 text-sm">
-              <span className="text-muted-foreground">Raw Rows: <strong className="text-foreground">{debugStats.commRawRows}</strong></span>
-              <span className="text-muted-foreground">Positive Rows: <strong className="text-foreground">{debugStats.commPositiveRows}</strong></span>
-              <span className="text-muted-foreground">Negative Rows: <strong className="text-foreground">{debugStats.commNegativeRows}</strong></span>
-              <span className="text-muted-foreground">Distinct Policy (raw): <strong className="text-foreground">{debugStats.commDistinctPolicyRaw}</strong></span>
-              <span className="text-muted-foreground">Distinct Policy (normalized): <strong className="text-foreground">{debugStats.commDistinctPolicyNormalized}</strong></span>
-            </div>
-            <div className="flex flex-wrap gap-6 text-sm border-t pt-2">
-              <span className="text-muted-foreground">Total Positive: <strong className="text-foreground">${debugStats.commTotalPositive.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></span>
-              <span className="text-muted-foreground">Total Negative: <strong className="text-foreground">${debugStats.commTotalNegative.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></span>
-            </div>
-            {debugStats.commSampleRaw && debugStats.commSampleRaw.length > 0 && (
-              <div className="border-t pt-2">
-                <div className="text-sm text-muted-foreground font-medium mb-1">Sample (first 10 rows): raw → parsed</div>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs font-mono">
-                  {debugStats.commSampleRaw.map((raw, i) => (
-                    <div key={i} className="border rounded px-2 py-1 bg-muted/30">
-                      <div className="text-muted-foreground truncate" title={raw}>{raw}</div>
-                      <div className="text-foreground">→ {debugStats.commSampleParsed[i]?.toFixed(2)}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-        </CollapsibleDebugCard>
-      )}
-
-      {/* Clawbacks Detail — every negative-amount commission row in scope.
-          Sourced from raw normalized commission records so it ties exactly to
-          the Net Paid card's "Clawbacks $X" line. Each row carries its source
-          file label + statement date so we can answer "why is a Mar 21 row in
-          the Mar 2026 batch?" without leaving the dashboard. */}
-      {clawbackRows.length > 0 && (
-        <CollapsibleDebugCard
-          title="Clawbacks Detail"
-          icon={<TrendingDown className="h-4 w-4 text-destructive" />}
-          summary={`${clawbackRows.length} rows · −$${Math.abs(metrics.totalClawbacks).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
-        >
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>
-              All commission rows where amount &lt; 0 within the current{' '}
-              <strong>{payEntityFilter}</strong> scope, sorted most-negative first.
-            </span>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs"
-              onClick={() => {
-                const header = ['applicant_name','policy_number','pay_code','amount','pay_entity','source_file_label','statement_date','member_key'];
-                const csv = [header.join(',')]
-                  .concat(
-                    clawbackRows.map((r) =>
-                      header
-                        .map((k) => {
-                          const v = String((r as any)[k] ?? '');
-                          return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
-                        })
-                        .join(','),
-                    ),
-                  )
-                  .join('\n');
-                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `clawbacks-${payEntityFilter.toLowerCase()}-${currentBatchId ?? 'batch'}.csv`;
-                a.click();
-                URL.revokeObjectURL(url);
-              }}
-            >
-              Export CSV
-            </Button>
-          </div>
-          <div className="border rounded-md max-h-[420px] overflow-auto">
-            <table className="w-full text-xs">
-              <thead className="bg-muted/40 sticky top-0">
-                <tr className="text-left">
-                  <th className="px-2 py-1.5 font-medium">Member</th>
-                  <th className="px-2 py-1.5 font-medium">Policy #</th>
-                  <th className="px-2 py-1.5 font-medium">Pay Code</th>
-                  <th className="px-2 py-1.5 font-medium text-right">Amount</th>
-                  <th className="px-2 py-1.5 font-medium">Pay Entity</th>
-                  <th className="px-2 py-1.5 font-medium">Source File</th>
-                  <th
-                    className="px-2 py-1.5 font-medium cursor-pointer select-none hover:text-foreground"
-                    onClick={toggleClawbackStatementSort}
-                    title="Click to sort by Statement Date"
-                  >
-                    Statement Date{clawbackStatementSortIndicator}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedClawbackRows.slice(0, 500).map((r, i) => (
-                  <tr key={i} className="border-t">
-                    <td className="px-2 py-1 truncate max-w-[160px]" title={r.applicant_name}>{r.applicant_name || '—'}</td>
-                    <td className="px-2 py-1 font-mono">{r.policy_number || '—'}</td>
-                    <td className="px-2 py-1 font-mono">{r.pay_code}</td>
-                    <td className="px-2 py-1 text-right font-mono text-destructive">
-                      ${r.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </td>
-                    <td className="px-2 py-1">{r.pay_entity || '—'}</td>
-                    <td className="px-2 py-1 truncate max-w-[200px]" title={r.source_file_label}>{r.source_file_label || '—'}</td>
-                    <td className="px-2 py-1">{r.statement_date || '—'}</td>
-                  </tr>
-                ))}
-                {sortedClawbackRows.length > 500 && (
-                  <tr>
-                    <td colSpan={7} className="px-2 py-2 text-center text-muted-foreground italic">
-                      Showing first 500 of {sortedClawbackRows.length}. Export CSV for the full list.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </CollapsibleDebugCard>
-      )}
-
-      {/* EE Universe Audit — surfaces the gap between EE total and
-          (Found-in-BO + Not-in-BO). Read-only diagnostic panel; classifies
-          each gap row with a best-effort inferred reason so we can decide
-          the right downstream fix without designing a "not actionable"
-          bucket that hides bugs. */}
-      {reconciled.length > 0 && normalizedRecords.length > 0 && (
-        <CollapsibleDebugCard
-          title="Persistent vs Canonical EE-Universe Drift"
-          icon={<ShieldAlert className="h-4 w-4" />}
-          summary={`${eeAuditRows.length} EE members fall outside Found and Not-in-BO buckets`}
-        >
-          <div className="text-xs text-muted-foreground">
-            Diagnostic (#118 follow-up): rows where the persistent
-            <code className="font-mono mx-1">reconciled_members.is_in_expected_ede_universe</code>
-            flag and live <em>canonical</em> EE-universe calculation disagree.
-            Members in the Expected Enrollments universe (scope:{' '}
-            <strong>{payEntityFilter}</strong>) who are NOT in the Found-in-BO
-            bucket and NOT in the actionable Not-in-BO bucket. UI metrics no
-            longer depend on the persistent flag — this panel exists to
-            surface stale-rebuild / reconcile-time drift. The
-            <em> Inferred Reason</em> column is a best-effort classification
-            computed at render time, not stored.
-          </div>
-          <DataTable
-            data={eeAuditRows}
-            columns={[
-              { key: 'applicant_name', label: 'Member Name' },
-              { key: 'policy_number', label: 'Policy #' },
-              { key: 'issuer_subscriber_id', label: 'Issuer Sub ID' },
-              { key: 'exchange_subscriber_id', label: 'Exchange Sub ID' },
-              { key: 'ede_status', label: 'EDE Status' },
-              { key: 'current_policy_aor', label: 'currentPolicyAOR' },
-              { key: 'writing_agent_npn', label: 'Writing Agent NPN' },
-              { key: 'bo_record_exists', label: 'BO Record Exists?' },
-              { key: 'bo_broker_npn', label: 'BO Broker NPN' },
-              { key: 'bo_eligible', label: 'BO Eligible' },
-              { key: 'bo_term_date', label: 'BO Term Date' },
-              { key: 'bo_state', label: 'BO State' },
-              { key: 'inferred_reason', label: 'Inferred Reason' },
-            ]}
-            exportFileName={`ee_universe_audit_${payEntityFilter.toLowerCase()}.csv`}
-            pageSize={25}
-          />
-        </CollapsibleDebugCard>
-      )}
-
       {/* Source Funnel — Phase 2b introduction of the classifier (§4.5 of
           ARCHITECTURE_PLAN). Observational for now; Phase 3 wires dispute /
           attribution workflows off the gap counts. */}
@@ -1761,6 +1457,309 @@ export default function DashboardPage() {
         </>
       )}
 
+      {/* Debug Counts */}
+      <CollapsibleDebugCard
+        title="Debug Counts (Selected Batch)"
+        icon={<Database className="h-4 w-4" />}
+        summary={`${counts.uploadedFiles} files · ${counts.normalizedRecords} normalized · ${counts.reconciledMembers} members`}
+      >
+          <div className="flex flex-wrap gap-6 text-sm">
+            <span className="text-muted-foreground">Uploaded Files: <strong className="text-foreground">{counts.uploadedFiles}</strong></span>
+            <span className="text-muted-foreground">Normalized Records: <strong className="text-foreground">{counts.normalizedRecords}</strong></span>
+            <span className="text-muted-foreground">Reconciled Members: <strong className="text-foreground">{counts.reconciledMembers}</strong></span>
+            <span className="text-muted-foreground">Filtered Members: <strong className="text-foreground">{filtered.length}</strong></span>
+          </div>
+          {debugStats && (
+            <div className="flex flex-wrap gap-6 text-sm border-t pt-2 mt-2">
+              <span className="text-muted-foreground">Raw Records: <strong className="text-foreground">{debugStats.totalRawRecords}</strong></span>
+              <span className="text-muted-foreground">EDE rows: <strong className="text-foreground">{debugStats.totalEDE}</strong></span>
+              <span className="text-muted-foreground">Back Office rows: <strong className="text-foreground">{debugStats.totalBO}</strong></span>
+              <span className="text-muted-foreground">Commission rows: <strong className="text-foreground">{debugStats.totalComm}</strong></span>
+              <span className="text-muted-foreground">Unique Member Keys: <strong className="text-foreground">{debugStats.uniqueMemberKeys}</strong></span>
+              <span className="text-muted-foreground">Avg Records/Key: <strong className="text-foreground">{debugStats.avgRecordsPerKey}</strong></span>
+            </div>
+          )}
+          {debugStats && (
+            <div className="flex flex-wrap gap-6 text-sm border-t pt-2 mt-2">
+              <span className="text-muted-foreground">EDE w/ issuerSubId: <strong className="text-foreground">{debugStats.edeWithIssuerSubId}</strong></span>
+              <span className="text-muted-foreground">EDE missing issuerSubId: <strong className="text-foreground">{debugStats.edeMissingIssuerSubId}</strong></span>
+              <span className="text-muted-foreground">…of which have exchangeSubId: <strong className="text-foreground">{debugStats.edeMissingIssuerSubIdWithExchange}</strong></span>
+              <span className="text-muted-foreground">Promoted from sibling: <strong className="text-foreground">{debugStats.edePromotedIssuerSubIdFromExchange}</strong></span>
+              <span className="text-muted-foreground">BO starting "U": <strong className="text-foreground">{debugStats.boStartingWithU}</strong></span>
+              <span className="text-muted-foreground">Comm starting "U": <strong className="text-foreground">{debugStats.commStartingWithU}</strong></span>
+              <span className="text-muted-foreground">BO Active (in period): <strong className="text-foreground">{debugStats.boActiveCount}</strong></span>
+              <span className="text-muted-foreground">BO Excluded (expired term): <strong className="text-foreground">{debugStats.boExcludedCount}</strong></span>
+              <span className="text-muted-foreground">BO No Term Date (assumed active): <strong className="text-foreground">{debugStats.boMissingTermDate}</strong></span>
+            </div>
+          )}
+          {debugStats && debugStats.edeMissingIssuerSubIdSamples.length > 0 && (
+            <div className="border-t pt-2 mt-2 text-xs">
+              <div className="text-muted-foreground font-medium mb-1">
+                Sample EDE rows missing issuerSubId (with exchangeSubId):
+              </div>
+              <div className="space-y-1 font-mono">
+                {debugStats.edeMissingIssuerSubIdSamples.map((s, i) => (
+                  <div key={i} className="text-foreground">
+                    {s.applicant_name} — exchSub: {s.exchange_subscriber_id} — exchPol: {s.exchange_policy_id || '—'} — file: {s.source_file_label}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {debugStats && (
+            <div className="flex flex-wrap gap-6 text-sm border-t pt-2 mt-2">
+              <span className="text-muted-foreground">Match by issuer_sub_id: <strong className="text-foreground">{debugStats.matchByIssuerSubId}</strong></span>
+              <span className="text-muted-foreground">Match by exchange_sub_id: <strong className="text-foreground">{debugStats.matchByExchangeSubId}</strong></span>
+              <span className="text-muted-foreground">Match by policy_number: <strong className="text-foreground">{debugStats.matchByPolicyNumber}</strong></span>
+              <span className="text-muted-foreground">Match by name: <strong className="text-foreground">{debugStats.matchByName}</strong></span>
+              <span className="text-muted-foreground">Match by fallback: <strong className="text-foreground">{debugStats.matchByFallback}</strong></span>
+            </div>
+          )}
+      </CollapsibleDebugCard>
+
+      {/* EDE Enrollment Debug */}
+      {debugStats && (
+        <CollapsibleDebugCard
+          title="EDE Expected Enrollment Debug"
+          icon={<Users className="h-4 w-4" />}
+          summary={`${debugStats.edeAfterFilter} qualified · ${formatMonthBreakdown(filteredEde.byMonth) || 'no months'}`}
+        >
+            <div className="flex flex-wrap gap-6 text-sm">
+              <span className="text-muted-foreground">Total Raw EDE rows: <strong className="text-foreground">{debugStats.edeRawTotal}</strong></span>
+              <span className="text-muted-foreground">After filter (eff. date + status): <strong className="text-foreground">{debugStats.edeAfterFilter}</strong></span>
+              <span className="text-muted-foreground">Unique member_keys after filter: <strong className="text-foreground">{debugStats.edeUniqueKeysAfterFilter}</strong></span>
+              <span className="text-muted-foreground">Expected Enrollments (reconciled): <strong className="text-foreground">{metrics.expected}</strong></span>
+              <span className="text-muted-foreground">All EDE unfiltered: <strong className="text-foreground">{metrics.totalEdeRaw}</strong></span>
+              <span className="text-muted-foreground">Invalid date rows: <strong className="text-foreground">{debugStats.edeInvalidDateCount}</strong></span>
+            </div>
+            <div className="flex flex-wrap gap-6 text-sm border-t pt-2 items-center">
+              <span className="text-muted-foreground font-medium">Expected by month (newly effective):</span>
+              {Object.entries(filteredEde.byMonth)
+                .filter(([m, c]) => m && (c ?? 0) > 0)
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([m, c]) => (
+                  <button
+                    key={m}
+                    onClick={() => loadEdeRawDrilldown(m)}
+                    className="text-muted-foreground hover:text-primary underline-offset-4 hover:underline"
+                  >
+                    {formatMonthStart(m)}: <strong className="text-foreground">{c.toLocaleString()}</strong>
+                  </button>
+                ))}
+              <span className="text-xs text-muted-foreground italic">(click a count to drilldown into raw EDE rows)</span>
+            </div>
+            <div className="flex flex-wrap gap-4 text-sm border-t pt-2">
+              <span className="text-muted-foreground font-medium">Status breakdown:</span>
+              {Object.entries(debugStats.edeStatusBreakdown).sort((a, b) => b[1] - a[1]).map(([status, count]) => (
+                <span key={status} className="text-muted-foreground">
+                  {status}: <strong className="text-foreground">{count as number}</strong>
+                </span>
+              ))}
+            </div>
+            {debugStats.edeEffDateSamples.length > 0 && (
+              <div className="flex flex-wrap gap-4 text-sm border-t pt-2">
+                <span className="text-muted-foreground font-medium">Effective date samples:</span>
+                {debugStats.edeEffDateSamples.map((d, i) => (
+                  <span key={i} className="text-muted-foreground font-mono">{d}</span>
+                ))}
+              </div>
+            )}
+            {edeRawDrilldown && (
+              <div className="border-t pt-3 mt-2 space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold">
+                    Raw EDE rows for {formatMonthStart(edeRawDrilldown ?? '')}
+                    {!edeRawLoading && ` (${edeRawRows.length} rows)`}
+                  </h4>
+                  <button onClick={() => { setEdeRawDrilldown(null); setEdeRawRows([]); }} className="text-sm text-primary hover:underline">Close</button>
+                </div>
+                {edeRawLoading ? (
+                  <div className="text-sm text-muted-foreground py-4">Loading raw EDE rows...</div>
+                ) : (
+                  <DataTable
+                    data={edeRawRows}
+                    columns={EDE_RAW_DRILLDOWN_COLUMNS}
+                    exportFileName={`ede_raw_${edeRawDrilldown}.csv`}
+                    pageSize={25}
+                  />
+                )}
+              </div>
+            )}
+        </CollapsibleDebugCard>
+      )}
+
+      {/* Commission Aggregation Debug */}
+      {debugStats && (
+        <CollapsibleDebugCard
+          title="Commission Aggregation Debug"
+          icon={<DollarSign className="h-4 w-4" />}
+          summary={`${debugStats.commRawRows} rows · +$${debugStats.commTotalPositive.toLocaleString(undefined, { minimumFractionDigits: 2 })} / −$${Math.abs(debugStats.commTotalNegative).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+        >
+            <div className="flex flex-wrap gap-6 text-sm">
+              <span className="text-muted-foreground">Raw Rows: <strong className="text-foreground">{debugStats.commRawRows}</strong></span>
+              <span className="text-muted-foreground">Positive Rows: <strong className="text-foreground">{debugStats.commPositiveRows}</strong></span>
+              <span className="text-muted-foreground">Negative Rows: <strong className="text-foreground">{debugStats.commNegativeRows}</strong></span>
+              <span className="text-muted-foreground">Distinct Policy (raw): <strong className="text-foreground">{debugStats.commDistinctPolicyRaw}</strong></span>
+              <span className="text-muted-foreground">Distinct Policy (normalized): <strong className="text-foreground">{debugStats.commDistinctPolicyNormalized}</strong></span>
+            </div>
+            <div className="flex flex-wrap gap-6 text-sm border-t pt-2">
+              <span className="text-muted-foreground">Total Positive: <strong className="text-foreground">${debugStats.commTotalPositive.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></span>
+              <span className="text-muted-foreground">Total Negative: <strong className="text-foreground">${debugStats.commTotalNegative.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></span>
+            </div>
+            {debugStats.commSampleRaw && debugStats.commSampleRaw.length > 0 && (
+              <div className="border-t pt-2">
+                <div className="text-sm text-muted-foreground font-medium mb-1">Sample (first 10 rows): raw → parsed</div>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs font-mono">
+                  {debugStats.commSampleRaw.map((raw, i) => (
+                    <div key={i} className="border rounded px-2 py-1 bg-muted/30">
+                      <div className="text-muted-foreground truncate" title={raw}>{raw}</div>
+                      <div className="text-foreground">→ {debugStats.commSampleParsed[i]?.toFixed(2)}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+        </CollapsibleDebugCard>
+      )}
+
+      {/* Clawbacks Detail — every negative-amount commission row in scope.
+          Sourced from raw normalized commission records so it ties exactly to
+          the Net Paid card's "Clawbacks $X" line. Each row carries its source
+          file label + statement date so we can answer "why is a Mar 21 row in
+          the Mar 2026 batch?" without leaving the dashboard. */}
+      {clawbackRows.length > 0 && (
+        <CollapsibleDebugCard
+          title="Clawbacks Detail"
+          icon={<TrendingDown className="h-4 w-4 text-destructive" />}
+          summary={`${clawbackRows.length} rows · −$${Math.abs(metrics.totalClawbacks).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+        >
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>
+              All commission rows where amount &lt; 0 within the current{' '}
+              <strong>{payEntityFilter}</strong> scope, sorted most-negative first.
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => {
+                const header = ['applicant_name','policy_number','pay_code','amount','pay_entity','source_file_label','statement_date','member_key'];
+                const csv = [header.join(',')]
+                  .concat(
+                    clawbackRows.map((r) =>
+                      header
+                        .map((k) => {
+                          const v = String((r as any)[k] ?? '');
+                          return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+                        })
+                        .join(','),
+                    ),
+                  )
+                  .join('\n');
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `clawbacks-${payEntityFilter.toLowerCase()}-${currentBatchId ?? 'batch'}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+            >
+              Export CSV
+            </Button>
+          </div>
+          <div className="border rounded-md max-h-[420px] overflow-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/40 sticky top-0">
+                <tr className="text-left">
+                  <th className="px-2 py-1.5 font-medium">Member</th>
+                  <th className="px-2 py-1.5 font-medium">Policy #</th>
+                  <th className="px-2 py-1.5 font-medium">Pay Code</th>
+                  <th className="px-2 py-1.5 font-medium text-right">Amount</th>
+                  <th className="px-2 py-1.5 font-medium">Pay Entity</th>
+                  <th className="px-2 py-1.5 font-medium">Source File</th>
+                  <th
+                    className="px-2 py-1.5 font-medium cursor-pointer select-none hover:text-foreground"
+                    onClick={toggleClawbackStatementSort}
+                    title="Click to sort by Statement Date"
+                  >
+                    Statement Date{clawbackStatementSortIndicator}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedClawbackRows.slice(0, 500).map((r, i) => (
+                  <tr key={i} className="border-t">
+                    <td className="px-2 py-1 truncate max-w-[160px]" title={r.applicant_name}>{r.applicant_name || '—'}</td>
+                    <td className="px-2 py-1 font-mono">{r.policy_number || '—'}</td>
+                    <td className="px-2 py-1 font-mono">{r.pay_code}</td>
+                    <td className="px-2 py-1 text-right font-mono text-destructive">
+                      ${r.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-2 py-1">{r.pay_entity || '—'}</td>
+                    <td className="px-2 py-1 truncate max-w-[200px]" title={r.source_file_label}>{r.source_file_label || '—'}</td>
+                    <td className="px-2 py-1">{r.statement_date || '—'}</td>
+                  </tr>
+                ))}
+                {sortedClawbackRows.length > 500 && (
+                  <tr>
+                    <td colSpan={7} className="px-2 py-2 text-center text-muted-foreground italic">
+                      Showing first 500 of {sortedClawbackRows.length}. Export CSV for the full list.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CollapsibleDebugCard>
+      )}
+
+      {/* EE Universe Audit — surfaces the gap between EE total and
+          (Found-in-BO + Not-in-BO). Read-only diagnostic panel; classifies
+          each gap row with a best-effort inferred reason so we can decide
+          the right downstream fix without designing a "not actionable"
+          bucket that hides bugs. */}
+      {reconciled.length > 0 && normalizedRecords.length > 0 && (
+        <CollapsibleDebugCard
+          title="Persistent vs Canonical EE-Universe Drift"
+          icon={<ShieldAlert className="h-4 w-4" />}
+          summary={`${eeAuditRows.length} EE members fall outside Found and Not-in-BO buckets`}
+        >
+          <div className="text-xs text-muted-foreground">
+            Diagnostic (#118 follow-up): rows where the persistent
+            <code className="font-mono mx-1">reconciled_members.is_in_expected_ede_universe</code>
+            flag and live <em>canonical</em> EE-universe calculation disagree.
+            Members in the Expected Enrollments universe (scope:{' '}
+            <strong>{payEntityFilter}</strong>) who are NOT in the Found-in-BO
+            bucket and NOT in the actionable Not-in-BO bucket. UI metrics no
+            longer depend on the persistent flag — this panel exists to
+            surface stale-rebuild / reconcile-time drift. The
+            <em> Inferred Reason</em> column is a best-effort classification
+            computed at render time, not stored.
+          </div>
+          <DataTable
+            data={eeAuditRows}
+            columns={[
+              { key: 'applicant_name', label: 'Member Name' },
+              { key: 'policy_number', label: 'Policy #' },
+              { key: 'issuer_subscriber_id', label: 'Issuer Sub ID' },
+              { key: 'exchange_subscriber_id', label: 'Exchange Sub ID' },
+              { key: 'ede_status', label: 'EDE Status' },
+              { key: 'current_policy_aor', label: 'currentPolicyAOR' },
+              { key: 'writing_agent_npn', label: 'Writing Agent NPN' },
+              { key: 'bo_record_exists', label: 'BO Record Exists?' },
+              { key: 'bo_broker_npn', label: 'BO Broker NPN' },
+              { key: 'bo_eligible', label: 'BO Eligible' },
+              { key: 'bo_term_date', label: 'BO Term Date' },
+              { key: 'bo_state', label: 'BO State' },
+              { key: 'inferred_reason', label: 'Inferred Reason' },
+            ]}
+            exportFileName={`ee_universe_audit_${payEntityFilter.toLowerCase()}.csv`}
+            pageSize={25}
+          />
+        </CollapsibleDebugCard>
+      )}
       {/* Clawbacks drilldown — opened from the Net Paid Commission card. */}
       <Dialog open={clawbacksOpen} onOpenChange={setClawbacksOpen}>
         <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
