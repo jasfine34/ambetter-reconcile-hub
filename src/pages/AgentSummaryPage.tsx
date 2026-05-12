@@ -7,7 +7,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { NPN_MAP } from '@/lib/constants';
 import { extractNpnFromAorString } from '@/lib/agents';
 import { getNormalizedRecords } from '@/lib/persistence';
-import { filterCommissionRowsByScope, getExpectedPaymentBreakdown } from '@/lib/canonical';
+import {
+  filterCommissionRowsByScope,
+  getExpectedPaymentBreakdown,
+  classifyPolicyOwnerFromCurrentAor,
+  type PolicyOwnerBucket,
+} from '@/lib/canonical';
 import { computeFilteredEde } from '@/lib/expectedEde';
 import { getCoveredMonths } from '@/lib/dateRange';
 import { usePayEntityScope, type PayEntityScope } from '@/hooks/usePayEntityScope';
