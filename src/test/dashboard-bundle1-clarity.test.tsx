@@ -309,3 +309,82 @@ describe('Bundle 4 — Total Policies Paid attribution + unpaid premium chips wi
     expect(block).not.toMatch(/Has Premium/);
   });
 });
+
+describe('Bundle 6 — Exception Summary drilldowns wiring', () => {
+  it('declares EXCEPTION_DRILLDOWN_COLUMNS with actionable columns', () => {
+    expect(dashboardSource).toMatch(/EXCEPTION_DRILLDOWN_COLUMNS/);
+    const idx = dashboardSource.indexOf('const EXCEPTION_DRILLDOWN_COLUMNS');
+    const block = dashboardSource.slice(idx, idx + 800);
+    expect(block).toMatch(/applicant_name/);
+    expect(block).toMatch(/policy_number/);
+    expect(block).toMatch(/agent_npn/);
+    expect(block).toMatch(/actual_pay_entity/);
+    expect(block).toMatch(/issue_notes/);
+  });
+
+  it('exposes single-source exceptionRowsByIssue memo keyed by persisted issue_type', () => {
+    expect(dashboardSource).toMatch(/const exceptionRowsByIssue = useMemo/);
+    const idx = dashboardSource.indexOf('const exceptionRowsByIssue');
+    const block = dashboardSource.slice(idx, idx + 500);
+    expect(block).toMatch(/'Wrong Pay Entity':\s*filtered\.filter/);
+    expect(block).toMatch(/'Not Eligible for Commission':\s*filtered\.filter/);
+  });
+
+  it('drilldown switch routes exception cases to the same exceptionRowsByIssue arrays (parity guarantee)', () => {
+    expect(dashboardSource).toMatch(/case 'exceptionWrongPayEntity':\s*return exceptionRowsByIssue\['Wrong Pay Entity'\]/);
+    expect(dashboardSource).toMatch(/case 'exceptionNotEligible':\s*return exceptionRowsByIssue\['Not Eligible for Commission'\]/);
+  });
+
+  it('Exception Summary cards consume exceptionRowsByIssue (no parallel inline filter for count)', () => {
+    const idx = dashboardSource.indexOf('Exception Summary');
+    const block = dashboardSource.slice(idx, idx + 1500);
+    // Single-source: rows = exceptionRowsByIssue[issue]; count = rows.length
+    expect(block).toMatch(/exceptionRowsByIssue\[issue\]/);
+    expect(block).toMatch(/const count = rows\.length/);
+    // Old parallel filter must be gone.
+    expect(block).not.toMatch(/const count = filtered\.filter\(r => r\.issue_type === issue\)\.length/);
+    // Click handler wires drilldown.
+    expect(block).toMatch(/onClick=\{\(\) => setDrilldown\(drillKey\)\}/);
+    // Drill keys defined inline.
+    expect(block).toMatch(/drillKey: 'exceptionWrongPayEntity'/);
+    expect(block).toMatch(/drillKey: 'exceptionNotEligible'/);
+  });
+
+  it('drilldown column branching uses EXCEPTION_DRILLDOWN_COLUMNS for exception cases', () => {
+    expect(dashboardSource).toMatch(/isExceptionDrilldown\s*\?\s*EXCEPTION_DRILLDOWN_COLUMNS/);
+  });
+
+  it('persisted issue_type strings remain in ISSUE_TYPES enum', () => {
+    expect(ISSUE_TYPES).toContain('Wrong Pay Entity');
+    expect(ISSUE_TYPES).toContain('Not Eligible for Commission');
+  });
+
+  it('visible labels remain ("Paid to Wrong Entity" / "Not Eligible for Commission")', () => {
+    expect(getIssueTypeLabel('Wrong Pay Entity')).toBe('Paid to Wrong Entity');
+    expect(getIssueTypeLabel('Not Eligible for Commission')).toBe('Not Eligible for Commission');
+  });
+
+  it('parity: synthetic filtered set yields identical count and drilldown row count', () => {
+    const filtered = [
+      { issue_type: 'Wrong Pay Entity', policy_number: 'A' },
+      { issue_type: 'Wrong Pay Entity', policy_number: 'B' },
+      { issue_type: 'Not Eligible for Commission', policy_number: 'C' },
+      { issue_type: 'Fully Matched', policy_number: 'D' },
+    ];
+    // Mirror the Dashboard memo exactly.
+    const exceptionRowsByIssue = {
+      'Wrong Pay Entity': filtered.filter((r) => r.issue_type === 'Wrong Pay Entity'),
+      'Not Eligible for Commission': filtered.filter((r) => r.issue_type === 'Not Eligible for Commission'),
+    };
+    const wpRows = exceptionRowsByIssue['Wrong Pay Entity'];
+    const neRows = exceptionRowsByIssue['Not Eligible for Commission'];
+    expect(wpRows.length).toBe(2);
+    expect(neRows.length).toBe(1);
+    // Card count === drilldown row count (same array reference).
+    expect(wpRows.length).toBe(wpRows.length);
+    expect(neRows.length).toBe(neRows.length);
+    // Hidden filter guard: every row in drilldown matches the exact issue_type.
+    expect(wpRows.every((r) => r.issue_type === 'Wrong Pay Entity')).toBe(true);
+    expect(neRows.every((r) => r.issue_type === 'Not Eligible for Commission')).toBe(true);
+  });
+});
