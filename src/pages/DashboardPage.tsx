@@ -1493,9 +1493,7 @@ export default function DashboardPage() {
                       { label: 'JF', value: a.JF },
                       { label: 'EF', value: a.EF },
                       { label: 'BS', value: a.BS },
-                      { label: 'Downlines', value: a.Downlines },
-                      { label: 'Vix', value: a.Vix },
-                      { label: 'Unattributed', value: a.unattributed },
+                      { label: 'Other', value: a.Other },
                     ].filter((s) => s.value > 0);
                   })()}
                 />
