@@ -94,7 +94,6 @@ describe('Agent Summary canonical unpaid grouping (AOR ownership)', () => {
     expect(grouped.get('JF')!.estMissing).toBe(350);
   });
 });
-});
 
 describe('AgentSummaryPage source — legacy predicate removed', () => {
   const src = readFileSync(resolve(__dirname, '../pages/AgentSummaryPage.tsx'), 'utf8');
