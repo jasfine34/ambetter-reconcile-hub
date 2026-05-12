@@ -890,6 +890,14 @@ export default function DashboardPage() {
     return metrics.eligibleCohort.filter(r => !r.in_commission).slice(0, 50);
   }, [metrics.eligibleCohort]);
 
+  // Bundle 6 — single-source rows for Exception Summary cards. The same
+  // array drives both the card count and the drilldown payload, so they
+  // can never drift. Keyed by the exact persisted issue_type string.
+  const exceptionRowsByIssue = useMemo(() => ({
+    'Wrong Pay Entity': filtered.filter((r) => r.issue_type === 'Wrong Pay Entity'),
+    'Not Eligible for Commission': filtered.filter((r) => r.issue_type === 'Not Eligible for Commission'),
+  }), [filtered]);
+
   const drilldownData = useMemo(() => {
     if (!drilldown) return null;
     const sc = metrics.sourceCoverage;
@@ -929,11 +937,16 @@ export default function DashboardPage() {
       // Diagnostic-only: BO Active w/ Non-current EDE (Interpretation C).
       // Excluded from Should Be Paid; visible separately for review.
       case 'boActiveNonCurrentEde': return sc.boActiveNonCurrentEde.rows.map((x) => ({ ...x.row, diagnostic_reason: x.reason }));
+      // Bundle 6 — Exception Summary drilldowns. Same rows array used for
+      // the card count, guaranteeing parity.
+      case 'exceptionWrongPayEntity': return exceptionRowsByIssue['Wrong Pay Entity'];
+      case 'exceptionNotEligible': return exceptionRowsByIssue['Not Eligible for Commission'];
       default: return filtered;
     }
-  }, [drilldown, filtered, eeUniverseKeys, metrics.sourceCoverage, metrics.expectedPaymentBreakdown]);
+  }, [drilldown, filtered, eeUniverseKeys, metrics.sourceCoverage, metrics.expectedPaymentBreakdown, exceptionRowsByIssue]);
 
   const isCoverageDrilldown = ['fullyMatched', 'paidBackOfficeOnly', 'paidEdeOnly', 'commissionOnly', 'backOfficeOnly', 'unpaidExpected', 'totalPaidAll', 'boActiveNonCurrentEde'].includes(drilldown || '');
+  const isExceptionDrilldown = drilldown === 'exceptionWrongPayEntity' || drilldown === 'exceptionNotEligible';
 
   return (
     <div className="space-y-6">
