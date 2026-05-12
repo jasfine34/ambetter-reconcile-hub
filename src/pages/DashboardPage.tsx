@@ -81,6 +81,24 @@ const EDE_RAW_DRILLDOWN_COLUMNS = [
   { key: 'source_file_label', label: 'Source File' },
 ];
 
+// Expected Enrollments drilldown columns — matches the FilteredEdeRow shape
+// returned by computeFilteredEde.uniqueMembers (the canonical EE universe).
+// This carveout exists ONLY for the Expected drilldown so the row count and
+// the card value (filteredEde.uniqueKeys) are sourced from the same data.
+// Reconciled-member-only fields (issue_type, actual_commission, in_commission)
+// are intentionally omitted; FilteredEdeRow does not carry them.
+const EXPECTED_DRILLDOWN_COLUMNS = [
+  { key: 'applicant_name', label: 'Name' },
+  { key: 'policy_number', label: 'Policy #' },
+  { key: 'issuer_subscriber_id', label: 'Issuer Sub ID' },
+  { key: 'exchange_subscriber_id', label: 'Exchange Sub ID' },
+  { key: 'current_policy_aor', label: 'Current Policy AOR' },
+  { key: 'policy_status', label: 'Policy Status' },
+  { key: 'effective_date', label: 'Effective Date' },
+  { key: 'effective_month', label: 'Effective Month' },
+  { key: 'in_back_office', label: 'Back Office' },
+];
+
 const RECON_COLUMNS = [
   { key: 'applicant_name', label: 'Name' },
   { key: 'policy_number', label: 'Policy #' },
