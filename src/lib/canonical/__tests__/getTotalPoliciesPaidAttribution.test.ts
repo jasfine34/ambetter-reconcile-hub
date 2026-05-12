@@ -90,3 +90,59 @@ describe('getTotalPoliciesPaidAttribution sums exactly to Total Policies Paid', 
     expect(sum).toBe(paid.length);
   });
 });
+
+describe('Bundle 4.5 — evidence matching falls back to stable identity fields', () => {
+  it('matches via policy_number when paid row member_key differs from commission member_key', () => {
+    const paid = [{ member_key: 'reconciled-A', policy_number: 'POL-1' }];
+    const normalized = [
+      comm({ member_key: 'raw-X', policy_number: 'POL-1', agent_npn: NPN.JF }),
+    ];
+    const out = getTotalPoliciesPaidAttribution(paid, normalized);
+    expect(out.JF).toBe(1);
+    expect(out.unattributed).toBe(0);
+  });
+
+  it('matches via issuer_subscriber_id when policy_number missing on paid side', () => {
+    const paid = [{ member_key: 'A', issuer_subscriber_id: 'ISS-9' }];
+    const normalized = [
+      comm({ member_key: 'B', issuer_subscriber_id: 'ISS-9', agent_npn: NPN.EF }),
+    ];
+    expect(getTotalPoliciesPaidAttribution(paid, normalized).EF).toBe(1);
+  });
+
+  it('matches via exchange_subscriber_id', () => {
+    const paid = [{ member_key: 'A', exchange_subscriber_id: 'EX-7' }];
+    const normalized = [
+      comm({ member_key: 'B', exchange_subscriber_id: 'EX-7', writing_agent_carrier_id: NPN.BS }),
+    ];
+    expect(getTotalPoliciesPaidAttribution(paid, normalized).BS).toBe(1);
+  });
+
+  it('does not double-count when multiple identity fields point to the same evidence row', () => {
+    const paid = [{ member_key: 'A', policy_number: 'POL', issuer_subscriber_id: 'ISS' }];
+    const normalized = [
+      comm({ member_key: 'A', policy_number: 'POL', issuer_subscriber_id: 'ISS', agent_npn: NPN.JF }),
+    ];
+    const out = getTotalPoliciesPaidAttribution(paid, normalized);
+    expect(out.JF).toBe(1);
+    expect(out.JF + out.EF + out.BS + out.Downlines + out.Vix + out.unattributed).toBe(1);
+  });
+
+  it('visible chips + unattributed sum exactly to Total Policies Paid (no hidden gap)', () => {
+    const paid = [
+      { member_key: 'a', policy_number: 'P1' },
+      { member_key: 'b', policy_number: 'P2' },
+      { member_key: 'c', policy_number: 'P3' }, // no commission evidence
+    ];
+    const normalized = [
+      comm({ member_key: 'zzz', policy_number: 'P1', agent_npn: NPN.JF }),
+      comm({ member_key: 'b', agent_npn: NPN.EF }),
+    ];
+    const out = getTotalPoliciesPaidAttribution(paid, normalized);
+    expect(out.JF).toBe(1);
+    expect(out.EF).toBe(1);
+    expect(out.unattributed).toBe(1);
+    const sum = out.JF + out.EF + out.BS + out.Downlines + out.Vix + out.unattributed;
+    expect(sum).toBe(paid.length);
+  });
+});
