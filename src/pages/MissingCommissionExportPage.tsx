@@ -658,8 +658,7 @@ export default function MissingCommissionExportPage() {
         zip: profile.zip.value,
       });
 
-      const netPremium = m.net_premium ?? m.premium ?? null;
-      const bucket = classifyNetPremium(netPremium);
+      const bucket = classifyNetPremium(m);
 
       const estMissing =
         typeof m.estimated_missing_commission === 'number' && m.estimated_missing_commission > 0
