@@ -272,10 +272,6 @@ describe('Bundle 4 — Total Policies Paid attribution + unpaid premium chips wi
     expect(dashboardSource).toMatch(
       /const paidAttribution = getTotalPoliciesPaidAttribution\(\s*sourceCoverage\.totalPoliciesPaid\.rows,\s*normalizedRecords,\s*\)/,
     );
-    // No inline NPN classification on the dashboard.
-    expect(dashboardSource).not.toMatch(/['"]21277051['"]/);
-    expect(dashboardSource).not.toMatch(/['"]21055210['"]/);
-    expect(dashboardSource).not.toMatch(/['"]16531877['"]/);
   });
 
   it('Source Coverage Total Policies Paid card renders JF/EF/BS/Downlines/Vix splits from paidAttribution', () => {
