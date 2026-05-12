@@ -19,6 +19,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { serializeErrorMessage } from '@/pages/MissingCommissionExportPage';
+import { getIssueTypeLabel, ISSUE_TYPES } from '@/lib/constants';
 
 const dashboardSource = readFileSync(
   resolve(__dirname, '../pages/DashboardPage.tsx'),
