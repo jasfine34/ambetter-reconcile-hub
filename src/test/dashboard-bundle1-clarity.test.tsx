@@ -42,9 +42,12 @@ describe('Item 1 — serializeErrorMessage', () => {
 });
 
 describe('Item 2 — Total Policies Paid tooltip mentions all 5 paid buckets', () => {
-  // Pull the JSX for the Total Policies Paid MetricCard.
-  const idx = dashboardSource.indexOf('title="Total Policies Paid"');
-  const block = dashboardSource.slice(idx, idx + 1200);
+  // Pull the JSX for the source-coverage Total Policies Paid card (the one
+  // wired to setDrilldown('totalPaidAll')); Bundle 3 added a second card
+  // with the same title bound to setDrilldown('paidComm').
+  const idx = dashboardSource.indexOf("setDrilldown('totalPaidAll')");
+  const start = dashboardSource.lastIndexOf('<MetricCard', idx);
+  const block = dashboardSource.slice(start, idx + 1500);
 
   it('references Fully Matched & Paid', () => {
     expect(block).toMatch(/Fully Matched & Paid/);
