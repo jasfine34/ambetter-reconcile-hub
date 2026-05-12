@@ -788,27 +788,57 @@ export function classifyPaidAttribution(
 
 /**
  * For each Total Policies Paid policy, find its positive commission rows in
- * `normalizedRecords` (joined by member_key) and assign one bucket per
- * priority order. Returns split counts.
+ * `normalizedRecords` and assign one bucket per priority order.
+ *
+ * Bundle 4.5: evidence is indexed by multiple stable identity fields
+ * (member_key, policy_number, issuer_subscriber_id, exchange_subscriber_id)
+ * so paid rows whose reconciled member_key differs from the raw normalized
+ * commission-row key still attribute. A paid row's evidence is the union of
+ * matches across any of these keys (de-duplicated). Returns split counts.
  */
+function evidenceKeysOf(rec: any): string[] {
+  const keys: string[] = [];
+  const push = (prefix: string, v: any) => {
+    if (v === null || v === undefined) return;
+    const s = String(v).trim();
+    if (!s) return;
+    keys.push(`${prefix}:${s}`);
+  };
+  push('mk', rec.member_key);
+  push('pol', rec.policy_number);
+  push('iss', rec.issuer_subscriber_id);
+  push('exc', rec.exchange_subscriber_id);
+  return keys;
+}
+
 export function getTotalPoliciesPaidAttribution(
   totalPoliciesPaidRows: any[],
   normalizedRecords: any[],
 ): PaidAttributionSplitCounts {
-  const positiveByMember = new Map<string, any[]>();
+  const positiveByKey = new Map<string, any[]>();
   for (const rec of normalizedRecords) {
     if (rec.source_type !== 'COMMISSION') continue;
     if (!(Number(rec.commission_amount) > 0)) continue;
-    const key = rec.member_key;
-    if (!key) continue;
-    const arr = positiveByMember.get(key);
-    if (arr) arr.push(rec); else positiveByMember.set(key, [rec]);
+    for (const k of evidenceKeysOf(rec)) {
+      const arr = positiveByKey.get(k);
+      if (arr) arr.push(rec); else positiveByKey.set(k, [rec]);
+    }
   }
   const out: PaidAttributionSplitCounts = {
     JF: 0, EF: 0, BS: 0, Downlines: 0, Vix: 0, unattributed: 0,
   };
   for (const r of totalPoliciesPaidRows) {
-    const evidence = positiveByMember.get(r.member_key) || [];
+    const seen = new Set<any>();
+    const evidence: any[] = [];
+    for (const k of evidenceKeysOf(r)) {
+      const arr = positiveByKey.get(k);
+      if (!arr) continue;
+      for (const rec of arr) {
+        if (seen.has(rec)) continue;
+        seen.add(rec);
+        evidence.push(rec);
+      }
+    }
     const bucket = classifyPaidAttribution(evidence);
     if (bucket) out[bucket] += 1;
     else out.unattributed += 1;
