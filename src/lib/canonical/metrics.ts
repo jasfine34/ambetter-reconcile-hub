@@ -398,8 +398,8 @@ export interface ExpectedPaymentBreakdown<T = any> {
   paidSplit: { matched: number; boOnly: number; edeOnly: number };
   unpaidSplit: { matched: number; boOnly: number; edeOnly: number };
   /**
-   * Bundle 4: premium-evidence split of Expected But Unpaid. Classification
-   * uses `net_premium ?? premium`:
+   * Bundle 4 / 4.5: premium-evidence split of Expected But Unpaid.
+   * Classification uses `net_premium` ONLY (no fallback to gross premium):
    *   - `zeroNetPremium`: value is null/undefined/blank/non-numeric/0/negative
    *   - `hasPremium`:     parsed numeric value > 0
    * Counts sum exactly to `unpaidCount` for every scope.
