@@ -1238,6 +1238,10 @@ export default function DashboardPage() {
                 { label: 'BO Only', value: metrics.expectedPaymentBreakdown.unpaidSplit.boOnly },
                 { label: 'EDE Only', value: metrics.expectedPaymentBreakdown.unpaidSplit.edeOnly },
               ]}
+              splits2={[
+                { label: 'Zero Net Premium', value: metrics.expectedPaymentBreakdown.unpaidPremiumSplit.zeroNetPremium },
+                { label: 'Has Premium', value: metrics.expectedPaymentBreakdown.unpaidPremiumSplit.hasPremium },
+              ]}
             />
             <div className="relative rounded-xl border p-5 text-left bg-success/10 border-success/30">
               <div className="flex items-center justify-between mb-2">
