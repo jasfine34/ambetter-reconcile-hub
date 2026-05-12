@@ -228,13 +228,28 @@ describe('Messer column mapping helpers', () => {
 // 7. Premium-bucket filtering
 // ---------------------------------------------------------------------------
 
-describe('classifyNetPremium', () => {
-  it('buckets correctly', () => {
-    expect(classifyNetPremium(0)).toBe('zero_premium');
-    expect(classifyNetPremium(null)).toBe('zero_premium');
-    expect(classifyNetPremium(undefined)).toBe('zero_premium');
-    expect(classifyNetPremium(0.01)).toBe('has_premium');
-    expect(classifyNetPremium(500)).toBe('has_premium');
+describe('classifyNetPremium (Bundle 4.6: row-form, canonical predicate)', () => {
+  it('buckets correctly via canonical isZeroNetPremium', () => {
+    expect(classifyNetPremium({ net_premium: 0 })).toBe('zero_premium');
+    expect(classifyNetPremium({ net_premium: null })).toBe('zero_premium');
+    expect(classifyNetPremium({ net_premium: undefined })).toBe('zero_premium');
+    expect(classifyNetPremium({ net_premium: 0.01 })).toBe('has_premium');
+    expect(classifyNetPremium({ net_premium: 500 })).toBe('has_premium');
+  });
+  it('Bundle 4.6: net_premium null with positive gross premium → zero_premium (no fallback)', () => {
+    expect(classifyNetPremium({ net_premium: null, premium: 500 })).toBe('zero_premium');
+  });
+  it('Bundle 4.6: net_premium undefined with positive gross premium → zero_premium', () => {
+    expect(classifyNetPremium({ net_premium: undefined, premium: 500 })).toBe('zero_premium');
+  });
+  it('Bundle 4.6: net_premium 0 with positive gross premium → zero_premium', () => {
+    expect(classifyNetPremium({ net_premium: 0, premium: 500 })).toBe('zero_premium');
+  });
+  it('Bundle 4.6: net_premium 100 → has_premium', () => {
+    expect(classifyNetPremium({ net_premium: 100 })).toBe('has_premium');
+  });
+  it('Bundle 4.6: both null → zero_premium', () => {
+    expect(classifyNetPremium({ net_premium: null, premium: null })).toBe('zero_premium');
   });
 });
 
