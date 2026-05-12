@@ -96,6 +96,20 @@ export function MetricCard({ title, value, icon, variant = 'default', onClick, s
           ))}
         </div>
       )}
+      {splits2 && splits2.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5" data-testid="metric-card-splits-2">
+          {splits2.map((s) => (
+            <span
+              key={s.label}
+              data-testid={`metric-card-split2-${s.label}`}
+              className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+            >
+              <span>{s.label}</span>
+              <span className="text-foreground font-semibold">{s.value.toLocaleString()}</span>
+            </span>
+          ))}
+        </div>
+      )}
     </button>
   );
 }
