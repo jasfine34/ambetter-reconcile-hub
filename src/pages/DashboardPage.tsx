@@ -886,12 +886,12 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-y-2">
         <div>
           <h2 className="text-2xl font-bold text-foreground">Reconciliation Dashboard</h2>
           <p className="text-sm text-muted-foreground">{dashboardTitle}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 gap-y-2">
           <Select value={payEntityFilter} onValueChange={(v) => setPayEntityFilter(v as PayEntityFilter)}>
             <SelectTrigger className="w-[160px]">
               <SelectValue placeholder="View" />
