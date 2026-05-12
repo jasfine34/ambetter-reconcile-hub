@@ -142,7 +142,7 @@ describe('Bundle 8 cross-surface parity — Source Coverage EBU ownership chips'
       missingFromBO: [],
       byMonth: { '2026-03': reconciled.length },
     } as any;
-    const { getExpectedPaymentBreakdown } = require('@/lib/canonical/metrics');
+    
     const out = getExpectedPaymentBreakdown(reconciled, 'All', filteredEde, new Set());
     // Same expectations as TPP chip parity.
     const tpp = getTotalPoliciesPaidAttribution(aorTransferRows);
