@@ -673,8 +673,10 @@ export default function DashboardPage() {
     const backOfficeOnly = sourceCoverage.unpaidBackOfficeOnly.count;
     const unpaidExpected = sourceCoverage.expectedButUnpaid.count;
     const totalPaidAll = sourceCoverage.totalPoliciesPaid.count;
-    // Bundle 4: paid-attribution split (JF/EF/BS/Downlines/Vix) computed via
-    // canonical helper — DashboardPage MUST NOT inline-classify.
+    // Bundle 7: paid-attribution ownership split (JF/EF/BS/Other) computed via
+    // canonical helper using EDE current_policy_aor — DashboardPage MUST NOT
+    // inline-classify. Vix is a pay entity (not ownership) and Downlines is
+    // payment evidence (not ownership), so neither appears in this split.
     const paidAttribution = getTotalPoliciesPaidAttribution(
       sourceCoverage.totalPoliciesPaid.rows,
       normalizedRecords,
