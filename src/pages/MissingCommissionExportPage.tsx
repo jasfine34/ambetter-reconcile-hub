@@ -355,11 +355,13 @@ export function resolveWritingAgentCarrierId(opts: {
   return hit ? hit.id : '';
 }
 
-/** Bucket a numeric net premium into the three-way premium filter buckets. */
-export function classifyNetPremium(net: number | null | undefined): PremiumBucket {
-  const n = Number(net);
-  if (!net || isNaN(n) || n === 0) return 'zero_premium';
-  return 'has_premium';
+/**
+ * Bundle 4.6: thin wrapper over the canonical zero-net-premium predicate.
+ * Maps to MCE's programmatic bucket names (zero_premium / has_premium).
+ * The rule itself lives in `isZeroNetPremium` in canonical/metrics.ts.
+ */
+export function classifyNetPremium(row: any): PremiumBucket {
+  return isZeroNetPremium(row) ? 'zero_premium' : 'has_premium';
 }
 
 export function buildMesserCsvFilename(opts: {
