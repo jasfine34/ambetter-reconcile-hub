@@ -38,6 +38,7 @@ import {
   getMonthlyBreakdown,
   isActiveBackOfficeRecord,
   getExpectedPaymentBreakdown,
+  getExpectedMissingCommissionSum,
   getSourceCoverageBuckets,
   classifySourceTypeForRow,
   filterCommissionRowsByScope,
