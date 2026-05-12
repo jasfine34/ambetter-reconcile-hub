@@ -729,3 +729,86 @@ export function getSourceCoverageBuckets(
     },
   };
 }
+
+// ===========================================================================
+// Bundle 4 — Total Policies Paid attribution split (JF/EF/BS/Downlines/Vix).
+//
+// Maps each Total Policies Paid policy back to its positive normalized
+// commission-row evidence and assigns ONE bucket per policy via priority:
+//   Vix  > EF > JF > BS > Downlines
+// (Erica's Vix-statement activity belongs under Vix, not EF — Vix wins by
+// pay_entity regardless of agent NPN.) Counts sum exactly to the parent
+// totalPoliciesPaid count under All / Coverall scopes when commission
+// evidence exists for every paid row, which is the canonical invariant
+// (a row only enters totalPoliciesPaid when in_commission=true).
+// ===========================================================================
+
+export type PaidAttributionBucket = 'JF' | 'EF' | 'BS' | 'Downlines' | 'Vix';
+
+export interface PaidAttributionSplitCounts {
+  JF: number;
+  EF: number;
+  BS: number;
+  Downlines: number;
+  Vix: number;
+  /** Rows with no positive commission evidence — should be 0; surfaced for diagnostics. */
+  unattributed: number;
+}
+
+const ATTRIBUTION_NPN_JF = '21055210';
+const ATTRIBUTION_NPN_EF = '21277051';
+const ATTRIBUTION_NPN_BS = '16531877';
+
+function recHasNpn(rec: any, npn: string): boolean {
+  return (
+    String(rec?.agent_npn ?? '').trim() === npn ||
+    String(rec?.writing_agent_carrier_id ?? '').trim() === npn
+  );
+}
+
+/**
+ * Classify one paid policy into a single attribution bucket given its
+ * positive commission evidence rows. Priority: Vix > EF > JF > BS > Downlines.
+ * Returns null when no positive evidence exists.
+ */
+export function classifyPaidAttribution(
+  positiveEvidence: any[],
+): PaidAttributionBucket | null {
+  if (!positiveEvidence || positiveEvidence.length === 0) return null;
+  if (positiveEvidence.some((r) => r.pay_entity === 'Vix')) return 'Vix';
+  if (positiveEvidence.some((r) => r.pay_entity === 'Coverall' && recHasNpn(r, ATTRIBUTION_NPN_EF))) return 'EF';
+  if (positiveEvidence.some((r) => r.pay_entity === 'Coverall' && recHasNpn(r, ATTRIBUTION_NPN_JF))) return 'JF';
+  if (positiveEvidence.some((r) => r.pay_entity === 'Coverall' && recHasNpn(r, ATTRIBUTION_NPN_BS))) return 'BS';
+  if (positiveEvidence.some((r) => r.pay_entity === 'Coverall')) return 'Downlines';
+  return null;
+}
+
+/**
+ * For each Total Policies Paid policy, find its positive commission rows in
+ * `normalizedRecords` (joined by member_key) and assign one bucket per
+ * priority order. Returns split counts.
+ */
+export function getTotalPoliciesPaidAttribution(
+  totalPoliciesPaidRows: any[],
+  normalizedRecords: any[],
+): PaidAttributionSplitCounts {
+  const positiveByMember = new Map<string, any[]>();
+  for (const rec of normalizedRecords) {
+    if (rec.source_type !== 'COMMISSION') continue;
+    if (!(Number(rec.commission_amount) > 0)) continue;
+    const key = rec.member_key;
+    if (!key) continue;
+    const arr = positiveByMember.get(key);
+    if (arr) arr.push(rec); else positiveByMember.set(key, [rec]);
+  }
+  const out: PaidAttributionSplitCounts = {
+    JF: 0, EF: 0, BS: 0, Downlines: 0, Vix: 0, unattributed: 0,
+  };
+  for (const r of totalPoliciesPaidRows) {
+    const evidence = positiveByMember.get(r.member_key) || [];
+    const bucket = classifyPaidAttribution(evidence);
+    if (bucket) out[bucket] += 1;
+    else out.unattributed += 1;
+  }
+  return out;
+}
