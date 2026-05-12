@@ -38,6 +38,7 @@ import {
   getMonthlyBreakdown,
   isActiveBackOfficeRecord,
   getExpectedPaymentBreakdown,
+  getExpectedMissingCommissionSum,
   getSourceCoverageBuckets,
   classifySourceTypeForRow,
   filterCommissionRowsByScope,
@@ -616,7 +617,6 @@ export default function DashboardPage() {
     const paidEligible = expectedPaymentBreakdown.paidCount;
     const unpaid = expectedPaymentBreakdown.unpaidCount;
 
-    const paidCommRecords = filtered.filter(r => r.in_commission).length;
     const netPaid = getNetPaidCommission(normalizedRecords, scopeForCanonical);
     const totalComm = netPaid.gross;
     const totalClawbacks = netPaid.clawbacks;
@@ -629,7 +629,7 @@ export default function DashboardPage() {
     const unclassifiedNet = split.unclassifiedNet;
     const netPaidTotal = netPaid.net;
     const splitDelta = netPaidTotal - (coverallDirectNet + downlineNet);
-    const estMissing = filtered.reduce((s, r) => s + (r.estimated_missing_commission || 0), 0);
+    const estMissing = getExpectedMissingCommissionSum(reconciled, scopeForCanonical, filteredEde, confirmedUpgradeMemberKeys);
     const difference = shouldPay - paidEligible;
     const unpaidVariance = unpaid - difference;
     const totalEdeRaw = filtered.filter(r => r.in_ede).length;
@@ -656,6 +656,8 @@ export default function DashboardPage() {
     const backOfficeOnly = sourceCoverage.unpaidBackOfficeOnly.count;
     const unpaidExpected = sourceCoverage.expectedButUnpaid.count;
     const totalPaidAll = sourceCoverage.totalPoliciesPaid.count;
+    // Bundle 3: paidCommRecords sourced from the same canonical totalPoliciesPaid set.
+    const paidCommRecords = sourceCoverage.totalPoliciesPaid.count;
     const boActiveNonCurrentEde = sourceCoverage.boActiveNonCurrentEde.count;
 
     return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, eligibleCohort, expectedPaymentBreakdown, sourceCoverage, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidBackOfficeOnly, paidEdeOnly, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, boActiveNonCurrentEde, coverallDirectNet, downlineNet, netPaidTotal, splitDelta, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
@@ -886,7 +888,7 @@ export default function DashboardPage() {
       // come from the same getExpectedPaymentBreakdown so card values and
       // drilldown row counts cannot drift.
       case 'shouldPay': return epb.universe.rows;
-      case 'paidComm': return filtered.filter(r => r.in_commission);
+      case 'paidComm': return sc.totalPoliciesPaid.rows;
       case 'paidEligible': return epb.paidRows;
       case 'unpaid': return epb.unpaidRows.map((r) => ({ ...r, _sourceType: sourceTypeForUnpaid(r) }));
       case 'fullyMatched': return sc.fullyMatchedPaid.rows;
@@ -1203,7 +1205,7 @@ export default function DashboardPage() {
                 { label: 'EDE Only', value: metrics.expectedPaymentBreakdown.universe.edeOnlyCount },
               ]}
             />
-            <MetricCard title="Paid Commission Records" value={metrics.paidCommRecords} icon={<CheckCircle2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('paidComm')} tooltip={{ text: "These are all members that appear on the commission statements as having been paid, regardless of whether they match our expected book.", why: "This shows what the carrier actually paid, including payments that may not belong to your tracked enrollments." }} />
+            <MetricCard title="Total Policies Paid" value={metrics.paidCommRecords} icon={<CheckCircle2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('paidComm')} tooltip={{ text: "Count of all unique members where commission was paid, regardless of source. Sourced from the canonical totalPoliciesPaid bucket.", why: "This shows what the carrier actually paid, including payments that may not belong to your tracked enrollments." }} />
             <MetricCard
               title="Expected Payments Received"
               value={metrics.paidEligible}
