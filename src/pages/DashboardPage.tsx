@@ -628,7 +628,7 @@ export default function DashboardPage() {
     const unclassifiedNet = split.unclassifiedNet;
     const netPaidTotal = netPaid.net;
     const splitDelta = netPaidTotal - (coverallDirectNet + downlineNet);
-    const estMissing = filtered.reduce((s, r) => s + (r.estimated_missing_commission || 0), 0);
+    const estMissing = getExpectedMissingCommissionSum(reconciled, scopeForCanonical, filteredEde, confirmedUpgradeMemberKeys);
     const difference = shouldPay - paidEligible;
     const unpaidVariance = unpaid - difference;
     const totalEdeRaw = filtered.filter(r => r.in_ede).length;
