@@ -1,10 +1,9 @@
 /**
- * Bundle 4 — Total Policies Paid attribution split tests.
+ * Bundle 7 — Total Policies Paid attribution split tests (REPLACES Bundle 4).
  *
- * Verifies the canonical priority Vix > EF > JF > BS > Downlines, that
- * EF/JF/BS map by NPN OR writing_agent_carrier_id (any positive amount),
- * that Erica's Vix-statement activity lands under Vix (not EF), and that
- * the chips sum exactly to Total Policies Paid for the input set.
+ * Ownership is determined ONLY by EDE current_policy_aor via the canonical
+ * policyOwner helper. Buckets: JF / EF / BS / Other. Vix and Downlines are
+ * NOT ownership buckets and must not appear in attribution output.
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -12,137 +11,62 @@ import {
   getTotalPoliciesPaidAttribution,
 } from '@/lib/canonical/metrics';
 
-const NPN = { JF: '21055210', EF: '21277051', BS: '16531877' };
+const aor = (s: string) => ({ current_policy_aor: s });
 
-const comm = (overrides: any) => ({
-  source_type: 'COMMISSION',
-  pay_entity: 'Coverall',
-  agent_npn: '',
-  writing_agent_carrier_id: '',
-  commission_amount: 1,
-  member_key: 'm1',
-  ...overrides,
-});
-
-describe('classifyPaidAttribution priority order', () => {
-  it('EF: Coverall-statement Erica NPN, any positive amount', () => {
-    expect(classifyPaidAttribution([comm({ agent_npn: NPN.EF, commission_amount: 0.5 })])).toBe('EF');
+describe('Bundle 7 — classifyPaidAttribution uses current_policy_aor only', () => {
+  it('JF / EF / BS via embedded NPN', () => {
+    expect(classifyPaidAttribution(aor('Jason Fine (21055210)'))).toBe('JF');
+    expect(classifyPaidAttribution(aor('Erica Fine (21277051)'))).toBe('EF');
+    expect(classifyPaidAttribution(aor('Becky Shuta (16531877)'))).toBe('BS');
   });
-  it('Erica Vix-statement activity is Vix, never EF', () => {
-    expect(classifyPaidAttribution([comm({ pay_entity: 'Vix', agent_npn: NPN.EF })])).toBe('Vix');
+  it('JF / EF / BS via name prefix when no NPN embedded', () => {
+    expect(classifyPaidAttribution(aor('Jason Fine'))).toBe('JF');
+    expect(classifyPaidAttribution(aor('erica fine'))).toBe('EF');
+    expect(classifyPaidAttribution(aor('Becky Shuta'))).toBe('BS');
   });
-  it('JF: Coverall-statement Jason NPN', () => {
-    expect(classifyPaidAttribution([comm({ agent_npn: NPN.JF })])).toBe('JF');
+  it('Other for null / blank / unknown / downstream AORs', () => {
+    expect(classifyPaidAttribution(aor(''))).toBe('Other');
+    expect(classifyPaidAttribution({ current_policy_aor: null })).toBe('Other');
+    expect(classifyPaidAttribution({})).toBe('Other');
+    expect(classifyPaidAttribution(aor('Some Downline (99999999)'))).toBe('Other');
+    expect(classifyPaidAttribution(aor('Allen Ford (21077804)'))).toBe('Other');
   });
-  it('BS: Coverall-statement Becky NPN (also via writing_agent_carrier_id)', () => {
-    expect(classifyPaidAttribution([comm({ writing_agent_carrier_id: NPN.BS })])).toBe('BS');
-  });
-  it('Downlines: any other positive Coverall-statement NPN', () => {
-    expect(classifyPaidAttribution([comm({ agent_npn: '21077804' })])).toBe('Downlines');
-  });
-  it('Multi-evidence policy follows priority Vix > EF > JF > BS > Downlines', () => {
-    const evidence = [
-      comm({ agent_npn: '99999999' }), // Downlines
-      comm({ agent_npn: NPN.BS }), // BS
-      comm({ agent_npn: NPN.JF }), // JF
-      comm({ agent_npn: NPN.EF }), // EF
-      comm({ pay_entity: 'Vix', agent_npn: NPN.EF }), // Vix
-    ];
-    expect(classifyPaidAttribution(evidence)).toBe('Vix');
-    expect(classifyPaidAttribution(evidence.slice(0, 4))).toBe('EF');
-    expect(classifyPaidAttribution(evidence.slice(0, 3))).toBe('JF');
-    expect(classifyPaidAttribution(evidence.slice(0, 2))).toBe('BS');
-    expect(classifyPaidAttribution(evidence.slice(0, 1))).toBe('Downlines');
-  });
-  it('returns null with no positive evidence', () => {
-    expect(classifyPaidAttribution([])).toBeNull();
+  it('Writing-agent NPN on the row MUST NOT influence ownership (AOR-transfer)', () => {
+    // Writing agent Jason; current AOR Erica → EF.
+    expect(classifyPaidAttribution({
+      current_policy_aor: 'Erica Fine (21277051)',
+      agent_npn: '21055210',
+    })).toBe('EF');
+    // Writing agent Erica; current AOR Jason → JF.
+    expect(classifyPaidAttribution({
+      current_policy_aor: 'Jason Fine (21055210)',
+      agent_npn: '21277051',
+    })).toBe('JF');
   });
 });
 
-describe('getTotalPoliciesPaidAttribution sums exactly to Total Policies Paid', () => {
-  it('counts each policy exactly once and sums to input size', () => {
+describe('Bundle 7 — getTotalPoliciesPaidAttribution sums to Total Policies Paid', () => {
+  it('chip counts sum exactly to input row count, no commission evidence consulted', () => {
     const paid = [
-      { member_key: 'mJF' },
-      { member_key: 'mEF' },
-      { member_key: 'mBS' },
-      { member_key: 'mDL' },
-      { member_key: 'mVix' },
-      { member_key: 'mEFviaVix' },
-      { member_key: 'mMulti' },
+      aor('Jason Fine (21055210)'),
+      aor('Erica Fine (21277051)'),
+      aor('Becky Shuta (16531877)'),
+      aor('Random Downline (99999999)'),
+      { current_policy_aor: '' },
+      // AOR-transfer: writing-agent NPN must be ignored.
+      { current_policy_aor: 'Jason Fine (21055210)', agent_npn: '21277051' },
     ];
-    const normalized = [
-      comm({ member_key: 'mJF', agent_npn: NPN.JF }),
-      comm({ member_key: 'mEF', agent_npn: NPN.EF, commission_amount: 0.25 }),
-      comm({ member_key: 'mBS', writing_agent_carrier_id: NPN.BS }),
-      comm({ member_key: 'mDL', agent_npn: '15978551' }),
-      comm({ member_key: 'mVix', pay_entity: 'Vix', agent_npn: NPN.JF }),
-      comm({ member_key: 'mEFviaVix', pay_entity: 'Vix', agent_npn: NPN.EF }),
-      // Multi-evidence: should land in Vix.
-      comm({ member_key: 'mMulti', agent_npn: NPN.JF }),
-      comm({ member_key: 'mMulti', pay_entity: 'Vix' }),
-      // Negative/zero rows must be ignored.
-      comm({ member_key: 'mJF', agent_npn: NPN.JF, commission_amount: -50 }),
-      comm({ member_key: 'mJF', agent_npn: NPN.JF, commission_amount: 0 }),
-    ];
-    const out = getTotalPoliciesPaidAttribution(paid, normalized);
-    expect(out).toEqual({ JF: 1, EF: 1, BS: 1, Downlines: 1, Vix: 3, unattributed: 0 });
-    const sum = out.JF + out.EF + out.BS + out.Downlines + out.Vix + out.unattributed;
+    const out = getTotalPoliciesPaidAttribution(paid);
+    expect(out).toEqual({ JF: 2, EF: 1, BS: 1, Other: 2 });
+    const sum = out.JF + out.EF + out.BS + out.Other;
     expect(sum).toBe(paid.length);
   });
-});
 
-describe('Bundle 4.5 — evidence matching falls back to stable identity fields', () => {
-  it('matches via policy_number when paid row member_key differs from commission member_key', () => {
-    const paid = [{ member_key: 'reconciled-A', policy_number: 'POL-1' }];
-    const normalized = [
-      comm({ member_key: 'raw-X', policy_number: 'POL-1', agent_npn: NPN.JF }),
-    ];
-    const out = getTotalPoliciesPaidAttribution(paid, normalized);
-    expect(out.JF).toBe(1);
-    expect(out.unattributed).toBe(0);
-  });
-
-  it('matches via issuer_subscriber_id when policy_number missing on paid side', () => {
-    const paid = [{ member_key: 'A', issuer_subscriber_id: 'ISS-9' }];
-    const normalized = [
-      comm({ member_key: 'B', issuer_subscriber_id: 'ISS-9', agent_npn: NPN.EF }),
-    ];
-    expect(getTotalPoliciesPaidAttribution(paid, normalized).EF).toBe(1);
-  });
-
-  it('matches via exchange_subscriber_id', () => {
-    const paid = [{ member_key: 'A', exchange_subscriber_id: 'EX-7' }];
-    const normalized = [
-      comm({ member_key: 'B', exchange_subscriber_id: 'EX-7', writing_agent_carrier_id: NPN.BS }),
-    ];
-    expect(getTotalPoliciesPaidAttribution(paid, normalized).BS).toBe(1);
-  });
-
-  it('does not double-count when multiple identity fields point to the same evidence row', () => {
-    const paid = [{ member_key: 'A', policy_number: 'POL', issuer_subscriber_id: 'ISS' }];
-    const normalized = [
-      comm({ member_key: 'A', policy_number: 'POL', issuer_subscriber_id: 'ISS', agent_npn: NPN.JF }),
-    ];
-    const out = getTotalPoliciesPaidAttribution(paid, normalized);
-    expect(out.JF).toBe(1);
-    expect(out.JF + out.EF + out.BS + out.Downlines + out.Vix + out.unattributed).toBe(1);
-  });
-
-  it('visible chips + unattributed sum exactly to Total Policies Paid (no hidden gap)', () => {
-    const paid = [
-      { member_key: 'a', policy_number: 'P1' },
-      { member_key: 'b', policy_number: 'P2' },
-      { member_key: 'c', policy_number: 'P3' }, // no commission evidence
-    ];
-    const normalized = [
-      comm({ member_key: 'zzz', policy_number: 'P1', agent_npn: NPN.JF }),
-      comm({ member_key: 'b', agent_npn: NPN.EF }),
-    ];
-    const out = getTotalPoliciesPaidAttribution(paid, normalized);
-    expect(out.JF).toBe(1);
+  it('second arg (legacy normalizedRecords) is ignored — commission rows are not ownership', () => {
+    const paid = [aor('Erica Fine (21277051)')];
+    const fakeCommission = [{ source_type: 'COMMISSION', agent_npn: '21055210', commission_amount: 100 }];
+    const out = getTotalPoliciesPaidAttribution(paid, fakeCommission);
     expect(out.EF).toBe(1);
-    expect(out.unattributed).toBe(1);
-    const sum = out.JF + out.EF + out.BS + out.Downlines + out.Vix + out.unattributed;
-    expect(sum).toBe(paid.length);
+    expect(out.JF).toBe(0);
   });
 });

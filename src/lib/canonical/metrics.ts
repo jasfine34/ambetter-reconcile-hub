@@ -738,114 +738,52 @@ export function getSourceCoverageBuckets(
 }
 
 // ===========================================================================
-// Bundle 4 — Total Policies Paid attribution split (JF/EF/BS/Downlines/Vix).
+// Bundle 7 — Total Policies Paid attribution split (JF/EF/BS/Other).
 //
-// Maps each Total Policies Paid policy back to its positive normalized
-// commission-row evidence and assigns ONE bucket per policy via priority:
-//   Vix  > EF > JF > BS > Downlines
-// (Erica's Vix-statement activity belongs under Vix, not EF — Vix wins by
-// pay_entity regardless of agent NPN.) Counts sum exactly to the parent
-// totalPoliciesPaid count under All / Coverall scopes when commission
-// evidence exists for every paid row, which is the canonical invariant
-// (a row only enters totalPoliciesPaid when in_commission=true).
+// Ownership is determined ONLY by EDE current_policy_aor via the canonical
+// `classifyPolicyOwnerFromCurrentAor` helper. Vix is a pay entity (not an
+// ownership bucket); Downlines is writing/payment evidence (not ownership).
+// Counts sum exactly to the parent totalPoliciesPaid count for any scope.
+// Commission rows are payment evidence only — they MUST NOT determine the
+// owner bucket. Bundle 4's writing-agent-basis attribution is replaced.
 // ===========================================================================
 
-export type PaidAttributionBucket = 'JF' | 'EF' | 'BS' | 'Downlines' | 'Vix';
+import {
+  classifyPolicyOwnerFromCurrentAor,
+  type PolicyOwnerBucket,
+} from './policyOwner';
+
+export type PaidAttributionBucket = PolicyOwnerBucket;
 
 export interface PaidAttributionSplitCounts {
   JF: number;
   EF: number;
   BS: number;
-  Downlines: number;
-  Vix: number;
-  /** Rows with no positive commission evidence — should be 0; surfaced for diagnostics. */
-  unattributed: number;
-}
-
-const ATTRIBUTION_NPN_JF = '21055210';
-const ATTRIBUTION_NPN_EF = '21277051';
-const ATTRIBUTION_NPN_BS = '16531877';
-
-function recHasNpn(rec: any, npn: string): boolean {
-  return (
-    String(rec?.agent_npn ?? '').trim() === npn ||
-    String(rec?.writing_agent_carrier_id ?? '').trim() === npn
-  );
+  Other: number;
 }
 
 /**
- * Classify one paid policy into a single attribution bucket given its
- * positive commission evidence rows. Priority: Vix > EF > JF > BS > Downlines.
- * Returns null when no positive evidence exists.
+ * Classify a single paid row into an ownership bucket from its
+ * `current_policy_aor`. Pure delegate to the canonical owner helper.
  */
-export function classifyPaidAttribution(
-  positiveEvidence: any[],
-): PaidAttributionBucket | null {
-  if (!positiveEvidence || positiveEvidence.length === 0) return null;
-  if (positiveEvidence.some((r) => r.pay_entity === 'Vix')) return 'Vix';
-  if (positiveEvidence.some((r) => r.pay_entity === 'Coverall' && recHasNpn(r, ATTRIBUTION_NPN_EF))) return 'EF';
-  if (positiveEvidence.some((r) => r.pay_entity === 'Coverall' && recHasNpn(r, ATTRIBUTION_NPN_JF))) return 'JF';
-  if (positiveEvidence.some((r) => r.pay_entity === 'Coverall' && recHasNpn(r, ATTRIBUTION_NPN_BS))) return 'BS';
-  if (positiveEvidence.some((r) => r.pay_entity === 'Coverall')) return 'Downlines';
-  return null;
+export function classifyPaidAttribution(row: any): PaidAttributionBucket {
+  return classifyPolicyOwnerFromCurrentAor(row?.current_policy_aor);
 }
 
 /**
- * For each Total Policies Paid policy, find its positive commission rows in
- * `normalizedRecords` and assign one bucket per priority order.
- *
- * Bundle 4.5: evidence is indexed by multiple stable identity fields
- * (member_key, policy_number, issuer_subscriber_id, exchange_subscriber_id)
- * so paid rows whose reconciled member_key differs from the raw normalized
- * commission-row key still attribute. A paid row's evidence is the union of
- * matches across any of these keys (de-duplicated). Returns split counts.
+ * For each Total Policies Paid policy, assign one ownership bucket using
+ * `current_policy_aor`. The optional second parameter is accepted for
+ * backwards-compat with Bundle 4 callers and is intentionally unused —
+ * commission evidence MUST NOT influence ownership.
  */
-function evidenceKeysOf(rec: any): string[] {
-  const keys: string[] = [];
-  const push = (prefix: string, v: any) => {
-    if (v === null || v === undefined) return;
-    const s = String(v).trim();
-    if (!s) return;
-    keys.push(`${prefix}:${s}`);
-  };
-  push('mk', rec.member_key);
-  push('pol', rec.policy_number);
-  push('iss', rec.issuer_subscriber_id);
-  push('exc', rec.exchange_subscriber_id);
-  return keys;
-}
-
 export function getTotalPoliciesPaidAttribution(
   totalPoliciesPaidRows: any[],
-  normalizedRecords: any[],
+  _normalizedRecordsUnused?: any[],
 ): PaidAttributionSplitCounts {
-  const positiveByKey = new Map<string, any[]>();
-  for (const rec of normalizedRecords) {
-    if (rec.source_type !== 'COMMISSION') continue;
-    if (!(Number(rec.commission_amount) > 0)) continue;
-    for (const k of evidenceKeysOf(rec)) {
-      const arr = positiveByKey.get(k);
-      if (arr) arr.push(rec); else positiveByKey.set(k, [rec]);
-    }
-  }
-  const out: PaidAttributionSplitCounts = {
-    JF: 0, EF: 0, BS: 0, Downlines: 0, Vix: 0, unattributed: 0,
-  };
+  const out: PaidAttributionSplitCounts = { JF: 0, EF: 0, BS: 0, Other: 0 };
   for (const r of totalPoliciesPaidRows) {
-    const seen = new Set<any>();
-    const evidence: any[] = [];
-    for (const k of evidenceKeysOf(r)) {
-      const arr = positiveByKey.get(k);
-      if (!arr) continue;
-      for (const rec of arr) {
-        if (seen.has(rec)) continue;
-        seen.add(rec);
-        evidence.push(rec);
-      }
-    }
-    const bucket = classifyPaidAttribution(evidence);
-    if (bucket) out[bucket] += 1;
-    else out.unattributed += 1;
+    out[classifyPaidAttribution(r)] += 1;
   }
   return out;
 }
+

@@ -9,7 +9,7 @@ const COLUMNS = [
   { key: 'applicant_name', label: 'Name' },
   { key: 'policy_number', label: 'Policy #' },
   { key: 'agent_name', label: 'Agent' },
-  { key: 'aor_bucket', label: 'AOR' },
+  { key: 'current_policy_aor', label: 'Current Policy AOR' }, { key: 'aor_bucket', label: 'Writing Agent' },
   { key: 'in_ede', label: 'EDE' },
   { key: 'in_back_office', label: 'Back Office' },
   { key: 'in_commission', label: 'Commission' },

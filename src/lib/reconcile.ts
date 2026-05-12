@@ -1,4 +1,4 @@
-import { NPN_MAP, DEFAULT_COMMISSION_ESTIMATE, SBA_STATES } from './constants';
+import { DEFAULT_COMMISSION_ESTIMATE, SBA_STATES } from './constants';
 import { cleanId, cleanSubscriberId, normalizePolicyStatus } from './normalize';
 import type { NormalizedRecord } from './normalize';
 import { isCoverallAORByName } from './agents';
@@ -6,6 +6,7 @@ import { getCoveredMonths, fallbackReconcileMonth } from './dateRange';
 import { lookupResolved, type ResolverIndex } from './resolvedIdentities';
 import { pickCurrentPolicyAor, collectFfmAppIds } from './aorPicker';
 import { isActiveBackOfficeRecord as canonicalIsActiveBackOfficeRecord } from './canonical/isActiveBackOfficeRecord';
+import { classifyPolicyOwnerFromCurrentAor, expectedPayEntityForOwner } from './canonical/policyOwner';
 
 const SBA_STATE_SET: ReadonlySet<string> = new Set(SBA_STATES);
 
@@ -876,8 +877,17 @@ export function reconcile(
     const inComm = hasPositivePayment;
     const actualPayEntity = comm[0]?.pay_entity || '';
 
-    const npnInfo = NPN_MAP[agentNpn as keyof typeof NPN_MAP];
-    const expectedPayEntity = npnInfo?.expectedPayEntity || '';
+    // Bundle 7 — ownership is determined by EDE current_policy_aor, NOT by
+    // writing-agent NPN. Owner bucket drives expected_pay_entity AND the
+    // Wrong-Pay-Entity / Erica-Paid-Under issue assignment. Single canonical
+    // helper (src/lib/canonical/policyOwner.ts) — do not inline.
+    const ownerBucket = classifyPolicyOwnerFromCurrentAor(currentPolicyAor);
+    const expectedPayEntity = expectedPayEntityForOwner(ownerBucket);
+    const ownerName =
+      ownerBucket === 'JF' ? 'Jason Fine'
+      : ownerBucket === 'EF' ? 'Erica Fine'
+      : ownerBucket === 'BS' ? 'Becky Shuta'
+      : (currentPolicyAor || 'unknown AOR');
 
     const shouldBePaid = inEde && inBo && eligible === 'Yes';
 
@@ -902,21 +912,18 @@ export function reconcile(
     } else if (inEde && inBo && eligible !== 'Yes') {
       issueType = 'Not Eligible for Commission';
     } else if (shouldBePaid && !inComm) {
-      // When the batch has no commission file at all (early-month onboarding
-      // before the carrier sends the statement), label these as 'Pending
-      // Commission Statement' so the dashboard's exception queues don't fill
-      // with phantom disputes. The bucket flips to 'Missing from Commission'
-      // automatically once the commission file is uploaded and rebuild runs.
       issueType = batchHasCommissionFile
         ? 'Missing from Commission'
         : 'Pending Commission Statement';
-    } else if (inComm && (agentNpn === '21055210' || agentNpn === '16531877') && actualPayEntity === 'Vix') {
+    } else if (inComm && (ownerBucket === 'JF' || ownerBucket === 'BS') && actualPayEntity === 'Vix') {
       issueType = 'Wrong Pay Entity';
-      issueNotes = `${npnInfo?.name} paid under Vix instead of Coverall`;
-    } else if (agentNpn === '21277051' && actualPayEntity === 'Coverall') {
+      issueNotes = `Current AOR is ${ownerName}; commission paid via Vix.`;
+    } else if (inComm && ownerBucket === 'EF' && actualPayEntity === 'Coverall') {
       issueType = 'Erica Paid Under Coverall';
-    } else if (agentNpn === '21277051' && actualPayEntity === 'Vix') {
+      issueNotes = `Current AOR is ${ownerName}; commission paid via Coverall.`;
+    } else if (inComm && ownerBucket === 'EF' && actualPayEntity === 'Vix') {
       issueType = 'Erica Paid Under Vix';
+      issueNotes = `Current AOR is ${ownerName}; commission paid via Vix.`;
     }
 
     let estMissing: number | null = null;

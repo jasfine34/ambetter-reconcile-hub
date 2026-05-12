@@ -264,39 +264,37 @@ describe('Bundle 3 — P4 KPI canonicalization wiring', () => {
   });
 });
 
-describe('Bundle 4 — Total Policies Paid attribution + unpaid premium chips wiring', () => {
+describe('Bundle 7 — Total Policies Paid attribution + unpaid premium chips wiring', () => {
   it('DashboardPage imports getTotalPoliciesPaidAttribution from canonical barrel', () => {
     expect(dashboardSource).toMatch(/getTotalPoliciesPaidAttribution/);
   });
 
-  it('paidAttribution sources from sourceCoverage.totalPoliciesPaid.rows + normalizedRecords (not inline)', () => {
+  it('paidAttribution sources from sourceCoverage.totalPoliciesPaid.rows (ownership helper)', () => {
     expect(dashboardSource).toMatch(
-      /const paidAttribution = getTotalPoliciesPaidAttribution\(\s*sourceCoverage\.totalPoliciesPaid\.rows,\s*normalizedRecords,\s*\)/,
+      /const paidAttribution = getTotalPoliciesPaidAttribution\(\s*sourceCoverage\.totalPoliciesPaid\.rows/,
     );
   });
 
-  it('Source Coverage Total Policies Paid card renders JF/EF/BS/Downlines/Vix splits from paidAttribution', () => {
+  it('Source Coverage Total Policies Paid card renders ownership chips JF/EF/BS/Other only', () => {
     const idx = dashboardSource.indexOf("setDrilldown('totalPaidAll')");
     const block = dashboardSource.slice(dashboardSource.lastIndexOf('<MetricCard', idx), idx + 1200);
     expect(block).toMatch(/metrics\.paidAttribution/);
     expect(block).toMatch(/label: 'JF'/);
     expect(block).toMatch(/label: 'EF'/);
     expect(block).toMatch(/label: 'BS'/);
-    expect(block).toMatch(/label: 'Downlines'/);
-    expect(block).toMatch(/label: 'Vix'/);
-    // Bundle 4.5: Unattributed chip is wired so visible chips can sum to Total Policies Paid.
-    expect(block).toMatch(/label: 'Unattributed'/);
+    expect(block).toMatch(/label: 'Other'/);
+    // Bundle 7 — ownership-only chips. Vix and Downlines must NOT appear.
+    expect(block).not.toMatch(/label: 'Vix'/);
+    expect(block).not.toMatch(/label: 'Downlines'/);
+    expect(block).not.toMatch(/label: 'Unattributed'/);
   });
 
   it('Top KPI Expected But Unpaid card renders both source-type splits and premium splits2', () => {
-    // Find the top KPI card (the one that uses metrics.unpaid + setDrilldown('unpaid')).
     const idx = dashboardSource.indexOf("setDrilldown('unpaid')");
     const block = dashboardSource.slice(dashboardSource.lastIndexOf('<MetricCard', idx), idx + 1200);
-    // Existing source-type chips preserved.
     expect(block).toMatch(/unpaidSplit\.matched/);
     expect(block).toMatch(/unpaidSplit\.boOnly/);
     expect(block).toMatch(/unpaidSplit\.edeOnly/);
-    // New premium chips wired to canonical helper output.
     expect(block).toMatch(/unpaidPremiumSplit\.zeroNetPremium/);
     expect(block).toMatch(/unpaidPremiumSplit\.hasPremium/);
     expect(block).toMatch(/Zero Net Premium/);
