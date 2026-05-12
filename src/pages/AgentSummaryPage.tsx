@@ -292,9 +292,9 @@ export default function AgentSummaryPage() {
         className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground"
       >
         <strong className="text-foreground">Unpaid</strong> and <strong className="text-foreground">Est. Missing</strong>{' '}
-        use the canonical Expected But Unpaid universe (Matched + BO Only + EDE Only unpaid), grouped by writing-agent
-        NPN. This table only displays the active AOR agents in NPN_MAP (Jason, Erica, Becky); Expected But Unpaid rows
-        written by other NPNs are not included here
+        use the canonical Expected But Unpaid universe (Matched + BO Only + EDE Only unpaid), grouped by EDE{' '}
+        <code>current_policy_aor</code> ownership (Jason, Erica, Becky). Expected But Unpaid rows whose current AOR
+        falls outside those three buckets are aggregated into the "Other AORs" row below
         {otherUnpaidCount > 0 ? (
           <>
             {' '}— <strong className="text-foreground">{otherUnpaidCount.toLocaleString()}</strong> such row
