@@ -195,3 +195,31 @@ describe('Bundle 1.5 — shared classifier import wiring', () => {
   });
 });
 
+describe('Bundle 2 — Expected drilldown + clawback canonical wiring', () => {
+  it('Expected Enrollments drilldown sources rows from filteredEde.uniqueMembers (not filtered + eeUniverseKeys)', () => {
+    expect(dashboardSource).toMatch(/case 'expected':\s*return filteredEde\.uniqueMembers/);
+    expect(dashboardSource).not.toMatch(
+      /case 'expected':\s*return filtered\.filter\(r => eeUniverseKeys\.has/,
+    );
+  });
+
+  it('clawbackRows consumes filterCommissionRowsByScope (no inline COMMISSION + pay_entity loop)', () => {
+    const idx = dashboardSource.indexOf('const clawbackRows = useMemo');
+    const block = dashboardSource.slice(idx, idx + 1500);
+    expect(block).toMatch(/filterCommissionRowsByScope\(normalizedRecords,\s*scopeForCanonical\)/);
+    expect(block).not.toMatch(/rec\.source_type !== 'COMMISSION'/);
+    expect(block).not.toMatch(
+      /payEntityFilter === 'Coverall' && rec\.pay_entity !== 'Coverall'/,
+    );
+  });
+
+  it('MissingCommissionExportPage no longer imports getEligibleCohort', () => {
+    const exportSource = readFileSync(
+      resolve(__dirname, '../pages/MissingCommissionExportPage.tsx'),
+      'utf8',
+    );
+    expect(exportSource).not.toMatch(/getEligibleCohort/);
+    expect(exportSource).not.toMatch(/void getEligibleCohort/);
+  });
+});
+
