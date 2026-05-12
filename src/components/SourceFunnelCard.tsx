@@ -197,8 +197,8 @@ function FunnelStage({
 }) {
   const styles: Record<string, string> = {
     default: 'bg-card border-border text-foreground',
-    info: 'bg-info/10 border-info/30 text-info-foreground',
-    success: 'bg-success/10 border-success/30 text-success-foreground',
+    info: 'bg-info/10 border-info/30 text-sky-900 dark:text-sky-100',
+    success: 'bg-success/10 border-success/30 text-emerald-900 dark:text-emerald-100',
     muted: 'bg-muted border-border text-muted-foreground',
   };
   return (
