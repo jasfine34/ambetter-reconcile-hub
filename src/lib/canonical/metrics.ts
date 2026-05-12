@@ -408,12 +408,15 @@ export interface ExpectedPaymentBreakdown<T = any> {
 }
 
 /**
- * Bundle 4: classify a row's premium evidence as zero-net-premium vs
+ * Bundle 4 / 4.5: classify a row's premium evidence as zero-net-premium vs
  * has-premium. Centralized so dashboards / cards / tests share one rule.
- * Aligned with current MCE semantics (net_premium ?? premium).
+ * Bundle 4.5: net_premium ONLY — no fallback to gross premium. A null
+ * net_premium (incl. true-zero collapsed by reconcile) is Zero Net Premium
+ * even when gross premium is positive. Upstream zero-vs-null collapse fix
+ * remains queued for Bundle 5.
  */
 export function classifyUnpaidPremium(row: any): 'zeroNetPremium' | 'hasPremium' {
-  const raw = row?.net_premium ?? row?.premium ?? null;
+  const raw = row?.net_premium ?? null;
   if (raw === null || raw === undefined) return 'zeroNetPremium';
   if (typeof raw === 'string' && raw.trim() === '') return 'zeroNetPremium';
   const n = typeof raw === 'number' ? raw : Number(raw);
