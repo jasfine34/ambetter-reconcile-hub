@@ -437,6 +437,7 @@ export function getExpectedPaymentBreakdown(
   const unpaidRows: any[] = [];
   const paidSplit = { matched: 0, boOnly: 0, edeOnly: 0 };
   const unpaidSplit = { matched: 0, boOnly: 0, edeOnly: 0 };
+  const unpaidPremiumSplit = { zeroNetPremium: 0, hasPremium: 0 };
   const bucketFor = new Map<any, 'matched' | 'boOnly' | 'edeOnly'>();
   for (const r of universe.matched) bucketFor.set(r, 'matched');
   for (const r of universe.boOnly) bucketFor.set(r, 'boOnly');
@@ -449,6 +450,7 @@ export function getExpectedPaymentBreakdown(
     } else {
       unpaidRows.push(r);
       unpaidSplit[bucket] += 1;
+      unpaidPremiumSplit[classifyUnpaidPremium(r)] += 1;
     }
   }
   return {
@@ -459,6 +461,7 @@ export function getExpectedPaymentBreakdown(
     unpaidCount: unpaidRows.length,
     paidSplit,
     unpaidSplit,
+    unpaidPremiumSplit,
   };
 }
 
