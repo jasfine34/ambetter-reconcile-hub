@@ -873,7 +873,12 @@ export default function DashboardPage() {
     // Missing Commission Export page emits — no new predicate.
     const sourceTypeForUnpaid = (r: any) => classifySourceTypeForRow(r, epb.universe);
     switch (drilldown) {
-      case 'expected': return filtered.filter(r => eeUniverseKeys.has(r.member_key));
+      // Bundle 2 — source rows directly from filteredEde.uniqueMembers so
+      // the drilldown row count matches the Expected Enrollments card value
+      // (filteredEde.uniqueKeys) exactly. Previously this filtered the
+      // legacy `filtered` reconciled array through eeUniverseKeys, which
+      // could drift if the reconciled set was stale or out of sync.
+      case 'expected': return filteredEde.uniqueMembers;
       // Phase 1 (#X): top expected-payment cards now slice from the broader
       // expected-payment universe. shouldPay / paidEligible / unpaid all
       // come from the same getExpectedPaymentBreakdown so card values and
