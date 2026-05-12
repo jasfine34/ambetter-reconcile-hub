@@ -154,20 +154,28 @@ export default function AgentSummaryPage() {
     [reconciled, scope, filteredEde, confirmedUpgradeMemberKeys],
   );
 
-  // Group canonical unpaid rows by writing-agent NPN once so the per-row
-  // table can read off count + summed estimated_missing_commission in O(1).
-  const unpaidByNpn = useMemo(() => {
-    const m = new Map<string, { count: number; estMissing: number }>();
+  // Group canonical unpaid rows by EDE current_policy_aor ownership bucket
+  // (Bundle 7). Replaces Bundle 1.6's writing-agent NPN grouping. JF/EF/BS
+  // map to the active AOR agents in NPN_MAP; everything else aggregates
+  // into the "Other AORs" row below.
+  const unpaidByOwnerBucket = useMemo(() => {
+    const m = new Map<PolicyOwnerBucket, { count: number; estMissing: number }>();
     for (const r of canonicalUnpaidRows) {
-      const npn = String((r as any).agent_npn || '').trim();
-      if (!npn) continue;
-      const entry = m.get(npn) ?? { count: 0, estMissing: 0 };
+      const bucket = classifyPolicyOwnerFromCurrentAor((r as any).current_policy_aor);
+      const entry = m.get(bucket) ?? { count: 0, estMissing: 0 };
       entry.count += 1;
       entry.estMissing += Number((r as any).estimated_missing_commission) || 0;
-      m.set(npn, entry);
+      m.set(bucket, entry);
     }
     return m;
   }, [canonicalUnpaidRows]);
+
+  // NPN → owner bucket lookup for the per-agent rows below.
+  const NPN_TO_BUCKET: Readonly<Record<string, PolicyOwnerBucket>> = {
+    '21055210': 'JF',
+    '21277051': 'EF',
+    '16531877': 'BS',
+  };
 
   const agentData = useMemo(() =>
     AGENTS.map(agent => {
@@ -181,14 +189,15 @@ export default function AgentSummaryPage() {
       const bo = writingRecs.filter(r => r.in_back_office).length;
       const eligible = writingRecs.filter(r => r.eligible_for_commission === 'Yes').length;
       const paid = writingRecs.filter(r => r.in_commission).length;
-      // CANONICAL Unpaid (Phase 1.6): Matched + BO Only + EDE Only unpaid
-      // for this writing-agent NPN. Replaces the legacy narrow predicate
-      // (in_ede ∧ in_back_office ∧ eligible='Yes' ∧ !in_commission).
-      const unpaidEntry = unpaidByNpn.get(agent.npn);
+      // CANONICAL Unpaid (Bundle 7): grouped by EDE current_policy_aor
+      // ownership bucket via classifyPolicyOwnerFromCurrentAor — NOT by
+      // writing-agent NPN. AOR-transfer rows now follow the current AOR.
+      const bucket = NPN_TO_BUCKET[agent.npn];
+      const unpaidEntry = bucket ? unpaidByOwnerBucket.get(bucket) : undefined;
       const unpaid = unpaidEntry?.count ?? 0;
       const totalComm = commissionByNpn.get(agent.npn) || 0;
-      // Est. Missing now sums ONLY canonical unpaid rows for this agent,
-      // matching the count above (single definition for count + dollars).
+      // Est. Missing now sums ONLY canonical unpaid rows for this owner
+      // bucket, matching the count above (single definition for count + dollars).
       const estMissing = unpaidEntry?.estMissing ?? 0;
       return {
         agent_name: agent.name,
@@ -203,7 +212,7 @@ export default function AgentSummaryPage() {
         estimated_missing_commission: estMissing,
       };
     }),
-  [reconciled, commissionByNpn, filteredEde, unpaidByNpn]);
+  [reconciled, commissionByNpn, filteredEde, unpaidByOwnerBucket]);
 
   const columns = [
     { key: 'agent_name', label: 'Agent' },
@@ -219,14 +228,15 @@ export default function AgentSummaryPage() {
   ];
 
   // Disclose attribution scope: Unpaid totals across this table sum only
-  // the displayed AOR agents' writing-NPNs. The aggregate row below
-  // surfaces the remaining canonical Expected But Unpaid rows using THE
-  // SAME filtered set the attribution-scope note counts — no second
-  // predicate, no re-classification.
-  const displayedNpns = useMemo(() => new Set(AGENTS.map((a) => a.npn)), []);
+  // the displayed AOR agents (JF/EF/BS owner buckets). The aggregate row
+  // below surfaces canonical Expected But Unpaid rows whose EDE
+  // current_policy_aor owner bucket is "Other" — same single classifier
+  // (no second predicate, no re-classification).
   const otherUnpaidRows = useMemo(
-    () => canonicalUnpaidRows.filter((r: any) => !displayedNpns.has(String(r.agent_npn || '').trim())),
-    [canonicalUnpaidRows, displayedNpns],
+    () => canonicalUnpaidRows.filter(
+      (r: any) => classifyPolicyOwnerFromCurrentAor(r.current_policy_aor) === 'Other',
+    ),
+    [canonicalUnpaidRows],
   );
   const otherUnpaidCount = otherUnpaidRows.length;
   const otherEstMissing = useMemo(
@@ -238,7 +248,7 @@ export default function AgentSummaryPage() {
     return [
       ...agentData,
       {
-        agent_name: 'Other Writing NPNs (Aggregate)',
+        agent_name: 'Other AORs (Aggregate)',
         agent_npn: '—',
         expected_count: 0,
         written_by_count: otherUnpaidCount,
