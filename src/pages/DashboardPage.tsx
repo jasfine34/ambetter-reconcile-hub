@@ -1205,7 +1205,7 @@ export default function DashboardPage() {
                 { label: 'EDE Only', value: metrics.expectedPaymentBreakdown.universe.edeOnlyCount },
               ]}
             />
-            <MetricCard title="Total Policies Paid" value={metrics.paidCommRecords} icon={<CheckCircle2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('paidComm')} tooltip={{ text: "Count of all unique members where commission was paid, regardless of source. Sourced from the canonical totalPoliciesPaid bucket.", why: "This shows what the carrier actually paid, including payments that may not belong to your tracked enrollments." }} />
+            
             <MetricCard
               title="Expected Payments Received"
               value={metrics.paidEligible}
