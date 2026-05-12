@@ -39,6 +39,14 @@ const mockGetBreakdown = vi.fn();
 vi.mock('@/lib/canonical/metrics', () => ({
   getEligibleCohort: (...a: any[]) => mockGetEligible(...a),
   getExpectedPaymentBreakdown: (...a: any[]) => mockGetBreakdown(...a),
+  isZeroNetPremium: (row: any) => {
+    const raw = row?.net_premium ?? null;
+    if (raw === null || raw === undefined) return true;
+    if (typeof raw === 'string' && raw.trim() === '') return true;
+    const n = typeof raw === 'number' ? raw : Number(raw);
+    if (!Number.isFinite(n)) return true;
+    return !(n > 0);
+  },
 }));
 
 /** Build a breakdown stub from a flat row list. Each row may set _bucket
