@@ -75,7 +75,7 @@ describe('Bundle 7 cross-surface parity — classifier shared by all surfaces', 
 });
 
 describe('Bundle 7 cross-surface parity — wiring guards (no inline ownership logic)', () => {
-  const read = (p: string) => readFileSync(resolve(__dirname, '..', '..', p), 'utf8');
+  const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
   const reconcile = read('lib/reconcile.ts');
   const dashboard = read('pages/DashboardPage.tsx');
   const exceptions = read('pages/ExceptionsPage.tsx');
