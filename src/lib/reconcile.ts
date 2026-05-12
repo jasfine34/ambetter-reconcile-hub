@@ -6,6 +6,7 @@ import { getCoveredMonths, fallbackReconcileMonth } from './dateRange';
 import { lookupResolved, type ResolverIndex } from './resolvedIdentities';
 import { pickCurrentPolicyAor, collectFfmAppIds } from './aorPicker';
 import { isActiveBackOfficeRecord as canonicalIsActiveBackOfficeRecord } from './canonical/isActiveBackOfficeRecord';
+import { classifyPolicyOwnerFromCurrentAor, expectedPayEntityForOwner } from './canonical/policyOwner';
 
 const SBA_STATE_SET: ReadonlySet<string> = new Set(SBA_STATES);
 
