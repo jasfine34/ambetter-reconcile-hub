@@ -17,7 +17,7 @@ const emptyFiltered = {
   missingFromBO: [],
 } as unknown as FilteredEdeResult;
 
-const scope = { type: 'pay_entity' as const, pay_entity: 'Coverall' as const };
+const scope = 'Coverall' as const;
 
 function withUnpaid(rows: any[]) {
   return vi.spyOn(metrics, 'getExpectedPaymentBreakdown').mockReturnValue({
