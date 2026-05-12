@@ -233,17 +233,19 @@ describe('Bundle 3 — P4 KPI canonicalization wiring', () => {
     expect(dashboardSource).not.toMatch(/const paidCommRecords = filtered\.filter\(r => r\.in_commission\)\.length/);
   });
 
-  it('Total Policies Paid card (Bundle 3 rename) is wired to paidComm drilldown and metrics.paidCommRecords', () => {
-    const idx = dashboardSource.indexOf("setDrilldown('paidComm')");
-    const start = dashboardSource.lastIndexOf('<MetricCard', idx);
-    const block = dashboardSource.slice(start, idx + 200);
-    expect(block).toMatch(/title="Total Policies Paid"/);
-    expect(block).toMatch(/value=\{metrics\.paidCommRecords\}/);
-    expect(block).not.toMatch(/title="Paid Commission Records"/);
+  it('Bundle 3.5 — Dashboard renders exactly one "Total Policies Paid" MetricCard (Source Coverage card)', () => {
+    const matches = dashboardSource.match(/title="Total Policies Paid"/g) || [];
+    expect(matches.length).toBe(1);
+    // The remaining card is the Source Coverage one wired to totalPaidAll.
+    const idx = dashboardSource.indexOf('title="Total Policies Paid"');
+    const block = dashboardSource.slice(idx, idx + 600);
+    expect(block).toMatch(/setDrilldown\('totalPaidAll'\)/);
+    expect(block).toMatch(/value=\{metrics\.totalPaidAll\}/);
+    // Old card name must not return.
+    expect(dashboardSource).not.toMatch(/title="Paid Commission Records"/);
   });
 
-  it('paidComm drilldown sources from canonical totalPoliciesPaid.rows (not filtered in_commission)', () => {
-    expect(dashboardSource).toMatch(/case 'paidComm':\s*return sc\.totalPoliciesPaid\.rows/);
+  it('paidComm drilldown (if retained) still sources from canonical totalPoliciesPaid.rows — never inline P4 formula', () => {
     expect(dashboardSource).not.toMatch(/case 'paidComm':\s*return filtered\.filter\(r => r\.in_commission\)/);
   });
 
