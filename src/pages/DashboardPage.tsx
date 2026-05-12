@@ -40,6 +40,7 @@ import {
   getExpectedPaymentBreakdown,
   getSourceCoverageBuckets,
   classifySourceTypeForRow,
+  filterCommissionRowsByScope,
 } from '@/lib/canonical';
 import { getIssueTypeLabel } from '@/lib/constants';
 
