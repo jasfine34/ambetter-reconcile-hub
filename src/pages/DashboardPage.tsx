@@ -172,6 +172,22 @@ const BO_ACTIVE_NON_CURRENT_EDE_COLUMNS = [
   { key: 'diagnostic_reason', label: 'Reason' },
 ];
 
+// Bundle 6 — Exception Summary drilldown columns. Reused for both
+// "Wrong Pay Entity" and "Not Eligible for Commission" cards.
+const EXCEPTION_DRILLDOWN_COLUMNS = [
+  { key: 'applicant_name', label: 'Name' },
+  { key: 'policy_number', label: 'Policy #' },
+  { key: 'agent_npn', label: 'Agent NPN' },
+  { key: 'agent_name', label: 'Agent' },
+  { key: 'aor_bucket', label: 'AOR' },
+  { key: 'expected_pay_entity', label: 'Expected Entity' },
+  { key: 'actual_pay_entity', label: 'Actual Entity' },
+  { key: 'eligible_for_commission', label: 'Eligible' },
+  { key: 'actual_commission', label: 'Commission $' },
+  { key: 'issue_type', label: 'Issue' },
+  { key: 'issue_notes', label: 'Notes' },
+];
+
 const NOT_IN_BO_COLUMNS = [
   { key: 'applicant_name', label: 'Full Name' },
   { key: 'policy_number', label: 'Policy # (EDE)' },
