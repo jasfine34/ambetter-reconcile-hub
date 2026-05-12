@@ -29,6 +29,7 @@ import {
 import {
   classifyPaidAttribution,
   getTotalPoliciesPaidAttribution,
+  getExpectedPaymentBreakdown,
 } from '@/lib/canonical/metrics';
 
 // AOR-transfer fixtures: writing-agent NPN ≠ current AOR NPN.
@@ -110,5 +111,43 @@ describe('Bundle 7 cross-surface parity — wiring guards (no inline ownership l
   it('Exception / drilldown tables expose current_policy_aor as Current Policy AOR', () => {
     expect(dashboard).toMatch(/key:\s*['"]current_policy_aor['"][^}]*Current Policy AOR/);
     expect(exceptions).toMatch(/key:\s*['"]current_policy_aor['"][^}]*Current Policy AOR/);
+  });
+});
+
+describe('Bundle 8 cross-surface parity — Source Coverage EBU ownership chips', () => {
+  it('unpaidOwnerSplit on the EBU tile classifies identically to TPP attribution chips', () => {
+    // Same AOR-transfer fixtures, but on the unpaid side. Build a synthetic
+    // reconciled+filteredEde universe so getExpectedPaymentBreakdown classifies
+    // every row as in-universe & unpaid.
+    const reconciled = aorTransferRows.map((r, i) => ({
+      member_key: `m${i}`,
+      in_back_office: true,
+      in_ede: true,
+      eligible_for_commission: 'Yes',
+      pay_entity: 'Coverall',
+      in_commission: false,
+      net_premium: 100,
+      ...r,
+    }));
+    const filteredEde = {
+      uniqueMembers: reconciled.map((r) => ({
+        member_key: r.member_key,
+        issuer_subscriber_id: null,
+        exchange_subscriber_id: null,
+        policy_number: null,
+        effective_month: '2026-03',
+        covered_member_count: 1,
+      })),
+      uniqueKeys: reconciled.length,
+      missingFromBO: [],
+      byMonth: { '2026-03': reconciled.length },
+    } as any;
+    
+    const out = getExpectedPaymentBreakdown(reconciled, 'All', filteredEde, new Set());
+    // Same expectations as TPP chip parity.
+    const tpp = getTotalPoliciesPaidAttribution(aorTransferRows);
+    expect(out.unpaidOwnerSplit).toEqual(tpp);
+    const sum = out.unpaidOwnerSplit.JF + out.unpaidOwnerSplit.EF + out.unpaidOwnerSplit.BS + out.unpaidOwnerSplit.Other;
+    expect(sum).toBe(out.unpaidCount);
   });
 });

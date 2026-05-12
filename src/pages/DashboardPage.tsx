@@ -1479,7 +1479,23 @@ export default function DashboardPage() {
                 <MetricCard title="Paid: EDE Only" value={metrics.paidEdeOnly} icon={<AlertTriangle className="h-4 w-4" />} variant="warning" onClick={() => setDrilldown('paidEdeOnly')} tooltip={{ text: "Members in EDE and paid, where the Back Office record is inactive/terminated or absent.", why: "Trailing or re-enrolled commissions on policies whose BO record was terminated or never imported." }} />
                 <MetricCard title="Paid: Commission Statement Only" value={metrics.commissionOnly} icon={<FileText className="h-4 w-4" />} variant="warning" onClick={() => setDrilldown('commissionOnly')} tooltip={{ text: "Members appearing only on commission statements (no EDE, no active BO).", why: "Commission-only ghosts — typically trailing $1 retention payments on legacy books." }} />
                 <MetricCard title="Unpaid: Back Office Only" value={metrics.backOfficeOnly} icon={<Building2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('backOfficeOnly')} tooltip={{ text: "Members active in Back Office, not in EDE, not yet paid.", why: "May represent missed enrollments or future revenue not yet realized." }} />
-                <MetricCard title="Expected But Unpaid" value={metrics.unpaidExpected} icon={<XCircle className="h-4 w-4" />} variant="destructive" onClick={() => setDrilldown('unpaidExpected')} tooltip={{ text: "Members in the expected-payment universe (Matched / BO Only / EDE Only) that were not paid.", why: "Primary recovery target — expected revenue that was not received." }} />
+                <MetricCard
+                  title="Expected But Unpaid"
+                  value={metrics.unpaidExpected}
+                  icon={<XCircle className="h-4 w-4" />}
+                  variant="destructive"
+                  onClick={() => setDrilldown('unpaidExpected')}
+                  tooltip={{ text: "Members in the expected-payment universe (Matched / BO Only / EDE Only) that were not paid.", why: "Primary recovery target — expected revenue that was not received." }}
+                  splits={(() => {
+                    const o = metrics.expectedPaymentBreakdown.unpaidOwnerSplit;
+                    return [
+                      { label: 'JF', value: o.JF },
+                      { label: 'EF', value: o.EF },
+                      { label: 'BS', value: o.BS },
+                      { label: 'Other', value: o.Other },
+                    ].filter((s) => s.value > 0);
+                  })()}
+                />
                 <MetricCard
                   title="Total Policies Paid"
                   value={metrics.totalPaidAll}

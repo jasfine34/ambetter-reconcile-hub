@@ -387,3 +387,22 @@ describe('Bundle 6 — Exception Summary drilldowns wiring', () => {
     expect(neRows.every((r) => r.issue_type === 'Not Eligible for Commission')).toBe(true);
   });
 });
+
+describe('Bundle 8 — Source Coverage Expected But Unpaid ownership chips wiring', () => {
+  it('Source Coverage EBU tile renders JF/EF/BS/Other ownership chips from canonical unpaidOwnerSplit', () => {
+    const idx = dashboardSource.indexOf("setDrilldown('unpaidExpected')");
+    expect(idx).toBeGreaterThan(0);
+    const start = dashboardSource.lastIndexOf('<MetricCard', idx);
+    const end = dashboardSource.indexOf('/>', idx);
+    const block = dashboardSource.slice(start, end);
+    expect(block).toMatch(/unpaidOwnerSplit/);
+    expect(block).toMatch(/label:\s*'JF'/);
+    expect(block).toMatch(/label:\s*'EF'/);
+    expect(block).toMatch(/label:\s*'BS'/);
+    expect(block).toMatch(/label:\s*'Other'/);
+    // Other conditional via the same > 0 filter pattern as TPP.
+    expect(block).toMatch(/\.filter\(\(s\) => s\.value > 0\)/);
+    // No inline ownership classification in this block.
+    expect(block).not.toMatch(/classifyPolicyOwnerFromCurrentAor/);
+  });
+});

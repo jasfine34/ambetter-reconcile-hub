@@ -24,6 +24,7 @@ import {
   filterCommissionRowsByScope,
 } from './scope';
 import { isActiveBackOfficeRecord } from './isActiveBackOfficeRecord';
+import { classifyPolicyOwnerFromCurrentAor as _classifyOwnerEarly } from './policyOwner';
 
 export interface NetPaidBreakdown {
   net: number;
@@ -405,6 +406,15 @@ export interface ExpectedPaymentBreakdown<T = any> {
    * Counts sum exactly to `unpaidCount` for every scope.
    */
   unpaidPremiumSplit: { zeroNetPremium: number; hasPremium: number };
+  /**
+   * Bundle 8 — ownership split of Expected But Unpaid by EDE
+   * `current_policy_aor` via the canonical `classifyPolicyOwnerFromCurrentAor`
+   * helper. Mirrors `getTotalPoliciesPaidAttribution` on the paid side so the
+   * Source Coverage Analysis "Expected But Unpaid" tile can render JF / EF /
+   * BS / Other ownership chips. Counts sum exactly to `unpaidCount` for
+   * every scope.
+   */
+  unpaidOwnerSplit: { JF: number; EF: number; BS: number; Other: number };
 }
 
 /**
@@ -445,6 +455,7 @@ export function getExpectedPaymentBreakdown(
   const paidSplit = { matched: 0, boOnly: 0, edeOnly: 0 };
   const unpaidSplit = { matched: 0, boOnly: 0, edeOnly: 0 };
   const unpaidPremiumSplit = { zeroNetPremium: 0, hasPremium: 0 };
+  const unpaidOwnerSplit = { JF: 0, EF: 0, BS: 0, Other: 0 };
   const bucketFor = new Map<any, 'matched' | 'boOnly' | 'edeOnly'>();
   for (const r of universe.matched) bucketFor.set(r, 'matched');
   for (const r of universe.boOnly) bucketFor.set(r, 'boOnly');
@@ -458,6 +469,7 @@ export function getExpectedPaymentBreakdown(
       unpaidRows.push(r);
       unpaidSplit[bucket] += 1;
       unpaidPremiumSplit[classifyUnpaidPremium(r)] += 1;
+      unpaidOwnerSplit[_classifyOwnerEarly((r as any)?.current_policy_aor)] += 1;
     }
   }
   return {
@@ -469,6 +481,7 @@ export function getExpectedPaymentBreakdown(
     paidSplit,
     unpaidSplit,
     unpaidPremiumSplit,
+    unpaidOwnerSplit,
   };
 }
 
