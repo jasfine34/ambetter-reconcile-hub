@@ -228,13 +228,28 @@ describe('Messer column mapping helpers', () => {
 // 7. Premium-bucket filtering
 // ---------------------------------------------------------------------------
 
-describe('classifyNetPremium', () => {
-  it('buckets correctly', () => {
-    expect(classifyNetPremium(0)).toBe('zero_premium');
-    expect(classifyNetPremium(null)).toBe('zero_premium');
-    expect(classifyNetPremium(undefined)).toBe('zero_premium');
-    expect(classifyNetPremium(0.01)).toBe('has_premium');
-    expect(classifyNetPremium(500)).toBe('has_premium');
+describe('classifyNetPremium (Bundle 4.6: row-form, canonical predicate)', () => {
+  it('buckets correctly via canonical isZeroNetPremium', () => {
+    expect(classifyNetPremium({ net_premium: 0 })).toBe('zero_premium');
+    expect(classifyNetPremium({ net_premium: null })).toBe('zero_premium');
+    expect(classifyNetPremium({ net_premium: undefined })).toBe('zero_premium');
+    expect(classifyNetPremium({ net_premium: 0.01 })).toBe('has_premium');
+    expect(classifyNetPremium({ net_premium: 500 })).toBe('has_premium');
+  });
+  it('Bundle 4.6: net_premium null with positive gross premium → zero_premium (no fallback)', () => {
+    expect(classifyNetPremium({ net_premium: null, premium: 500 })).toBe('zero_premium');
+  });
+  it('Bundle 4.6: net_premium undefined with positive gross premium → zero_premium', () => {
+    expect(classifyNetPremium({ net_premium: undefined, premium: 500 })).toBe('zero_premium');
+  });
+  it('Bundle 4.6: net_premium 0 with positive gross premium → zero_premium', () => {
+    expect(classifyNetPremium({ net_premium: 0, premium: 500 })).toBe('zero_premium');
+  });
+  it('Bundle 4.6: net_premium 100 → has_premium', () => {
+    expect(classifyNetPremium({ net_premium: 100 })).toBe('has_premium');
+  });
+  it('Bundle 4.6: both null → zero_premium', () => {
+    expect(classifyNetPremium({ net_premium: null, premium: null })).toBe('zero_premium');
   });
 });
 
@@ -433,5 +448,53 @@ describe('non-blank guards: Address / FFM ID / Policy Effective Date', () => {
     expect(p.ffm_id.value).toBe('FFM-XYZ');
     // Effective date from EDE (row context, not enrichment)
     expect(resolvePolicyEffectiveDate({ records, reconciledEffectiveDate: null })).toBe('2026-02-01');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 10. Bundle 4.6 — canonical predicate wiring + cross-surface parity
+// ---------------------------------------------------------------------------
+
+import * as fs from 'fs';
+import * as path from 'path';
+import { isZeroNetPremium, classifyUnpaidPremium } from '@/lib/canonical/metrics';
+
+describe('Bundle 4.6 wiring guard', () => {
+  it('MissingCommissionExportPage.tsx has no inline net_premium ?? premium fallback', () => {
+    const src = fs.readFileSync(
+      path.resolve(__dirname, '../pages/MissingCommissionExportPage.tsx'),
+      'utf8',
+    );
+    expect(/\.net_premium\s*\?\?\s*[A-Za-z_$][\w$]*\.?premium/.test(src)).toBe(false);
+  });
+  it('MissingCommissionExportPage.tsx imports canonical isZeroNetPremium', () => {
+    const src = fs.readFileSync(
+      path.resolve(__dirname, '../pages/MissingCommissionExportPage.tsx'),
+      'utf8',
+    );
+    expect(src).toMatch(/isZeroNetPremium/);
+    expect(src).toMatch(/from '@\/lib\/canonical\/metrics'/);
+  });
+});
+
+describe('Bundle 4.6 cross-surface parity (Dashboard ↔ MCE)', () => {
+  const cases: any[] = [
+    { net_premium: null, premium: 500 },
+    { net_premium: undefined, premium: 999 },
+    { net_premium: 0, premium: 250 },
+    { net_premium: null, premium: null },
+    { net_premium: 100 },
+    { net_premium: 0.01 },
+    { net_premium: '   ' },
+    { net_premium: 'abc' },
+    { net_premium: -5 },
+  ];
+  it('zero-vs-has classification agrees on every fixture', () => {
+    for (const row of cases) {
+      const dashZero = classifyUnpaidPremium(row) === 'zeroNetPremium';
+      const mceZero = classifyNetPremium(row) === 'zero_premium';
+      expect(mceZero).toBe(dashZero);
+      expect(dashZero).toBe(isZeroNetPremium(row));
+    }
   });
 });
