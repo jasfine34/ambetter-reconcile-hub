@@ -29,6 +29,7 @@ import {
 import {
   classifyPaidAttribution,
   getTotalPoliciesPaidAttribution,
+  getExpectedPaymentBreakdown,
 } from '@/lib/canonical/metrics';
 
 // AOR-transfer fixtures: writing-agent NPN ≠ current AOR NPN.
