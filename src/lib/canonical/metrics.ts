@@ -455,6 +455,7 @@ export function getExpectedPaymentBreakdown(
   const paidSplit = { matched: 0, boOnly: 0, edeOnly: 0 };
   const unpaidSplit = { matched: 0, boOnly: 0, edeOnly: 0 };
   const unpaidPremiumSplit = { zeroNetPremium: 0, hasPremium: 0 };
+  const unpaidOwnerSplit = { JF: 0, EF: 0, BS: 0, Other: 0 };
   const bucketFor = new Map<any, 'matched' | 'boOnly' | 'edeOnly'>();
   for (const r of universe.matched) bucketFor.set(r, 'matched');
   for (const r of universe.boOnly) bucketFor.set(r, 'boOnly');
@@ -468,6 +469,7 @@ export function getExpectedPaymentBreakdown(
       unpaidRows.push(r);
       unpaidSplit[bucket] += 1;
       unpaidPremiumSplit[classifyUnpaidPremium(r)] += 1;
+      unpaidOwnerSplit[_classifyOwnerEarly((r as any)?.current_policy_aor)] += 1;
     }
   }
   return {
@@ -479,6 +481,7 @@ export function getExpectedPaymentBreakdown(
     paidSplit,
     unpaidSplit,
     unpaidPremiumSplit,
+    unpaidOwnerSplit,
   };
 }
 
