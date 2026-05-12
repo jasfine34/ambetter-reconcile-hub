@@ -24,6 +24,7 @@ import {
   filterCommissionRowsByScope,
 } from './scope';
 import { isActiveBackOfficeRecord } from './isActiveBackOfficeRecord';
+import { classifyPolicyOwnerFromCurrentAor as _classifyOwnerEarly } from './policyOwner';
 
 export interface NetPaidBreakdown {
   net: number;
