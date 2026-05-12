@@ -46,10 +46,10 @@ describe('unpaidPremiumSplit sums to unpaidCount', () => {
       ...props,
     });
     const reconciled = [
-      mk('a', { in_commission: false, net_premium: 100 }),     // matched, hasPremium
-      mk('b', { in_commission: false, net_premium: 0 }),       // matched, zero
-      mk('c', { in_commission: false, net_premium: null, premium: null }), // matched, zero
-      mk('d', { in_commission: true, net_premium: 200 }),      // matched paid (excluded)
+      mk('a', { in_commission: false, net_premium: 100, current_policy_aor: 'Jason Fine (21055210)' }),     // matched, hasPremium, JF
+      mk('b', { in_commission: false, net_premium: 0, current_policy_aor: 'Erica Fine (21277051)' }),       // matched, zero, EF
+      mk('c', { in_commission: false, net_premium: null, premium: null, current_policy_aor: '' }),          // matched, zero, Other
+      mk('d', { in_commission: true, net_premium: 200, current_policy_aor: 'Becky Shuta (16531877)' }),     // matched paid (excluded)
     ];
     const filteredEde = {
       uniqueMembers: reconciled.map((r) => ({
@@ -75,5 +75,33 @@ describe('unpaidPremiumSplit sums to unpaidCount', () => {
     expect(
       out.unpaidSplit.matched + out.unpaidSplit.boOnly + out.unpaidSplit.edeOnly,
     ).toBe(out.unpaidCount);
+    // Bundle 8 — ownership split sums to unpaidCount and reflects current_policy_aor.
+    expect(out.unpaidOwnerSplit).toEqual({ JF: 1, EF: 1, BS: 0, Other: 1 });
+    expect(
+      out.unpaidOwnerSplit.JF + out.unpaidOwnerSplit.EF + out.unpaidOwnerSplit.BS + out.unpaidOwnerSplit.Other,
+    ).toBe(out.unpaidCount);
+  });
+
+  it('Bundle 8 — AOR-transfer: writing-agent NPN ignored; current_policy_aor drives unpaidOwnerSplit', () => {
+    const mk = (id: string, props: any) => ({
+      member_key: id,
+      in_back_office: true,
+      in_ede: true,
+      eligible_for_commission: 'Yes',
+      pay_entity: 'Coverall',
+      in_commission: false,
+      net_premium: 100,
+      ...props,
+    });
+    // Writing agent Jason, current AOR Erica → must be EF, not JF.
+    const reconciled = [
+      mk('x', { current_policy_aor: 'Erica Fine (21277051)', agent_npn: '21055210' }),
+    ];
+    const filteredEde = {
+      uniqueMembers: [{ member_key: 'x', issuer_subscriber_id: null, exchange_subscriber_id: null, policy_number: null, effective_month: '2026-03', covered_member_count: 1 }],
+      uniqueKeys: 1, missingFromBO: [], byMonth: { '2026-03': 1 },
+    } as any;
+    const out = getExpectedPaymentBreakdown(reconciled, 'All', filteredEde, new Set());
+    expect(out.unpaidOwnerSplit).toEqual({ JF: 0, EF: 1, BS: 0, Other: 0 });
   });
 });
