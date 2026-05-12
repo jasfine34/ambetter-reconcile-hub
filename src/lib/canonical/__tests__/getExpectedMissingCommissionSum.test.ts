@@ -1,88 +1,87 @@
 /**
  * Bundle 3 — getExpectedMissingCommissionSum behavior tests.
  *
- * The helper sums `estimated_missing_commission` over the canonical
- * Expected But Unpaid row set produced by getExpectedPaymentBreakdown.
- * Null/undefined/missing per-row estimates contribute 0; we never fall back
- * to a computed value (commission-less batches intentionally suppress
- * phantom estimates).
+ * Sums `estimated_missing_commission` over the canonical Expected But Unpaid
+ * row set produced by getExpectedPaymentBreakdown. Null/undefined/missing
+ * estimates contribute 0; we never fall back to a computed value
+ * (commission-less batches intentionally suppress phantom estimates).
  */
-import { describe, it, expect, vi } from 'vitest';
-import * as metrics from '../metrics';
+import { describe, it, expect } from 'vitest';
+import { getExpectedMissingCommissionSum, getExpectedPaymentBreakdown } from '../metrics';
 import type { FilteredEdeResult } from '@/lib/expectedEde';
 
-const emptyFiltered = {
-  uniqueMembers: [],
-  uniqueKeys: new Set<string>(),
-  missingFromBO: [],
-} as unknown as FilteredEdeResult;
-
-const scope = 'Coverall' as const;
-
-function withUnpaid(rows: any[]) {
-  return vi.spyOn(metrics, 'getExpectedPaymentBreakdown').mockReturnValue({
-    universe: { rows: [], total: 0, matched: [], boOnly: [], edeOnly: [],
-      matchedCount: 0, boOnlyCount: 0, edeOnlyCount: 0,
-      boActiveNonCurrentEde: [], boActiveNonCurrentEdeCount: 0,
-      boIneligible: [], boIneligibleCount: 0 } as any,
-    paidRows: [],
-    unpaidRows: rows,
-    paidCount: 0,
-    unpaidCount: rows.length,
-    paidSplit: { matched: 0, boOnly: 0, edeOnly: 0 },
-    unpaidSplit: { matched: 0, boOnly: 0, edeOnly: 0 },
-  });
+/**
+ * Build a minimal scenario whose rows fall into the EDE Only unpaid bucket
+ * (inEde && !inBoActive). Each row's `estimated_missing_commission` flows
+ * through to `breakdown.unpaidRows`.
+ */
+function makeScenario(rows: Array<{ key: string; est?: any }>) {
+  const reconciled = rows.map((r) => ({
+    member_key: r.key,
+    in_back_office: false,
+    in_ede: true,
+    in_commission: false,
+    eligible_for_commission: 'Yes',
+    estimated_missing_commission: r.est,
+  }));
+  const filteredEde = {
+    uniqueMembers: rows.map((r) => ({ member_key: r.key })),
+    uniqueKeys: new Set(rows.map((r) => r.key)),
+    missingFromBO: [],
+  } as unknown as FilteredEdeResult;
+  return { reconciled, filteredEde };
 }
 
 describe('getExpectedMissingCommissionSum', () => {
   it('sums estimated_missing_commission across canonical unpaidRows', () => {
-    const spy = withUnpaid([
-      { estimated_missing_commission: 10 },
-      { estimated_missing_commission: 25.5 },
-      { estimated_missing_commission: 4.5 },
+    const { reconciled, filteredEde } = makeScenario([
+      { key: 'a', est: 10 },
+      { key: 'b', est: 25.5 },
+      { key: 'c', est: 4.5 },
     ]);
-    const out = metrics.getExpectedMissingCommissionSum([], scope, emptyFiltered, new Set());
+    const out = getExpectedMissingCommissionSum(reconciled, 'All', filteredEde, new Set());
     expect(out).toBeCloseTo(40);
-    spy.mockRestore();
   });
 
   it('treats null / undefined / missing estimates as 0', () => {
-    const spy = withUnpaid([
-      { estimated_missing_commission: null },
-      { estimated_missing_commission: undefined },
-      {}, // missing key
-      { estimated_missing_commission: 7 },
+    const { reconciled, filteredEde } = makeScenario([
+      { key: 'a', est: null },
+      { key: 'b', est: undefined },
+      { key: 'c' }, // missing key
+      { key: 'd', est: 7 },
     ]);
-    const out = metrics.getExpectedMissingCommissionSum([], scope, emptyFiltered, new Set());
-    expect(out).toBe(7);
-    spy.mockRestore();
+    expect(getExpectedMissingCommissionSum(reconciled, 'All', filteredEde, new Set())).toBe(7);
   });
 
   it('returns 0 when unpaidRows is empty', () => {
-    const spy = withUnpaid([]);
-    expect(metrics.getExpectedMissingCommissionSum([], scope, emptyFiltered, new Set())).toBe(0);
-    spy.mockRestore();
+    expect(
+      getExpectedMissingCommissionSum([], 'All', {
+        uniqueMembers: [],
+        uniqueKeys: new Set(),
+        missingFromBO: [],
+      } as unknown as FilteredEdeResult, new Set()),
+    ).toBe(0);
   });
 
   it('does NOT fall back to a computed estimate (NaN/strings ignored)', () => {
-    const spy = withUnpaid([
-      { estimated_missing_commission: NaN },
-      { estimated_missing_commission: '15' as any },
-      { estimated_missing_commission: 3 },
+    const { reconciled, filteredEde } = makeScenario([
+      { key: 'a', est: NaN },
+      { key: 'b', est: '15' },
+      { key: 'c', est: 3 },
     ]);
-    expect(metrics.getExpectedMissingCommissionSum([], scope, emptyFiltered, new Set())).toBe(3);
-    spy.mockRestore();
+    expect(getExpectedMissingCommissionSum(reconciled, 'All', filteredEde, new Set())).toBe(3);
   });
 
-  it('mirrors getExpectedPaymentBreakdown input shape (delegates to it)', () => {
-    const spy = withUnpaid([{ estimated_missing_commission: 1 }]);
-    metrics.getExpectedMissingCommissionSum([{ a: 1 } as any], scope, emptyFiltered, new Set(['k']));
-    expect(spy).toHaveBeenCalledWith(
-      [{ a: 1 }],
-      scope,
-      emptyFiltered,
-      new Set(['k']),
+  it('respects the same scope/input behavior as getExpectedPaymentBreakdown (parity)', () => {
+    const { reconciled, filteredEde } = makeScenario([
+      { key: 'a', est: 12 },
+      { key: 'b', est: 8 },
+    ]);
+    const breakdown = getExpectedPaymentBreakdown(reconciled, 'All', filteredEde, new Set());
+    const expected = breakdown.unpaidRows.reduce(
+      (s, r: any) => s + (typeof r.estimated_missing_commission === 'number' && Number.isFinite(r.estimated_missing_commission) ? r.estimated_missing_commission : 0),
+      0,
     );
-    spy.mockRestore();
+    expect(getExpectedMissingCommissionSum(reconciled, 'All', filteredEde, new Set())).toBe(expected);
   });
 });
