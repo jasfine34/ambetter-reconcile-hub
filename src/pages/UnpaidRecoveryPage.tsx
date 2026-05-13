@@ -412,7 +412,7 @@ export default function UnpaidRecoveryPage() {
 
   function handleExport() {
     const batchMonth = currentBatch?.statement_month ? String(currentBatch.statement_month).substring(0, 7) : '';
-    const csv = buildUnpaidRecoveryCsv(filteredRows, universe);
+    const csv = buildUnpaidRecoveryCsv(filteredRows, universe, getFfmId);
     const filename = buildUnpaidRecoveryFilename({ scope, batchMonth, downloadDate: new Date() });
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
