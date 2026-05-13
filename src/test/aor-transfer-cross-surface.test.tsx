@@ -182,8 +182,11 @@ describe('Bundle 10 cross-surface parity — TPP commission-only fallback is opt
     expect(tpp).toEqual({ JF: 1, EF: 1, BS: 0, 'Commission-Only': 1, Other: 0 });
     expect(ebuLike.Other).toBe(2);
     expect(ebuLike['Commission-Only']).toBe(0);
-    // Asymmetry asserted: TPP's Commission-Only count corresponds to rows
-    // EBU would route to Other under its no-fallback path.
-    expect(tpp['Commission-Only'] + tpp.Other).toBe(ebuLike.Other);
+    // Asymmetry asserted: every row TPP classifies as Commission-Only would
+    // have been EBU-Other under the no-fallback path. (Some EBU-Other rows
+    // additionally promote to JF/EF/BS on TPP via the writing-agent NPN
+    // fallback — that's the second deliberate divergence.)
+    expect(tpp['Commission-Only']).toBeGreaterThan(0);
+    expect(tpp['Commission-Only']).toBeLessThanOrEqual(ebuLike.Other);
   });
 });
