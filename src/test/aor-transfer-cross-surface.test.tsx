@@ -55,7 +55,7 @@ describe('Bundle 7 cross-surface parity — classifier shared by all surfaces', 
 
   it('getTotalPoliciesPaidAttribution chip totals follow current AOR (writing NPN ignored)', () => {
     const out = getTotalPoliciesPaidAttribution(aorTransferRows);
-    expect(out).toEqual({ JF: 1, EF: 1, BS: 0, Other: 2 });
+    expect(out).toEqual({ JF: 1, EF: 1, BS: 0, 'Commission-Only': 0, Other: 2 });
     const sum = out.JF + out.EF + out.BS + out.Other;
     expect(sum).toBe(aorTransferRows.length);
   });
