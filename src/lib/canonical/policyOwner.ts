@@ -65,6 +65,50 @@ export function classifyPolicyOwnerFromCurrentAor(
 }
 
 /**
+ * Bundle 10 — Display-time variant: identical to
+ * `classifyPolicyOwnerFromCurrentAor` UNLESS the caller opts in to the
+ * commission-evidence fallback AND asserts the row matches the canonical
+ * "Paid: Commission Statement Only" Source Coverage bucket. In that case
+ * the writing-agent NPN may map the row to JF/EF/BS, otherwise the new
+ * "Commission-Only" bucket is returned.
+ *
+ * IMPORTANT: this helper has NO knowledge of the Paid: Commission Statement
+ * Only predicate — that lives in `getSourceCoverageBuckets` in metrics.ts.
+ * Callers compute it once and pass `isCommissionStatementOnly` per row.
+ *
+ * Default opts → behavior identical to `classifyPolicyOwnerFromCurrentAor`.
+ * Only the Total Policies Paid attribution surface opts in. All other
+ * ownership consumers (reconcile, Agent Summary, EBU chips, drilldown AOR
+ * column) continue to use the no-fallback canonical helper.
+ *
+ * NPN-only fallback discipline (consistent with prior audit decisions):
+ * the writing-agent NPN is compared exactly against POLICY_OWNER_NPNS.
+ * No name-based fallback on agent_npn.
+ */
+export type PolicyOwnerDisplayBucket = PolicyOwnerBucket | 'Commission-Only';
+
+export function classifyPolicyOwnerForDisplay(
+  row: { current_policy_aor?: string | null; agent_npn?: string | null },
+  opts?: {
+    allowCommissionOnlyFallback?: boolean;
+    isCommissionStatementOnly?: boolean;
+  },
+): PolicyOwnerDisplayBucket {
+  const aorBucket = classifyPolicyOwnerFromCurrentAor(row?.current_policy_aor);
+  if (aorBucket === 'JF' || aorBucket === 'EF' || aorBucket === 'BS') return aorBucket;
+  if (opts?.allowCommissionOnlyFallback && opts?.isCommissionStatementOnly) {
+    const npn = String(row?.agent_npn ?? '').trim();
+    if (npn) {
+      if (npn === POLICY_OWNER_NPNS.JF) return 'JF';
+      if (npn === POLICY_OWNER_NPNS.EF) return 'EF';
+      if (npn === POLICY_OWNER_NPNS.BS) return 'BS';
+    }
+    return 'Commission-Only';
+  }
+  return 'Other';
+}
+
+/**
  * Expected pay entity inferred from the current AOR owner.
  *   JF / BS → 'Coverall'
  *   EF      → 'Coverall_or_Vix' (preserve existing Erica semantics)
