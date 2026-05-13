@@ -756,6 +756,12 @@ export default function MissingCommissionExportPage() {
             fields across <strong>all uploaded sources</strong> (BO-first, walking later
             BO → same-month EDE → later EDE → earlier fallback).
           </p>
+          <p
+            data-testid="mce-ebu-disclaimer"
+            className="text-xs text-muted-foreground italic"
+          >
+            {EBU_BATCH_SCOPE_DISCLAIMER}
+          </p>
         </header>
 
         {/* Filter bar */}
