@@ -1552,6 +1552,12 @@ export default function DashboardPage() {
                 />
 
               </div>
+              <p
+                data-testid="dashboard-source-coverage-ebu-disclaimer"
+                className="text-xs text-muted-foreground italic mt-2"
+              >
+                {EBU_BATCH_SCOPE_DISCLAIMER}
+              </p>
             </div>
           )}
 
