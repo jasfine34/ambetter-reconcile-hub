@@ -21,7 +21,14 @@ interface CarrierEntry {
 
 // Keep aliases in lowercase; match is substring-based so "Ambetter from X"
 // canonicalizes to 'ambetter' without needing every variant enumerated.
+//
+// ORDER MATTERS — first matching entry wins. Specific aliases must come
+// BEFORE the generic carrier they overlap with (e.g. anthem_bcbs before
+// anthem and bcbs; bs_ca before bcbs).
 const CARRIERS: CarrierEntry[] = [
+  // Specific-before-generic overrides (Bundle 13a additions).
+  { canonicalKey: 'anthem_bcbs', displayName: 'Anthem BCBS', aliasSubstrings: ['anthem bcbs'] },
+  { canonicalKey: 'bs_ca', displayName: 'Blue Shield CA', aliasSubstrings: ['bs ca', 'blue shield ca'] },
   {
     canonicalKey: 'ambetter',
     displayName: 'Ambetter',
@@ -41,6 +48,19 @@ const CARRIERS: CarrierEntry[] = [
   { canonicalKey: 'humana', displayName: 'Humana', aliasSubstrings: ['humana'] },
   { canonicalKey: 'kaiser', displayName: 'Kaiser', aliasSubstrings: ['kaiser'] },
   { canonicalKey: 'centene', displayName: 'Centene', aliasSubstrings: ['centene'] },
+  // Bundle 13a Messer 2026 grid additions. Aliases are deliberately full
+  // brand names (no vague tokens like 'health', 'care', 'first', 'med').
+  { canonicalKey: 'alliant', displayName: 'Alliant', aliasSubstrings: ['alliant'] },
+  { canonicalKey: 'amerihealth_caritas', displayName: 'AmeriHealth Caritas', aliasSubstrings: ['amerihealth caritas'] },
+  { canonicalKey: 'antidote', displayName: 'Antidote', aliasSubstrings: ['antidote'] },
+  { canonicalKey: 'avmed', displayName: 'AvMed', aliasSubstrings: ['avmed'] },
+  { canonicalKey: 'baylor_scott_white', displayName: 'Baylor Scott & White', aliasSubstrings: ['baylor scott', 'baylor'] },
+  { canonicalKey: 'caresource', displayName: 'Caresource', aliasSubstrings: ['caresource'] },
+  { canonicalKey: 'christus', displayName: 'Christus', aliasSubstrings: ['christus'] },
+  { canonicalKey: 'health_first', displayName: 'Health First', aliasSubstrings: ['health first'] },
+  { canonicalKey: 'highmark', displayName: 'Highmark', aliasSubstrings: ['highmark'] },
+  { canonicalKey: 'imperial', displayName: 'Imperial', aliasSubstrings: ['imperial'] },
+  { canonicalKey: 'wellpoint', displayName: 'Wellpoint', aliasSubstrings: ['wellpoint'] },
 ];
 
 /**
