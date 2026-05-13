@@ -64,3 +64,71 @@ describe('classifyPolicyOwnerFromCurrentAor — wiring guards', () => {
     );
   });
 });
+
+import { classifyPolicyOwnerForDisplay } from '@/lib/canonical/policyOwner';
+
+describe('Bundle 10 — classifyPolicyOwnerForDisplay (commission-only fallback)', () => {
+  it('default opts behave identically to classifyPolicyOwnerFromCurrentAor', () => {
+    const cases = [
+      { current_policy_aor: 'Jason Fine (21055210)' },
+      { current_policy_aor: 'erica fine' },
+      { current_policy_aor: 'Becky Shuta (16531877)' },
+      { current_policy_aor: '' },
+      { current_policy_aor: null },
+      { current_policy_aor: 'Allen Ford (21077804)' },
+      { current_policy_aor: 'Erica Fine (21277051)', agent_npn: '21055210' },
+    ];
+    for (const r of cases) {
+      expect(classifyPolicyOwnerForDisplay(r as any)).toBe(
+        classifyPolicyOwnerFromCurrentAor(r.current_policy_aor as any),
+      );
+    }
+  });
+
+  it('AOR present + opts ignored regardless of commission-only flag (AOR wins)', () => {
+    const row = { current_policy_aor: 'Erica Fine (21277051)', agent_npn: '21055210' };
+    expect(
+      classifyPolicyOwnerForDisplay(row, { allowCommissionOnlyFallback: true, isCommissionStatementOnly: false }),
+    ).toBe('EF');
+    expect(
+      classifyPolicyOwnerForDisplay(row, { allowCommissionOnlyFallback: true, isCommissionStatementOnly: true }),
+    ).toBe('EF');
+  });
+
+  it('blank AOR + Jason writing-agent NPN — Other unless commission-only flag set', () => {
+    const row = { current_policy_aor: '', agent_npn: '21055210' };
+    expect(
+      classifyPolicyOwnerForDisplay(row, { allowCommissionOnlyFallback: true, isCommissionStatementOnly: false }),
+    ).toBe('Other');
+    expect(
+      classifyPolicyOwnerForDisplay(row, { allowCommissionOnlyFallback: true, isCommissionStatementOnly: true }),
+    ).toBe('JF');
+  });
+
+  it('blank AOR + downline NPN + commission-only flag → Commission-Only', () => {
+    const row = { current_policy_aor: '', agent_npn: '21077804' };
+    expect(
+      classifyPolicyOwnerForDisplay(row, { allowCommissionOnlyFallback: true, isCommissionStatementOnly: true }),
+    ).toBe('Commission-Only');
+  });
+
+  it('opt-in fallback off → never returns Commission-Only', () => {
+    const row = { current_policy_aor: '', agent_npn: '21077804' };
+    expect(
+      classifyPolicyOwnerForDisplay(row, { isCommissionStatementOnly: true }),
+    ).toBe('Other');
+  });
+
+  it('helper does NOT read in_commission / in_ede / in_back_office from the row', () => {
+    const row: any = {
+      current_policy_aor: '',
+      agent_npn: '21055210',
+      in_commission: false,
+      in_ede: true,
+      in_back_office: true,
+    };
+    expect(
+      classifyPolicyOwnerForDisplay(row, { allowCommissionOnlyFallback: true, isCommissionStatementOnly: true }),
+    ).toBe('JF');
+  });
+});
