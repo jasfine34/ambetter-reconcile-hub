@@ -391,10 +391,13 @@ export default function UnpaidRecoveryPage() {
   const unpaidRows = breakdown.unpaidRows;
   const universe = breakdown.universe;
 
+  // Bundle 12.5: single FFM ID resolver for the whole page (filter + table + CSV).
+  const getFfmId = useMemo(() => buildFfmIdResolver(normalizedRecords), [normalizedRecords]);
+
   // Single source for both the visible table AND the export.
   const filteredRows = useMemo(
-    () => filterUnpaidRecoveryRows(unpaidRows, universe, filters),
-    [unpaidRows, universe, filters],
+    () => filterUnpaidRecoveryRows(unpaidRows, universe, filters, getFfmId),
+    [unpaidRows, universe, filters, getFfmId],
   );
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
