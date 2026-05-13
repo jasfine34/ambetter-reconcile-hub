@@ -181,13 +181,12 @@ function scopeToParam(s: PayEntityScope): string {
 // Columns + export
 // ---------------------------------------------------------------------------
 
-const COLUMNS: Array<{ key: string; label: string }> = [
-  { key: 'issuer_subscriber_id', label: 'FFM ID / Issuer Sub ID' },
+export const UNPAID_RECOVERY_COLUMNS: Array<{ key: string; label: string }> = [
+  { key: 'ffm_id', label: 'FFM ID' },
   { key: 'applicant_name', label: 'Member Name' },
   { key: 'policy_number', label: 'Policy #' },
   { key: 'exchange_subscriber_id', label: 'Exchange Sub ID' },
   { key: 'owner_bucket', label: 'Owner' },
-  { key: 'current_policy_aor', label: 'Current Policy AOR' },
   { key: 'source_type', label: 'Source Type' },
   { key: 'premium_bucket', label: 'Premium Bucket' },
   { key: 'net_premium', label: 'Net Premium' },
@@ -197,14 +196,19 @@ const COLUMNS: Array<{ key: string; label: string }> = [
   { key: 'issue_type', label: 'Issue / Missing Reason' },
 ];
 
-function deriveDisplayRow(r: any, universe: { boOnly: readonly any[]; edeOnly: readonly any[] }) {
+const COLUMNS = UNPAID_RECOVERY_COLUMNS;
+
+function deriveDisplayRow(
+  r: any,
+  universe: { boOnly: readonly any[]; edeOnly: readonly any[] },
+  getFfmId: (row: any) => string = () => '',
+) {
   return {
-    issuer_subscriber_id: r.issuer_subscriber_id ?? '',
+    ffm_id: getFfmId(r),
     applicant_name: r.applicant_name ?? '',
     policy_number: r.policy_number ?? '',
     exchange_subscriber_id: r.exchange_subscriber_id ?? '',
     owner_bucket: classifyPolicyOwnerFromCurrentAor(r.current_policy_aor),
-    current_policy_aor: r.current_policy_aor ?? '',
     source_type: classifySourceTypeForRow(r, universe),
     premium_bucket: isZeroNetPremium(r) ? 'Zero Net Premium' : 'Has Premium',
     net_premium: r.net_premium ?? null,
@@ -215,9 +219,13 @@ function deriveDisplayRow(r: any, universe: { boOnly: readonly any[]; edeOnly: r
   };
 }
 
-export function buildUnpaidRecoveryCsv(rows: any[], universe: { boOnly: readonly any[]; edeOnly: readonly any[] }): string {
+export function buildUnpaidRecoveryCsv(
+  rows: any[],
+  universe: { boOnly: readonly any[]; edeOnly: readonly any[] },
+  getFfmId: (row: any) => string = () => '',
+): string {
   const data = rows.map((r) => {
-    const d = deriveDisplayRow(r, universe);
+    const d = deriveDisplayRow(r, universe, getFfmId);
     const obj: Record<string, string> = {};
     for (const col of COLUMNS) {
       const v = (d as any)[col.key];
