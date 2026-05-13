@@ -673,13 +673,21 @@ export default function DashboardPage() {
     const backOfficeOnly = sourceCoverage.unpaidBackOfficeOnly.count;
     const unpaidExpected = sourceCoverage.expectedButUnpaid.count;
     const totalPaidAll = sourceCoverage.totalPoliciesPaid.count;
-    // Bundle 7: paid-attribution ownership split (JF/EF/BS/Other) computed via
+    // Bundle 7 + Bundle 10: paid-attribution ownership split computed via the
     // canonical helper using EDE current_policy_aor — DashboardPage MUST NOT
     // inline-classify. Vix is a pay entity (not ownership) and Downlines is
     // payment evidence (not ownership), so neither appears in this split.
+    // Bundle 10 — display-time fallback: rows in the canonical Source Coverage
+    // `paidCommissionStatementOnly` bucket (no EDE record at all) may fall
+    // back to commission-statement evidence to land in JF/EF/BS, otherwise
+    // they classify as 'Commission-Only'. The predicate lives in Source
+    // Coverage; we just pass the resulting member-key Set through.
+    const commissionStatementOnlyKeys = new Set<string>(
+      sourceCoverage.paidCommissionStatementOnly.rows.map((r: any) => r.member_key),
+    );
     const paidAttribution = getTotalPoliciesPaidAttribution(
       sourceCoverage.totalPoliciesPaid.rows,
-      normalizedRecords,
+      commissionStatementOnlyKeys,
     );
     // Bundle 3: paidCommRecords sourced from the same canonical totalPoliciesPaid set.
     const paidCommRecords = sourceCoverage.totalPoliciesPaid.count;
