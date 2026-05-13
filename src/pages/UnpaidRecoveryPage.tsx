@@ -80,10 +80,43 @@ const SOURCE_LABELS: Record<Exclude<SourceTypeFilter, 'all'>, 'Matched' | 'BO On
  * Pure filter — exported for tests. Visible table AND export both use this
  * same function so the on-screen rows always equal the downloaded rows.
  */
+/**
+ * Build a per-row FFM ID resolver from the loaded normalizedRecords.
+ *
+ * Bundle 12.5: FFM ID = the actual EDE `raw_json.ffmAppId`, not the carrier
+ * policy identifier (which is what `issuer_subscriber_id` historically
+ * carried). We match EDE normalized records back to the unpaid row by
+ * `member_key` (the same identity key reconcile produces), collect distinct
+ * `ffmAppId` values in normalizedRecords order, and join with ", ".
+ *
+ * NO fallback to issuer_subscriber_id / policy_number / exchange_subscriber_id.
+ * Returns '' when no matched EDE record carries an ffmAppId.
+ */
+export function buildFfmIdResolver(normalizedRecords: any[]): (row: any) => string {
+  const byKey = new Map<string, string[]>();
+  for (const rec of normalizedRecords ?? []) {
+    if (rec?.source_type !== 'EDE') continue;
+    const key = String(rec.member_key ?? '');
+    if (!key) continue;
+    const ffm = String(rec.raw_json?.ffmAppId ?? '').trim();
+    if (!ffm) continue;
+    const arr = byKey.get(key) ?? [];
+    if (!arr.includes(ffm)) arr.push(ffm);
+    byKey.set(key, arr);
+  }
+  return (row: any) => {
+    const key = String(row?.member_key ?? '');
+    if (!key) return '';
+    const arr = byKey.get(key);
+    return arr && arr.length ? arr.join(', ') : '';
+  };
+}
+
 export function filterUnpaidRecoveryRows(
   rows: any[],
   universe: { boOnly: readonly any[]; edeOnly: readonly any[] },
   filters: UnpaidRecoveryFilters,
+  getFfmId: (row: any) => string = () => '',
 ): any[] {
   const search = filters.search.trim().toLowerCase();
   return rows.filter((r) => {
@@ -101,6 +134,7 @@ export function filterUnpaidRecoveryRows(
     }
     if (search) {
       const hay = [
+        getFfmId(r),
         r.applicant_name,
         r.policy_number,
         r.issuer_subscriber_id,
