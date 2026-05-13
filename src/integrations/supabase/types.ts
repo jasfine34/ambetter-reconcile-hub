@@ -91,6 +91,102 @@ export type Database = {
           },
         ]
       }
+      carrier_comp_rates: {
+        Row: {
+          calculation_basis: string
+          carrier_display: string
+          carrier_key: string
+          comp_basis: string
+          comp_level: string
+          created_at: string
+          effective_end_date: string | null
+          effective_start_date: string
+          effective_year: number
+          id: string
+          member_cap: number | null
+          member_max: number | null
+          member_min: number | null
+          notes: string | null
+          plan_variant: string | null
+          production_threshold: number | null
+          rate_key: string
+          rate_unit: string | null
+          rate_value: number | null
+          raw_carrier_header: string
+          raw_comp_for: string | null
+          raw_comp_type: string | null
+          raw_rate_value: string | null
+          source_file_name: string
+          source_name: string
+          state_code: string | null
+          support_status: string
+          unsupported_reason: string | null
+          updated_at: string
+        }
+        Insert: {
+          calculation_basis: string
+          carrier_display: string
+          carrier_key: string
+          comp_basis: string
+          comp_level?: string
+          created_at?: string
+          effective_end_date?: string | null
+          effective_start_date: string
+          effective_year: number
+          id?: string
+          member_cap?: number | null
+          member_max?: number | null
+          member_min?: number | null
+          notes?: string | null
+          plan_variant?: string | null
+          production_threshold?: number | null
+          rate_key: string
+          rate_unit?: string | null
+          rate_value?: number | null
+          raw_carrier_header: string
+          raw_comp_for?: string | null
+          raw_comp_type?: string | null
+          raw_rate_value?: string | null
+          source_file_name: string
+          source_name: string
+          state_code?: string | null
+          support_status: string
+          unsupported_reason?: string | null
+          updated_at?: string
+        }
+        Update: {
+          calculation_basis?: string
+          carrier_display?: string
+          carrier_key?: string
+          comp_basis?: string
+          comp_level?: string
+          created_at?: string
+          effective_end_date?: string | null
+          effective_start_date?: string
+          effective_year?: number
+          id?: string
+          member_cap?: number | null
+          member_max?: number | null
+          member_min?: number | null
+          notes?: string | null
+          plan_variant?: string | null
+          production_threshold?: number | null
+          rate_key?: string
+          rate_unit?: string | null
+          rate_value?: number | null
+          raw_carrier_header?: string
+          raw_comp_for?: string | null
+          raw_comp_type?: string | null
+          raw_rate_value?: string | null
+          source_file_name?: string
+          source_name?: string
+          state_code?: string | null
+          support_status?: string
+          unsupported_reason?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       carriers: {
         Row: {
           aliases: string[]
