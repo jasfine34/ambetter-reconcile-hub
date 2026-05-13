@@ -7,8 +7,8 @@
  *
  * SAFETY RULES (enforced by compGrid.static.test.ts):
  * - No imports from @supabase, reconcile, metrics, or expectedEde.
- * - No references to DEFAULT_COMMISSION_ESTIMATE, estimated_missing_commission,
- *   or batch_average. This helper has no opinion on legacy fallbacks.
+ * - No references to legacy estimate-fallback constants. This helper has
+ *   no opinion on legacy fallbacks; callers handle reconciliation.
  */
 
 export interface CarrierCompRateRow {
