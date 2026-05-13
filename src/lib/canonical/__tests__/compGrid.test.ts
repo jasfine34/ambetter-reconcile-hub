@@ -9,69 +9,73 @@ import { getExpectedCommission, type CarrierCompRateRow } from '../compGrid';
 
 // ---------- Seed parser ----------
 
+function parseTuple(body: string): CarrierCompRateRow | null {
+  const tokens: (string | number | null)[] = [];
+  let i = 0;
+  while (i < body.length) {
+    const ch = body[i];
+    if (ch === ' ' || ch === ',' || ch === '\n' || ch === '\t') { i++; continue; }
+    if (ch === "'") {
+      let j = i + 1;
+      let s = '';
+      while (j < body.length) {
+        if (body[j] === "'" && body[j + 1] === "'") { s += "'"; j += 2; continue; }
+        if (body[j] === "'") break;
+        s += body[j]; j++;
+      }
+      tokens.push(s);
+      i = j + 1;
+    } else {
+      let j = i;
+      while (j < body.length && body[j] !== ',') j++;
+      const tok = body.slice(i, j).trim();
+      if (tok.toUpperCase() === 'NULL') tokens.push(null);
+      else if (tok !== '' && !Number.isNaN(Number(tok))) tokens.push(Number(tok));
+      else if (tok !== '') tokens.push(tok);
+      i = j;
+    }
+  }
+  if (tokens.length < 21) return null;
+  const [
+    rate_key, _source_name, _source_file_name, carrier_key, carrier_display,
+    state_code, plan_variant, _comp_level, _production_threshold, comp_basis,
+    calculation_basis, rate_value, rate_unit, member_min, member_max, member_cap,
+    effective_year, _eff_start, _eff_end, support_status, unsupported_reason,
+  ] = tokens;
+  return {
+    rate_key: String(rate_key),
+    carrier_key: String(carrier_key),
+    carrier_display: String(carrier_display),
+    state_code: state_code as string | null,
+    plan_variant: plan_variant as string | null,
+    comp_basis: String(comp_basis),
+    calculation_basis: String(calculation_basis),
+    rate_value: rate_value == null ? null : Number(rate_value),
+    rate_unit: rate_unit as string | null,
+    member_min: member_min == null ? null : Number(member_min),
+    member_max: member_max == null ? null : Number(member_max),
+    member_cap: member_cap == null ? null : Number(member_cap),
+    effective_year: Number(effective_year),
+    support_status: String(support_status),
+    unsupported_reason: unsupported_reason as string | null,
+  };
+}
+
 function parseSeed(): CarrierCompRateRow[] {
   const sql = readFileSync(
     resolve(__dirname, '../../../../outputs/bundle13a_carrier_comp_rates_seed.sql'),
     'utf8',
   );
-  // Match each tuple: (...)
-  const tupleRe = /\(([^()]*?'[^()]*?)\)(?=\s*[,;])/g;
   const rows: CarrierCompRateRow[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = tupleRe.exec(sql))) {
-    const body = m[1];
-    // Tokenize: 'string' | NULL | number
-    const tokens: (string | number | null)[] = [];
-    let i = 0;
-    while (i < body.length) {
-      const ch = body[i];
-      if (ch === ' ' || ch === ',' || ch === '\n') { i++; continue; }
-      if (ch === "'") {
-        let j = i + 1;
-        let s = '';
-        while (j < body.length) {
-          if (body[j] === "'" && body[j + 1] === "'") { s += "'"; j += 2; continue; }
-          if (body[j] === "'") break;
-          s += body[j]; j++;
-        }
-        tokens.push(s);
-        i = j + 1;
-      } else {
-        let j = i;
-        while (j < body.length && body[j] !== ',' && body[j] !== '\n') j++;
-        const tok = body.slice(i, j).trim();
-        if (tok.toUpperCase() === 'NULL') tokens.push(null);
-        else if (tok !== '' && !Number.isNaN(Number(tok))) tokens.push(Number(tok));
-        else if (tok !== '') tokens.push(tok);
-        i = j;
-      }
-    }
-    if (tokens.length < 21) continue;
-    const [
-      rate_key, source_name, source_file_name, carrier_key, carrier_display,
-      state_code, plan_variant, comp_level, production_threshold, comp_basis,
-      calculation_basis, rate_value, rate_unit, member_min, member_max, member_cap,
-      effective_year, _eff_start, _eff_end, support_status, unsupported_reason,
-    ] = tokens;
-    void source_name; void source_file_name; void carrier_display; void comp_level;
-    void production_threshold; void comp_basis;
-    rows.push({
-      rate_key: String(rate_key),
-      carrier_key: String(carrier_key),
-      carrier_display: String(carrier_display),
-      state_code: state_code as string | null,
-      plan_variant: plan_variant as string | null,
-      comp_basis: String(comp_basis),
-      calculation_basis: String(calculation_basis),
-      rate_value: rate_value == null ? null : Number(rate_value),
-      rate_unit: rate_unit as string | null,
-      member_min: member_min == null ? null : Number(member_min),
-      member_max: member_max == null ? null : Number(member_max),
-      member_cap: member_cap == null ? null : Number(member_cap),
-      effective_year: Number(effective_year),
-      support_status: String(support_status),
-      unsupported_reason: unsupported_reason as string | null,
-    });
+  for (const raw of sql.split('\n')) {
+    const line = raw.trim();
+    // Each tuple line begins with "(" and ends with ")," or ");"
+    if (!line.startsWith('(')) continue;
+    const closeIdx = line.lastIndexOf(')');
+    if (closeIdx < 0) continue;
+    const body = line.slice(1, closeIdx);
+    const row = parseTuple(body);
+    if (row) rows.push(row);
   }
   return rows;
 }
