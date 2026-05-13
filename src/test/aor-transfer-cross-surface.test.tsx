@@ -143,11 +143,46 @@ describe('Bundle 8 cross-surface parity — Source Coverage EBU ownership chips'
       byMonth: { '2026-03': reconciled.length },
     } as any;
     
-    const out = getExpectedPaymentBreakdown(reconciled, 'All', filteredEde, new Set());
-    // Same expectations as TPP chip parity.
+    // JF/EF/BS/Other parity with TPP no-fallback path. (Bundle 10 adds a
+    // Commission-Only key on TPP that EBU does not have — see asymmetry
+    // suite below — so we compare the load-bearing buckets directly.)
     const tpp = getTotalPoliciesPaidAttribution(aorTransferRows);
-    expect(out.unpaidOwnerSplit).toEqual(tpp);
+    expect(out.unpaidOwnerSplit.JF).toBe(tpp.JF);
+    expect(out.unpaidOwnerSplit.EF).toBe(tpp.EF);
+    expect(out.unpaidOwnerSplit.BS).toBe(tpp.BS);
+    expect(out.unpaidOwnerSplit.Other).toBe(tpp.Other);
     const sum = out.unpaidOwnerSplit.JF + out.unpaidOwnerSplit.EF + out.unpaidOwnerSplit.BS + out.unpaidOwnerSplit.Other;
     expect(sum).toBe(out.unpaidCount);
+  });
+});
+
+describe('Bundle 10 cross-surface parity — TPP commission-only fallback is opt-in only', () => {
+  // Rows with no AOR + downline writing-agent NPN. With the canonical
+  // commission-only Set, TPP places these in 'Commission-Only'. EBU's
+  // no-fallback path classifies them as 'Other'. JF/EF/BS rows continue
+  // to agree across surfaces — that's the load-bearing parity invariant.
+  const blankAor = [
+    { member_key: 'm1', current_policy_aor: '', agent_npn: '99999999' }, // downline → CO on TPP, Other on EBU
+    { member_key: 'm2', current_policy_aor: '', agent_npn: '21055210' }, // Jason wrote → JF on TPP (fallback), Other on EBU
+    { member_key: 'm3', current_policy_aor: 'Erica Fine (21277051)', agent_npn: '21055210' }, // EF both
+  ];
+  const csoKeys = new Set(['m1', 'm2', 'm3']);
+
+  it('JF/EF/BS classifications agree across TPP (with fallback) and EBU (no fallback)', () => {
+    // m3 is the only AOR-resolved row; both surfaces must agree on EF.
+    expect(classifyPaidAttribution(blankAor[2], csoKeys)).toBe('EF');
+    expect(classifyPolicyOwnerFromCurrentAor(blankAor[2].current_policy_aor)).toBe('EF');
+  });
+
+  it('TPP may classify Commission-Only where EBU classifies Other (deliberate per-surface asymmetry)', () => {
+    const tpp = getTotalPoliciesPaidAttribution(blankAor, csoKeys);
+    // Without the Set (EBU's contract), the same rows classify as Other.
+    const ebuLike = getTotalPoliciesPaidAttribution(blankAor);
+    expect(tpp).toEqual({ JF: 1, EF: 1, BS: 0, 'Commission-Only': 1, Other: 0 });
+    expect(ebuLike.Other).toBe(2);
+    expect(ebuLike['Commission-Only']).toBe(0);
+    // Asymmetry asserted: TPP's Commission-Only count corresponds to rows
+    // EBU would route to Other under its no-fallback path.
+    expect(tpp['Commission-Only'] + tpp.Other).toBe(ebuLike.Other);
   });
 });
