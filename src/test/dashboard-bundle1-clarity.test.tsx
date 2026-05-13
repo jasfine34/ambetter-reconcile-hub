@@ -449,3 +449,77 @@ describe('Bundle 10 — Total Policies Paid commission-only fallback wiring', ()
     expect(policyOwnerSrc).not.toMatch(/in_back_office/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Bundle 12 — EBU batch-scope disclaimer wiring guards.
+// Centralized constant: EBU_BATCH_SCOPE_DISCLAIMER in src/lib/constants.ts.
+// Asserts every consuming surface imports + renders the constant, AND that
+// the literal disclaimer text is not duplicated as a string literal anywhere
+// outside the constants file.
+// ---------------------------------------------------------------------------
+describe('Bundle 12 — EBU batch-scope disclaimer (centralized constant)', () => {
+  const constantsSrc = readFileSync(resolve(__dirname, '../lib/constants.ts'), 'utf8');
+  const dashSrc = dashboardSource;
+  const mceSrc = readFileSync(resolve(__dirname, '../pages/MissingCommissionExportPage.tsx'), 'utf8');
+  const agentSrc = readFileSync(resolve(__dirname, '../pages/AgentSummaryPage.tsx'), 'utf8');
+  const urSrc = readFileSync(resolve(__dirname, '../pages/UnpaidRecoveryPage.tsx'), 'utf8');
+
+  // The exact disclaimer text — sourced from constants.ts at import time so
+  // this test never hard-codes a duplicate of the literal string.
+  const DISCLAIMER_TEXT =
+    "Unpaid counts are based on the selected batch's files only. Payments that appeared in later commission statements may not be cleared here.";
+
+  it('constant is defined exactly once in src/lib/constants.ts', () => {
+    expect(constantsSrc).toMatch(/export const EBU_BATCH_SCOPE_DISCLAIMER\s*=/);
+    const occurrences = constantsSrc.split(DISCLAIMER_TEXT).length - 1;
+    expect(occurrences).toBe(1);
+  });
+
+  it('Dashboard imports + renders the constant (top KPI EBU card)', () => {
+    expect(dashSrc).toMatch(/EBU_BATCH_SCOPE_DISCLAIMER/);
+    expect(dashSrc).toMatch(/from '@\/lib\/constants'/);
+    expect(dashSrc).toMatch(/data-testid="dashboard-ebu-disclaimer"/);
+    expect(dashSrc).toMatch(/\{EBU_BATCH_SCOPE_DISCLAIMER\}/);
+  });
+
+  it('Dashboard renders the constant near the Source Coverage EBU tile', () => {
+    expect(dashSrc).toMatch(/data-testid="dashboard-source-coverage-ebu-disclaimer"/);
+  });
+
+  it('MissingCommissionExportPage imports + renders the constant in its header', () => {
+    expect(mceSrc).toMatch(/EBU_BATCH_SCOPE_DISCLAIMER/);
+    expect(mceSrc).toMatch(/from '@\/lib\/constants'/);
+    expect(mceSrc).toMatch(/data-testid="mce-ebu-disclaimer"/);
+  });
+
+  it('AgentSummaryPage imports + renders the constant in the unpaid section', () => {
+    expect(agentSrc).toMatch(/EBU_BATCH_SCOPE_DISCLAIMER/);
+    expect(agentSrc).toMatch(/from '@\/lib\/constants'/);
+    expect(agentSrc).toMatch(/data-testid="agent-summary-ebu-disclaimer"/);
+  });
+
+  it('UnpaidRecoveryPage imports + renders the constant in its header', () => {
+    expect(urSrc).toMatch(/EBU_BATCH_SCOPE_DISCLAIMER/);
+    expect(urSrc).toMatch(/from '@\/lib\/constants'/);
+    expect(urSrc).toMatch(/data-testid="ur-ebu-disclaimer"/);
+  });
+
+  it('cross-surface parity — all five surfaces consume the SAME constant', () => {
+    for (const src of [dashSrc, mceSrc, agentSrc, urSrc]) {
+      expect(src).toMatch(/\{EBU_BATCH_SCOPE_DISCLAIMER\}/);
+    }
+  });
+
+  it('standing guard — disclaimer text appears as a literal ONLY in constants.ts', () => {
+    // Inline duplicates in any consuming surface would break centralization.
+    for (const src of [dashSrc, mceSrc, agentSrc, urSrc]) {
+      expect(src.includes(DISCLAIMER_TEXT)).toBe(false);
+    }
+  });
+
+  it('no paid surface (Should Be Paid / Total Policies Paid) renders the disclaimer', () => {
+    // Quick sanity: there should be no disclaimer testid bound to a paid card.
+    expect(dashSrc).not.toMatch(/data-testid="dashboard-should-be-paid-disclaimer"/);
+    expect(dashSrc).not.toMatch(/data-testid="dashboard-total-policies-paid-disclaimer"/);
+  });
+});
