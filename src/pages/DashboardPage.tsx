@@ -44,7 +44,7 @@ import {
   classifySourceTypeForRow,
   filterCommissionRowsByScope,
 } from '@/lib/canonical';
-import { getIssueTypeLabel } from '@/lib/constants';
+import { getIssueTypeLabel, EBU_BATCH_SCOPE_DISCLAIMER } from '@/lib/constants';
 
 /** Format '2026-01' as '1/1/2026' for display. */
 function formatMonthStart(monthKey: string): string {
