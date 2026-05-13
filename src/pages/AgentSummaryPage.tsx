@@ -4,7 +4,7 @@ import { BatchSelector } from '@/components/BatchSelector';
 import { DataTable } from '@/components/DataTable';
 import { MetricCard } from '@/components/MetricCard';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { NPN_MAP } from '@/lib/constants';
+import { NPN_MAP, EBU_BATCH_SCOPE_DISCLAIMER } from '@/lib/constants';
 import { extractNpnFromAorString } from '@/lib/agents';
 import { getNormalizedRecords } from '@/lib/persistence';
 import {
