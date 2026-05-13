@@ -39,7 +39,7 @@ import {
   filterReconciledByScope,
 } from '@/lib/canonical/scope';
 import { extractNpnFromAorString } from '@/lib/agents';
-import { NPN_MAP, DEFAULT_COMMISSION_ESTIMATE } from '@/lib/constants';
+import { NPN_MAP, DEFAULT_COMMISSION_ESTIMATE, EBU_BATCH_SCOPE_DISCLAIMER } from '@/lib/constants';
 import { computeFilteredEde } from '@/lib/expectedEde';
 import { getExpectedPaymentBreakdown, isZeroNetPremium } from '@/lib/canonical/metrics';
 import { classifySourceTypeForRow } from '@/lib/canonical/sourceTypeForRow';
