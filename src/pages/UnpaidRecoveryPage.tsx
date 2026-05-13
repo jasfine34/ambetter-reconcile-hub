@@ -46,6 +46,7 @@ import {
   type WeakMatchOverride,
 } from '@/lib/weakMatch';
 import { filterReconciledByScope } from '@/lib/canonical/scope';
+import { EBU_BATCH_SCOPE_DISCLAIMER } from '@/lib/constants';
 
 // ---------------------------------------------------------------------------
 // Filter model
