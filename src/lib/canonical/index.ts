@@ -11,3 +11,7 @@ export * from './invariants';
 export * from './isActiveBackOfficeRecord';
 export * from './sourceTypeForRow';
 export * from './policyOwner';
+export * from './compGrid';
+export * from './compGridLoader';
+export * from './policyState';
+export * from './policyMemberCount';
