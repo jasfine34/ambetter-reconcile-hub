@@ -14,6 +14,7 @@ import ManualMatchPage from "./pages/ManualMatchPage";
 import AllRecordsPage from "./pages/AllRecordsPage";
 import MemberTimelinePage from "./pages/MemberTimelinePage";
 import MissingCommissionExportPage from "./pages/MissingCommissionExportPage";
+import UnpaidRecoveryPage from "./pages/UnpaidRecoveryPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
