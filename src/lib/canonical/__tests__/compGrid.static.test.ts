@@ -8,8 +8,6 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const SRC = readFileSync(resolve(__dirname, '../compGrid.ts'), 'utf8');
-// eslint-disable-next-line no-console
-console.log('[compGrid.static] SRC length', SRC.length, 'has DEFAULT?', SRC.includes('DEFAULT_COMMISSION_ESTIMATE'));
 
 describe('compGrid.ts — forbidden imports', () => {
   for (const forbidden of [
