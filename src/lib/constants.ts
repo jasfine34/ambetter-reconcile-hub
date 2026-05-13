@@ -109,3 +109,18 @@ export function getIssueTypeTooltip(issueType: string): string | undefined {
 export const SBA_STATES = ['GA', 'IL', 'NJ', 'PA'] as const;
 
 export const DEFAULT_COMMISSION_ESTIMATE = 18.00;
+
+/**
+ * Bundle 12 — User-facing disclaimer rendered on every Expected But Unpaid
+ * (EBU) surface (Dashboard EBU card, Source Coverage EBU tile, Missing
+ * Commission Export, Agent Summary unpaid section, Unpaid Recovery page).
+ *
+ * Centralized here so future copy changes happen in ONE place. Do NOT inline
+ * this string anywhere else — the standing guard in
+ * dashboard-bundle1-clarity.test.tsx asserts no duplicate string literals.
+ *
+ * Temporary: revisited (likely removed/rephrased) once Bundle 13 implements
+ * cross-batch payment clearing.
+ */
+export const EBU_BATCH_SCOPE_DISCLAIMER =
+  "Unpaid counts are based on the selected batch's files only. Payments that appeared in later commission statements may not be cleared here.";
