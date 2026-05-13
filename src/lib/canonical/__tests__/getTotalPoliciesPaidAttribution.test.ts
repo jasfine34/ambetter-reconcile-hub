@@ -57,7 +57,6 @@ describe('Bundle 7 — getTotalPoliciesPaidAttribution sums to Total Policies Pa
       { current_policy_aor: 'Jason Fine (21055210)', agent_npn: '21277051' },
     ];
     const out = getTotalPoliciesPaidAttribution(paid);
-    const out = getTotalPoliciesPaidAttribution(paid);
     expect(out).toEqual({ JF: 2, EF: 1, BS: 1, 'Commission-Only': 0, Other: 2 });
     const sum = out.JF + out.EF + out.BS + out['Commission-Only'] + out.Other;
     expect(sum).toBe(paid.length);
