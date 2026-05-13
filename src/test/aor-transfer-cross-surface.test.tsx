@@ -143,6 +143,7 @@ describe('Bundle 8 cross-surface parity — Source Coverage EBU ownership chips'
       byMonth: { '2026-03': reconciled.length },
     } as any;
     
+    const out = getExpectedPaymentBreakdown(reconciled, 'All', filteredEde, new Set());
     // JF/EF/BS/Other parity with TPP no-fallback path. (Bundle 10 adds a
     // Commission-Only key on TPP that EBU does not have — see asymmetry
     // suite below — so we compare the load-bearing buckets directly.)
