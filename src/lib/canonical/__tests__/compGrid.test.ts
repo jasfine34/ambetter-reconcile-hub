@@ -100,7 +100,7 @@ describe('compGrid — seed integrity', () => {
 
 // ---------- Synthetic rows for math + branch tests ----------
 
-const mk = (over: Partial<CarrierCompRateRow>): CarrierCompRateRow => ({
+const mk = (over: Partial<CarrierCompRateRow> = {}): CarrierCompRateRow => ({
   rate_key: 'k', carrier_key: 'ambetter', carrier_display: 'Ambetter',
   state_code: 'FL', plan_variant: null, comp_basis: 'pmpm',
   calculation_basis: 'per_member_pmpm', rate_value: 10, rate_unit: 'dollar',
@@ -160,7 +160,7 @@ describe('getExpectedCommission — short-circuits', () => {
       [mk({ support_status: 'unsupported_v1', calculation_basis: 'per_member_pmpm' })],
     );
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toBe('unsupported_v1');
+    if (r.ok === false) expect(r.reason).toBe('unsupported_v1');
   });
   it('percent_premium_unsupported returns its specific reason', () => {
     const r = getExpectedCommission(
@@ -168,7 +168,7 @@ describe('getExpectedCommission — short-circuits', () => {
       [mk({ support_status: 'unsupported_v1', calculation_basis: 'percent_premium_unsupported', rate_value: null })],
     );
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toBe('percent_premium_unsupported');
+    if (r.ok === false) expect(r.reason).toBe('percent_premium_unsupported');
   });
 });
 
@@ -180,7 +180,7 @@ describe('getExpectedCommission — plan_variant resolution', () => {
       rows,
     );
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toBe('plan_variant_not_found');
+    if (r.ok === false) expect(r.reason).toBe('plan_variant_not_found');
   });
   it('null planVariant prefers bracket rows even when non-bracket rows exist', () => {
     const rows = [
@@ -226,7 +226,7 @@ describe('getExpectedCommission — state fallback & no-numeric-fallback', () =>
       [mk()],
     );
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toBe('no_carrier_year_rows');
+    if (r.ok === false) expect(r.reason).toBe('no_carrier_year_rows');
   });
   it('bracket with no matching member range returns no_bracket_match', () => {
     const r = getExpectedCommission(
@@ -234,7 +234,7 @@ describe('getExpectedCommission — state fallback & no-numeric-fallback', () =>
       [mk({ calculation_basis: 'per_policy_monthly_bracket', rate_value: 1, member_min: 1, member_max: 5 })],
     );
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toBe('no_bracket_match');
+    if (r.ok === false) expect(r.reason).toBe('no_bracket_match');
   });
 });
 
