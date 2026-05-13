@@ -304,6 +304,13 @@ export default function AgentSummaryPage() {
           <>.</>
         )}
       </div>
+      <p
+        data-testid="agent-summary-ebu-disclaimer"
+        className="text-xs text-muted-foreground italic"
+      >
+        {EBU_BATCH_SCOPE_DISCLAIMER}
+      </p>
+
       <div className="grid grid-cols-3 gap-4">
         {agentData.map(a => (
           <MetricCard
