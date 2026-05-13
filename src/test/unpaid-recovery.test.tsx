@@ -20,6 +20,8 @@ import {
   parseScopeParam,
   buildUnpaidRecoveryCsv,
   buildUnpaidRecoveryFilename,
+  buildFfmIdResolver,
+  UNPAID_RECOVERY_COLUMNS,
 } from '@/pages/UnpaidRecoveryPage';
 import {
   classifyPolicyOwnerFromCurrentAor,
@@ -287,3 +289,123 @@ describe('Bundle 11 — cross-surface parity with Dashboard EBU', () => {
     expect(z.length).toBe(breakdown.unpaidPremiumSplit.zeroNetPremium);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Bundle 12.5 — column cleanup + FFM ID re-source
+// ---------------------------------------------------------------------------
+describe('Bundle 12.5 — column order + Current Policy AOR removal', () => {
+  const EXPECTED_LABELS = [
+    'FFM ID',
+    'Member Name',
+    'Policy #',
+    'Exchange Sub ID',
+    'Owner',
+    'Source Type',
+    'Premium Bucket',
+    'Net Premium',
+    'Est. Missing Commission',
+    'Effective Date',
+    'Policy Status',
+    'Issue / Missing Reason',
+  ];
+
+  it('UNPAID_RECOVERY_COLUMNS labels match the spec order exactly', () => {
+    expect(UNPAID_RECOVERY_COLUMNS.map((c) => c.label)).toEqual(EXPECTED_LABELS);
+  });
+
+  it('Current Policy AOR column is removed', () => {
+    expect(UNPAID_RECOVERY_COLUMNS.find((c) => c.key === 'current_policy_aor')).toBeUndefined();
+    expect(UNPAID_RECOVERY_COLUMNS.find((c) => c.label === 'Current Policy AOR')).toBeUndefined();
+  });
+
+  it('FFM ID column key is ffm_id (not issuer_subscriber_id)', () => {
+    expect(UNPAID_RECOVERY_COLUMNS[0]).toEqual({ key: 'ffm_id', label: 'FFM ID' });
+    expect(UNPAID_RECOVERY_COLUMNS.find((c) => c.key === 'issuer_subscriber_id')).toBeUndefined();
+  });
+
+  it('CSV header matches spec exactly (no Current Policy AOR)', () => {
+    const csv = buildUnpaidRecoveryCsv([], { boOnly: [], edeOnly: [] });
+    const parsed = Papa.parse(csv.trim(), { header: false });
+    expect((parsed.data as string[][])[0]).toEqual(EXPECTED_LABELS);
+    expect(csv).not.toContain('Current Policy AOR');
+  });
+});
+
+describe('Bundle 12.5 — buildFfmIdResolver (FFM ID re-source)', () => {
+  it('resolves FFM ID from matched EDE record raw_json.ffmAppId — never falls back to policy/subscriber IDs', () => {
+    const row = makeRow({
+      member_key: 'mk-1',
+      issuer_subscriber_id: 'POLICY-XYZ',
+      policy_number: 'POLICY-XYZ',
+      exchange_subscriber_id: 'POLICY-XYZ',
+    });
+    const recs = [
+      { source_type: 'EDE', member_key: 'mk-1', raw_json: { ffmAppId: 'FFM-789' } },
+    ];
+    const get = buildFfmIdResolver(recs);
+    expect(get(row)).toBe('FFM-789');
+    expect(get(row)).not.toContain('POLICY-XYZ');
+  });
+
+  it('returns empty when no matched EDE record carries an ffmAppId (BO-only row)', () => {
+    const row = makeRow({
+      member_key: 'mk-bo',
+      issuer_subscriber_id: 'IS-555',
+      policy_number: 'POL-555',
+      exchange_subscriber_id: 'ES-555',
+    });
+    // Only a BO normalized record — no EDE record at all.
+    const recs = [
+      { source_type: 'BACK_OFFICE', member_key: 'mk-bo', raw_json: { ffmAppId: 'WRONG' } },
+    ];
+    const get = buildFfmIdResolver(recs);
+    expect(get(row)).toBe('');
+  });
+
+  it('returns empty when matched EDE record has no ffmAppId (no fallback to policy_number/issuer/exchange ids)', () => {
+    const row = makeRow({
+      member_key: 'mk-2',
+      issuer_subscriber_id: 'IS-222',
+      policy_number: 'POL-222',
+      exchange_subscriber_id: 'ES-222',
+    });
+    const recs = [
+      { source_type: 'EDE', member_key: 'mk-2', raw_json: { /* no ffmAppId */ } },
+    ];
+    const get = buildFfmIdResolver(recs);
+    const v = get(row);
+    expect(v).toBe('');
+    expect(v).not.toContain('IS-222');
+    expect(v).not.toContain('POL-222');
+    expect(v).not.toContain('ES-222');
+  });
+
+  it('joins distinct multi-FFM-ID values with ", " preserving normalizedRecords order', () => {
+    const row = makeRow({ member_key: 'mk-3' });
+    const recs = [
+      { source_type: 'EDE', member_key: 'mk-3', raw_json: { ffmAppId: 'FFM-AAA' } },
+      { source_type: 'EDE', member_key: 'mk-3', raw_json: { ffmAppId: 'FFM-BBB' } },
+      { source_type: 'EDE', member_key: 'mk-3', raw_json: { ffmAppId: 'FFM-AAA' } }, // dedupe
+    ];
+    const get = buildFfmIdResolver(recs);
+    expect(get(row)).toBe('FFM-AAA, FFM-BBB');
+  });
+
+  it('CSV row uses resolved FFM ID display value (not issuer_subscriber_id)', () => {
+    const row = makeRow({
+      member_key: 'mk-csv',
+      issuer_subscriber_id: 'POLICY-XYZ',
+      policy_number: 'POLICY-XYZ',
+    });
+    const recs = [
+      { source_type: 'EDE', member_key: 'mk-csv', raw_json: { ffmAppId: 'FFM-CSV-1' } },
+    ];
+    const get = buildFfmIdResolver(recs);
+    const csv = buildUnpaidRecoveryCsv([row], { boOnly: [], edeOnly: [] }, get);
+    const parsed = Papa.parse(csv.trim(), { header: true });
+    const r0 = (parsed.data as Array<Record<string, string>>)[0];
+    expect(r0['FFM ID']).toBe('FFM-CSV-1');
+    expect(r0['FFM ID']).not.toBe('POLICY-XYZ');
+  });
+});
+
