@@ -763,39 +763,67 @@ export function getSourceCoverageBuckets(
 
 import {
   classifyPolicyOwnerFromCurrentAor,
+  classifyPolicyOwnerForDisplay,
   type PolicyOwnerBucket,
+  type PolicyOwnerDisplayBucket,
 } from './policyOwner';
 
-export type PaidAttributionBucket = PolicyOwnerBucket;
+export type PaidAttributionBucket = PolicyOwnerDisplayBucket;
 
 export interface PaidAttributionSplitCounts {
   JF: number;
   EF: number;
   BS: number;
+  'Commission-Only': number;
   Other: number;
 }
 
 /**
- * Classify a single paid row into an ownership bucket from its
- * `current_policy_aor`. Pure delegate to the canonical owner helper.
+ * Classify a single paid row into an ownership bucket.
+ *
+ * Bundle 10: when `commissionStatementOnlyKeys` is provided (computed from
+ * the canonical Source Coverage `paidCommissionStatementOnly` bucket), rows
+ * in that set may fall back to the writing-agent NPN to claim a JF/EF/BS
+ * owner; otherwise they classify as 'Commission-Only'. Without that Set,
+ * behavior is the pure EDE-AOR rule from Bundle 7.
  */
-export function classifyPaidAttribution(row: any): PaidAttributionBucket {
-  return classifyPolicyOwnerFromCurrentAor(row?.current_policy_aor);
+export function classifyPaidAttribution(
+  row: any,
+  commissionStatementOnlyKeys?: Set<string>,
+): PaidAttributionBucket {
+  if (!commissionStatementOnlyKeys) {
+    return classifyPolicyOwnerFromCurrentAor(row?.current_policy_aor);
+  }
+  return classifyPolicyOwnerForDisplay(row, {
+    allowCommissionOnlyFallback: true,
+    isCommissionStatementOnly: commissionStatementOnlyKeys.has(row?.member_key),
+  });
 }
 
 /**
- * For each Total Policies Paid policy, assign one ownership bucket using
- * `current_policy_aor`. The optional second parameter is accepted for
- * backwards-compat with Bundle 4 callers and is intentionally unused —
- * commission evidence MUST NOT influence ownership.
+ * For each Total Policies Paid policy, assign one ownership bucket.
+ *
+ * Bundle 10: optional `commissionStatementOnlyKeys` is the canonical Set of
+ * member keys in the Source Coverage `paidCommissionStatementOnly` bucket.
+ * When provided, those rows fall back to commission evidence (JF/EF/BS by
+ * writing-agent NPN, else 'Commission-Only'). The predicate is NOT
+ * recomputed here — pass it in from `getSourceCoverageBuckets`.
+ *
+ * A legacy second arg of `normalizedRecords` (array) is ignored — commission
+ * rows must not influence ownership unless the caller explicitly marshals
+ * the Source Coverage commission-only Set.
  */
 export function getTotalPoliciesPaidAttribution(
   totalPoliciesPaidRows: any[],
-  _normalizedRecordsUnused?: any[],
+  commissionStatementOnlyKeysOrLegacy?: Set<string> | any[],
 ): PaidAttributionSplitCounts {
-  const out: PaidAttributionSplitCounts = { JF: 0, EF: 0, BS: 0, Other: 0 };
+  const out: PaidAttributionSplitCounts = { JF: 0, EF: 0, BS: 0, 'Commission-Only': 0, Other: 0 };
+  const keys =
+    commissionStatementOnlyKeysOrLegacy instanceof Set
+      ? commissionStatementOnlyKeysOrLegacy
+      : undefined;
   for (const r of totalPoliciesPaidRows) {
-    out[classifyPaidAttribution(r)] += 1;
+    out[classifyPaidAttribution(r, keys)] += 1;
   }
   return out;
 }

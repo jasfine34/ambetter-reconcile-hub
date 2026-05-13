@@ -406,3 +406,46 @@ describe('Bundle 8 — Source Coverage Expected But Unpaid ownership chips wirin
     expect(block).not.toMatch(/classifyPolicyOwnerFromCurrentAor/);
   });
 });
+
+describe('Bundle 10 — Total Policies Paid commission-only fallback wiring', () => {
+  it('DashboardPage computes commissionStatementOnlyKeys from canonical Source Coverage bucket', () => {
+    expect(dashboardSource).toMatch(/sourceCoverage\.paidCommissionStatementOnly\.rows/);
+    expect(dashboardSource).toMatch(/commissionStatementOnlyKeys\s*=\s*new Set/);
+  });
+
+  it('paidAttribution receives the canonical commissionStatementOnlyKeys Set as the second arg', () => {
+    expect(dashboardSource).toMatch(
+      /getTotalPoliciesPaidAttribution\(\s*sourceCoverage\.totalPoliciesPaid\.rows,\s*commissionStatementOnlyKeys/,
+    );
+  });
+
+  it('Total Policies Paid card renders Commission-Only chip (conditional via > 0 filter)', () => {
+    const idx = dashboardSource.indexOf("setDrilldown('totalPaidAll')");
+    const block = dashboardSource.slice(dashboardSource.lastIndexOf('<MetricCard', idx), idx + 1500);
+    expect(block).toMatch(/label:\s*'Commission-Only'/);
+    expect(block).toMatch(/a\['Commission-Only'\]/);
+    expect(block).toMatch(/\.filter\(\(s\) => s\.value > 0\)/);
+  });
+
+  it('EBU chip rendering still uses no-fallback path (Bundle 8 behavior unchanged)', () => {
+    const idx = dashboardSource.indexOf("setDrilldown('unpaidExpected')");
+    const block = dashboardSource.slice(dashboardSource.lastIndexOf('<MetricCard', idx), idx + 1500);
+    expect(block).toMatch(/unpaidOwnerSplit/);
+    // EBU MUST NOT consume the commission-only Set or render Commission-Only.
+    expect(block).not.toMatch(/Commission-Only/);
+    expect(block).not.toMatch(/commissionStatementOnlyKeys/);
+  });
+
+  it('No inline ownership classification remains in DashboardPage', () => {
+    expect(dashboardSource).not.toMatch(/function\s+classifyPaidAttribution/);
+    expect(dashboardSource).not.toMatch(/function\s+classifyPolicyOwner/);
+  });
+
+  it('metrics.ts does NOT duplicate the Paid: Commission Statement Only predicate inside policyOwner classifier', () => {
+    const policyOwnerSrc = readFileSync(resolve(__dirname, '../lib/canonical/policyOwner.ts'), 'utf8');
+    // Predicate fields the Source Coverage version reads from rows.
+    expect(policyOwnerSrc).not.toMatch(/in_commission/);
+    expect(policyOwnerSrc).not.toMatch(/in_ede/);
+    expect(policyOwnerSrc).not.toMatch(/in_back_office/);
+  });
+});

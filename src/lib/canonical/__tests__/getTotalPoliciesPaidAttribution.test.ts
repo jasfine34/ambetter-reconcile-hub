@@ -57,16 +57,36 @@ describe('Bundle 7 — getTotalPoliciesPaidAttribution sums to Total Policies Pa
       { current_policy_aor: 'Jason Fine (21055210)', agent_npn: '21277051' },
     ];
     const out = getTotalPoliciesPaidAttribution(paid);
-    expect(out).toEqual({ JF: 2, EF: 1, BS: 1, Other: 2 });
-    const sum = out.JF + out.EF + out.BS + out.Other;
+    expect(out).toEqual({ JF: 2, EF: 1, BS: 1, 'Commission-Only': 0, Other: 2 });
+    const sum = out.JF + out.EF + out.BS + out['Commission-Only'] + out.Other;
     expect(sum).toBe(paid.length);
   });
 
-  it('second arg (legacy normalizedRecords) is ignored — commission rows are not ownership', () => {
+  it('legacy second arg (array of normalizedRecords) is ignored — commission rows are not ownership', () => {
     const paid = [aor('Erica Fine (21277051)')];
     const fakeCommission = [{ source_type: 'COMMISSION', agent_npn: '21055210', commission_amount: 100 }];
     const out = getTotalPoliciesPaidAttribution(paid, fakeCommission);
     expect(out.EF).toBe(1);
     expect(out.JF).toBe(0);
+    expect(out['Commission-Only']).toBe(0);
+  });
+});
+
+describe('Bundle 10 — getTotalPoliciesPaidAttribution with commission-statement-only Set', () => {
+  it('rows in the commission-only Set fall back to writing-agent NPN (JF/EF/BS) or Commission-Only', () => {
+    const paid = [
+      // In commission-only Set, blank AOR, written by Jason → JF.
+      { member_key: 'm1', current_policy_aor: '', agent_npn: '21055210' },
+      // In commission-only Set, blank AOR, downline → Commission-Only.
+      { member_key: 'm2', current_policy_aor: '', agent_npn: '99999999' },
+      // NOT in commission-only Set, blank AOR → Other (Bundle 7 unchanged).
+      { member_key: 'm3', current_policy_aor: '', agent_npn: '21055210' },
+      // AOR present → AOR wins regardless of commission-only flag.
+      { member_key: 'm4', current_policy_aor: 'Erica Fine (21277051)', agent_npn: '21055210' },
+    ];
+    const out = getTotalPoliciesPaidAttribution(paid, new Set(['m1', 'm2', 'm4']));
+    expect(out).toEqual({ JF: 1, EF: 1, BS: 0, 'Commission-Only': 1, Other: 1 });
+    const sum = out.JF + out.EF + out.BS + out['Commission-Only'] + out.Other;
+    expect(sum).toBe(paid.length);
   });
 });
