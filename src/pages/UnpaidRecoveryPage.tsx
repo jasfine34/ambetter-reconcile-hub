@@ -516,7 +516,7 @@ export default function UnpaidRecoveryPage() {
                 </TableCell>
               </TableRow>
             ) : pagedRows.map((r, i) => {
-              const d = deriveDisplayRow(r, universe);
+              const d = deriveDisplayRow(r, universe, getFfmId);
               return (
                 <TableRow key={r.member_key ?? i} data-testid="ur-row">
                   {COLUMNS.map((c) => (
