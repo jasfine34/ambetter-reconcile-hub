@@ -37,6 +37,7 @@ const App = () => (
               <Route path="/records" element={<AllRecordsPage />} />
               <Route path="/member-timeline" element={<MemberTimelinePage />} />
               <Route path="/exports/missing-commission" element={<MissingCommissionExportPage />} />
+              <Route path="/unpaid-recovery" element={<UnpaidRecoveryPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </AppLayout>
