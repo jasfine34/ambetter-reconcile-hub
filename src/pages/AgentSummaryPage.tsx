@@ -4,7 +4,7 @@ import { BatchSelector } from '@/components/BatchSelector';
 import { DataTable } from '@/components/DataTable';
 import { MetricCard } from '@/components/MetricCard';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { NPN_MAP } from '@/lib/constants';
+import { NPN_MAP, EBU_BATCH_SCOPE_DISCLAIMER } from '@/lib/constants';
 import { extractNpnFromAorString } from '@/lib/agents';
 import { getNormalizedRecords } from '@/lib/persistence';
 import {
@@ -304,6 +304,13 @@ export default function AgentSummaryPage() {
           <>.</>
         )}
       </div>
+      <p
+        data-testid="agent-summary-ebu-disclaimer"
+        className="text-xs text-muted-foreground italic"
+      >
+        {EBU_BATCH_SCOPE_DISCLAIMER}
+      </p>
+
       <div className="grid grid-cols-3 gap-4">
         {agentData.map(a => (
           <MetricCard

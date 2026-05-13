@@ -46,6 +46,7 @@ import {
   type WeakMatchOverride,
 } from '@/lib/weakMatch';
 import { filterReconciledByScope } from '@/lib/canonical/scope';
+import { EBU_BATCH_SCOPE_DISCLAIMER } from '@/lib/constants';
 
 // ---------------------------------------------------------------------------
 // Filter model
@@ -385,6 +386,12 @@ export default function UnpaidRecoveryPage() {
           <p className="text-sm text-muted-foreground max-w-2xl">
             Filter and export the canonical Expected But Unpaid cohort. Display-only —
             shares its row source with Dashboard EBU, MCE, and Source Coverage EBU.
+          </p>
+          <p
+            data-testid="ur-ebu-disclaimer"
+            className="text-xs text-muted-foreground italic mt-1 max-w-2xl"
+          >
+            {EBU_BATCH_SCOPE_DISCLAIMER}
           </p>
         </div>
         <div className="flex items-center gap-2">

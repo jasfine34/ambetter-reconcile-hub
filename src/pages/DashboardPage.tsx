@@ -44,7 +44,7 @@ import {
   classifySourceTypeForRow,
   filterCommissionRowsByScope,
 } from '@/lib/canonical';
-import { getIssueTypeLabel } from '@/lib/constants';
+import { getIssueTypeLabel, EBU_BATCH_SCOPE_DISCLAIMER } from '@/lib/constants';
 
 /** Format '2026-01' as '1/1/2026' for display. */
 function formatMonthStart(monthKey: string): string {
@@ -1406,6 +1406,12 @@ export default function DashboardPage() {
             <MetricCard title="Clawbacks / Adjustments" value={`$${metrics.totalClawbacks.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} icon={<TrendingDown className="h-4 w-4" />} variant="destructive" tooltip={{ text: "The total dollar amount of negative commission rows (clawbacks, reversals, adjustments).", why: "These reduce your net revenue. A high clawback amount may indicate policy cancellations or billing corrections." }} />
             <MetricCard title="Est. Missing Commission" value={`$${metrics.estMissing.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} icon={<TrendingDown className="h-4 w-4" />} variant="warning" tooltip={{ text: "This is an estimate of how much commission may be missing based on unpaid policies.", why: "This represents potential recoverable revenue and helps prioritize follow-up with carriers." }} />
           </div>
+          <p
+            data-testid="dashboard-ebu-disclaimer"
+            className="text-xs text-muted-foreground italic -mt-2"
+          >
+            {EBU_BATCH_SCOPE_DISCLAIMER}
+          </p>
 
           {/* Validation Panel */}
           <Card className={metrics.unpaidVariance > 5 ? 'border-destructive/50 bg-destructive/5' : 'border-success/50 bg-success/5'}>
@@ -1546,6 +1552,12 @@ export default function DashboardPage() {
                 />
 
               </div>
+              <p
+                data-testid="dashboard-source-coverage-ebu-disclaimer"
+                className="text-xs text-muted-foreground italic mt-2"
+              >
+                {EBU_BATCH_SCOPE_DISCLAIMER}
+              </p>
             </div>
           )}
 

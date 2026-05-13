@@ -39,7 +39,7 @@ import {
   filterReconciledByScope,
 } from '@/lib/canonical/scope';
 import { extractNpnFromAorString } from '@/lib/agents';
-import { NPN_MAP, DEFAULT_COMMISSION_ESTIMATE } from '@/lib/constants';
+import { NPN_MAP, DEFAULT_COMMISSION_ESTIMATE, EBU_BATCH_SCOPE_DISCLAIMER } from '@/lib/constants';
 import { computeFilteredEde } from '@/lib/expectedEde';
 import { getExpectedPaymentBreakdown, isZeroNetPremium } from '@/lib/canonical/metrics';
 import { classifySourceTypeForRow } from '@/lib/canonical/sourceTypeForRow';
@@ -755,6 +755,12 @@ export default function MissingCommissionExportPage() {
             statement. Each row is enriched with the best-known descriptive and contact
             fields across <strong>all uploaded sources</strong> (BO-first, walking later
             BO → same-month EDE → later EDE → earlier fallback).
+          </p>
+          <p
+            data-testid="mce-ebu-disclaimer"
+            className="text-xs text-muted-foreground italic"
+          >
+            {EBU_BATCH_SCOPE_DISCLAIMER}
           </p>
         </header>
 
