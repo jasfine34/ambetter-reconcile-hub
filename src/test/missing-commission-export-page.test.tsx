@@ -147,6 +147,7 @@ function setBatchContext(overrides: Partial<any> = {}) {
     reconciled: [],
     resolverIndex: null,
     reconciledLoadedForBatchId: BATCH_JAN.id,
+    loading: false,
     ...overrides,
   });
 }
