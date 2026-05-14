@@ -312,12 +312,13 @@ function computeMath(
   }
 
   if (chosen.calculation_basis === 'zero_rate') {
+    const zero = roundToCents(0);
     return {
-      expectedAmount: 0,
+      expectedAmount: zero,
       rateRecordId: chosen.id,
       compBasis: compBasisFromRow(chosen),
       supportStatus: 'supported',
-      evidence: { ...evidenceBase, computation: `${evidenceBase.computation} | zero_rate → 0` },
+      evidence: { ...evidenceBase, computation: `${evidenceBase.computation} | zero_rate → $0.00` },
     };
   }
 
@@ -329,27 +330,27 @@ function computeMath(
   }
 
   const rate = Number(chosen.rate_value);
-  let expected: number;
+  let raw: number;
   let formula: string;
   switch (chosen.calculation_basis) {
     case 'per_member_pmpm':
-      expected = rate * members * months;
-      formula = `${rate} * ${members} * ${months}`;
+      raw = rate * members * months;
+      formula = `per_member_pmpm: $${rate} × ${members} members × ${months} month${months === 1 ? '' : 's'}`;
       break;
     case 'capped_member_pmpm': {
       const cap = chosen.member_cap ?? Number.POSITIVE_INFINITY;
       const eff = Math.min(members, cap);
-      expected = rate * eff * months;
-      formula = `${rate} * min(${members},${chosen.member_cap}) * ${months}`;
+      raw = rate * eff * months;
+      formula = `capped_member_pmpm: $${rate} × min(${members}, ${chosen.member_cap}) × ${months}`;
       break;
     }
     case 'per_policy_monthly_bracket':
-      expected = rate * months;
-      formula = `${rate} * ${months} (bracket ${chosen.member_min}-${chosen.member_max ?? '∞'})`;
+      raw = rate * months;
+      formula = `per_policy_monthly_bracket: $${rate} × ${months} (bracket ${chosen.member_min}-${chosen.member_max ?? '∞'})`;
       break;
     case 'pmpy':
-      expected = rate * members;
-      formula = `${rate} * ${members} (pmpy, months ignored)`;
+      raw = rate * members * (months / 12);
+      formula = `pmpy: $${rate} × ${members} × (${months} / 12)`;
       break;
     default:
       return notFound('data_inconsistency_supported_unsupported_basis', {
@@ -358,12 +359,13 @@ function computeMath(
       });
   }
 
+  const expected = roundToCents(raw);
   return {
     expectedAmount: expected,
     rateRecordId: chosen.id,
     compBasis: compBasisFromRow(chosen),
     supportStatus: 'supported',
-    evidence: { ...evidenceBase, computation: `${evidenceBase.computation} | ${formula}` },
+    evidence: { ...evidenceBase, computation: `${evidenceBase.computation} | ${formula} = $${expected.toFixed(2)}` },
   };
 }
 
