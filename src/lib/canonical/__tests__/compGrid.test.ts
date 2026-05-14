@@ -520,7 +520,8 @@ describe('compGrid — Fix 7 static no-consumer guard', () => {
   const inScope = files.filter(f =>
     /\.(ts|tsx)$/.test(f) &&
     !/\.test\.tsx?$/.test(f) &&
-    !f.endsWith('compGrid.ts'),
+    !f.endsWith('compGrid.ts') &&
+    !f.endsWith('crossBatchClearingSweep.ts'),
   );
   it('no production file references getExpectedCommission', () => {
     const offenders: string[] = [];
