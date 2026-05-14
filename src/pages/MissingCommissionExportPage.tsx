@@ -912,46 +912,56 @@ export default function MissingCommissionExportPage() {
             </div>
           </div>
 
-          {/* #124 — Run Report row. Filters never auto-run; the Run Report
-              button is the only thing that produces results. The download
-              button reflects the SNAPSHOT result (runner.result), not live
-              filter state, so the file always matches the on-screen table. */}
+          {/* Bundle 12.6 — Run Report row. Lazy load on click; no
+              cross-batch query on mount. Filter changes RESET to idle (no
+              stale banner). Download uses snapshot, not live filters. */}
           <div className="flex items-center justify-between pt-2 border-t">
             <div className="text-sm text-muted-foreground" data-testid="report-count">
-              {sourceLoading
-                ? 'Loading cross-batch records…'
-                : runner.status === 'idle'
-                  ? 'Choose filters and click Run Report.'
-                  : runner.status === 'loading'
+              {!isBatchReady
+                ? 'Waiting for batch data…'
+                : sourceStatus === 'loading'
+                  ? 'Loading source records…'
+                  : reportStatus === 'computing'
                     ? 'Running report…'
-                    : runner.status === 'error'
-                      ? 'Run failed. See details below.'
-                      : displayed
-                        ? `${displayed.rows.length} member${displayed.rows.length === 1 ? '' : 's'}`
-                        : ''}
+                    : sourceStatus === 'error'
+                      ? 'Source load failed. See details below.'
+                      : reportStatus === 'error'
+                        ? 'Run failed. See details below.'
+                        : reportStatus === 'idle'
+                          ? 'Choose filters and click Run Report.'
+                          : displayed
+                            ? `${displayed.rows.length} member${displayed.rows.length === 1 ? '' : 's'}`
+                            : ''}
               {displayed && displayed.rows.length !== displayed.allBeforeBucket.length && (
                 <span className="ml-2 text-xs">({displayed.allBeforeBucket.length} before premium filter)</span>
               )}
             </div>
             <div className="flex items-center gap-2">
               <Button
-                onClick={() => runner.run()}
-                disabled={sourceLoading || runner.status === 'loading' || !currentBatchId}
-                variant={runner.status === 'idle' || runner.stale ? 'default' : 'outline'}
+                onClick={() => runReport()}
+                disabled={
+                  !isBatchReady ||
+                  sourceStatus === 'loading' ||
+                  reportStatus === 'computing' ||
+                  sourceStatus === 'error'
+                }
+                variant={reportStatus === 'idle' ? 'default' : 'outline'}
                 data-testid="run-report"
               >
-                {runner.status === 'loading' ? (
+                {sourceStatus === 'loading' || reportStatus === 'computing' ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : runner.stale ? (
-                  <RefreshCw className="h-4 w-4 mr-2" />
                 ) : (
                   <Play className="h-4 w-4 mr-2" />
                 )}
-                {runner.status === 'loading' ? 'Running…' : runner.stale ? 'Re-run Report' : 'Run Report'}
+                {sourceStatus === 'loading' || reportStatus === 'computing' ? 'Running…' : 'Run Report'}
               </Button>
               <Button
                 onClick={handleDownload}
-                disabled={!displayed || displayed.rows.length === 0}
+                disabled={
+                  reportStatus !== 'ready' ||
+                  !displayed ||
+                  displayed.rows.length === 0
+                }
                 variant="outline"
                 data-testid="messer-download"
               >
@@ -962,25 +972,9 @@ export default function MissingCommissionExportPage() {
           </div>
         </div>
 
-        {/* #124 — Stale-filter banner. Old results stay visible (so the
-            operator can still read / download them) but a banner makes it
-            unmissable that filters changed since the last run. */}
-        {runner.stale && (
-          <div
-            role="status"
-            data-testid="stale-banner"
-            className="flex items-center gap-2 rounded-md border border-warning bg-warning/10 px-4 py-2 text-sm text-warning-foreground"
-          >
-            <AlertTriangle className="h-4 w-4 text-warning" />
-            <span className="text-foreground">
-              Filters changed. Click <strong>Re-run Report</strong> to refresh.
-            </span>
-          </div>
-        )}
-
-        {/* #124 — Five explicit content states. Errors NEVER render as a
-            blank table; idle and empty are visually distinct from loading. */}
-        {sourceError ? (
+        {/* Content states. Errors NEVER render as a blank table; idle and
+            empty are visually distinct from loading. */}
+        {sourceStatus === 'error' ? (
           <div
             role="alert"
             data-testid="source-error-state"
@@ -988,17 +982,48 @@ export default function MissingCommissionExportPage() {
           >
             <AlertCircle className="h-8 w-8 mx-auto text-destructive" />
             <div className="text-sm font-medium">Failed to load source records</div>
-            <div className="text-xs text-muted-foreground max-w-md mx-auto">{sourceError.message}</div>
+            <div className="text-xs text-muted-foreground max-w-md mx-auto break-words">
+              {sourceError?.message ?? 'Unknown error'}
+            </div>
+            <Button onClick={() => runReport()} variant="outline" size="sm" data-testid="retry-source">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Retry
+            </Button>
           </div>
-        ) : sourceLoading ? (
+        ) : sourceStatus === 'loading' ? (
           <div
             data-testid="source-loading-state"
             className="rounded-lg border bg-card p-12 text-center space-y-3"
           >
             <Loader2 className="h-8 w-8 mx-auto animate-spin text-muted-foreground" />
-            <div className="text-sm text-muted-foreground">Loading cross-batch records…</div>
+            <div className="text-sm text-muted-foreground">Loading source records…</div>
           </div>
-        ) : runner.status === 'idle' ? (
+        ) : reportStatus === 'computing' ? (
+          <div
+            data-testid="loading-state"
+            className="rounded-lg border bg-card p-12 text-center space-y-3"
+          >
+            <Loader2 className="h-8 w-8 mx-auto animate-spin text-primary" />
+            <div className="text-sm font-medium">Running report…</div>
+            <div className="text-xs text-muted-foreground">Computing missing-commission cohort.</div>
+          </div>
+        ) : reportStatus === 'error' ? (
+          <div
+            role="alert"
+            data-testid="error-state"
+            className="rounded-lg border border-destructive bg-destructive/5 p-8 text-center space-y-3"
+          >
+            <AlertCircle className="h-8 w-8 mx-auto text-destructive" />
+            <div className="text-sm font-medium">Run failed</div>
+            <div className="text-xs text-muted-foreground max-w-md mx-auto break-words">
+              {reportError?.message ?? 'Unknown error'}
+            </div>
+            <Button onClick={() => runReport()} variant="outline" size="sm" data-testid="retry-run">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Run again
+            </Button>
+          </div>
+        ) : reportStatus === 'idle' ? (
           <div
             data-testid="initial-state"
             className="rounded-lg border bg-card p-12 text-center space-y-3"
@@ -1009,32 +1034,7 @@ export default function MissingCommissionExportPage() {
               Pick a batch, scope, and premium bucket above. Results will appear here once you run the report.
             </div>
           </div>
-        ) : runner.status === 'loading' ? (
-          <div
-            data-testid="loading-state"
-            className="rounded-lg border bg-card p-12 text-center space-y-3"
-          >
-            <Loader2 className="h-8 w-8 mx-auto animate-spin text-primary" />
-            <div className="text-sm font-medium">Running report…</div>
-            <div className="text-xs text-muted-foreground">Computing missing-commission cohort.</div>
-          </div>
-        ) : runner.status === 'error' ? (
-          <div
-            role="alert"
-            data-testid="error-state"
-            className="rounded-lg border border-destructive bg-destructive/5 p-8 text-center space-y-3"
-          >
-            <AlertCircle className="h-8 w-8 mx-auto text-destructive" />
-            <div className="text-sm font-medium">Run failed</div>
-            <div className="text-xs text-muted-foreground max-w-md mx-auto break-words">
-              {runner.error?.message ?? 'Unknown error'}
-            </div>
-            <Button onClick={() => runner.run()} variant="outline" size="sm" data-testid="retry-run">
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Run again
-            </Button>
-          </div>
-        ) : runner.status === 'empty' ? (
+        ) : reportStatus === 'empty' ? (
           <div
             data-testid="empty-state"
             className="rounded-lg border bg-card p-12 text-center space-y-3"
@@ -1046,8 +1046,7 @@ export default function MissingCommissionExportPage() {
             </div>
           </div>
         ) : (
-          // Populated state — the existing preview table, unchanged
-          // visually. Only the data source switched from filteredExportRows
+
           // to displayed.rows (the snapshot from the last run).
           <div className="rounded-lg border overflow-auto" data-testid="results-table">
             <Table>
