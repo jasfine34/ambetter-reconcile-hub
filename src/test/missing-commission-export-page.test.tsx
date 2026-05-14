@@ -146,6 +146,7 @@ function setBatchContext(overrides: Partial<any> = {}) {
     setCurrentBatchId: vi.fn(),
     reconciled: [],
     resolverIndex: null,
+    reconciledLoadedForBatchId: BATCH_JAN.id,
     ...overrides,
   });
 }
