@@ -570,11 +570,9 @@ describe('crossBatchClearingSweep — v12 branch coverage', () => {
   });
 
   it('Test C — reconciled row in batch with unresolvable statement_month → batch_statement_month_unresolved', async () => {
-    // Custom mock: include a stray reconciled row whose batch_id maps to an
-    // upload_batch with an unparseable statement_month, so it never enters
-    // batchMonthById and trips the per-row sm guard.
     const validBatch: Batch = baseBatch('B_VALID', '2026-02-01');
     const invalidBatch: Batch = { id: 'B_INVALID', statement_month: 'not-a-date', created_at: '2026-02-01' };
+    const queriedBatchIds: string[] = [];
     fromMock.mockImplementation((table: string) => {
       if (table === 'upload_batches') {
         return { select: () => Promise.resolve({ data: [validBatch, invalidBatch], error: null }) };
@@ -583,16 +581,14 @@ describe('crossBatchClearingSweep — v12 branch coverage', () => {
         const chain: any = {
           _batch: null,
           select() { return chain; },
-          eq(_c: string, v: string) { chain._batch = v; return chain; },
+          eq(_c: string, v: string) { chain._batch = v; queriedBatchIds.push(v); return chain; },
           range(from: number) {
             if (from > 0) return Promise.resolve({ data: [], error: null });
-            // Only B_VALID is queried (sweep iterates valid months only).
-            // Return one row matching plus one stray row with batch_id=B_INVALID.
-            const rows: RM[] = [
-              makeUnpaidRM('M_VALID', 'B_VALID'),
-              makeUnpaidRM('M_STRAY', 'B_INVALID', { policy_number: 'pStray' }),
-            ];
-            return Promise.resolve({ data: rows, error: null });
+            const rowsByBatch: Record<string, RM[]> = {
+              B_VALID: [makeUnpaidRM('M_VALID', 'B_VALID')],
+              B_INVALID: [makeUnpaidRM('M_STRAY', 'B_INVALID', { policy_number: 'pStray' })],
+            };
+            return Promise.resolve({ data: rowsByBatch[chain._batch] ?? [], error: null });
           },
         };
         return chain;
@@ -609,6 +605,7 @@ describe('crossBatchClearingSweep — v12 branch coverage', () => {
       return { select: () => Promise.resolve({ data: [], error: null }) };
     });
     const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    expect(queriedBatchIds).toEqual(expect.arrayContaining(['B_VALID', 'B_INVALID']));
     const stray = r.inputErrors.find(e => e.reconciled_member_id === 'M_STRAY');
     expect(stray).toBeTruthy();
     expect(stray!.reason).toBe('batch_statement_month_unresolved');
