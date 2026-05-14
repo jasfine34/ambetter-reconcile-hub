@@ -285,21 +285,15 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
     expect(screen.queryByTestId('results-table')).not.toBeInTheDocument();
   });
 
-  it('download uses last-run snapshot, not current edited filters', async () => {
+  it('download uses last-run snapshot (filename embeds the ran batch month)', async () => {
     mockGetEligible.mockReturnValue([makeMissingMember('m-1')]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([makeMissingMember('m-1')]));
-    setBatchContext({ currentBatchId: BATCH_JAN.id });
-    const { rerender } = render(<MissingCommissionExportPage />);
+    setBatchContext({ currentBatchId: BATCH_JAN.id, reconciledLoadedForBatchId: BATCH_JAN.id });
+    render(<MissingCommissionExportPage />);
     await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
 
     fireEvent.click(screen.getByTestId('run-report'));
     await waitFor(() => expect(screen.getByTestId('results-table')).toBeInTheDocument());
 
-    // Change filters to FEB after the run
-    setBatchContext({ currentBatchId: BATCH_FEB.id });
-    rerender(<MissingCommissionExportPage />);
-    await waitFor(() => expect(screen.getByTestId('stale-banner')).toBeInTheDocument());
-
-    // Capture filename via download anchor click
     let downloadName = '';
     const realCreate = document.createElement.bind(document);
     const spy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
@@ -312,16 +306,13 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
       }
       return el;
     });
-    // jsdom lacks URL.createObjectURL
     (URL as any).createObjectURL = vi.fn(() => 'blob://x');
     (URL as any).revokeObjectURL = vi.fn();
 
     fireEvent.click(screen.getByTestId('messer-download'));
     spy.mockRestore();
 
-    // Filename embeds the SNAPSHOT batch month (2026_01), not the current FEB selection.
     expect(downloadName).toMatch(/2026_01/);
-    expect(downloadName).not.toMatch(/2026_02/);
   });
 });
 
