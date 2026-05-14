@@ -105,9 +105,16 @@ export interface GetExpectedCommissionArgs {
   policyYear: number;
 }
 
-/** Map a policy year to the grid year that applies. v1 only seeds 2026. */
-export function mapPolicyYearTo2026Grid(_policyYear: number): number {
-  return 2026;
+/** Map a policy year to the grid year that applies. v1 seeds 2026; pass through otherwise. */
+export function mapPolicyYearTo2026Grid(policyYear: number): number {
+  if (policyYear === 2025) return 2026;
+  if (policyYear === 2026) return 2026;
+  return policyYear;
+}
+
+/** Uniform rounding helper applied to every successful expectedAmount. */
+function roundToCents(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
 function summarizeRow(r: CarrierCompRateRow) {
