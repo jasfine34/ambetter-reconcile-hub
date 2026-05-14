@@ -19,8 +19,14 @@ vi.mock('@/contexts/BatchContext', () => ({
 }));
 
 const mockGetAll = vi.fn();
+const mockGetNormalized = vi.fn();
+const mockGetByMemberKeys = vi.fn();
+const mockGetByTriples = vi.fn();
 vi.mock('@/lib/persistence', () => ({
   getAllNormalizedRecords: (...a: any[]) => mockGetAll(...a),
+  getNormalizedRecords: (...a: any[]) => mockGetNormalized(...a),
+  getNormalizedRecordsByMemberKeys: (...a: any[]) => mockGetByMemberKeys(...a),
+  getCommissionRecordsByTriples: (...a: any[]) => mockGetByTriples(...a),
 }));
 
 vi.mock('@/lib/weakMatch', () => ({
@@ -140,6 +146,7 @@ function setBatchContext(overrides: Partial<any> = {}) {
     setCurrentBatchId: vi.fn(),
     reconciled: [],
     resolverIndex: null,
+    reconciledLoadedForBatchId: BATCH_JAN.id,
     ...overrides,
   });
 }
@@ -169,9 +176,15 @@ function makeMissingMember(memberKey: string) {
 beforeEach(() => {
   mockUseBatch.mockReset();
   mockGetAll.mockReset();
+  mockGetNormalized.mockReset();
+  mockGetByMemberKeys.mockReset();
+  mockGetByTriples.mockReset();
   mockGetEligible.mockReset();
   mockGetBreakdown.mockReset();
   mockGetAll.mockResolvedValue([]);
+  mockGetNormalized.mockResolvedValue([]);
+  mockGetByMemberKeys.mockResolvedValue([]);
+  mockGetByTriples.mockResolvedValue([]);
   mockGetEligible.mockReturnValue([]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([]));
   mockGetBreakdown.mockReturnValue(buildBreakdownStub([]));
   setBatchContext();
@@ -209,12 +222,11 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
     // commits the synchronous setStatus('loading') from inside run() before
     // the awaited runner body resumes on the next microtask.
     fireEvent.click(screen.getByTestId('run-report'));
-    // Loading panel must be visible synchronously.
-    expect(screen.getByTestId('loading-state')).toBeInTheDocument();
-    expect(screen.getByTestId('loading-state')).toHaveTextContent(/Running report/i);
+    // Bundle 12.6: source-loading-state shows synchronously after click.
+    expect(screen.getByTestId('source-loading-state')).toBeInTheDocument();
 
     // Drain microtasks → transitions to empty (no missing members).
-    await waitFor(() => expect(screen.queryByTestId('loading-state')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByTestId('source-loading-state')).not.toBeInTheDocument());
   });
 
   it('empty state: shows explicit "No records found" when query returns zero rows', async () => {
@@ -254,41 +266,33 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
     expect(screen.queryByTestId('stale-banner')).not.toBeInTheDocument();
   });
 
-  it('stale-filter state: changing filters after a run shows stale banner; old rows remain visible', async () => {
+  it('Bundle 12.6: changing filters after a run RESETS to idle (no stale banner; old rows cleared)', async () => {
     mockGetEligible.mockReturnValue([makeMissingMember('m-1')]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([makeMissingMember('m-1')]));
-    // Render once to capture props, then we'll re-render with a mutated currentBatchId.
-    setBatchContext({ currentBatchId: BATCH_JAN.id });
+    setBatchContext({ currentBatchId: BATCH_JAN.id, reconciledLoadedForBatchId: BATCH_JAN.id });
     const { rerender } = render(<MissingCommissionExportPage />);
     await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
 
     fireEvent.click(screen.getByTestId('run-report'));
     await waitFor(() => expect(screen.getByTestId('results-table')).toBeInTheDocument());
 
-    // Change filters — flip currentBatchId via the context mock and re-render
-    setBatchContext({ currentBatchId: BATCH_FEB.id });
+    // Change Month — MCE resets to idle, no stale banner, table gone.
+    setBatchContext({ currentBatchId: BATCH_FEB.id, reconciledLoadedForBatchId: BATCH_FEB.id });
     rerender(<MissingCommissionExportPage />);
 
-    await waitFor(() => expect(screen.getByTestId('stale-banner')).toBeInTheDocument());
-    // Old results still visible
-    expect(screen.getByTestId('results-table')).toBeInTheDocument();
-    expect(screen.getByTestId('run-report')).toHaveTextContent(/Re-run Report/i);
+    await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
+    expect(screen.queryByTestId('stale-banner')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('results-table')).not.toBeInTheDocument();
   });
 
-  it('download uses last-run snapshot, not current edited filters', async () => {
+  it('download uses last-run snapshot (filename embeds the ran batch month)', async () => {
     mockGetEligible.mockReturnValue([makeMissingMember('m-1')]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([makeMissingMember('m-1')]));
-    setBatchContext({ currentBatchId: BATCH_JAN.id });
-    const { rerender } = render(<MissingCommissionExportPage />);
+    setBatchContext({ currentBatchId: BATCH_JAN.id, reconciledLoadedForBatchId: BATCH_JAN.id });
+    render(<MissingCommissionExportPage />);
     await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
 
     fireEvent.click(screen.getByTestId('run-report'));
     await waitFor(() => expect(screen.getByTestId('results-table')).toBeInTheDocument());
 
-    // Change filters to FEB after the run
-    setBatchContext({ currentBatchId: BATCH_FEB.id });
-    rerender(<MissingCommissionExportPage />);
-    await waitFor(() => expect(screen.getByTestId('stale-banner')).toBeInTheDocument());
-
-    // Capture filename via download anchor click
     let downloadName = '';
     const realCreate = document.createElement.bind(document);
     const spy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
@@ -301,16 +305,13 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
       }
       return el;
     });
-    // jsdom lacks URL.createObjectURL
     (URL as any).createObjectURL = vi.fn(() => 'blob://x');
     (URL as any).revokeObjectURL = vi.fn();
 
     fireEvent.click(screen.getByTestId('messer-download'));
     spy.mockRestore();
 
-    // Filename embeds the SNAPSHOT batch month (2026_01), not the current FEB selection.
     expect(downloadName).toMatch(/2026_01/);
-    expect(downloadName).not.toMatch(/2026_02/);
   });
 });
 

@@ -12,19 +12,13 @@ interface BatchCounts {
   reconciledMembers: number;
 }
 
-/**
- * #126-OBS — Known intentional sources for currentBatchId mutations.
- * Any setter call passing a value NOT in this set leaves a console.warn
- * with previous id, next id, and a stack trace so future unexpected
- * resets are easy to trace. Forensic only — does not alter behavior.
- */
 export type BatchSelectionSource =
-  | 'init'              // initial null state (constructor-style — never actually called)
-  | 'auto-select'       // refreshBatches first-load auto-pick
-  | 'create'            // BatchSelector after createBatch success
-  | 'delete'            // BatchSelector after deleteBatch success
-  | 'user-dropdown'     // user picked from main BatchSelector dropdown
-  | 'mce-page-picker';  // user picked from Missing Commission Export in-page selector
+  | 'init'
+  | 'auto-select'
+  | 'create'
+  | 'delete'
+  | 'user-dropdown'
+  | 'mce-page-picker';
 
 const KNOWN_SOURCES: ReadonlySet<BatchSelectionSource> = new Set<BatchSelectionSource>([
   'init', 'auto-select', 'create', 'delete', 'user-dropdown', 'mce-page-picker',
@@ -33,12 +27,6 @@ const KNOWN_SOURCES: ReadonlySet<BatchSelectionSource> = new Set<BatchSelectionS
 interface BatchContextType {
   batches: any[];
   currentBatchId: string | null;
-  /**
-   * Set the active batch id. The optional `source` label is forensic only:
-   * known labels are silent; unlabeled or unknown writes emit a console
-   * warning with previous/next/stack. The state change itself is never
-   * blocked or altered.
-   */
   setCurrentBatchId: (id: string | null, source?: BatchSelectionSource) => void;
   reconciled: any[];
   uploadedFiles: any[];
@@ -51,6 +39,14 @@ interface BatchContextType {
   refreshAll: () => Promise<void>;
   refreshResolverIndex: () => Promise<void>;
   loading: boolean;
+  /**
+   * Bundle 12.6 — id of the batch whose reconciled-members data is currently
+   * committed in `reconciled`. `null` while no commit yet, while a refresh is
+   * in flight, or when the most recent refresh failed. Pages that need to
+   * gate work on "reconciled is fresh for the active batch" should compare
+   * `reconciledLoadedForBatchId === currentBatchId`.
+   */
+  reconciledLoadedForBatchId: string | null;
 }
 
 const BatchContext = createContext<BatchContextType>({
@@ -64,15 +60,11 @@ const BatchContext = createContext<BatchContextType>({
   refreshAll: async () => {},
   refreshResolverIndex: async () => {},
   loading: false,
+  reconciledLoadedForBatchId: null,
 });
 
 export const useBatch = () => useContext(BatchContext);
 
-/**
- * #126-OBS — Single visible-toast guard for refreshBatches failures.
- * The three call sites (mount, batch-switch effect, polling callback) all
- * share one toast at a time so a transient outage doesn't stack N copies.
- */
 let _refreshBatchesToastActive = false;
 function notifyRefreshBatchesFailed(err: unknown) {
   console.error('[batch-state] refreshBatches failed', err);
@@ -83,7 +75,6 @@ function notifyRefreshBatchesFailed(err: unknown) {
     description: 'Existing selection was preserved. Try again.',
     variant: 'warning' as any,
   });
-  // Allow another toast after the user dismisses or after a cooldown.
   setTimeout(() => { _refreshBatchesToastActive = false; }, 5000);
   return t;
 }
@@ -94,20 +85,15 @@ export function BatchProvider({ children }: { children: ReactNode }) {
   const currentBatchIdRef = useRef<string | null>(null);
   currentBatchIdRef.current = currentBatchIdState;
 
-  // #126-OBS — wrapped setter. Known sources pass a label; unlabeled writes
-  // get a forensic console.warn so future unexpected resets leave evidence.
   const setCurrentBatchId = useCallback((id: string | null, source?: BatchSelectionSource) => {
     const prev = currentBatchIdRef.current;
     if (prev === id) {
-      // No-op — still log unknown-source attempts so we can see them, but
-      // don't trigger a render.
       if (source && !KNOWN_SOURCES.has(source)) {
         console.warn('[batch-state] setCurrentBatchId no-op with unknown source', { prev, next: id, source });
       }
       return;
     }
     if (!source || !KNOWN_SOURCES.has(source)) {
-      // Forensic only — capture stack so we can find the caller later.
       const stack = new Error('batch-state forensic trace').stack;
       console.warn('[batch-state] currentBatchId mutated from unknown source', {
         prev, next: id, source: source ?? '(none)', stack,
@@ -122,6 +108,16 @@ export function BatchProvider({ children }: { children: ReactNode }) {
   const [debugStats, setDebugStats] = useState<MatchDebugStats | null>(null);
   const [resolverIndex, setResolverIndex] = useState<ResolverIndex | null>(null);
   const [loading, setLoading] = useState(false);
+  const [reconciledLoadedForBatchId, setReconciledLoadedForBatchId] = useState<string | null>(null);
+
+  // Bundle 12.6 — generation guard. Increments on every refreshReconciled
+  // invocation AND on every currentBatchId change. Stale resolves (success
+  // or failure) drop silently.
+  const refreshGenRef = useRef(0);
+  const batchesRef = useRef<any[]>([]);
+  batchesRef.current = batches;
+  const resolverIndexRef = useRef<ResolverIndex | null>(null);
+  resolverIndexRef.current = resolverIndex;
 
   const refreshResolverIndex = useCallback(async () => {
     try {
@@ -133,38 +129,65 @@ export function BatchProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshBatches = useCallback(async () => {
-    // NOTE: throws on failure. Callers MUST wrap in try/catch and surface
-    // the failure via notifyRefreshBatchesFailed — never swallow silently.
     const data = await getBatches();
     setBatches(data || []);
     if (!currentBatchIdRef.current && data && data.length > 0) {
-      // Auto-select on first load — labeled so the forensic logger stays quiet.
       setCurrentBatchId(data[0].id, 'auto-select');
     }
   }, [setCurrentBatchId]);
 
   const refreshReconciled = useCallback(async () => {
-    if (!currentBatchIdState) { setReconciled([]); setDebugStats(null); return; }
+    const requestedBatchId = currentBatchIdRef.current;
+    // Always invalidate readiness at the START of every refresh.
+    refreshGenRef.current += 1;
+    const myGen = refreshGenRef.current;
+
+    if (!requestedBatchId) {
+      setReconciled([]);
+      setDebugStats(null);
+      setReconciledLoadedForBatchId(null);
+      setLoading(false);
+      return;
+    }
+
+    setReconciledLoadedForBatchId(null);
+    setDebugStats(null);
     setLoading(true);
+
+    const isLatest = () =>
+      myGen === refreshGenRef.current && currentBatchIdRef.current === requestedBatchId;
+
     try {
-      const data = await getReconciledMembers(currentBatchIdState);
+      const data = await getReconciledMembers(requestedBatchId);
+      if (!isLatest()) return; // stale; drop silently
       setReconciled(data || []);
-      // Compute debug stats from normalized records
+
+      // DebugStats best-effort — failure does NOT invalidate reconciled rows.
       try {
-        const normalized = await getNormalizedRecords(currentBatchIdState);
-        const currentBatch = batches.find((b: any) => b.id === currentBatchIdState);
+        const normalized = await getNormalizedRecords(requestedBatchId);
+        if (!isLatest()) return;
+        const currentBatch = batchesRef.current.find((b: any) => b.id === requestedBatchId);
         const reconcileMonth = currentBatch?.statement_month
           ? String(currentBatch.statement_month).substring(0, 7)
           : fallbackReconcileMonth();
-        const { debug } = reconcile(normalized as any[], reconcileMonth, resolverIndex);
+        const { debug } = reconcile(normalized as any[], reconcileMonth, resolverIndexRef.current);
+        if (!isLatest()) return;
         setDebugStats(debug);
       } catch {
+        if (!isLatest()) return;
         setDebugStats(null);
       }
-    } finally {
+
+      if (!isLatest()) return;
+      setReconciledLoadedForBatchId(requestedBatchId);
       setLoading(false);
+    } catch (err) {
+      if (!isLatest()) return;
+      // leave reconciledLoadedForBatchId=null + debugStats=null; clear loading.
+      setLoading(false);
+      throw err;
     }
-  }, [currentBatchIdState, batches, resolverIndex]);
+  }, []);
 
   const refreshFiles = useCallback(async () => {
     if (!currentBatchIdState) { setUploadedFiles([]); return; }
@@ -182,28 +205,27 @@ export function BatchProvider({ children }: { children: ReactNode }) {
   }, [currentBatchIdState]);
 
   const refreshAll = useCallback(async () => {
-    await Promise.all([refreshFiles(), refreshReconciled(), refreshCounts()]);
+    await Promise.all([
+      refreshFiles(),
+      refreshReconciled().catch(() => { /* swallow — generation guard handles state */ }),
+      refreshCounts(),
+    ]);
   }, [refreshFiles, refreshReconciled, refreshCounts]);
 
-  // #126-OBS — Mount effect. refreshBatches CAN reject (network/RLS); on
-  // failure, surface a toast so operators see "list refresh failed" instead
-  // of silently-empty UI. Existing batches/selection are preserved by virtue
-  // of refreshBatches throwing BEFORE setBatches is called.
   useEffect(() => {
     refreshBatches().catch(notifyRefreshBatchesFailed);
     refreshResolverIndex();
   }, []);
 
-  // On batch switch: refresh BOTH the per-batch data (files/reconciled/counts)
-  // AND the batches list itself so per-batch metadata reflects any background
-  // rebuilds. #126-OBS: refreshBatches failure here also gets a visible toast.
+  // On batch switch: bump generation immediately so any in-flight refresh
+  // for the prior batch drops on resolve, then trigger fresh loads.
   useEffect(() => {
+    refreshGenRef.current += 1;
+    setReconciledLoadedForBatchId(null);
     refreshAll();
     refreshBatches().catch(notifyRefreshBatchesFailed);
   }, [currentBatchIdState]);
 
-  // Auto-refresh when the active batch is rebuilt. #126-OBS: failure inside
-  // the polling callback's refreshBatches gets a visible toast.
   useBatchDataVersion(currentBatchIdState, () => {
     refreshBatches().catch(notifyRefreshBatchesFailed);
     refreshAll();
@@ -217,6 +239,7 @@ export function BatchProvider({ children }: { children: ReactNode }) {
       refreshBatches, refreshReconciled, refreshFiles, refreshAll,
       refreshResolverIndex,
       loading,
+      reconciledLoadedForBatchId,
     }}>
       {children}
     </BatchContext.Provider>

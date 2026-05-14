@@ -16,7 +16,7 @@
  * NO persisted-data changes. NO RECONCILE_LOGIC_VERSION bump (UI/export-only,
  * same precedent as #90).
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useBatch } from '@/contexts/BatchContext';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -24,9 +24,12 @@ import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Download, Info, AlertTriangle, Play, Loader2, RefreshCw, AlertCircle, Inbox } from 'lucide-react';
-import { useReportRunner } from '@/hooks/useReportRunner';
 import Papa from 'papaparse';
-import { getAllNormalizedRecords } from '@/lib/persistence';
+import {
+  getNormalizedRecords,
+  getNormalizedRecordsByMemberKeys,
+  getCommissionRecordsByTriples,
+} from '@/lib/persistence';
 import {
   buildMemberProfile,
   splitNameLastSpace,
@@ -51,6 +54,7 @@ import {
   pickStableKey,
   type WeakMatchOverride,
 } from '@/lib/weakMatch';
+
 
 type PremiumBucket = 'all' | 'zero_premium' | 'has_premium';
 
@@ -440,299 +444,380 @@ export function buildMesserCsv(rows: ExportRow[]): string {
 // ---------------------------------------------------------------------------
 
 export default function MissingCommissionExportPage() {
-  const { batches, currentBatchId, setCurrentBatchId, reconciled, resolverIndex } = useBatch();
+  const {
+    batches, currentBatchId, setCurrentBatchId, reconciled, resolverIndex,
+    reconciledLoadedForBatchId,
+  } = useBatch();
   const [scope, setScope] = useState<CanonicalScope>('Coverall');
   const [premiumBucket, setPremiumBucket] = useState<PremiumBucket>('all');
-  const [allRecords, setAllRecords] = useState<any[]>([]);
-  const [weakOverrides, setWeakOverrides] = useState<Map<string, WeakMatchOverride>>(new Map());
-  // Page-level mount-load spinner. Distinct from the report runner's
-  // `loading` state — `sourceLoading` covers the one-shot pull of
-  // cross-batch normalized records on first render; `runner.status === 'loading'`
-  // covers a Run Report click.
-  const [sourceLoading, setSourceLoading] = useState(false);
-  const [sourceError, setSourceError] = useState<Error | null>(null);
 
-  // Cross-batch normalized records — required for profile enrichment AND
-  // for computing the canonical EE-universe (filteredEde) used by the cohort.
-  // Loaded once on mount; the report runner consumes a snapshot of this on
-  // each Run Report click.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setSourceLoading(true);
-      setSourceError(null);
-      try {
-        const [data, overrides] = await Promise.all([
-          getAllNormalizedRecords(),
-          loadWeakMatchOverrides().catch(() => new Map<string, WeakMatchOverride>()),
-        ]);
-        if (!cancelled) {
-          setAllRecords(data || []);
-          setWeakOverrides(overrides);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setSourceError(err instanceof Error ? err : new Error(serializeErrorMessage(err)));
-        }
-      } finally {
-        if (!cancelled) setSourceLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  // batch_id → 'YYYY-MM' (source-only — independent of filters).
-  const batchMonthByBatchId = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const b of batches) {
-      m.set(b.id, b.statement_month ? String(b.statement_month).substring(0, 7) : '');
-    }
-    return m;
-  }, [batches]);
-
-  // Index records by member_key once (source-only — reused for every profile build).
-  const recordsByMemberKey = useMemo(() => {
-    const m = new Map<string, any[]>();
-    for (const r of allRecords) {
-      const k = r.member_key;
-      if (!k) continue;
-      const arr = m.get(k);
-      if (arr) arr.push(r);
-      else m.set(k, [r]);
-    }
-    return m;
-  }, [allRecords]);
-
-  // #109 derived (carrier, pay_entity, agent_npn) → writing_agent_carrier_id
-  // map. Source-only — depends solely on allRecords (cross-batch).
-  const writingAgentIdLookup = useMemo(
-    () => buildWritingAgentCarrierIdLookup({ records: allRecords, batchMonthByBatchId }),
-    [allRecords, batchMonthByBatchId],
-  );
-
-  // One-shot console warning when the lookup discovers conflicting IDs for the
-  // same (carrier, pay_entity, NPN) — surfaces forward-safety issues for review.
-  useEffect(() => {
-    const conflicts: Array<{ key: string; winner: string; losers: string[] }> = [];
-    for (const [key, entry] of writingAgentIdLookup) {
-      if (entry.conflicts.length) conflicts.push({ key, winner: entry.id, losers: entry.conflicts });
-    }
-    if (conflicts.length) {
-      console.warn(
-        `[#109] writing_agent_carrier_id lookup found ${conflicts.length} (carrier, pay_entity, NPN) pair(s) with multiple distinct IDs. Most-recent month wins; review:`,
-        conflicts,
-      );
-    }
-  }, [writingAgentIdLookup]);
-
-  // -------------------------------------------------------------------------
-  // #124 — Run Report runner.
-  //
-  // All filter-driven work lives in the runner; clicking Run Report captures
-  // the current (scope, premiumBucket, batchId) snapshot, computes the
-  // export rows, and stores them. The page never recomputes export rows
-  // when filters change — it only flags `runner.stale` so the operator
-  // knows the on-screen result no longer matches their selections.
-  //
-  // The runner closes over the latest source data (allRecords, reconciled,
-  // resolverIndex, weakOverrides) so a background data refresh between
-  // clicks does not require re-binding `run`.
-  // -------------------------------------------------------------------------
+  // ---- Bundle 12.6 — local state machines ----------------------------------
+  type SourceStatus = 'idle' | 'loading' | 'ready' | 'error';
+  type ReportStatus = 'idle' | 'computing' | 'ready' | 'empty' | 'error';
   interface ReportFilters {
     scope: CanonicalScope;
     premiumBucket: PremiumBucket;
     batchId: string | null;
   }
   interface ReportResult {
-    /** Rows after the premium-bucket filter (what the table + CSV use). */
     rows: ExportRow[];
-    /** Rows BEFORE the premium-bucket filter — used by the "(N before premium filter)" hint. */
     allBeforeBucket: ExportRow[];
-    /** Batch month captured at run time (used for the CSV filename). */
     ranBatchMonth: string;
   }
+
+  const [sourceStatus, setSourceStatus] = useState<SourceStatus>('idle');
+  const [reportStatus, setReportStatus] = useState<ReportStatus>('idle');
+  const [sourceError, setSourceError] = useState<Error | null>(null);
+  const [reportError, setReportError] = useState<Error | null>(null);
+  const [displayed, setDisplayed] = useState<ReportResult | null>(null);
+  const [ranFilters, setRanFilters] = useState<ReportFilters | null>(null);
+  const currentRunGen = useRef(0);
+
   const filters: ReportFilters = useMemo(
     () => ({ scope, premiumBucket, batchId: currentBatchId ?? null }),
     [scope, premiumBucket, currentBatchId],
   );
 
-  const runner = useReportRunner<ReportFilters, ReportResult>(filters, async (f) => {
-    // Resolve the run-time batch from the snapshot, NOT the live state, so
-    // the operator's download matches the table they're looking at even if
-    // they change the batch picker afterwards.
+  const resetToIdle = () => {
+    currentRunGen.current += 1;
+    setSourceStatus('idle');
+    setReportStatus('idle');
+    setSourceError(null);
+    setReportError(null);
+    setDisplayed(null);
+    setRanFilters(null);
+  };
+
+  // Filter changes after a run reset to idle (Addition B — MCE supersedes
+  // prior stale-result contract).
+  const lastSeenFiltersRef = useRef<ReportFilters>(filters);
+  useEffect(() => {
+    const prev = lastSeenFiltersRef.current;
+    const changed =
+      prev.scope !== filters.scope ||
+      prev.premiumBucket !== filters.premiumBucket ||
+      prev.batchId !== filters.batchId;
+    if (changed && (sourceStatus !== 'idle' || reportStatus !== 'idle')) {
+      resetToIdle();
+    }
+    lastSeenFiltersRef.current = filters;
+  }, [filters.scope, filters.premiumBucket, filters.batchId]);
+
+  // Addition U — when batch reconciled-data readiness drops, full reset.
+  useEffect(() => {
+    if (
+      currentBatchId &&
+      reconciledLoadedForBatchId !== currentBatchId &&
+      (sourceStatus !== 'idle' || reportStatus !== 'idle' || displayed !== null)
+    ) {
+      resetToIdle();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reconciledLoadedForBatchId, currentBatchId]);
+
+  const isBatchReady =
+    !!currentBatchId && reconciledLoadedForBatchId === currentBatchId;
+
+  // ---- Run pipeline --------------------------------------------------------
+  async function runReport() {
+    if (!isBatchReady) return;
+    if (sourceStatus === 'loading') return;
+
+    currentRunGen.current += 1;
+    const myGen = currentRunGen.current;
+
+    // CAPTURE phase — snapshot everything we need for this run.
+    const f: ReportFilters = filters;
     const ranBatch = batches.find((b: any) => b.id === f.batchId) ?? null;
     const ranBatchMonth: string = ranBatch?.statement_month
       ? String(ranBatch.statement_month).substring(0, 7)
       : '';
     const ranCoveredMonths = getCoveredMonths(ranBatch?.statement_month);
-
-    const ranBatchRecords = allRecords.filter((r) => r.batch_id === f.batchId);
-
-    const ranFilteredEde = computeFilteredEde(
-      ranBatchRecords,
-      reconciled,
-      f.scope,
-      ranCoveredMonths,
-      resolverIndex,
-    );
-
-    // Confirmed weak-match upgrades (mirrors prior derivation).
-    const confirmedUpgradeMemberKeys = (() => {
-      const out = new Set<string>();
-      if (!weakOverrides.size || !reconciled.length) return out;
-      // #129 follow-up: pass periodStart from the run-time batch's
-      // statement_month so this consumer aligns with Dashboard/ManualMatch.
-      const periodStart = ranBatch?.statement_month ?? null;
-      const candidates = findWeakMatches(ranFilteredEde.uniqueMembers, ranBatchRecords, { periodStart });
-      const { confirmedKeys } = applyOverrides(candidates, weakOverrides);
-      if (!confirmedKeys.size) return out;
-      const inScope = filterReconciledByScope(reconciled, f.scope);
-      for (const r of inScope) {
-        if (r.in_back_office) continue;
-        const key = pickStableKey({
-          issuer_subscriber_id: r.issuer_subscriber_id,
-          exchange_subscriber_id: r.exchange_subscriber_id,
-          policy_number: r.policy_number,
-        });
-        if (key && confirmedKeys.has(key)) out.add(r.member_key);
-      }
-      return out;
-    })();
-
-    // Phase 1.5 — align with Dashboard "Expected But Unpaid". The export
-    // pulls unpaid rows from the canonical expected-payment universe
-    // (Matched + true BO Only + EDE Only). Diagnostic rows (BO Active:
-    // Non-current EDE) are excluded by the universe helper.
-    const breakdown = getExpectedPaymentBreakdown(reconciled, f.scope, ranFilteredEde, confirmedUpgradeMemberKeys);
-    const missingMembers = breakdown.unpaidRows;
-
-    const allBeforeBucket: ExportRow[] = [];
-    for (const m of missingMembers) {
-      const memberKey = m.member_key;
-      const records = recordsByMemberKey.get(memberKey) ?? [];
-      const profile = buildMemberProfile(memberKey, {
-        records,
-        referenceMonth: ranBatchMonth,
-        batchMonthByBatchId,
-      });
-
-      const nameVal = profile.applicant_name.value || m.applicant_name || '';
-      const { first, last } = splitNameLastSpace(nameVal);
-
-      const aor = String(m.current_policy_aor ?? '').trim();
-      const aorNpn = extractNpnFromAorString(aor);
-      const npn = aorNpn || String(m.agent_npn ?? '').trim();
-
-      const commRec = records.find((r) => r.source_type === 'COMMISSION' && r.writing_agent_carrier_id);
-      const targetPayEntity = resolveTargetPayEntity({
-        expectedPayEntity: m.expected_pay_entity,
-        actualPayEntity: m.actual_pay_entity,
-        scope: f.scope,
-        agentNpn: npn,
-      });
-      const writingAgentCarrierId = resolveWritingAgentCarrierId({
-        records,
-        carrier: 'Ambetter',
-        payEntity: targetPayEntity,
-        agentNpn: npn,
-        lookup: writingAgentIdLookup,
-      });
-
-      const boRec = records.find((r) => r.source_type === 'BACK_OFFICE' && r.agent_name);
-      const writingAgentName = resolveWritingAgentName({
-        currentPolicyAor: aor,
-        boBrokerName: boRec?.agent_name,
-        commissionWritingAgentName: commRec?.agent_name,
-      });
-
-      const memberId = resolveMemberId({
-        issuerSubscriberId: m.issuer_subscriber_id,
-        policyNumber: m.policy_number,
-        exchangeSubscriberId: m.exchange_subscriber_id,
-      });
-
-      const address = assembleAddressLine({
-        address1: profile.address1.value,
-        city: profile.city.value,
-        state: profile.state.value,
-        zip: profile.zip.value,
-      });
-
-      const bucket = classifyNetPremium(m);
-
-      const estMissing =
-        typeof m.estimated_missing_commission === 'number' && m.estimated_missing_commission > 0
-          ? m.estimated_missing_commission
-          : DEFAULT_COMMISSION_ESTIMATE;
-
-      const hasConflict =
-        profile.applicant_name.conflict ||
-        profile.address1.conflict ||
-        profile.city.conflict ||
-        profile.state.conflict ||
-        profile.zip.conflict ||
-        profile.dob.conflict ||
-        profile.phone.conflict ||
-        profile.email.conflict;
-
-      allBeforeBucket.push({
-        carrierName: 'Ambetter',
-        npn,
-        writingAgentCarrierId,
-        writingAgentName,
-        policyEffectiveDate: resolvePolicyEffectiveDate({
-          records,
-          reconciledEffectiveDate: m.effective_date,
-        }),
-        policyNumber: String(m.policy_number ?? '') || '',
-        memberFirstName: first,
-        memberLastName: last,
-        dob: profile.dob.value || (m.dob ? String(m.dob) : ''),
-        ssn: '',
-        memberId,
-        address,
-        _memberKey: memberKey,
-        _ffmId: profile.ffm_id,
-        _phone: profile.phone,
-        _email: profile.email,
-        _exchangeSubscriberId: String(m.exchange_subscriber_id ?? ''),
-        _issuerSubscriberId: String(m.issuer_subscriber_id ?? ''),
-        _aor: aor,
-        _netPremiumBucket: bucket,
-        _missingReason: m.issue_type || 'Missing from Commission',
-        _estimatedMissingCommission: estMissing,
-        _profile: profile,
-        _hasConflict: hasConflict,
-        _sourceType: classifySourceTypeForRow(m, breakdown.universe),
-      });
+    const reconciledSnapshot = reconciled;
+    const resolverIndexSnapshot = resolverIndex;
+    const batchMonthByBatchIdSnap = new Map<string, string>();
+    for (const b of batches) {
+      batchMonthByBatchIdSnap.set(
+        b.id,
+        b.statement_month ? String(b.statement_month).substring(0, 7) : '',
+      );
     }
 
-    const rows =
-      f.premiumBucket === 'all'
-        ? allBeforeBucket
-        : allBeforeBucket.filter((r) => r._netPremiumBucket === f.premiumBucket);
+    const isLatest = () => myGen === currentRunGen.current;
+    const commit = (fn: () => void) => { if (isLatest()) fn(); };
 
-    return { rows, allBeforeBucket, ranBatchMonth };
-  }, {
-    // Empty bucket = zero displayed rows (after premium filter). The
-    // operator should still see "no rows" as an explicit empty state, not
-    // a populated table.
-    isEmpty: (r) => r.rows.length === 0,
-  });
+    setSourceStatus('loading');
+    setSourceError(null);
+    setReportStatus('idle');
+    setReportError(null);
 
-  // The displayed result set — `null` until the first successful run.
-  const displayed = runner.result;
+    let selectedBatchRecords: any[];
+    let weakOverrides: Map<string, WeakMatchOverride>;
+    try {
+      const [recs, overrides] = await Promise.all([
+        getNormalizedRecords(f.batchId!),
+        loadWeakMatchOverrides().catch(() => new Map<string, WeakMatchOverride>()),
+      ]);
+      selectedBatchRecords = recs || [];
+      weakOverrides = overrides;
+    } catch (err) {
+      if (!isLatest()) return;
+      commit(() => {
+        setSourceError(err instanceof Error ? err : new Error(serializeErrorMessage(err)));
+        setSourceStatus('error');
+      });
+      return;
+    }
+    if (!isLatest()) return;
+
+    // Compute selected-batch-only EE universe.
+    let breakdown: ReturnType<typeof getExpectedPaymentBreakdown>;
+    let missingMembers: any[];
+    try {
+      const ranFilteredEde = computeFilteredEde(
+        selectedBatchRecords,
+        reconciledSnapshot,
+        f.scope,
+        ranCoveredMonths,
+        resolverIndexSnapshot,
+      );
+
+      const periodStart = ranBatch?.statement_month ?? null;
+      const candidates = findWeakMatches(ranFilteredEde.uniqueMembers, selectedBatchRecords, { periodStart });
+      const { confirmedKeys } = applyOverrides(candidates, weakOverrides);
+      const confirmedUpgradeMemberKeys = new Set<string>();
+      if (confirmedKeys.size && reconciledSnapshot.length) {
+        const inScope = filterReconciledByScope(reconciledSnapshot, f.scope);
+        for (const r of inScope) {
+          if (r.in_back_office) continue;
+          const key = pickStableKey({
+            issuer_subscriber_id: r.issuer_subscriber_id,
+            exchange_subscriber_id: r.exchange_subscriber_id,
+            policy_number: r.policy_number,
+          });
+          if (key && confirmedKeys.has(key)) confirmedUpgradeMemberKeys.add(r.member_key);
+        }
+      }
+
+      breakdown = getExpectedPaymentBreakdown(
+        reconciledSnapshot, f.scope, ranFilteredEde, confirmedUpgradeMemberKeys,
+      );
+      missingMembers = breakdown.unpaidRows;
+    } catch (err) {
+      if (!isLatest()) return;
+      commit(() => {
+        setReportError(err instanceof Error ? err : new Error(serializeErrorMessage(err)));
+        setSourceStatus('ready');
+        setReportStatus('error');
+      });
+      return;
+    }
+
+    // Slim cross-batch enrichment + commission-triple loaders.
+    const memberKeys = Array.from(new Set(missingMembers.map((m) => m.member_key).filter(Boolean)));
+    let enrichmentRecords: any[] = [];
+    let commissionTripleRecords: any[] = [];
+    try {
+      // Derive triples from missingMembers using the same target-pay-entity rule.
+      const tripleSet = new Map<string, { carrier: string; payEntity: string; agentNpn: string }>();
+      for (const m of missingMembers) {
+        const aor = String(m.current_policy_aor ?? '').trim();
+        const aorNpn = extractNpnFromAorString(aor);
+        const npn = aorNpn || String(m.agent_npn ?? '').trim();
+        if (!npn) continue;
+        const targetPe = resolveTargetPayEntity({
+          expectedPayEntity: m.expected_pay_entity,
+          actualPayEntity: m.actual_pay_entity,
+          scope: f.scope,
+          agentNpn: npn,
+        });
+        if (!targetPe) continue;
+        const key = `Ambetter|${targetPe.toLowerCase()}|${npn}`;
+        if (!tripleSet.has(key)) {
+          tripleSet.set(key, { carrier: 'Ambetter', payEntity: targetPe, agentNpn: npn });
+        }
+      }
+      const triples = Array.from(tripleSet.values());
+
+      const [enrichRows, commRows] = await Promise.all([
+        memberKeys.length === 0 ? Promise.resolve([]) : getNormalizedRecordsByMemberKeys(memberKeys),
+        triples.length === 0 ? Promise.resolve([]) : getCommissionRecordsByTriples(triples),
+      ]);
+      enrichmentRecords = enrichRows || [];
+      commissionTripleRecords = commRows || [];
+    } catch (err) {
+      if (!isLatest()) return;
+      commit(() => {
+        setSourceError(err instanceof Error ? err : new Error(serializeErrorMessage(err)));
+        setSourceStatus('error');
+      });
+      return;
+    }
+    if (!isLatest()) return;
+
+    commit(() => setSourceStatus('ready'));
+    setReportStatus('computing');
+
+    try {
+      // Build profile-records map: union of selected-batch + cross-batch enrichment.
+      const profileById = new Map<string, any>();
+      for (const r of selectedBatchRecords) if (r.id) profileById.set(r.id, r);
+      for (const r of enrichmentRecords) if (r.id && !profileById.has(r.id)) profileById.set(r.id, r);
+      const profileRecordsByMemberKey = new Map<string, any[]>();
+      for (const r of profileById.values()) {
+        const k = r.member_key;
+        if (!k) continue;
+        const arr = profileRecordsByMemberKey.get(k);
+        if (arr) arr.push(r); else profileRecordsByMemberKey.set(k, [r]);
+      }
+
+      // Build writing-agent-carrier-id lookup from historical commission rows
+      // (cross-batch) PLUS any commission rows in the selected batch.
+      const lookupRecords: any[] = [];
+      for (const r of selectedBatchRecords) {
+        if (r.source_type === 'COMMISSION') lookupRecords.push(r);
+      }
+      const lookupSeen = new Set<string>(lookupRecords.map((r) => r.id).filter(Boolean));
+      for (const r of commissionTripleRecords) {
+        if (!r.id || !lookupSeen.has(r.id)) lookupRecords.push(r);
+      }
+      const writingAgentIdLookup = buildWritingAgentCarrierIdLookup({
+        records: lookupRecords,
+        batchMonthByBatchId: batchMonthByBatchIdSnap,
+      });
+
+      const allBeforeBucket: ExportRow[] = [];
+      for (const m of missingMembers) {
+        const memberKey = m.member_key;
+        const records = profileRecordsByMemberKey.get(memberKey) ?? [];
+        const profile = buildMemberProfile(memberKey, {
+          records,
+          referenceMonth: ranBatchMonth,
+          batchMonthByBatchId: batchMonthByBatchIdSnap,
+        });
+
+        const nameVal = profile.applicant_name.value || m.applicant_name || '';
+        const { first, last } = splitNameLastSpace(nameVal);
+
+        const aor = String(m.current_policy_aor ?? '').trim();
+        const aorNpn = extractNpnFromAorString(aor);
+        const npn = aorNpn || String(m.agent_npn ?? '').trim();
+
+        const commRec = records.find((r) => r.source_type === 'COMMISSION' && r.writing_agent_carrier_id);
+        const targetPayEntity = resolveTargetPayEntity({
+          expectedPayEntity: m.expected_pay_entity,
+          actualPayEntity: m.actual_pay_entity,
+          scope: f.scope,
+          agentNpn: npn,
+        });
+        // Pass commission-triple records too so Tier-1 direct lookup can hit
+        // a historical row when the member's enrichment set has none.
+        const writingAgentCarrierId = resolveWritingAgentCarrierId({
+          records: [...records, ...commissionTripleRecords],
+          carrier: 'Ambetter',
+          payEntity: targetPayEntity,
+          agentNpn: npn,
+          lookup: writingAgentIdLookup,
+        });
+
+        const boRec = records.find((r) => r.source_type === 'BACK_OFFICE' && r.agent_name);
+        const writingAgentName = resolveWritingAgentName({
+          currentPolicyAor: aor,
+          boBrokerName: boRec?.agent_name,
+          commissionWritingAgentName: commRec?.agent_name,
+        });
+
+        const memberId = resolveMemberId({
+          issuerSubscriberId: m.issuer_subscriber_id,
+          policyNumber: m.policy_number,
+          exchangeSubscriberId: m.exchange_subscriber_id,
+        });
+
+        const address = assembleAddressLine({
+          address1: profile.address1.value,
+          city: profile.city.value,
+          state: profile.state.value,
+          zip: profile.zip.value,
+        });
+
+        const bucket = classifyNetPremium(m);
+
+        const estMissing =
+          typeof m.estimated_missing_commission === 'number' && m.estimated_missing_commission > 0
+            ? m.estimated_missing_commission
+            : DEFAULT_COMMISSION_ESTIMATE;
+
+        const hasConflict =
+          profile.applicant_name.conflict ||
+          profile.address1.conflict ||
+          profile.city.conflict ||
+          profile.state.conflict ||
+          profile.zip.conflict ||
+          profile.dob.conflict ||
+          profile.phone.conflict ||
+          profile.email.conflict;
+
+        allBeforeBucket.push({
+          carrierName: 'Ambetter',
+          npn,
+          writingAgentCarrierId,
+          writingAgentName,
+          policyEffectiveDate: resolvePolicyEffectiveDate({
+            records,
+            reconciledEffectiveDate: m.effective_date,
+          }),
+          policyNumber: String(m.policy_number ?? '') || '',
+          memberFirstName: first,
+          memberLastName: last,
+          dob: profile.dob.value || (m.dob ? String(m.dob) : ''),
+          ssn: '',
+          memberId,
+          address,
+          _memberKey: memberKey,
+          _ffmId: profile.ffm_id,
+          _phone: profile.phone,
+          _email: profile.email,
+          _exchangeSubscriberId: String(m.exchange_subscriber_id ?? ''),
+          _issuerSubscriberId: String(m.issuer_subscriber_id ?? ''),
+          _aor: aor,
+          _netPremiumBucket: bucket,
+          _missingReason: m.issue_type || 'Missing from Commission',
+          _estimatedMissingCommission: estMissing,
+          _profile: profile,
+          _hasConflict: hasConflict,
+          _sourceType: classifySourceTypeForRow(m, breakdown.universe),
+        });
+      }
+
+      const rows =
+        f.premiumBucket === 'all'
+          ? allBeforeBucket
+          : allBeforeBucket.filter((r) => r._netPremiumBucket === f.premiumBucket);
+
+      const result: ReportResult = { rows, allBeforeBucket, ranBatchMonth };
+
+      if (!isLatest()) return;
+      commit(() => {
+        setDisplayed(result);
+        setRanFilters(f);
+        setReportStatus(rows.length === 0 ? 'empty' : 'ready');
+      });
+    } catch (err) {
+      if (!isLatest()) return;
+      commit(() => {
+        setReportError(err instanceof Error ? err : new Error(serializeErrorMessage(err)));
+        setReportStatus('error');
+      });
+    }
+  }
 
   function handleDownload() {
-    if (!displayed || !runner.ranFilters) return;
-    // CSV uses the SNAPSHOT result + filters from the last run, not live
-    // filter state. This is the #124 contract: the file matches the
-    // on-screen table even if the operator has since changed filters.
+    if (!displayed || !ranFilters || displayed.rows.length === 0) return;
     const csv = buildMesserCsv(displayed.rows);
     const filename = buildMesserCsvFilename({
-      scope: runner.ranFilters.scope,
+      scope: ranFilters.scope,
       batchMonth: displayed.ranBatchMonth,
-      filter: runner.ranFilters.premiumBucket,
+      filter: ranFilters.premiumBucket,
       downloadDate: new Date(),
     });
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -827,46 +912,56 @@ export default function MissingCommissionExportPage() {
             </div>
           </div>
 
-          {/* #124 — Run Report row. Filters never auto-run; the Run Report
-              button is the only thing that produces results. The download
-              button reflects the SNAPSHOT result (runner.result), not live
-              filter state, so the file always matches the on-screen table. */}
+          {/* Bundle 12.6 — Run Report row. Lazy load on click; no
+              cross-batch query on mount. Filter changes RESET to idle (no
+              stale banner). Download uses snapshot, not live filters. */}
           <div className="flex items-center justify-between pt-2 border-t">
             <div className="text-sm text-muted-foreground" data-testid="report-count">
-              {sourceLoading
-                ? 'Loading cross-batch records…'
-                : runner.status === 'idle'
-                  ? 'Choose filters and click Run Report.'
-                  : runner.status === 'loading'
+              {!isBatchReady
+                ? 'Waiting for batch data…'
+                : sourceStatus === 'loading'
+                  ? 'Loading source records…'
+                  : reportStatus === 'computing'
                     ? 'Running report…'
-                    : runner.status === 'error'
-                      ? 'Run failed. See details below.'
-                      : displayed
-                        ? `${displayed.rows.length} member${displayed.rows.length === 1 ? '' : 's'}`
-                        : ''}
+                    : sourceStatus === 'error'
+                      ? 'Source load failed. See details below.'
+                      : reportStatus === 'error'
+                        ? 'Run failed. See details below.'
+                        : reportStatus === 'idle'
+                          ? 'Choose filters and click Run Report.'
+                          : displayed
+                            ? `${displayed.rows.length} member${displayed.rows.length === 1 ? '' : 's'}`
+                            : ''}
               {displayed && displayed.rows.length !== displayed.allBeforeBucket.length && (
                 <span className="ml-2 text-xs">({displayed.allBeforeBucket.length} before premium filter)</span>
               )}
             </div>
             <div className="flex items-center gap-2">
               <Button
-                onClick={() => runner.run()}
-                disabled={sourceLoading || runner.status === 'loading' || !currentBatchId}
-                variant={runner.status === 'idle' || runner.stale ? 'default' : 'outline'}
+                onClick={() => runReport()}
+                disabled={
+                  !isBatchReady ||
+                  sourceStatus === 'loading' ||
+                  reportStatus === 'computing' ||
+                  sourceStatus === 'error'
+                }
+                variant={reportStatus === 'idle' ? 'default' : 'outline'}
                 data-testid="run-report"
               >
-                {runner.status === 'loading' ? (
+                {sourceStatus === 'loading' || reportStatus === 'computing' ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : runner.stale ? (
-                  <RefreshCw className="h-4 w-4 mr-2" />
                 ) : (
                   <Play className="h-4 w-4 mr-2" />
                 )}
-                {runner.status === 'loading' ? 'Running…' : runner.stale ? 'Re-run Report' : 'Run Report'}
+                {sourceStatus === 'loading' || reportStatus === 'computing' ? 'Running…' : 'Run Report'}
               </Button>
               <Button
                 onClick={handleDownload}
-                disabled={!displayed || displayed.rows.length === 0}
+                disabled={
+                  reportStatus !== 'ready' ||
+                  !displayed ||
+                  displayed.rows.length === 0
+                }
                 variant="outline"
                 data-testid="messer-download"
               >
@@ -877,25 +972,9 @@ export default function MissingCommissionExportPage() {
           </div>
         </div>
 
-        {/* #124 — Stale-filter banner. Old results stay visible (so the
-            operator can still read / download them) but a banner makes it
-            unmissable that filters changed since the last run. */}
-        {runner.stale && (
-          <div
-            role="status"
-            data-testid="stale-banner"
-            className="flex items-center gap-2 rounded-md border border-warning bg-warning/10 px-4 py-2 text-sm text-warning-foreground"
-          >
-            <AlertTriangle className="h-4 w-4 text-warning" />
-            <span className="text-foreground">
-              Filters changed. Click <strong>Re-run Report</strong> to refresh.
-            </span>
-          </div>
-        )}
-
-        {/* #124 — Five explicit content states. Errors NEVER render as a
-            blank table; idle and empty are visually distinct from loading. */}
-        {sourceError ? (
+        {/* Content states. Errors NEVER render as a blank table; idle and
+            empty are visually distinct from loading. */}
+        {sourceStatus === 'error' ? (
           <div
             role="alert"
             data-testid="source-error-state"
@@ -903,17 +982,48 @@ export default function MissingCommissionExportPage() {
           >
             <AlertCircle className="h-8 w-8 mx-auto text-destructive" />
             <div className="text-sm font-medium">Failed to load source records</div>
-            <div className="text-xs text-muted-foreground max-w-md mx-auto">{sourceError.message}</div>
+            <div className="text-xs text-muted-foreground max-w-md mx-auto break-words">
+              {sourceError?.message ?? 'Unknown error'}
+            </div>
+            <Button onClick={() => runReport()} variant="outline" size="sm" data-testid="retry-source">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Retry
+            </Button>
           </div>
-        ) : sourceLoading ? (
+        ) : sourceStatus === 'loading' ? (
           <div
             data-testid="source-loading-state"
             className="rounded-lg border bg-card p-12 text-center space-y-3"
           >
             <Loader2 className="h-8 w-8 mx-auto animate-spin text-muted-foreground" />
-            <div className="text-sm text-muted-foreground">Loading cross-batch records…</div>
+            <div className="text-sm text-muted-foreground">Loading source records…</div>
           </div>
-        ) : runner.status === 'idle' ? (
+        ) : reportStatus === 'computing' ? (
+          <div
+            data-testid="loading-state"
+            className="rounded-lg border bg-card p-12 text-center space-y-3"
+          >
+            <Loader2 className="h-8 w-8 mx-auto animate-spin text-primary" />
+            <div className="text-sm font-medium">Running report…</div>
+            <div className="text-xs text-muted-foreground">Computing missing-commission cohort.</div>
+          </div>
+        ) : reportStatus === 'error' ? (
+          <div
+            role="alert"
+            data-testid="error-state"
+            className="rounded-lg border border-destructive bg-destructive/5 p-8 text-center space-y-3"
+          >
+            <AlertCircle className="h-8 w-8 mx-auto text-destructive" />
+            <div className="text-sm font-medium">Run failed</div>
+            <div className="text-xs text-muted-foreground max-w-md mx-auto break-words">
+              {reportError?.message ?? 'Unknown error'}
+            </div>
+            <Button onClick={() => runReport()} variant="outline" size="sm" data-testid="retry-run">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Run again
+            </Button>
+          </div>
+        ) : reportStatus === 'idle' ? (
           <div
             data-testid="initial-state"
             className="rounded-lg border bg-card p-12 text-center space-y-3"
@@ -924,32 +1034,7 @@ export default function MissingCommissionExportPage() {
               Pick a batch, scope, and premium bucket above. Results will appear here once you run the report.
             </div>
           </div>
-        ) : runner.status === 'loading' ? (
-          <div
-            data-testid="loading-state"
-            className="rounded-lg border bg-card p-12 text-center space-y-3"
-          >
-            <Loader2 className="h-8 w-8 mx-auto animate-spin text-primary" />
-            <div className="text-sm font-medium">Running report…</div>
-            <div className="text-xs text-muted-foreground">Computing missing-commission cohort.</div>
-          </div>
-        ) : runner.status === 'error' ? (
-          <div
-            role="alert"
-            data-testid="error-state"
-            className="rounded-lg border border-destructive bg-destructive/5 p-8 text-center space-y-3"
-          >
-            <AlertCircle className="h-8 w-8 mx-auto text-destructive" />
-            <div className="text-sm font-medium">Run failed</div>
-            <div className="text-xs text-muted-foreground max-w-md mx-auto break-words">
-              {runner.error?.message ?? 'Unknown error'}
-            </div>
-            <Button onClick={() => runner.run()} variant="outline" size="sm" data-testid="retry-run">
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Run again
-            </Button>
-          </div>
-        ) : runner.status === 'empty' ? (
+        ) : reportStatus === 'empty' ? (
           <div
             data-testid="empty-state"
             className="rounded-lg border bg-card p-12 text-center space-y-3"
@@ -961,11 +1046,9 @@ export default function MissingCommissionExportPage() {
             </div>
           </div>
         ) : (
-          // Populated state — the existing preview table, unchanged
-          // visually. Only the data source switched from filteredExportRows
-          // to displayed.rows (the snapshot from the last run).
           <div className="rounded-lg border overflow-auto" data-testid="results-table">
             <Table>
+
             <TableHeader>
               <TableRow>
                 {/* Operator-aid column: FFM ID = issuer_subscriber_id, the
