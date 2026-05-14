@@ -838,6 +838,14 @@ export default function MissingCommissionExportPage() {
         setDisplayed(result);
         setRanFilters(f);
         setReportStatus(rows.length === 0 ? 'empty' : 'ready');
+
+        if (commissionTripleFallbackFailed) {
+          toast({
+            title: 'Report completed with limited commission history',
+            description:
+              'Some Writing Agent Carrier ID values may be blank because the historical commission lookup timed out. The report rows and CSV still completed.',
+          });
+        }
       });
     } catch (err) {
       if (!isLatest()) return;
