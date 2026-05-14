@@ -22,6 +22,10 @@ const mockGetAll = vi.fn();
 const mockGetNormalized = vi.fn();
 const mockGetByMemberKeys = vi.fn();
 const mockGetByTriples = vi.fn();
+const mockToast = vi.fn();
+vi.mock('@/hooks/use-toast', () => ({
+  useToast: () => ({ toast: mockToast }),
+}));
 vi.mock('@/lib/persistence', () => ({
   getAllNormalizedRecords: (...a: any[]) => mockGetAll(...a),
   getNormalizedRecords: (...a: any[]) => mockGetNormalized(...a),
