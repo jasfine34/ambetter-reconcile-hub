@@ -176,9 +176,15 @@ function makeMissingMember(memberKey: string) {
 beforeEach(() => {
   mockUseBatch.mockReset();
   mockGetAll.mockReset();
+  mockGetNormalized.mockReset();
+  mockGetByMemberKeys.mockReset();
+  mockGetByTriples.mockReset();
   mockGetEligible.mockReset();
   mockGetBreakdown.mockReset();
   mockGetAll.mockResolvedValue([]);
+  mockGetNormalized.mockResolvedValue([]);
+  mockGetByMemberKeys.mockResolvedValue([]);
+  mockGetByTriples.mockResolvedValue([]);
   mockGetEligible.mockReturnValue([]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([]));
   mockGetBreakdown.mockReturnValue(buildBreakdownStub([]));
   setBatchContext();
