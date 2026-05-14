@@ -467,6 +467,7 @@ export default function MissingCommissionExportPage() {
     batches, currentBatchId, setCurrentBatchId, reconciled, resolverIndex,
     reconciledLoadedForBatchId, loading: batchLoading,
   } = useBatch();
+  const { toast } = useToast();
   const [scope, setScope] = useState<CanonicalScope>('Coverall');
   const [premiumBucket, setPremiumBucket] = useState<PremiumBucket>('all');
 
