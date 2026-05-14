@@ -632,3 +632,54 @@ describe('MissingCommissionExportPage — v14 Download race close', () => {
     )).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Bundle 12.7 — Commission triple fallback non-fatal
+// ---------------------------------------------------------------------------
+describe('MissingCommissionExportPage — Bundle 12.7 commission triple fallback', () => {
+  it('triple fallback rejects → report completes with warning toast', async () => {
+    const member = {
+      ...makeMissingMember('m-1'),
+      agent_npn: '21055210',
+    };
+    mockGetBreakdown.mockReturnValue(buildBreakdownStub([member]));
+    mockGetByTriples.mockRejectedValueOnce(new Error('canceling statement due to statement timeout'));
+
+    render(<MissingCommissionExportPage />);
+    await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('run-report'));
+    await waitFor(() => expect(screen.getByTestId('results-table')).toBeInTheDocument());
+
+    expect(mockGetByTriples).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/Failed to load source records/i)).not.toBeInTheDocument();
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Report completed with limited commission history',
+        description: expect.stringContaining('Writing Agent Carrier ID'),
+      }),
+    );
+  });
+
+  it('triple fallback resolves normally → no warning toast', async () => {
+    const member = {
+      ...makeMissingMember('m-1'),
+      agent_npn: '21055210',
+    };
+    mockGetBreakdown.mockReturnValue(buildBreakdownStub([member]));
+    mockGetByTriples.mockResolvedValueOnce([]);
+
+    render(<MissingCommissionExportPage />);
+    await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('run-report'));
+    await waitFor(() => expect(screen.getByTestId('results-table')).toBeInTheDocument());
+
+    expect(mockGetByTriples).toHaveBeenCalledTimes(1);
+    expect(mockToast).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Report completed with limited commission history',
+      }),
+    );
+  });
+});
