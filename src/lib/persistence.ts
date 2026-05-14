@@ -504,6 +504,128 @@ export async function getAllNormalizedRecords() {
   return allData;
 }
 
+// ---------------------------------------------------------------------------
+// Bundle 12.6 — Slim cross-batch loaders for MCE.
+//
+// These exist so MCE can stop calling getAllNormalizedRecords() on mount
+// (a select('*') across ~27K active rows that hit statement_timeout). Every
+// new loader applies the canonical active predicate (staging_status='active'
+// AND superseded_at IS NULL), uses an explicit projected column list, chunks
+// the .in(...) input to stay under URL length limits, de-dupes by id, and
+// uses keyset pagination so a single pathological chunk can't run away.
+// ---------------------------------------------------------------------------
+
+/** Projected columns consumed by buildMemberProfile + resolve* helpers. */
+const MCE_ENRICHMENT_COLUMNS =
+  'id,batch_id,created_at,source_type,source_file_label,carrier,member_key,' +
+  'applicant_name,first_name,last_name,dob,policy_number,exchange_subscriber_id,' +
+  'issuer_subscriber_id,agent_name,agent_npn,pay_entity,effective_date,' +
+  'broker_effective_date,client_address_1,client_address_2,client_city,' +
+  'client_state_full,client_zip,writing_agent_carrier_id,premium,net_premium,raw_json';
+
+/** Projected columns for the historical writing-agent-carrier-id fallback. */
+const MCE_COMMISSION_TRIPLE_COLUMNS =
+  'id,batch_id,source_type,carrier,pay_entity,agent_npn,writing_agent_carrier_id,created_at';
+
+const MCE_IN_CHUNK_SIZE = 200;
+
+/**
+ * Slim cross-batch loader keyed by member_key. Returns the projected enrichment
+ * columns for ANY active normalized_record matching one of the supplied keys,
+ * across all batches. Empty input → no DB call.
+ */
+export async function getNormalizedRecordsByMemberKeys(memberKeys: string[]) {
+  if (!memberKeys || memberKeys.length === 0) return [];
+  const uniqueKeys = Array.from(new Set(memberKeys.filter((k) => !!k)));
+  if (uniqueKeys.length === 0) return [];
+  const seen = new Set<string>();
+  const out: any[] = [];
+  for (let i = 0; i < uniqueKeys.length; i += MCE_IN_CHUNK_SIZE) {
+    const chunk = uniqueKeys.slice(i, i + MCE_IN_CHUNK_SIZE);
+    let lastId: string | null = null;
+    while (true) {
+      let q: any = (supabase as any)
+        .from('normalized_records')
+        .select(MCE_ENRICHMENT_COLUMNS)
+        .eq('staging_status', 'active')
+        .is('superseded_at', null)
+        .in('member_key', chunk)
+        .order('id', { ascending: true })
+        .limit(NORMALIZED_PAGE_SIZE);
+      if (lastId !== null) q = q.gt('id', lastId);
+      const { data, error } = await q;
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      for (const row of data) {
+        if (!seen.has(row.id)) { seen.add(row.id); out.push(row); }
+      }
+      if (data.length < NORMALIZED_PAGE_SIZE) break;
+      lastId = data[data.length - 1].id;
+    }
+  }
+  return out;
+}
+
+/**
+ * Slim historical-commission loader keyed by (carrier, pay_entity, agent_npn)
+ * triples. Used to populate the writing_agent_carrier_id fallback for
+ * missing-commission members who have no commission row of their own.
+ *
+ * DB-bounded by source_type='COMMISSION' + active predicate + chunked NPN .in().
+ * Client-side filter then drops rows whose (carrier,pay_entity,agent_npn)
+ * triple is NOT in the requested set. Empty input → no DB call.
+ */
+export async function getCommissionRecordsByTriples(
+  triples: Array<{ carrier: string; payEntity: string; agentNpn: string }>,
+) {
+  if (!triples || triples.length === 0) return [];
+  const norm = (s: string) => (s ?? '').trim();
+  const tripleKey = (c: string, p: string, n: string) =>
+    `${norm(c).toLowerCase()}|${norm(p).toLowerCase()}|${norm(n)}`;
+  const wantSet = new Set<string>();
+  const npnSet = new Set<string>();
+  for (const t of triples) {
+    const npn = norm(t.agentNpn);
+    if (!npn) continue;
+    wantSet.add(tripleKey(t.carrier, t.payEntity, npn));
+    npnSet.add(npn);
+  }
+  if (npnSet.size === 0) return [];
+  const npns = Array.from(npnSet);
+  const seen = new Set<string>();
+  const out: any[] = [];
+  for (let i = 0; i < npns.length; i += MCE_IN_CHUNK_SIZE) {
+    const chunk = npns.slice(i, i + MCE_IN_CHUNK_SIZE);
+    let lastId: string | null = null;
+    while (true) {
+      let q: any = (supabase as any)
+        .from('normalized_records')
+        .select(MCE_COMMISSION_TRIPLE_COLUMNS)
+        .eq('staging_status', 'active')
+        .is('superseded_at', null)
+        .eq('source_type', 'COMMISSION')
+        .in('agent_npn', chunk)
+        .order('id', { ascending: true })
+        .limit(NORMALIZED_PAGE_SIZE);
+      if (lastId !== null) q = q.gt('id', lastId);
+      const { data, error } = await q;
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      for (const row of data) {
+        if (seen.has(row.id)) continue;
+        const k = tripleKey(row.carrier ?? '', row.pay_entity ?? '', row.agent_npn ?? '');
+        if (!wantSet.has(k)) continue;
+        if (!norm(row.writing_agent_carrier_id ?? '')) continue;
+        seen.add(row.id);
+        out.push(row);
+      }
+      if (data.length < NORMALIZED_PAGE_SIZE) break;
+      lastId = data[data.length - 1].id;
+    }
+  }
+  return out;
+}
+
 /**
  * Returns ALL normalized records for a batch, including superseded rows from
  * prior snapshot uploads. Use this when you need to reason about snapshot
