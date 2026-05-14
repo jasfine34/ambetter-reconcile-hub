@@ -132,6 +132,21 @@ vi.mock('@/components/ui/tooltip', () => ({
   TooltipContent: ({ children }: any) => <>{children}</>,
 }));
 
+vi.mock('@/components/ui/select', () => ({
+  Select: ({ value, onValueChange, children }: any) => (
+    <select value={value} onChange={(e) => onValueChange?.(e.target.value)}>{children}</select>
+  ),
+  SelectTrigger: () => null,
+  SelectContent: ({ children }: any) => <>{children}</>,
+  SelectItem: ({ value, children }: any) => <option value={value}>{children}</option>,
+  SelectValue: () => null,
+  SelectGroup: ({ children }: any) => <>{children}</>,
+  SelectLabel: ({ children }: any) => <>{children}</>,
+  SelectSeparator: () => null,
+  SelectScrollUpButton: () => null,
+  SelectScrollDownButton: () => null,
+}));
+
 import MissingCommissionExportPage from '@/pages/MissingCommissionExportPage';
 
 // ---- Helpers --------------------------------------------------------------
