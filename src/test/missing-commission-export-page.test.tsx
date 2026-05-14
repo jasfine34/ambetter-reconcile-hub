@@ -267,24 +267,22 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
     expect(screen.queryByTestId('stale-banner')).not.toBeInTheDocument();
   });
 
-  it('stale-filter state: changing filters after a run shows stale banner; old rows remain visible', async () => {
+  it('Bundle 12.6: changing filters after a run RESETS to idle (no stale banner; old rows cleared)', async () => {
     mockGetEligible.mockReturnValue([makeMissingMember('m-1')]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([makeMissingMember('m-1')]));
-    // Render once to capture props, then we'll re-render with a mutated currentBatchId.
-    setBatchContext({ currentBatchId: BATCH_JAN.id });
+    setBatchContext({ currentBatchId: BATCH_JAN.id, reconciledLoadedForBatchId: BATCH_JAN.id });
     const { rerender } = render(<MissingCommissionExportPage />);
     await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
 
     fireEvent.click(screen.getByTestId('run-report'));
     await waitFor(() => expect(screen.getByTestId('results-table')).toBeInTheDocument());
 
-    // Change filters — flip currentBatchId via the context mock and re-render
-    setBatchContext({ currentBatchId: BATCH_FEB.id });
+    // Change Month — MCE resets to idle, no stale banner, table gone.
+    setBatchContext({ currentBatchId: BATCH_FEB.id, reconciledLoadedForBatchId: BATCH_FEB.id });
     rerender(<MissingCommissionExportPage />);
 
-    await waitFor(() => expect(screen.getByTestId('stale-banner')).toBeInTheDocument());
-    // Old results still visible
-    expect(screen.getByTestId('results-table')).toBeInTheDocument();
-    expect(screen.getByTestId('run-report')).toHaveTextContent(/Re-run Report/i);
+    await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
+    expect(screen.queryByTestId('stale-banner')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('results-table')).not.toBeInTheDocument();
   });
 
   it('download uses last-run snapshot, not current edited filters', async () => {
