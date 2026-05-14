@@ -999,6 +999,7 @@ export default function DashboardPage() {
           </Button>
           <RebuildBatchButton />
           <RebuildAllBatchesButton />
+          <RebuildCrossBatchClearingsButton />
           <BatchSelector />
         </div>
       </div>
