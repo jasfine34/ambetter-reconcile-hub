@@ -77,6 +77,10 @@ export function evaluateCrossBatchAmountClearing(args: {
     else ignored.push(c);
   }
 
+  const positivesSum = positives.reduce((s, p) => s + Math.abs(p.commission_amount ?? 0), 0);
+  const reversalsAbsSum = reversals.reduce((s, r) => s + Math.abs(r.commission_amount ?? 0), 0);
+  const totalNet = positivesSum - reversalsAbsSum;
+
   const threshold = args.expected_amount * 0.7;
   const baseState = {
     threshold_amount: threshold,
@@ -85,16 +89,6 @@ export function evaluateCrossBatchAmountClearing(args: {
     ignoredRecordIds: ignored.map(i => i.id),
   };
 
-  if (positives.length === 0 && reversals.length > 0) {
-    return {
-      ...empty,
-      ...baseState,
-      actual_reversal_amount: reversals.reduce((s, r) => s + (r.commission_amount ?? 0), 0),
-      actual_net_amount: reversals.reduce((s, r) => s + (r.commission_amount ?? 0), 0),
-      clearing_state: 'manual_review_required',
-      manual_review_reason: 'reversal_without_prior_full_clear',
-    };
-  }
   if (positives.length === 0 && reversals.length === 0 && ignored.length > 0) {
     return {
       ...empty,
@@ -114,20 +108,45 @@ export function evaluateCrossBatchAmountClearing(args: {
     };
   }
 
-  const all = [...positives, ...reversals].sort((a, b) => {
+  const signedRows = [
+    ...positives.map(p => ({ ...p, _signed: Math.abs(p.commission_amount ?? 0) })),
+    ...reversals.map(r => ({ ...r, _signed: -Math.abs(r.commission_amount ?? 0) })),
+  ].sort((a, b) => {
     if (a.statement_month !== b.statement_month) return a.statement_month < b.statement_month ? -1 : 1;
     const ac = a.created_at ?? '';
     const bc = b.created_at ?? '';
     return ac < bc ? -1 : ac > bc ? 1 : 0;
   });
 
+  const clearingStatementMonths = Array.from(
+    new Set(signedRows.map(r => r.statement_month))
+  ).sort();
+
   let net = 0;
   let firstFullClear: string | null = null;
   let reversedAt: string | null = null;
-  const months = new Set<string>();
-  for (const r of all) {
-    net += r.commission_amount ?? 0;
-    months.add(r.statement_month);
+  let reachedThresholdEver = false;
+
+  for (const r of signedRows) {
+    const isReversal = r._signed < 0;
+
+    if (isReversal && !reachedThresholdEver) {
+      return {
+        ...baseState,
+        clearing_state: 'manual_review_required',
+        manual_review_reason: 'reversal_without_prior_full_clear',
+        actual_positive_amount: positivesSum,
+        actual_reversal_amount: reversalsAbsSum,
+        actual_net_amount: totalNet,
+        remainder_owed: args.expected_amount,
+        clearingStatementMonths,
+      };
+    }
+
+    net += r._signed;
+
+    if (net >= threshold) reachedThresholdEver = true;
+
     if (firstFullClear == null && net >= threshold) {
       firstFullClear = r.statement_month;
     } else if (firstFullClear != null && reversedAt == null && net < threshold) {
@@ -135,22 +154,17 @@ export function evaluateCrossBatchAmountClearing(args: {
     }
   }
 
-  const positivesSum = positives.reduce((s, p) => s + (p.commission_amount ?? 0), 0);
-  const reversalsSum = reversals.reduce((s, r) => s + (r.commission_amount ?? 0), 0);
-  const totalNet = positivesSum + reversalsSum;
   const remainder = Math.max(0, args.expected_amount - totalNet);
-
-  const monthsList = Array.from(months).sort();
 
   if (reversedAt) {
     return {
       ...baseState,
       clearing_state: 'cleared_then_reversed',
       actual_positive_amount: positivesSum,
-      actual_reversal_amount: reversalsSum,
+      actual_reversal_amount: reversalsAbsSum,
       actual_net_amount: totalNet,
       remainder_owed: remainder,
-      clearingStatementMonths: monthsList,
+      clearingStatementMonths,
       firstFullClearStatementMonth: firstFullClear,
       reversedAtStatementMonth: reversedAt,
     };
@@ -160,10 +174,10 @@ export function evaluateCrossBatchAmountClearing(args: {
       ...baseState,
       clearing_state: 'fully_cleared',
       actual_positive_amount: positivesSum,
-      actual_reversal_amount: reversalsSum,
+      actual_reversal_amount: reversalsAbsSum,
       actual_net_amount: totalNet,
       remainder_owed: remainder,
-      clearingStatementMonths: monthsList,
+      clearingStatementMonths,
       firstFullClearStatementMonth: firstFullClear,
     };
   }
@@ -171,9 +185,9 @@ export function evaluateCrossBatchAmountClearing(args: {
     ...baseState,
     clearing_state: 'partially_cleared',
     actual_positive_amount: positivesSum,
-    actual_reversal_amount: reversalsSum,
+    actual_reversal_amount: reversalsAbsSum,
     actual_net_amount: totalNet,
     remainder_owed: remainder,
-    clearingStatementMonths: monthsList,
+    clearingStatementMonths,
   };
 }

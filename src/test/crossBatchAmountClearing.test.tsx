@@ -87,4 +87,94 @@ describe('evaluateCrossBatchAmountClearing', () => {
     const r = evaluateCrossBatchAmountClearing({ expected_amount: 100, candidates: [c('a', 80, '2026-03'), c('b', 10, '2026-03')] });
     expect(r.clearingStatementMonths).toEqual(['2026-03']);
   });
+
+  // v11 — amount-predicate fixes
+  it('#1 $80 + -$20 → cleared_then_reversed with absolute reversal', () => {
+    const r = evaluateCrossBatchAmountClearing({
+      expected_amount: 100,
+      candidates: [c('a', 80, '2026-02'), c('b', -20, '2026-03')],
+    });
+    expect(r.clearing_state).toBe('cleared_then_reversed');
+    expect(r.firstFullClearStatementMonth).toBe('2026-02');
+    expect(r.reversedAtStatementMonth).toBe('2026-03');
+    expect(r.actual_positive_amount).toBe(80);
+    expect(r.actual_reversal_amount).toBe(20);
+    expect(r.actual_net_amount).toBe(60);
+    expect(r.remainder_owed).toBe(40);
+  });
+
+  it('#2 clawback-hinted positive amount subtracts from net', () => {
+    const r = evaluateCrossBatchAmountClearing({
+      expected_amount: 100,
+      candidates: [c('a', 80, '2026-02'), c('b', 20, '2026-03', { transaction_type: 'clawback' })],
+    });
+    expect(r.clearing_state).toBe('cleared_then_reversed');
+    expect(r.actual_reversal_amount).toBe(20);
+    expect(r.actual_net_amount).toBe(60);
+  });
+
+  it('#3 reversal before any positive → manual_review_required', () => {
+    const r = evaluateCrossBatchAmountClearing({
+      expected_amount: 100,
+      candidates: [c('a', -100, '2026-02'), c('b', 100, '2026-03')],
+    });
+    expect(r.clearing_state).toBe('manual_review_required');
+    expect(r.manual_review_reason).toBe('reversal_without_prior_full_clear');
+  });
+
+  it('#4 +$100 + -$100 + +$100 → cleared_then_reversed terminal', () => {
+    const r = evaluateCrossBatchAmountClearing({
+      expected_amount: 100,
+      candidates: [c('a', 100, '2026-02'), c('b', -100, '2026-03'), c('d', 100, '2026-04')],
+    });
+    expect(r.clearing_state).toBe('cleared_then_reversed');
+    expect(r.firstFullClearStatementMonth).toBe('2026-02');
+    expect(r.reversedAtStatementMonth).toBe('2026-03');
+    expect(r.actual_positive_amount).toBe(200);
+    expect(r.actual_reversal_amount).toBe(100);
+    expect(r.actual_net_amount).toBe(100);
+  });
+
+  it('#5 single -$100 → manual_review with absolute reversal', () => {
+    const r = evaluateCrossBatchAmountClearing({
+      expected_amount: 100,
+      candidates: [c('a', -100, '2026-02')],
+    });
+    expect(r.clearing_state).toBe('manual_review_required');
+    expect(r.manual_review_reason).toBe('reversal_without_prior_full_clear');
+    expect(r.actual_reversal_amount).toBe(100);
+    expect(r.actual_net_amount).toBe(-100);
+  });
+
+  it('#6 fully_cleared with reversal staying above threshold', () => {
+    const r = evaluateCrossBatchAmountClearing({
+      expected_amount: 100,
+      candidates: [c('a', 100, '2026-02'), c('b', -20, '2026-03')],
+    });
+    expect(r.clearing_state).toBe('fully_cleared');
+    expect(r.actual_reversal_amount).toBe(20);
+    expect(r.actual_net_amount).toBe(80);
+  });
+
+  it('#7 clawback hint with large positive remains fully_cleared', () => {
+    const r = evaluateCrossBatchAmountClearing({
+      expected_amount: 100,
+      candidates: [c('a', 200, '2026-02'), c('b', 50, '2026-03', { transaction_type: 'clawback' })],
+    });
+    expect(r.clearing_state).toBe('fully_cleared');
+    expect(r.actual_reversal_amount).toBe(50);
+    expect(r.actual_net_amount).toBe(150);
+  });
+
+  it('#8 partial positive then reversal before threshold → manual_review', () => {
+    const r = evaluateCrossBatchAmountClearing({
+      expected_amount: 100,
+      candidates: [c('a', 50, '2026-02'), c('b', -10, '2026-03'), c('d', 50, '2026-04')],
+    });
+    expect(r.clearing_state).toBe('manual_review_required');
+    expect(r.manual_review_reason).toBe('reversal_without_prior_full_clear');
+    expect(r.actual_positive_amount).toBe(100);
+    expect(r.actual_reversal_amount).toBe(10);
+    expect(r.actual_net_amount).toBe(90);
+  });
 });
