@@ -574,19 +574,10 @@ describe('MissingCommissionExportPage — v14 Download race close', () => {
 
   it('changing Scope disables Download immediately (filters drift)', async () => {
     await runOnce();
-    // Scope select uses Radix; flip via the underlying state by clicking
-    // the Scope trigger and choosing a new option. Easier: rerender with
-    // the same filters via state — instead exercise via batch swap below
-    // for batchId. For Scope drift we can simulate by clicking premium
-    // which already covers the same code path; we still want a Scope test.
-    // Use a programmatic approach: dispatch onValueChange via the radix
-    // hidden combobox. As a robust alternative, click any other bucket
-    // and then change scope through the select trigger's keyboard API.
-    // Fallback: trigger by reseting batch context with a different scope is
-    // not possible (scope is local state). So we simulate via the bucket
-    // route below — already covered. Mark scope coverage via the Month
-    // change test instead.
-    // (kept as no-op to preserve test count without flakiness)
+    const selects = screen.getAllByRole('combobox');
+    const scopeSelect = selects[2] as HTMLSelectElement;
+    fireEvent.change(scopeSelect, { target: { value: 'Vix' } });
+    expect((screen.getByTestId('messer-download') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('changing Month (batchId) disables Download immediately (filters drift)', async () => {
