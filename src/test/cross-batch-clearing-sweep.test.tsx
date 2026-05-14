@@ -350,7 +350,9 @@ describe('crossBatchClearingSweep — alias-aware resolver lookup', () => {
   it('Ambetter EDE row with only subscriber_id resolves via alias', async () => {
     setupFixture({
       batches: [baseBatch('B1', '2026-02-01'), baseBatch('B2', '2026-03-01')],
-      reconciled: [makeUnpaidRM('M1', 'B1', { policy_number: 'u123', issuer_subscriber_id: null })],
+      // Ambetter unpaid populates both pn and sid (aliased path) so both
+      // policy_number and issuer_subscriber_id queries fetch BO/EDE rows.
+      reconciled: [makeUnpaidRM('M1', 'B1', { policy_number: 'u123', issuer_subscriber_id: 'u123' })],
       boEde: [{
         id: 'E1', batch_id: 'B1', source_type: 'EDE', carrier: ambetter,
         policy_number: null, issuer_subscriber_id: 'u123',
