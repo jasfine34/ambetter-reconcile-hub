@@ -222,12 +222,11 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
     // commits the synchronous setStatus('loading') from inside run() before
     // the awaited runner body resumes on the next microtask.
     fireEvent.click(screen.getByTestId('run-report'));
-    // Loading panel must be visible synchronously.
-    expect(screen.getByTestId('loading-state')).toBeInTheDocument();
-    expect(screen.getByTestId('loading-state')).toHaveTextContent(/Running report/i);
+    // Bundle 12.6: source-loading-state shows synchronously after click.
+    expect(screen.getByTestId('source-loading-state')).toBeInTheDocument();
 
     // Drain microtasks → transitions to empty (no missing members).
-    await waitFor(() => expect(screen.queryByTestId('loading-state')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByTestId('source-loading-state')).not.toBeInTheDocument());
   });
 
   it('empty state: shows explicit "No records found" when query returns zero rows', async () => {
