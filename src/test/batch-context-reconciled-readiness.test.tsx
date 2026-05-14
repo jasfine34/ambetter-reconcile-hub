@@ -167,6 +167,7 @@ describe('BatchContext — generation guard for stale resolves/rejects', () => {
     await flushMicrotasks();
 
     expect(ctx!.reconciled).toEqual(snap.reconciled);
+    expect(ctx!.debugStats).toEqual(snap.debugStats);
     expect(ctx!.reconciledLoadedForBatchId).toEqual(snap.reconciledLoadedForBatchId);
     expect(ctx!.loading).toEqual(snap.loading);
 
@@ -199,6 +200,7 @@ describe('BatchContext — generation guard for stale resolves/rejects', () => {
     await flushMicrotasks();
 
     expect(ctx!.reconciled).toEqual(snap.reconciled);
+    expect(ctx!.debugStats).toEqual(snap.debugStats);
     expect(ctx!.reconciledLoadedForBatchId).toEqual(snap.reconciledLoadedForBatchId);
     expect(ctx!.loading).toEqual(snap.loading);
 
