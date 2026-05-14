@@ -443,10 +443,28 @@ export function buildMesserCsv(rows: ExportRow[]): string {
 // Page
 // ---------------------------------------------------------------------------
 
+/**
+ * v14 — Filter-match helper for Download-race close. Compares the fields
+ * actually stored in ReportFilters: scope, premiumBucket, batchId. Carrier
+ * is invariant in MCE today (UI control disabled, hard-coded to Ambetter)
+ * and is therefore intentionally NOT compared here.
+ */
+export function filtersMatchRanFilters(
+  current: { scope: CanonicalScope; premiumBucket: PremiumBucket; batchId: string | null },
+  ran: { scope: CanonicalScope; premiumBucket: PremiumBucket; batchId: string | null } | null,
+): boolean {
+  if (!ran) return false;
+  return (
+    current.scope === ran.scope &&
+    current.premiumBucket === ran.premiumBucket &&
+    current.batchId === ran.batchId
+  );
+}
+
 export default function MissingCommissionExportPage() {
   const {
     batches, currentBatchId, setCurrentBatchId, reconciled, resolverIndex,
-    reconciledLoadedForBatchId,
+    reconciledLoadedForBatchId, loading: batchLoading,
   } = useBatch();
   const [scope, setScope] = useState<CanonicalScope>('Coverall');
   const [premiumBucket, setPremiumBucket] = useState<PremiumBucket>('all');
@@ -516,7 +534,18 @@ export default function MissingCommissionExportPage() {
   }, [reconciledLoadedForBatchId, currentBatchId]);
 
   const isBatchReady =
-    !!currentBatchId && reconciledLoadedForBatchId === currentBatchId;
+    !!currentBatchId &&
+    reconciledLoadedForBatchId === currentBatchId &&
+    batchLoading === false;
+
+  // v14 — single derived Download enable computation. Used at BOTH the
+  // onClick handler guard and the disabled prop to prevent drift.
+  const isDownloadable =
+    reportStatus === 'ready' &&
+    !!displayed &&
+    displayed.rows.length > 0 &&
+    filtersMatchRanFilters(filters, ranFilters) &&
+    isBatchReady;
 
   // ---- Run pipeline --------------------------------------------------------
   async function runReport() {
@@ -812,7 +841,7 @@ export default function MissingCommissionExportPage() {
   }
 
   function handleDownload() {
-    if (!displayed || !ranFilters || displayed.rows.length === 0) return;
+    if (!isDownloadable || !displayed || !ranFilters) return;
     const csv = buildMesserCsv(displayed.rows);
     const filename = buildMesserCsvFilename({
       scope: ranFilters.scope,
@@ -957,11 +986,7 @@ export default function MissingCommissionExportPage() {
               </Button>
               <Button
                 onClick={handleDownload}
-                disabled={
-                  reportStatus !== 'ready' ||
-                  !displayed ||
-                  displayed.rows.length === 0
-                }
+                disabled={!isDownloadable}
                 variant="outline"
                 data-testid="messer-download"
               >
