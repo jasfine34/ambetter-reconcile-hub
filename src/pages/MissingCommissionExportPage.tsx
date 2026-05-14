@@ -30,6 +30,7 @@ import {
   getNormalizedRecordsByMemberKeys,
   getCommissionRecordsByTriples,
 } from '@/lib/persistence';
+import { useToast } from '@/hooks/use-toast';
 import {
   buildMemberProfile,
   splitNameLastSpace,
@@ -466,6 +467,7 @@ export default function MissingCommissionExportPage() {
     batches, currentBatchId, setCurrentBatchId, reconciled, resolverIndex,
     reconciledLoadedForBatchId, loading: batchLoading,
   } = useBatch();
+  const { toast } = useToast();
   const [scope, setScope] = useState<CanonicalScope>('Coverall');
   const [premiumBucket, setPremiumBucket] = useState<PremiumBucket>('all');
 
@@ -646,6 +648,8 @@ export default function MissingCommissionExportPage() {
     const memberKeys = Array.from(new Set(missingMembers.map((m) => m.member_key).filter(Boolean)));
     let enrichmentRecords: any[] = [];
     let commissionTripleRecords: any[] = [];
+    let commissionTripleFallbackFailed = false;
+
     try {
       // Derive triples from missingMembers using the same target-pay-entity rule.
       const tripleSet = new Map<string, { carrier: string; payEntity: string; agentNpn: string }>();
@@ -668,13 +672,17 @@ export default function MissingCommissionExportPage() {
       }
       const triples = Array.from(tripleSet.values());
 
-      const [enrichRows, commRows] = await Promise.all([
-        memberKeys.length === 0 ? Promise.resolve([]) : getNormalizedRecordsByMemberKeys(memberKeys),
-        triples.length === 0 ? Promise.resolve([]) : getCommissionRecordsByTriples(triples),
-      ]);
-      enrichmentRecords = enrichRows || [];
-      commissionTripleRecords = commRows || [];
+      enrichmentRecords = memberKeys.length === 0 ? [] : await getNormalizedRecordsByMemberKeys(memberKeys);
+
+      try {
+        commissionTripleRecords = triples.length === 0 ? [] : await getCommissionRecordsByTriples(triples);
+      } catch (error) {
+        commissionTripleFallbackFailed = true;
+        commissionTripleRecords = [];
+        console.warn('Missing Commission Export commission-triple fallback failed; continuing without fallback enrichment.', error);
+      }
     } catch (err) {
+      console.error('Failed to load Missing Commission Export source records', err);
       if (!isLatest()) return;
       commit(() => {
         setSourceError(err instanceof Error ? err : new Error(serializeErrorMessage(err)));
@@ -830,6 +838,14 @@ export default function MissingCommissionExportPage() {
         setDisplayed(result);
         setRanFilters(f);
         setReportStatus(rows.length === 0 ? 'empty' : 'ready');
+
+        if (commissionTripleFallbackFailed) {
+          toast({
+            title: 'Report completed with limited commission history',
+            description:
+              'Some Writing Agent Carrier ID values may be blank because the historical commission lookup timed out. The report rows and CSV still completed.',
+          });
+        }
       });
     } catch (err) {
       if (!isLatest()) return;
