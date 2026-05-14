@@ -16,7 +16,7 @@
  * NO persisted-data changes. NO RECONCILE_LOGIC_VERSION bump (UI/export-only,
  * same precedent as #90).
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useBatch } from '@/contexts/BatchContext';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -24,9 +24,12 @@ import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Download, Info, AlertTriangle, Play, Loader2, RefreshCw, AlertCircle, Inbox } from 'lucide-react';
-import { useReportRunner } from '@/hooks/useReportRunner';
 import Papa from 'papaparse';
-import { getAllNormalizedRecords } from '@/lib/persistence';
+import {
+  getNormalizedRecords,
+  getNormalizedRecordsByMemberKeys,
+  getCommissionRecordsByTriples,
+} from '@/lib/persistence';
 import {
   buildMemberProfile,
   splitNameLastSpace,
@@ -51,6 +54,7 @@ import {
   pickStableKey,
   type WeakMatchOverride,
 } from '@/lib/weakMatch';
+
 
 type PremiumBucket = 'all' | 'zero_premium' | 'has_premium';
 
