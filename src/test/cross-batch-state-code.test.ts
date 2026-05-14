@@ -39,4 +39,19 @@ describe('normalizeUsStateCode', () => {
   it('case insensitivity for full name', () => {
     expect(normalizeUsStateCode('NEW YORK')).toBe('NY');
   });
+  it('whitespace-padded two-letter code', () => {
+    expect(normalizeUsStateCode(' FL ')).toBe('FL');
+  });
+  it('lowercase two-letter code', () => {
+    expect(normalizeUsStateCode('ny')).toBe('NY');
+  });
+  it('full name lowercase', () => {
+    expect(normalizeUsStateCode('new york')).toBe('NY');
+  });
+  it('undefined returns null', () => {
+    expect(normalizeUsStateCode(undefined)).toBeNull();
+  });
+  it('Guam full name', () => {
+    expect(normalizeUsStateCode('Guam')).toBe('GU');
+  });
 });

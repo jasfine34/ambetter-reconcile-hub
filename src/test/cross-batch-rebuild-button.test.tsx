@@ -110,4 +110,44 @@ describe('RebuildCrossBatchClearingsButton', () => {
     expect(typeof arg.shouldContinue).toBe('function');
     expect(arg.shouldContinue()).toBe(true);
   });
+
+  // v11 — observable behavior for each abort variant
+  const abortVariants: Array<{ reason: string; msg: string }> = [
+    { reason: 'no_upload_batches', msg: 'No upload batches loaded; aborting sweep to prevent accidental clearing wipe.' },
+    { reason: 'no_valid_batch_months', msg: 'No upload batches have a valid statement month; aborting sweep to prevent accidental clearing wipe.' },
+    { reason: 'upload_batches_load_failed', msg: 'Failed to load upload batches; aborting sweep to prevent accidental clearing wipe.' },
+    { reason: 'stale_generation', msg: 'Sweep aborted because a newer rebuild was started.' },
+  ];
+  for (const v of abortVariants) {
+    it(`abortReason='${v.reason}' surfaces destructive toast and re-enables button`, async () => {
+      sweepMock.mockResolvedValueOnce({
+        run_id: 'r', clearingRowsWritten: 0, inputErrors: [], aborted: true,
+        abortReason: v.reason, errorMessage: v.msg,
+      });
+      render(<RebuildCrossBatchClearingsButton />);
+      fireEvent.click(screen.getByRole('button', { name: /Rebuild Cross-Batch Clearings/i }));
+      await waitFor(() => screen.getByText(/Rebuild Cross-Batch Clearings\?/i));
+      fireEvent.click(screen.getByRole('button', { name: /^Rebuild$/ }));
+      await waitFor(() => expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({
+        variant: 'destructive', description: v.msg,
+      })));
+      expect(sweepMock).toHaveBeenCalledTimes(1);
+      // success toast not emitted
+      expect(toastMock).not.toHaveBeenCalledWith(expect.objectContaining({ title: 'Cross-batch clearings rebuilt' }));
+      // button re-enabled
+      expect(screen.getByRole('button', { name: /Rebuild Cross-Batch Clearings/i })).not.toBeDisabled();
+    });
+  }
+
+  it('rejected sweep error message is surfaced verbatim in toast', async () => {
+    sweepMock.mockRejectedValueOnce(new Error('detailed boom'));
+    render(<RebuildCrossBatchClearingsButton />);
+    fireEvent.click(screen.getByRole('button', { name: /Rebuild Cross-Batch Clearings/i }));
+    await waitFor(() => screen.getByText(/Rebuild Cross-Batch Clearings\?/i));
+    fireEvent.click(screen.getByRole('button', { name: /^Rebuild$/ }));
+    await waitFor(() => expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({
+      variant: 'destructive', description: 'detailed boom',
+    })));
+    expect(screen.getByRole('button', { name: /Rebuild Cross-Batch Clearings/i })).not.toBeDisabled();
+  });
 });
