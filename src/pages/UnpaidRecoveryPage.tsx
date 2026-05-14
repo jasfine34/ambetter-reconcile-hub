@@ -533,8 +533,18 @@ export default function UnpaidRecoveryPage() {
         </Button>
       </div>
 
-      <div className="text-sm text-muted-foreground" data-testid="ur-count">
-        Showing {filteredRows.length.toLocaleString()} of {unpaidRows.length.toLocaleString()} unpaid policies
+      <div className="flex items-center gap-3 flex-wrap">
+        <Button
+          variant={showReversed ? 'default' : 'outline'}
+          size="sm"
+          onClick={toggleReversedFilter}
+          data-testid="ur-reversed-toggle"
+        >
+          Cleared then reversed ({partition.reversed.length})
+        </Button>
+        <div className="text-sm text-muted-foreground" data-testid="ur-count">
+          Showing {filteredRows.length.toLocaleString()} of {rawUnpaidRows.length.toLocaleString()} unpaid policies
+        </div>
       </div>
 
       <div className="rounded-lg border overflow-auto">
