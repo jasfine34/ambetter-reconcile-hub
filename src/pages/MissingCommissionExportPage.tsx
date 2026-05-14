@@ -443,10 +443,28 @@ export function buildMesserCsv(rows: ExportRow[]): string {
 // Page
 // ---------------------------------------------------------------------------
 
+/**
+ * v14 — Filter-match helper for Download-race close. Compares the fields
+ * actually stored in ReportFilters: scope, premiumBucket, batchId. Carrier
+ * is invariant in MCE today (UI control disabled, hard-coded to Ambetter)
+ * and is therefore intentionally NOT compared here.
+ */
+export function filtersMatchRanFilters(
+  current: { scope: CanonicalScope; premiumBucket: PremiumBucket; batchId: string | null },
+  ran: { scope: CanonicalScope; premiumBucket: PremiumBucket; batchId: string | null } | null,
+): boolean {
+  if (!ran) return false;
+  return (
+    current.scope === ran.scope &&
+    current.premiumBucket === ran.premiumBucket &&
+    current.batchId === ran.batchId
+  );
+}
+
 export default function MissingCommissionExportPage() {
   const {
     batches, currentBatchId, setCurrentBatchId, reconciled, resolverIndex,
-    reconciledLoadedForBatchId,
+    reconciledLoadedForBatchId, loading: batchLoading,
   } = useBatch();
   const [scope, setScope] = useState<CanonicalScope>('Coverall');
   const [premiumBucket, setPremiumBucket] = useState<PremiumBucket>('all');
