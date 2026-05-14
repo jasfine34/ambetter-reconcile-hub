@@ -17,7 +17,7 @@ export async function loadCarrierCompRates(
   let query = supabase
     .from('carrier_comp_rates')
     .select(
-      'rate_key, carrier_key, carrier_display, state_code, plan_variant, comp_basis, calculation_basis, rate_value, rate_unit, member_min, member_max, member_cap, effective_year, support_status, unsupported_reason',
+      'id, rate_key, carrier_key, carrier_display, state_code, plan_variant, comp_basis, calculation_basis, rate_value, rate_unit, member_min, member_max, member_cap, effective_year, support_status, unsupported_reason',
     )
     .eq('effective_year', effectiveYear);
   if (options.carrierKey) query = query.eq('carrier_key', options.carrierKey);
