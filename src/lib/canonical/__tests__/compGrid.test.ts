@@ -186,10 +186,10 @@ describe('getExpectedCommission — calculation_basis math', () => {
     expect(r.expectedAmount).toBe(200 * 12);
     expect(r.rateRecordId).toBe(rows[1].id);
   });
-  it('pmpy = rate * members (months ignored)', () => {
-    const row = mk({ calculation_basis: 'pmpy', comp_basis: 'pmpy', rate_value: 50 });
-    const r = getExpectedCommission(baseArgs({ members: 4, months: 6 }), [row]);
-    expect(r.expectedAmount).toBe(50 * 4);
+  it('pmpy = rate * members * (months / 12), rounded to cents', () => {
+    const row = mk({ calculation_basis: 'pmpy', comp_basis: 'pmpy', rate_value: 100 });
+    const r = getExpectedCommission(baseArgs({ members: 1, months: 1 }), [row]);
+    expect(r.expectedAmount).toBe(8.33);
     expect(r.compBasis).toBe('pmpy');
   });
   it('zero_rate returns supported with 0', () => {
