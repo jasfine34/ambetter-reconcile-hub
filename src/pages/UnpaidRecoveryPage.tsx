@@ -47,6 +47,13 @@ import {
 } from '@/lib/weakMatch';
 import { filterReconciledByScope } from '@/lib/canonical/scope';
 import { EBU_BATCH_SCOPE_DISCLAIMER } from '@/lib/constants';
+import { useCrossBatchOverlay } from '@/hooks/useCrossBatchOverlay';
+import {
+  partitionUnpaidRowsByOverlay,
+  type AdjustedRow,
+} from '@/lib/canonical/crossBatchOverlay';
+import { ClearingStatusChip } from '@/components/ClearingStatusChip';
+import { formatMoney } from '@/lib/utils';
 
 // ---------------------------------------------------------------------------
 // Filter model
