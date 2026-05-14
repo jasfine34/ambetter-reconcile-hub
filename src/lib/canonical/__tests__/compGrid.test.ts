@@ -358,6 +358,32 @@ describe('getExpectedCommission — state fallback', () => {
   });
 });
 
+describe('getExpectedCommission — policy-year passthrough', () => {
+  it('policyYear=2025 routes to 2026 grid (Ambetter FL)', () => {
+    const r = getExpectedCommission(
+      { carrier: 'ambetter', state: 'FL', members: 2, months: 1, policyYear: 2025 },
+      SEED,
+    );
+    expect(r.supportStatus).toBe('supported');
+    expect(r.expectedAmount).toBe(68);
+  });
+  it('policyYear=2026 routes to 2026 grid (Ambetter FL)', () => {
+    const r = getExpectedCommission(
+      { carrier: 'ambetter', state: 'FL', members: 2, months: 1, policyYear: 2026 },
+      SEED,
+    );
+    expect(r.supportStatus).toBe('supported');
+    expect(r.expectedAmount).toBe(68);
+  });
+  it('policyYear=2027 passes through → not_found (no rows seeded for 2027)', () => {
+    const r = getExpectedCommission(
+      { carrier: 'ambetter', state: 'FL', members: 2, months: 1, policyYear: 2027 },
+      SEED,
+    );
+    expect(r.supportStatus).toBe('not_found');
+    expect(r.unsupportedReason).toBe('carrier_state_not_in_grid');
+  });
+});
 describe('getExpectedCommission — missing-input validation (Fix 6)', () => {
   for (const [label, args] of [
     ['members=0', { members: 0 }],
