@@ -500,8 +500,9 @@ describe('compGrid — Fix 7 static no-consumer guard', () => {
 
 describe('compGridLoader — Addition K column-list parser', () => {
   function extractSelectArg(src: string): string | null {
-    const m = src.match(/\.select\(\s*([^)]*)\)/);
-    return m ? m[1].trim() : null;
+    const m = src.match(/\.select\(\s*([\s\S]*?)\s*\)/);
+    if (!m) return null;
+    return m[1].trim().replace(/,\s*$/, '').trim();
   }
   function parseLiteralColumnList(arg: string): { ok: true; cols: string[] } | { ok: false; reason: string } {
     if (arg.includes('${') || /[`'"]\s*\+/.test(arg) || /\+\s*[`'"]/.test(arg)) {
