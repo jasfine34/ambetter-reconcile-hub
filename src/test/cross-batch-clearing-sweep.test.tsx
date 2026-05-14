@@ -120,7 +120,7 @@ function makeUnpaidRM(id: string, batch_id: string, opts: Partial<RM> = {}): RM 
   return {
     id, batch_id, in_commission: false,
     expected_ede_effective_month: '2026-02', carrier: ambetter,
-    policy_number: 'P1', issuer_subscriber_id: null, ...opts,
+    policy_number: 'p1', issuer_subscriber_id: null, ...opts,
   };
 }
 
@@ -138,6 +138,7 @@ function commissionRow(id: string, batch_id: string, pn: string, amt: number, op
     id, batch_id, source_type: 'COMMISSION', carrier: ambetter,
     policy_number: pn, issuer_subscriber_id: pn,
     commission_amount: amt, created_at: '2026-03-15',
+    paid_to_date: '2026-02-28', months_paid: 1,
     raw_json: {}, ...opts,
   };
 }
