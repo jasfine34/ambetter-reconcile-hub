@@ -1,5 +1,6 @@
 /**
- * Bundle 13b — sweep safety-guard + abort tests.
+ * Bundle 13b — sweep tests (v11).
+ * Uses explicit getExpectedCommission mock for deterministic compGrid output.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -12,17 +13,136 @@ vi.mock('@/lib/canonical/compGridLoader', () => ({
   loadCarrierCompRates: async () => [],
 }));
 
+const getExpectedCommissionMock = vi.fn();
+vi.mock('@/lib/canonical/compGrid', () => ({
+  getExpectedCommission: (...args: any[]) => getExpectedCommissionMock(...args),
+}));
+
 import { runCrossBatchClearingSweep } from '@/lib/sweep/crossBatchClearingSweep';
+
+type Batch = { id: string; statement_month: string; created_at: string };
+type RM = {
+  id: string; batch_id: string; in_commission: boolean;
+  expected_ede_effective_month: string | null; carrier: string | null;
+  policy_number?: string | null; issuer_subscriber_id?: string | null;
+  expected_pay_entity?: string | null; actual_pay_entity?: string | null; agent_npn?: string | null;
+};
+type NR = {
+  id: string; batch_id: string; source_type: 'BACK_OFFICE' | 'EDE' | 'COMMISSION';
+  carrier?: string | null; policy_number?: string | null; issuer_subscriber_id?: string | null;
+  effective_date?: string | null; broker_effective_date?: string | null;
+  client_state_full?: string | null; commission_amount?: number | null;
+  paid_to_date?: string | null; months_paid?: number | null;
+  raw_json?: any; created_at?: string;
+};
+
+interface Fixture {
+  batches: Batch[];
+  reconciled?: RM[];
+  boEde?: NR[];
+  commission?: NR[];
+}
+
+interface Counters { commissionFromCalls: number; }
+
+function setupFixture(fx: Fixture): Counters {
+  const counters: Counters = { commissionFromCalls: 0 };
+  fromMock.mockImplementation((table: string) => {
+    if (table === 'upload_batches') {
+      return { select: () => Promise.resolve({ data: fx.batches, error: null }) };
+    }
+    if (table === 'reconciled_members') {
+      const chain: any = {
+        _batch: null,
+        select() { return chain; },
+        eq(_c: string, v: string) { chain._batch = v; return chain; },
+        range(from: number) {
+          if (from > 0) return Promise.resolve({ data: [], error: null });
+          const rows = (fx.reconciled ?? []).filter(r => r.batch_id === chain._batch);
+          return Promise.resolve({ data: rows, error: null });
+        },
+      };
+      return chain;
+    }
+    if (table === 'normalized_records') {
+      const chain: any = {
+        _src: null as null | 'COMMISSION' | 'BO_EDE',
+        _inCol: null as null | string,
+        _inVals: [] as string[],
+        _gt: false,
+        select() { return chain; },
+        eq(c: string, v: string) {
+          if (c === 'source_type') { chain._src = 'COMMISSION'; counters.commissionFromCalls++; }
+          return chain;
+        },
+        is() { return chain; },
+        in(c: string, v: string[]) {
+          if (c === 'source_type') chain._src = 'BO_EDE';
+          else { chain._inCol = c; chain._inVals = v; }
+          return chain;
+        },
+        order() { return chain; },
+        limit() { return chain; },
+        gt() { chain._gt = true; return chain; },
+        then(resolve: any) {
+          if (chain._gt) return resolve({ data: [], error: null });
+          let rows: NR[] = chain._src === 'COMMISSION' ? (fx.commission ?? []) : (fx.boEde ?? []);
+          if (chain._src === 'BO_EDE') rows = rows.filter(r => r.source_type === 'BACK_OFFICE' || r.source_type === 'EDE');
+          else rows = rows.filter(r => r.source_type === 'COMMISSION');
+          if (chain._inCol) {
+            const col = chain._inCol; const vals = new Set(chain._inVals);
+            rows = rows.filter((r: any) => vals.has(r[col]));
+          }
+          resolve({ data: rows, error: null });
+        },
+      };
+      return chain;
+    }
+    return { select: () => Promise.resolve({ data: [], error: null }) };
+  });
+  return counters;
+}
 
 beforeEach(() => {
   fromMock.mockReset();
   rpcMock.mockReset();
+  getExpectedCommissionMock.mockReset();
+  getExpectedCommissionMock.mockReturnValue({
+    supportStatus: 'supported', expectedAmount: 100, rateRecordId: 'rate-100', evidence: {},
+  });
+  rpcMock.mockResolvedValue({ error: null });
 });
 
-function batchesQuery(data: any, error: any = null) {
-  return { select: () => Promise.resolve({ data, error }) };
+const ambetter = 'AMBETTER';
+const baseBatch = (id: string, sm: string): Batch => ({ id, statement_month: sm, created_at: '2026-02-01' });
+
+function makeUnpaidRM(id: string, batch_id: string, opts: Partial<RM> = {}): RM {
+  return {
+    id, batch_id, in_commission: false,
+    expected_ede_effective_month: '2026-02', carrier: ambetter,
+    policy_number: 'P1', issuer_subscriber_id: null, ...opts,
+  };
 }
 
+function ambetterBoEde(id: string, batch_id: string, pn: string, state = 'FL'): NR {
+  return {
+    id, batch_id, source_type: 'EDE', carrier: ambetter,
+    policy_number: pn, issuer_subscriber_id: pn,
+    effective_date: '2026-02-01', client_state_full: state,
+    raw_json: { coveredMemberCount: 1 },
+  };
+}
+
+function commissionRow(id: string, batch_id: string, pn: string, amt: number, opts: Partial<NR> = {}): NR {
+  return {
+    id, batch_id, source_type: 'COMMISSION', carrier: ambetter,
+    policy_number: pn, issuer_subscriber_id: pn,
+    commission_amount: amt, created_at: '2026-03-15',
+    raw_json: {}, ...opts,
+  };
+}
+
+// ---------- Group: safety guards ----------
 describe('crossBatchClearingSweep — safety guards', () => {
   it('aborts with stale_generation when shouldContinue is false', async () => {
     const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => false });
@@ -31,84 +151,333 @@ describe('crossBatchClearingSweep — safety guards', () => {
   });
 
   it('aborts with no_upload_batches when zero rows', async () => {
-    fromMock.mockReturnValueOnce(batchesQuery([]));
+    setupFixture({ batches: [] });
     const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
     expect(r.aborted).toBe(true);
     expect(r.abortReason).toBe('no_upload_batches');
     expect(rpcMock).not.toHaveBeenCalled();
+    expect(r.clearingRowsWritten).toBe(0);
   });
 
   it('aborts with upload_batches_load_failed on error', async () => {
-    fromMock.mockReturnValueOnce(batchesQuery(null, new Error('boom')));
+    fromMock.mockReturnValueOnce({ select: () => Promise.resolve({ data: null, error: new Error('boom') }) });
     const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
     expect(r.aborted).toBe(true);
     expect(r.abortReason).toBe('upload_batches_load_failed');
+    expect(rpcMock).not.toHaveBeenCalled();
+    expect(r.clearingRowsWritten).toBe(0);
   });
 
   it('aborts with no_valid_batch_months when no valid statement_month', async () => {
-    fromMock.mockReturnValueOnce(batchesQuery([{ id: 'B1', statement_month: 'garbage', created_at: '2026-01-01' }]));
+    setupFixture({ batches: [{ id: 'B1', statement_month: 'garbage', created_at: '2026-01-01' }] });
     const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
     expect(r.aborted).toBe(true);
     expect(r.abortReason).toBe('no_valid_batch_months');
+    expect(rpcMock).not.toHaveBeenCalled();
+    expect(r.clearingRowsWritten).toBe(0);
   });
 
-  it('returns success when no unpaid rows (RPC supersedes)', async () => {
-    // upload_batches
-    fromMock.mockReturnValueOnce(batchesQuery([{ id: 'B1', statement_month: '2026-02-01', created_at: '2026-02-01' }]));
-    // reconciled_members range query
-    const reconciledChain: any = {
-      select: () => reconciledChain,
-      eq: () => reconciledChain,
-      range: () => Promise.resolve({ data: [], error: null }),
-    };
-    fromMock.mockReturnValueOnce(reconciledChain);
-    rpcMock.mockResolvedValueOnce({ error: null });
+  it('rejects on RPC failure', async () => {
+    setupFixture({ batches: [baseBatch('B1', '2026-02-01')] });
+    rpcMock.mockReset();
+    rpcMock.mockResolvedValueOnce({ error: new Error('rpc fail') });
+    await expect(runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true }))
+      .rejects.toThrow();
+  });
+});
+
+// ---------- Group: pre-grain inputErrors ----------
+describe('crossBatchClearingSweep — pre-grain inputErrors', () => {
+  it('records target_service_month_unresolved', async () => {
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01')],
+      reconciled: [makeUnpaidRM('M1', 'B1', { expected_ede_effective_month: 'BAD' })],
+    });
     const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
     expect(r.aborted).toBe(false);
-    expect(r.clearingRowsWritten).toBe(0);
+    expect(r.inputErrors[0].reason).toBe('target_service_month_unresolved');
+  });
+
+  it('records no_carrier', async () => {
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01')],
+      reconciled: [makeUnpaidRM('M1', 'B1', { carrier: 'WeirdCo' })],
+    });
+    const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    expect(r.inputErrors.find(e => e.reason === 'no_carrier')).toBeTruthy();
+  });
+
+  it('records no_identity_keys', async () => {
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01')],
+      reconciled: [makeUnpaidRM('M1', 'B1', { policy_number: null, issuer_subscriber_id: null })],
+    });
+    const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    expect(r.inputErrors.find(e => e.reason === 'no_identity_keys')).toBeTruthy();
+  });
+
+  it('inputErrors do not produce clearing rows', async () => {
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01')],
+      reconciled: [makeUnpaidRM('M1', 'B1', { carrier: 'WeirdCo' })],
+    });
+    await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    const rpcArgs = rpcMock.mock.calls[0][1];
+    expect(rpcArgs.p_rows).toEqual([]);
+  });
+});
+
+// ---------- Group: clearing-row composition ----------
+describe('crossBatchClearingSweep — clearing rows', () => {
+  it('produces clearing row for one unpaid grain + matching payment', async () => {
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01'), baseBatch('B2', '2026-03-01')],
+      reconciled: [makeUnpaidRM('M1', 'B1')],
+      boEde: [ambetterBoEde('E1', 'B1', 'P1')],
+      commission: [commissionRow('C1', 'B2', 'P1', 100)],
+    });
+    const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    expect(r.clearingRowsWritten).toBe(1);
+    const rows = rpcMock.mock.calls[0][1].p_rows;
+    expect(rows[0].clearing_state).toBe('fully_cleared');
     expect(rpcMock).toHaveBeenCalledWith(
       'replace_cross_batch_clearings_for_run',
       expect.objectContaining({ p_scope: 'global_full_rebuild' }),
     );
   });
 
-  it('records target_service_month_unresolved input error', async () => {
-    fromMock.mockReturnValueOnce(batchesQuery([{ id: 'B1', statement_month: '2026-02-01', created_at: '2026-02-01' }]));
-    const reconciledChain: any = {
-      select: () => reconciledChain, eq: () => reconciledChain,
-      range: vi.fn()
-        .mockResolvedValueOnce({ data: [{ id: 'M1', batch_id: 'B1', in_commission: false, expected_ede_effective_month: 'BAD', carrier: 'Ambetter', policy_number: 'P1', issuer_subscriber_id: null }], error: null })
-        .mockResolvedValueOnce({ data: [], error: null }),
-    };
-    fromMock.mockReturnValueOnce(reconciledChain);
-    rpcMock.mockResolvedValueOnce({ error: null });
-    const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
-    expect(r.aborted).toBe(false);
-    expect(r.inputErrors[0].reason).toBe('target_service_month_unresolved');
+  it('composed row exposes expected fields', async () => {
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01'), baseBatch('B2', '2026-03-01')],
+      reconciled: [makeUnpaidRM('M1', 'B1')],
+      boEde: [ambetterBoEde('E1', 'B1', 'P1')],
+      commission: [commissionRow('C1', 'B2', 'P1', 100)],
+    });
+    await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    const row = rpcMock.mock.calls[0][1].p_rows[0];
+    expect(row.policy_identity_key).toBe('ambetter|P1');
+    expect(row.target_service_month).toBe('2026-02');
+    expect(row.unpaid_batch_id).toBe('B1');
+    expect(row.unpaid_batch_ids).toEqual(['B1']);
+    expect(row.payment_batch_ids).toEqual(['B2']);
+    expect(row.expected_amount).toBe(100);
+    expect(row.threshold_amount).toBe(70);
+    expect(row.actual_positive_amount).toBe(100);
+    expect(row.actual_net_amount).toBe(100);
+    expect(row.comp_rate_id).toBe('rate-100');
+    expect(row.matched_paid_record_ids).toEqual(['C1']);
+    expect(row.run_id).toBeTruthy();
+    expect(row.logic_version).toBe('bundle-13b-v1');
   });
 
-  it('records no_carrier input error', async () => {
-    fromMock.mockReturnValueOnce(batchesQuery([{ id: 'B1', statement_month: '2026-02-01', created_at: '2026-02-01' }]));
-    const reconciledChain: any = {
-      select: () => reconciledChain, eq: () => reconciledChain,
-      range: vi.fn()
-        .mockResolvedValueOnce({ data: [{ id: 'M1', batch_id: 'B1', in_commission: false, expected_ede_effective_month: '2026-02', carrier: 'WeirdCo', policy_number: 'P1', issuer_subscriber_id: null }], error: null })
-        .mockResolvedValueOnce({ data: [], error: null }),
-    };
-    fromMock.mockReturnValueOnce(reconciledChain);
-    rpcMock.mockResolvedValueOnce({ error: null });
-    const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
-    expect(r.inputErrors.find(e => e.reason === 'no_carrier')).toBeTruthy();
+  it('partial payment below threshold → partially_cleared', async () => {
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01'), baseBatch('B2', '2026-03-01')],
+      reconciled: [makeUnpaidRM('M1', 'B1')],
+      boEde: [ambetterBoEde('E1', 'B1', 'P1')],
+      commission: [commissionRow('C1', 'B2', 'P1', 50)],
+    });
+    await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    const row = rpcMock.mock.calls[0][1].p_rows[0];
+    expect(row.clearing_state).toBe('partially_cleared');
+    expect(row.remainder_owed).toBe(50);
   });
 
-  it('rejects on RPC failure (unexpected path)', async () => {
-    fromMock.mockReturnValueOnce(batchesQuery([{ id: 'B1', statement_month: '2026-02-01', created_at: '2026-02-01' }]));
-    const reconciledChain: any = {
-      select: () => reconciledChain, eq: () => reconciledChain,
-      range: () => Promise.resolve({ data: [], error: null }),
-    };
-    fromMock.mockReturnValueOnce(reconciledChain);
-    rpcMock.mockResolvedValueOnce({ error: new Error('rpc fail') });
-    await expect(runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true })).rejects.toThrow();
+  it('zero expected → zero_expected_no_payment_required', async () => {
+    getExpectedCommissionMock.mockReturnValue({
+      supportStatus: 'supported', expectedAmount: 0, rateRecordId: 'rate-zero', evidence: {},
+    });
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01')],
+      reconciled: [makeUnpaidRM('M1', 'B1')],
+      boEde: [ambetterBoEde('E1', 'B1', 'P1')],
+    });
+    await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    const row = rpcMock.mock.calls[0][1].p_rows[0];
+    expect(row.clearing_state).toBe('zero_expected_no_payment_required');
+  });
+});
+
+// ---------- Group: Q22 cleared_then_reversed ----------
+describe('crossBatchClearingSweep — Q22 cleared_then_reversed', () => {
+  it('Feb +$100 + Mar -$100 → cleared_then_reversed', async () => {
+    setupFixture({
+      batches: [
+        baseBatch('B1', '2026-01-01'),
+        baseBatch('B2', '2026-02-01'),
+        baseBatch('B3', '2026-03-01'),
+      ],
+      reconciled: [makeUnpaidRM('M1', 'B1')],
+      boEde: [ambetterBoEde('E1', 'B1', 'P1')],
+      commission: [
+        commissionRow('C1', 'B2', 'P1', 100),
+        commissionRow('C2', 'B3', 'P1', -100),
+      ],
+    });
+    await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    const row = rpcMock.mock.calls[0][1].p_rows[0];
+    expect(row.clearing_state).toBe('cleared_then_reversed');
+    expect(row.first_full_clear_statement_month).toBe('2026-02');
+    expect(row.reversed_at_statement_month).toBe('2026-03');
+  });
+
+  it('plus April +$100 → still cleared_then_reversed', async () => {
+    setupFixture({
+      batches: [
+        baseBatch('B1', '2026-01-01'),
+        baseBatch('B2', '2026-02-01'),
+        baseBatch('B3', '2026-03-01'),
+        baseBatch('B4', '2026-04-01'),
+      ],
+      reconciled: [makeUnpaidRM('M1', 'B1')],
+      boEde: [ambetterBoEde('E1', 'B1', 'P1')],
+      commission: [
+        commissionRow('C1', 'B2', 'P1', 100),
+        commissionRow('C2', 'B3', 'P1', -100),
+        commissionRow('C3', 'B4', 'P1', 100),
+      ],
+    });
+    await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    const row = rpcMock.mock.calls[0][1].p_rows[0];
+    expect(row.clearing_state).toBe('cleared_then_reversed');
+    expect(row.matched_paid_record_ids).toEqual(expect.arrayContaining(['C1', 'C3']));
+  });
+});
+
+// ---------- Group: alias-aware lookup ----------
+describe('crossBatchClearingSweep — alias-aware resolver lookup', () => {
+  it('Ambetter EDE row with only subscriber_id resolves via alias', async () => {
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01'), baseBatch('B2', '2026-03-01')],
+      reconciled: [makeUnpaidRM('M1', 'B1', { policy_number: 'U123', issuer_subscriber_id: null })],
+      boEde: [{
+        id: 'E1', batch_id: 'B1', source_type: 'EDE', carrier: ambetter,
+        policy_number: null, issuer_subscriber_id: 'U123',
+        effective_date: '2026-02-01', client_state_full: 'FL',
+        raw_json: { coveredMemberCount: 1 },
+      }],
+      commission: [commissionRow('C1', 'B2', 'U123', 100)],
+    });
+    const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    expect(r.clearingRowsWritten).toBe(1);
+    const row = rpcMock.mock.calls[0][1].p_rows[0];
+    expect(row.clearing_state).toBe('fully_cleared');
+  });
+
+  it('Non-Ambetter (BCBS) does not alias subscriber_id → state_unresolved', async () => {
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01')],
+      reconciled: [makeUnpaidRM('M1', 'B1', { carrier: 'BCBS', policy_number: 'ABC', issuer_subscriber_id: null })],
+      boEde: [{
+        id: 'E1', batch_id: 'B1', source_type: 'EDE', carrier: 'BCBS',
+        policy_number: null, issuer_subscriber_id: 'ABC',
+        effective_date: '2026-02-01', client_state_full: 'FL',
+        raw_json: { coveredMemberCount: 1 },
+      }],
+    });
+    await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    const row = rpcMock.mock.calls[0][1].p_rows[0];
+    expect(row.clearing_state).toBe('manual_review_required');
+    expect(row.manual_review_reason).toBe('state_unresolved');
+  });
+});
+
+// ---------- Group: post-grain manual review ----------
+describe('crossBatchClearingSweep — post-grain manual review', () => {
+  it('not_found from compGrid → carrier_state_not_in_grid', async () => {
+    getExpectedCommissionMock.mockReturnValue({ supportStatus: 'not_found', evidence: {} });
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01')],
+      reconciled: [makeUnpaidRM('M1', 'B1')],
+      boEde: [ambetterBoEde('E1', 'B1', 'P1')],
+    });
+    await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    const row = rpcMock.mock.calls[0][1].p_rows[0];
+    expect(row.clearing_state).toBe('manual_review_required');
+    expect(row.manual_review_reason).toBe('carrier_state_not_in_grid');
+  });
+
+  it('unsupported_v1 surfaces unsupportedReason', async () => {
+    getExpectedCommissionMock.mockReturnValue({
+      supportStatus: 'unsupported_v1', unsupportedReason: 'percent_of_premium_not_implemented', evidence: {},
+    });
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01')],
+      reconciled: [makeUnpaidRM('M1', 'B1')],
+      boEde: [ambetterBoEde('E1', 'B1', 'P1')],
+    });
+    await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    const row = rpcMock.mock.calls[0][1].p_rows[0];
+    expect(row.manual_review_reason).toBe('percent_of_premium_not_implemented');
+  });
+
+  it('missing state evidence → state_unresolved', async () => {
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01')],
+      reconciled: [makeUnpaidRM('M1', 'B1')],
+      boEde: [], // no EDE rows → state resolver unresolved
+    });
+    await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    const row = rpcMock.mock.calls[0][1].p_rows[0];
+    expect(row.clearing_state).toBe('manual_review_required');
+    expect(row.manual_review_reason).toBe('state_unresolved');
+  });
+});
+
+// ---------- Group: payment_batch_ids dedupe ----------
+describe('crossBatchClearingSweep — payment_batch_ids', () => {
+  it('dedupes payment_batch_ids across multiple matching commissions', async () => {
+    setupFixture({
+      batches: [
+        baseBatch('B1', '2026-01-01'),
+        baseBatch('B2', '2026-02-01'),
+        baseBatch('B3', '2026-03-01'),
+      ],
+      reconciled: [makeUnpaidRM('M1', 'B1')],
+      boEde: [ambetterBoEde('E1', 'B1', 'P1')],
+      commission: [
+        commissionRow('C1', 'B2', 'P1', 60),
+        commissionRow('C2', 'B3', 'P1', 60),
+      ],
+    });
+    await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    const row = rpcMock.mock.calls[0][1].p_rows[0];
+    expect(new Set(row.payment_batch_ids)).toEqual(new Set(['B2', 'B3']));
+  });
+});
+
+// ---------- Group: performance shape ----------
+describe('crossBatchClearingSweep — performance shape', () => {
+  it('with 250 unpaid grains, COMMISSION load happens in bulk (≤ chunk count)', async () => {
+    const reconciled: RM[] = [];
+    const boEde: NR[] = [];
+    const commission: NR[] = [];
+    for (let i = 0; i < 250; i++) {
+      const pn = `P${i}`;
+      reconciled.push(makeUnpaidRM(`M${i}`, 'B1', { policy_number: pn }));
+      boEde.push(ambetterBoEde(`E${i}`, 'B1', pn));
+      commission.push(commissionRow(`C${i}`, 'B2', pn, 100));
+    }
+    const counters = setupFixture({
+      batches: [baseBatch('B1', '2026-02-01'), baseBatch('B2', '2026-03-01')],
+      reconciled, boEde, commission,
+    });
+    const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    expect(r.clearingRowsWritten).toBe(250);
+    // Bulk loads: 1 by policy_number + 1 by issuer_subscriber_id = 2 calls (per chunk).
+    // 250 grains < IN_CHUNK (500), so a single chunk each → ≤ 2 commission .from() calls.
+    expect(counters.commissionFromCalls).toBeLessThanOrEqual(2);
+  });
+
+  it('250 grains: total DB calls bounded by O(batches + chunks), not O(grains)', async () => {
+    const reconciled: RM[] = [];
+    for (let i = 0; i < 250; i++) {
+      reconciled.push(makeUnpaidRM(`M${i}`, 'B1', { policy_number: `P${i}` }));
+    }
+    setupFixture({ batches: [baseBatch('B1', '2026-02-01')], reconciled });
+    fromMock.mockClear();
+    await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    // Calls: upload_batches (1) + reconciled_members (1) + BO/EDE (≤2 lookups) + COMMISSION (≤2)
+    expect(fromMock.mock.calls.length).toBeLessThan(20);
   });
 });
