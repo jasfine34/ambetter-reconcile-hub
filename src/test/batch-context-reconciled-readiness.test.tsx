@@ -103,10 +103,14 @@ describe('BatchContext — reconciledLoadedForBatchId basic lifecycle', () => {
     await waitFor(() => expect(getReconciledMembersMock).toHaveBeenCalledWith(A.id));
     await waitFor(() => expect(ctx!.reconciledLoadedForBatchId).toBe(A.id));
 
+    // Defer B's load so we can observe the cleared state immediately after switch.
+    const dB = createDeferred<any[]>();
+    getReconciledMembersMock.mockImplementationOnce(() => dB.promise);
+
     await act(async () => { ctx!.setCurrentBatchId(B.id, 'user-dropdown'); });
-    // Immediately after switch: cleared (null), even though refresh is in flight
     expect(ctx!.reconciledLoadedForBatchId).toBe(null);
 
+    await act(async () => { dB.resolve([]); });
     await waitFor(() => expect(ctx!.reconciledLoadedForBatchId).toBe(B.id));
   });
 });
