@@ -986,11 +986,7 @@ export default function MissingCommissionExportPage() {
               </Button>
               <Button
                 onClick={handleDownload}
-                disabled={
-                  reportStatus !== 'ready' ||
-                  !displayed ||
-                  displayed.rows.length === 0
-                }
+                disabled={!isDownloadable}
                 variant="outline"
                 data-testid="messer-download"
               >
