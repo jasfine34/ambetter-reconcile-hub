@@ -150,11 +150,14 @@ describe('compGrid — seed integrity', () => {
 });
 
 describe('mapPolicyYearTo2026Grid', () => {
-  it('maps any year to 2026 in v1', () => {
-    expect(mapPolicyYearTo2026Grid(2024)).toBe(2026);
+  it('maps 2025 and 2026 to 2026', () => {
     expect(mapPolicyYearTo2026Grid(2025)).toBe(2026);
     expect(mapPolicyYearTo2026Grid(2026)).toBe(2026);
-    expect(mapPolicyYearTo2026Grid(2030)).toBe(2026);
+  });
+  it('passes through unknown years (forward compatibility)', () => {
+    expect(mapPolicyYearTo2026Grid(2024)).toBe(2024);
+    expect(mapPolicyYearTo2026Grid(2027)).toBe(2027);
+    expect(mapPolicyYearTo2026Grid(2030)).toBe(2030);
   });
 });
 
@@ -183,10 +186,10 @@ describe('getExpectedCommission — calculation_basis math', () => {
     expect(r.expectedAmount).toBe(200 * 12);
     expect(r.rateRecordId).toBe(rows[1].id);
   });
-  it('pmpy = rate * members (months ignored)', () => {
-    const row = mk({ calculation_basis: 'pmpy', comp_basis: 'pmpy', rate_value: 50 });
-    const r = getExpectedCommission(baseArgs({ members: 4, months: 6 }), [row]);
-    expect(r.expectedAmount).toBe(50 * 4);
+  it('pmpy = rate * members * (months / 12), rounded to cents', () => {
+    const row = mk({ calculation_basis: 'pmpy', comp_basis: 'pmpy', rate_value: 100 });
+    const r = getExpectedCommission(baseArgs({ members: 1, months: 1 }), [row]);
+    expect(r.expectedAmount).toBe(8.33);
     expect(r.compBasis).toBe('pmpy');
   });
   it('zero_rate returns supported with 0', () => {
@@ -198,14 +201,19 @@ describe('getExpectedCommission — calculation_basis math', () => {
 });
 
 describe('getExpectedCommission — real seed regressions', () => {
-  it('BCBS TN Blue Elite PMPY: 292.80 * members', () => {
+  it.each([
+    [1, 12, 292.80],
+    [1, 6, 146.40],
+    [2, 12, 585.60],
+    [2, 6, 292.80],
+  ])('BCBS TN Blue Elite PMPY: %i members × %i months → $%s', (members, months, expected) => {
     const r = getExpectedCommission(
-      { carrier: 'bcbs', state: 'TN', members: 3, months: 6, planVariant: 'blue_elite', policyYear: 2026 },
+      { carrier: 'bcbs', state: 'TN', members, months, planVariant: 'blue_elite', policyYear: 2026 },
       SEED,
     );
     expect(r.supportStatus).toBe('supported');
     expect(r.compBasis).toBe('pmpy');
-    expect(r.expectedAmount).toBeCloseTo(292.80 * 3, 4);
+    expect(r.expectedAmount).toBe(expected);
   });
   it('BCBS TN planVariant=null returns standard PMPM $25 (mixed-basis "standard" tag wins)', () => {
     const r = getExpectedCommission(
@@ -350,6 +358,32 @@ describe('getExpectedCommission — state fallback', () => {
   });
 });
 
+describe('getExpectedCommission — policy-year passthrough', () => {
+  it('policyYear=2025 routes to 2026 grid (Ambetter FL)', () => {
+    const r = getExpectedCommission(
+      { carrier: 'ambetter', state: 'FL', members: 2, months: 1, policyYear: 2025 },
+      SEED,
+    );
+    expect(r.supportStatus).toBe('supported');
+    expect(r.expectedAmount).toBe(68);
+  });
+  it('policyYear=2026 routes to 2026 grid (Ambetter FL)', () => {
+    const r = getExpectedCommission(
+      { carrier: 'ambetter', state: 'FL', members: 2, months: 1, policyYear: 2026 },
+      SEED,
+    );
+    expect(r.supportStatus).toBe('supported');
+    expect(r.expectedAmount).toBe(68);
+  });
+  it('policyYear=2027 passes through → not_found (no rows seeded for 2027)', () => {
+    const r = getExpectedCommission(
+      { carrier: 'ambetter', state: 'FL', members: 2, months: 1, policyYear: 2027 },
+      SEED,
+    );
+    expect(r.supportStatus).toBe('not_found');
+    expect(r.unsupportedReason).toBe('carrier_state_not_in_grid');
+  });
+});
 describe('getExpectedCommission — missing-input validation (Fix 6)', () => {
   for (const [label, args] of [
     ['members=0', { members: 0 }],
