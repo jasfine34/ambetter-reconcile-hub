@@ -648,6 +648,8 @@ export default function MissingCommissionExportPage() {
     const memberKeys = Array.from(new Set(missingMembers.map((m) => m.member_key).filter(Boolean)));
     let enrichmentRecords: any[] = [];
     let commissionTripleRecords: any[] = [];
+    let commissionTripleFallbackFailed = false;
+
     try {
       // Derive triples from missingMembers using the same target-pay-entity rule.
       const tripleSet = new Map<string, { carrier: string; payEntity: string; agentNpn: string }>();
@@ -670,27 +672,24 @@ export default function MissingCommissionExportPage() {
       }
       const triples = Array.from(tripleSet.values());
 
-      let commissionTripleFallbackFailed = false;
+      enrichmentRecords = memberKeys.length === 0 ? [] : await getNormalizedRecordsByMemberKeys(memberKeys);
 
       try {
-        enrichmentRecords = memberKeys.length === 0 ? [] : await getNormalizedRecordsByMemberKeys(memberKeys);
-
-        try {
-          commissionTripleRecords = triples.length === 0 ? [] : await getCommissionRecordsByTriples(triples);
-        } catch (error) {
-          commissionTripleFallbackFailed = true;
-          commissionTripleRecords = [];
-          console.warn('Missing Commission Export commission-triple fallback failed; continuing without fallback enrichment.', error);
-        }
-      } catch (err) {
-        console.error('Failed to load Missing Commission Export source records', err);
-        if (!isLatest()) return;
-        commit(() => {
-          setSourceError(err instanceof Error ? err : new Error(serializeErrorMessage(err)));
-          setSourceStatus('error');
-        });
-        return;
+        commissionTripleRecords = triples.length === 0 ? [] : await getCommissionRecordsByTriples(triples);
+      } catch (error) {
+        commissionTripleFallbackFailed = true;
+        commissionTripleRecords = [];
+        console.warn('Missing Commission Export commission-triple fallback failed; continuing without fallback enrichment.', error);
       }
+    } catch (err) {
+      console.error('Failed to load Missing Commission Export source records', err);
+      if (!isLatest()) return;
+      commit(() => {
+        setSourceError(err instanceof Error ? err : new Error(serializeErrorMessage(err)));
+        setSourceStatus('error');
+      });
+      return;
+    }
     if (!isLatest()) return;
 
     commit(() => setSourceStatus('ready'));
