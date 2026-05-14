@@ -534,7 +534,18 @@ export default function MissingCommissionExportPage() {
   }, [reconciledLoadedForBatchId, currentBatchId]);
 
   const isBatchReady =
-    !!currentBatchId && reconciledLoadedForBatchId === currentBatchId;
+    !!currentBatchId &&
+    reconciledLoadedForBatchId === currentBatchId &&
+    batchLoading === false;
+
+  // v14 — single derived Download enable computation. Used at BOTH the
+  // onClick handler guard and the disabled prop to prevent drift.
+  const isDownloadable =
+    reportStatus === 'ready' &&
+    !!displayed &&
+    displayed.rows.length > 0 &&
+    filtersMatchRanFilters(filters, ranFilters) &&
+    isBatchReady;
 
   // ---- Run pipeline --------------------------------------------------------
   async function runReport() {
