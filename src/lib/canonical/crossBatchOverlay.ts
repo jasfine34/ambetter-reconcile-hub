@@ -173,3 +173,61 @@ export function adjustmentForReconciledRow(
   if (!grainKey) return { grainKey: null, adjustment: { kind: 'no_overlay' } };
   return { grainKey, adjustment: classifyOverlay(overlayMap.byGrain.get(grainKey)) };
 }
+
+// ---------------------------------------------------------------------------
+// Surface partition helpers (consumed by Dashboard / MCE / Agent Summary /
+// Unpaid Recovery). Surfaces NEVER read overlay.remainder_owed directly —
+// they consume `effectiveEstMissing` (which honors adjustment.remainder).
+// ---------------------------------------------------------------------------
+
+export interface AdjustedRow {
+  row: any;
+  adjustment: RowAdjustment;
+  /** Effective dollar to use for this row in dollar-sum computations. */
+  effectiveEstMissing: number;
+}
+
+export interface AdjustedUnpaidPartition {
+  regular: AdjustedRow[];
+  reversed: AdjustedRow[];
+  removed: AdjustedRow[];
+  needsReview: AdjustedRow[];
+}
+
+function legacyEstMissing(row: any): number {
+  const n = Number(row?.estimated_missing_commission);
+  return Number.isFinite(n) ? n : 0;
+}
+
+export function partitionUnpaidRowsByOverlay(
+  unpaidRows: readonly any[],
+  overlay: ClearingOverlayMap,
+): AdjustedUnpaidPartition {
+  const regular: AdjustedRow[] = [];
+  const reversed: AdjustedRow[] = [];
+  const removed: AdjustedRow[] = [];
+  const needsReview: AdjustedRow[] = [];
+
+  for (const row of unpaidRows ?? []) {
+    const { adjustment } = adjustmentForReconciledRow(row, overlay);
+    const legacy = legacyEstMissing(row);
+    const effective = adjustment.kind === 'reduce_dollars' ? adjustment.remainder : legacy;
+    const item: AdjustedRow = { row, adjustment, effectiveEstMissing: effective };
+    switch (adjustment.kind) {
+      case 'remove_from_unpaid': removed.push(item); break;
+      case 'move_to_reversed_bucket': reversed.push(item); break;
+      case 'mark_needs_review':
+        regular.push(item);
+        needsReview.push(item);
+        break;
+      default: regular.push(item); break;
+    }
+  }
+  return { regular, reversed, removed, needsReview };
+}
+
+export function sumEffectiveEstMissing(items: readonly AdjustedRow[]): number {
+  let s = 0;
+  for (const it of items) s += it.effectiveEstMissing;
+  return s;
+}
