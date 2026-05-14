@@ -13,6 +13,7 @@ import { reconcile } from '@/lib/reconcile';
 import { useToast } from '@/hooks/use-toast';
 import { RebuildBatchButton } from '@/components/RebuildBatchButton';
 import { RebuildAllBatchesButton } from '@/components/RebuildAllBatchesButton';
+import { RebuildCrossBatchClearingsButton } from '@/components/RebuildCrossBatchClearingsButton';
 import { RECONCILE_LOGIC_VERSION } from '@/lib/rebuild';
 import { CollapsibleDebugCard } from '@/components/CollapsibleDebugCard';
 import { SourceFunnelCard } from '@/components/SourceFunnelCard';
