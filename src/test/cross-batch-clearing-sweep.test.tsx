@@ -622,8 +622,8 @@ describe('crossBatchClearingSweep — v12 branch coverage', () => {
     setupFixture({
       batches: [baseBatch('B1', '2026-02-01')],
       reconciled: [
-        makeUnpaidRM('M1', 'B1', { policy_number: 'p1', issuer_subscriber_id: 'sid-a' }),
-        makeUnpaidRM('M2', 'B1', { policy_number: 'p1', issuer_subscriber_id: 'sid-b' }),
+        makeUnpaidRM('M1', 'B1', { policy_number: 'p1', issuer_subscriber_id: 'sida' }),
+        makeUnpaidRM('M2', 'B1', { policy_number: 'p1', issuer_subscriber_id: 'sidb' }),
       ],
     });
     const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
