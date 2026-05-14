@@ -670,20 +670,27 @@ export default function MissingCommissionExportPage() {
       }
       const triples = Array.from(tripleSet.values());
 
-      const [enrichRows, commRows] = await Promise.all([
-        memberKeys.length === 0 ? Promise.resolve([]) : getNormalizedRecordsByMemberKeys(memberKeys),
-        triples.length === 0 ? Promise.resolve([]) : getCommissionRecordsByTriples(triples),
-      ]);
-      enrichmentRecords = enrichRows || [];
-      commissionTripleRecords = commRows || [];
-    } catch (err) {
-      if (!isLatest()) return;
-      commit(() => {
-        setSourceError(err instanceof Error ? err : new Error(serializeErrorMessage(err)));
-        setSourceStatus('error');
-      });
-      return;
-    }
+      let commissionTripleFallbackFailed = false;
+
+      try {
+        enrichmentRecords = memberKeys.length === 0 ? [] : await getNormalizedRecordsByMemberKeys(memberKeys);
+
+        try {
+          commissionTripleRecords = triples.length === 0 ? [] : await getCommissionRecordsByTriples(triples);
+        } catch (error) {
+          commissionTripleFallbackFailed = true;
+          commissionTripleRecords = [];
+          console.warn('Missing Commission Export commission-triple fallback failed; continuing without fallback enrichment.', error);
+        }
+      } catch (err) {
+        console.error('Failed to load Missing Commission Export source records', err);
+        if (!isLatest()) return;
+        commit(() => {
+          setSourceError(err instanceof Error ? err : new Error(serializeErrorMessage(err)));
+          setSourceStatus('error');
+        });
+        return;
+      }
     if (!isLatest()) return;
 
     commit(() => setSourceStatus('ready'));
