@@ -47,6 +47,13 @@ import {
 } from '@/lib/weakMatch';
 import { filterReconciledByScope } from '@/lib/canonical/scope';
 import { EBU_BATCH_SCOPE_DISCLAIMER } from '@/lib/constants';
+import { useCrossBatchOverlay } from '@/hooks/useCrossBatchOverlay';
+import {
+  partitionUnpaidRowsByOverlay,
+  type AdjustedRow,
+} from '@/lib/canonical/crossBatchOverlay';
+import { ClearingStatusChip } from '@/components/ClearingStatusChip';
+import { formatMoney } from '@/lib/utils';
 
 // ---------------------------------------------------------------------------
 // Filter model
@@ -388,16 +395,47 @@ export default function UnpaidRecoveryPage() {
     [reconciled, scope, filteredEde, confirmedUpgradeMemberKeys],
   );
 
-  const unpaidRows = breakdown.unpaidRows;
+  const rawUnpaidRows = breakdown.unpaidRows;
   const universe = breakdown.universe;
+
+  // Bundle 13c — overlay-aware partition.
+  const { overlay: clearingOverlay } = useCrossBatchOverlay();
+  const partition = useMemo(
+    () => partitionUnpaidRowsByOverlay(rawUnpaidRows, clearingOverlay),
+    [rawUnpaidRows, clearingOverlay],
+  );
+  // Map row → AdjustedRow for badge / dollar lookups.
+  const adjustedByRow = useMemo(() => {
+    const m = new Map<any, AdjustedRow>();
+    for (const it of [...partition.regular, ...partition.reversed]) m.set(it.row, it);
+    return m;
+  }, [partition]);
+
+  // "Cleared then reversed" filter chip — default off; controlled via URL.
+  const [showReversed, setShowReversed] = useState(false);
+  useEffect(() => {
+    setShowReversed(searchParams.get('filter') === 'clearedThenReversed');
+  }, [searchParams]);
+  const toggleReversedFilter = () => {
+    const next = new URLSearchParams(searchParams);
+    if (showReversed) next.delete('filter'); else next.set('filter', 'clearedThenReversed');
+    setSearchParams(next, { replace: true });
+  };
+
+  // Pre-filter unpaidRows for downstream filtering: regular always, reversed only when chip on.
+  const overlayedUnpaidRows = useMemo(() => {
+    const base = partition.regular.map((it) => it.row);
+    if (showReversed) return [...base, ...partition.reversed.map((it) => it.row)];
+    return base;
+  }, [partition, showReversed]);
 
   // Bundle 12.5: single FFM ID resolver for the whole page (filter + table + CSV).
   const getFfmId = useMemo(() => buildFfmIdResolver(normalizedRecords), [normalizedRecords]);
 
   // Single source for both the visible table AND the export.
   const filteredRows = useMemo(
-    () => filterUnpaidRecoveryRows(unpaidRows, universe, filters, getFfmId),
-    [unpaidRows, universe, filters, getFfmId],
+    () => filterUnpaidRecoveryRows(overlayedUnpaidRows, universe, filters, getFfmId),
+    [overlayedUnpaidRows, universe, filters, getFfmId],
   );
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
@@ -495,8 +533,18 @@ export default function UnpaidRecoveryPage() {
         </Button>
       </div>
 
-      <div className="text-sm text-muted-foreground" data-testid="ur-count">
-        Showing {filteredRows.length.toLocaleString()} of {unpaidRows.length.toLocaleString()} unpaid policies
+      <div className="flex items-center gap-3 flex-wrap">
+        <Button
+          variant={showReversed ? 'default' : 'outline'}
+          size="sm"
+          onClick={toggleReversedFilter}
+          data-testid="ur-reversed-toggle"
+        >
+          Cleared then reversed ({partition.reversed.length})
+        </Button>
+        <div className="text-sm text-muted-foreground" data-testid="ur-count">
+          Showing {filteredRows.length.toLocaleString()} of {rawUnpaidRows.length.toLocaleString()} unpaid policies
+        </div>
       </div>
 
       <div className="rounded-lg border overflow-auto">

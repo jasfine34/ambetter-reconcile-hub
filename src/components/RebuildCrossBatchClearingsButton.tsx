@@ -47,6 +47,8 @@ export function RebuildCrossBatchClearingsButton() {
       const desc = `Clearings rebuilt. ${result.clearingRowsWritten} clearing rows written.`
         + (result.inputErrors.length > 0 ? ` ${result.inputErrors.length} inputs could not be evaluated (see console).` : '');
       toast({ title: 'Cross-batch clearings rebuilt', description: desc });
+      // Bundle 13c — notify overlay-consuming surfaces to reload.
+      try { window.dispatchEvent(new CustomEvent('crossBatchClearings:rebuilt')); } catch { /* ignore */ }
     } catch (err: any) {
       setLoading(false);
       const msg = err?.message ?? String(err);
