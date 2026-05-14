@@ -256,7 +256,7 @@ describe('crossBatchClearingSweep — clearing rows', () => {
     });
     await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
     const row = rpcMock.mock.calls[0][1].p_rows[0];
-    expect(row.policy_identity_key).toBe('ambetter|P1');
+    expect(row.policy_identity_key).toBe('ambetter|p1');
     expect(row.target_service_month).toBe('2026-02');
     expect(row.unpaid_batch_id).toBe('B1');
     expect(row.unpaid_batch_ids).toEqual(['B1']);
