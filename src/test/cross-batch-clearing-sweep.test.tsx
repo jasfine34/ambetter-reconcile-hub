@@ -234,8 +234,8 @@ describe('crossBatchClearingSweep — clearing rows', () => {
     setupFixture({
       batches: [baseBatch('B1', '2026-02-01'), baseBatch('B2', '2026-03-01')],
       reconciled: [makeUnpaidRM('M1', 'B1')],
-      boEde: [ambetterBoEde('E1', 'B1', 'P1')],
-      commission: [commissionRow('C1', 'B2', 'P1', 100)],
+      boEde: [ambetterBoEde('E1', 'B1', 'p1')],
+      commission: [commissionRow('C1', 'B2', 'p1', 100)],
     });
     const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
     expect(r.clearingRowsWritten).toBe(1);
@@ -251,8 +251,8 @@ describe('crossBatchClearingSweep — clearing rows', () => {
     setupFixture({
       batches: [baseBatch('B1', '2026-02-01'), baseBatch('B2', '2026-03-01')],
       reconciled: [makeUnpaidRM('M1', 'B1')],
-      boEde: [ambetterBoEde('E1', 'B1', 'P1')],
-      commission: [commissionRow('C1', 'B2', 'P1', 100)],
+      boEde: [ambetterBoEde('E1', 'B1', 'p1')],
+      commission: [commissionRow('C1', 'B2', 'p1', 100)],
     });
     await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
     const row = rpcMock.mock.calls[0][1].p_rows[0];
@@ -275,8 +275,8 @@ describe('crossBatchClearingSweep — clearing rows', () => {
     setupFixture({
       batches: [baseBatch('B1', '2026-02-01'), baseBatch('B2', '2026-03-01')],
       reconciled: [makeUnpaidRM('M1', 'B1')],
-      boEde: [ambetterBoEde('E1', 'B1', 'P1')],
-      commission: [commissionRow('C1', 'B2', 'P1', 50)],
+      boEde: [ambetterBoEde('E1', 'B1', 'p1')],
+      commission: [commissionRow('C1', 'B2', 'p1', 50)],
     });
     await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
     const row = rpcMock.mock.calls[0][1].p_rows[0];
@@ -291,7 +291,7 @@ describe('crossBatchClearingSweep — clearing rows', () => {
     setupFixture({
       batches: [baseBatch('B1', '2026-02-01')],
       reconciled: [makeUnpaidRM('M1', 'B1')],
-      boEde: [ambetterBoEde('E1', 'B1', 'P1')],
+      boEde: [ambetterBoEde('E1', 'B1', 'p1')],
     });
     await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
     const row = rpcMock.mock.calls[0][1].p_rows[0];
@@ -309,10 +309,10 @@ describe('crossBatchClearingSweep — Q22 cleared_then_reversed', () => {
         baseBatch('B3', '2026-03-01'),
       ],
       reconciled: [makeUnpaidRM('M1', 'B1')],
-      boEde: [ambetterBoEde('E1', 'B1', 'P1')],
+      boEde: [ambetterBoEde('E1', 'B1', 'p1')],
       commission: [
-        commissionRow('C1', 'B2', 'P1', 100),
-        commissionRow('C2', 'B3', 'P1', -100),
+        commissionRow('C1', 'B2', 'p1', 100),
+        commissionRow('C2', 'B3', 'p1', -100),
       ],
     });
     await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
@@ -331,11 +331,11 @@ describe('crossBatchClearingSweep — Q22 cleared_then_reversed', () => {
         baseBatch('B4', '2026-04-01'),
       ],
       reconciled: [makeUnpaidRM('M1', 'B1')],
-      boEde: [ambetterBoEde('E1', 'B1', 'P1')],
+      boEde: [ambetterBoEde('E1', 'B1', 'p1')],
       commission: [
-        commissionRow('C1', 'B2', 'P1', 100),
-        commissionRow('C2', 'B3', 'P1', -100),
-        commissionRow('C3', 'B4', 'P1', 100),
+        commissionRow('C1', 'B2', 'p1', 100),
+        commissionRow('C2', 'B3', 'p1', -100),
+        commissionRow('C3', 'B4', 'p1', 100),
       ],
     });
     await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
@@ -350,14 +350,14 @@ describe('crossBatchClearingSweep — alias-aware resolver lookup', () => {
   it('Ambetter EDE row with only subscriber_id resolves via alias', async () => {
     setupFixture({
       batches: [baseBatch('B1', '2026-02-01'), baseBatch('B2', '2026-03-01')],
-      reconciled: [makeUnpaidRM('M1', 'B1', { policy_number: 'U123', issuer_subscriber_id: null })],
+      reconciled: [makeUnpaidRM('M1', 'B1', { policy_number: 'u123', issuer_subscriber_id: null })],
       boEde: [{
         id: 'E1', batch_id: 'B1', source_type: 'EDE', carrier: ambetter,
-        policy_number: null, issuer_subscriber_id: 'U123',
+        policy_number: null, issuer_subscriber_id: 'u123',
         effective_date: '2026-02-01', client_state_full: 'FL',
         raw_json: { coveredMemberCount: 1 },
       }],
-      commission: [commissionRow('C1', 'B2', 'U123', 100)],
+      commission: [commissionRow('C1', 'B2', 'u123', 100)],
     });
     const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
     expect(r.clearingRowsWritten).toBe(1);
@@ -368,10 +368,10 @@ describe('crossBatchClearingSweep — alias-aware resolver lookup', () => {
   it('Non-Ambetter (BCBS) does not alias subscriber_id → state_unresolved', async () => {
     setupFixture({
       batches: [baseBatch('B1', '2026-02-01')],
-      reconciled: [makeUnpaidRM('M1', 'B1', { carrier: 'BCBS', policy_number: 'ABC', issuer_subscriber_id: null })],
+      reconciled: [makeUnpaidRM('M1', 'B1', { carrier: 'BCBS', policy_number: 'abc', issuer_subscriber_id: null })],
       boEde: [{
         id: 'E1', batch_id: 'B1', source_type: 'EDE', carrier: 'BCBS',
-        policy_number: null, issuer_subscriber_id: 'ABC',
+        policy_number: null, issuer_subscriber_id: 'abc',
         effective_date: '2026-02-01', client_state_full: 'FL',
         raw_json: { coveredMemberCount: 1 },
       }],
@@ -390,7 +390,7 @@ describe('crossBatchClearingSweep — post-grain manual review', () => {
     setupFixture({
       batches: [baseBatch('B1', '2026-02-01')],
       reconciled: [makeUnpaidRM('M1', 'B1')],
-      boEde: [ambetterBoEde('E1', 'B1', 'P1')],
+      boEde: [ambetterBoEde('E1', 'B1', 'p1')],
     });
     await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
     const row = rpcMock.mock.calls[0][1].p_rows[0];
@@ -405,7 +405,7 @@ describe('crossBatchClearingSweep — post-grain manual review', () => {
     setupFixture({
       batches: [baseBatch('B1', '2026-02-01')],
       reconciled: [makeUnpaidRM('M1', 'B1')],
-      boEde: [ambetterBoEde('E1', 'B1', 'P1')],
+      boEde: [ambetterBoEde('E1', 'B1', 'p1')],
     });
     await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
     const row = rpcMock.mock.calls[0][1].p_rows[0];
@@ -435,10 +435,10 @@ describe('crossBatchClearingSweep — payment_batch_ids', () => {
         baseBatch('B3', '2026-03-01'),
       ],
       reconciled: [makeUnpaidRM('M1', 'B1')],
-      boEde: [ambetterBoEde('E1', 'B1', 'P1')],
+      boEde: [ambetterBoEde('E1', 'B1', 'p1')],
       commission: [
-        commissionRow('C1', 'B2', 'P1', 60),
-        commissionRow('C2', 'B3', 'P1', 60),
+        commissionRow('C1', 'B2', 'p1', 60),
+        commissionRow('C2', 'B3', 'p1', 60),
       ],
     });
     await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
