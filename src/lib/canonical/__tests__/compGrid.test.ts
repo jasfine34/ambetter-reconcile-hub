@@ -201,14 +201,19 @@ describe('getExpectedCommission — calculation_basis math', () => {
 });
 
 describe('getExpectedCommission — real seed regressions', () => {
-  it('BCBS TN Blue Elite PMPY: 292.80 * members', () => {
+  it.each([
+    [1, 12, 292.80],
+    [1, 6, 146.40],
+    [2, 12, 585.60],
+    [2, 6, 292.80],
+  ])('BCBS TN Blue Elite PMPY: %i members × %i months → $%s', (members, months, expected) => {
     const r = getExpectedCommission(
-      { carrier: 'bcbs', state: 'TN', members: 3, months: 6, planVariant: 'blue_elite', policyYear: 2026 },
+      { carrier: 'bcbs', state: 'TN', members, months, planVariant: 'blue_elite', policyYear: 2026 },
       SEED,
     );
     expect(r.supportStatus).toBe('supported');
     expect(r.compBasis).toBe('pmpy');
-    expect(r.expectedAmount).toBeCloseTo(292.80 * 3, 4);
+    expect(r.expectedAmount).toBe(expected);
   });
   it('BCBS TN planVariant=null returns standard PMPM $25 (mixed-basis "standard" tag wins)', () => {
     const r = getExpectedCommission(
