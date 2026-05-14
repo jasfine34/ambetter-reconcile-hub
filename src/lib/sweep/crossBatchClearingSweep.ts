@@ -140,9 +140,11 @@ export async function runCrossBatchClearingSweep(opts: SweepOptions): Promise<Sw
     return aborted('no_valid_batch_months', 'No upload batches have a valid statement month; aborting sweep to prevent accidental clearing wipe.');
   }
 
-  // A3 — load unpaid reconciled members across all batches with a valid month
+  // A3 — load unpaid reconciled members across all uploaded batches.
+  // Rows whose batch statement_month failed normalization are kept long enough
+  // to become batch_statement_month_unresolved inputErrors in A6.
   const unpaidRows: any[] = [];
-  for (const batchId of Object.keys(batchMonthById)) {
+  for (const batchId of batchData.map((b: any) => b.id).filter(Boolean)) {
     let from = 0;
     while (true) {
       const { data, error } = await (supabase as any)
