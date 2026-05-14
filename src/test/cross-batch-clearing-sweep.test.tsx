@@ -456,7 +456,7 @@ describe('crossBatchClearingSweep — performance shape', () => {
     const boEde: NR[] = [];
     const commission: NR[] = [];
     for (let i = 0; i < 250; i++) {
-      const pn = `P${i}`;
+      const pn = `p${i}`;
       reconciled.push(makeUnpaidRM(`M${i}`, 'B1', { policy_number: pn }));
       boEde.push(ambetterBoEde(`E${i}`, 'B1', pn));
       commission.push(commissionRow(`C${i}`, 'B2', pn, 100));
