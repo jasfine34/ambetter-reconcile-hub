@@ -19,8 +19,14 @@ vi.mock('@/contexts/BatchContext', () => ({
 }));
 
 const mockGetAll = vi.fn();
+const mockGetNormalized = vi.fn();
+const mockGetByMemberKeys = vi.fn();
+const mockGetByTriples = vi.fn();
 vi.mock('@/lib/persistence', () => ({
   getAllNormalizedRecords: (...a: any[]) => mockGetAll(...a),
+  getNormalizedRecords: (...a: any[]) => mockGetNormalized(...a),
+  getNormalizedRecordsByMemberKeys: (...a: any[]) => mockGetByMemberKeys(...a),
+  getCommissionRecordsByTriples: (...a: any[]) => mockGetByTriples(...a),
 }));
 
 vi.mock('@/lib/weakMatch', () => ({
