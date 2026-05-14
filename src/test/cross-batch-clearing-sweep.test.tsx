@@ -519,3 +519,120 @@ describe('crossBatchClearingSweep — additional edge cases', () => {
     expect(row.clearing_state).toBe('not_cleared');
   });
 });
+
+// ---------- Group: post-grain branch coverage (v12) ----------
+describe('crossBatchClearingSweep — v12 branch coverage', () => {
+  it('Test A — conflicting EDE state values within window → state_manual_review', async () => {
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01')],
+      reconciled: [makeUnpaidRM('M1', 'B1')],
+      boEde: [
+        {
+          id: 'E1', batch_id: 'B1', source_type: 'EDE', carrier: ambetter,
+          policy_number: 'p1', issuer_subscriber_id: 'p1',
+          effective_date: '2026-02-01', client_state_full: 'FL',
+          raw_json: { coveredMemberCount: 1 },
+        },
+        {
+          id: 'E2', batch_id: 'B1', source_type: 'EDE', carrier: ambetter,
+          policy_number: 'p1', issuer_subscriber_id: 'p1',
+          effective_date: '2026-02-01', client_state_full: 'TX',
+          raw_json: { coveredMemberCount: 1 },
+        },
+      ],
+    });
+    await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    const rows = rpcMock.mock.calls[0][1].p_rows;
+    expect(rows.length).toBe(1);
+    expect(rows[0].clearing_state).toBe('manual_review_required');
+    expect(rows[0].manual_review_reason).toBe('state_manual_review');
+    expect(rows[0].state_resolution_evidence.state.status).toBe('manual_review');
+    expect(getExpectedCommissionMock).not.toHaveBeenCalled();
+  });
+
+  it('Test B — state resolves but no member count → member_count_unresolved', async () => {
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01')],
+      reconciled: [makeUnpaidRM('M1', 'B1')],
+      boEde: [{
+        id: 'E1', batch_id: 'B1', source_type: 'EDE', carrier: ambetter,
+        policy_number: 'p1', issuer_subscriber_id: 'p1',
+        effective_date: '2026-02-01', client_state_full: 'FL',
+        raw_json: {},
+      }],
+    });
+    await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    const row = rpcMock.mock.calls[0][1].p_rows[0];
+    expect(row.clearing_state).toBe('manual_review_required');
+    expect(row.manual_review_reason).toBe('member_count_unresolved');
+    expect(row.state_resolution_evidence.memberCount.status).toBe('unresolved');
+    expect(getExpectedCommissionMock).not.toHaveBeenCalled();
+  });
+
+  it('Test C — reconciled row in batch with unresolvable statement_month → batch_statement_month_unresolved', async () => {
+    // Custom mock: include a stray reconciled row whose batch_id maps to an
+    // upload_batch with an unparseable statement_month, so it never enters
+    // batchMonthById and trips the per-row sm guard.
+    const validBatch: Batch = baseBatch('B_VALID', '2026-02-01');
+    const invalidBatch: Batch = { id: 'B_INVALID', statement_month: 'not-a-date', created_at: '2026-02-01' };
+    fromMock.mockImplementation((table: string) => {
+      if (table === 'upload_batches') {
+        return { select: () => Promise.resolve({ data: [validBatch, invalidBatch], error: null }) };
+      }
+      if (table === 'reconciled_members') {
+        const chain: any = {
+          _batch: null,
+          select() { return chain; },
+          eq(_c: string, v: string) { chain._batch = v; return chain; },
+          range(from: number) {
+            if (from > 0) return Promise.resolve({ data: [], error: null });
+            // Only B_VALID is queried (sweep iterates valid months only).
+            // Return one row matching plus one stray row with batch_id=B_INVALID.
+            const rows: RM[] = [
+              makeUnpaidRM('M_VALID', 'B_VALID'),
+              makeUnpaidRM('M_STRAY', 'B_INVALID', { policy_number: 'pStray' }),
+            ];
+            return Promise.resolve({ data: rows, error: null });
+          },
+        };
+        return chain;
+      }
+      if (table === 'normalized_records') {
+        const chain: any = {
+          select() { return chain; }, eq() { return chain; }, is() { return chain; },
+          in() { return chain; }, order() { return chain; }, limit() { return chain; },
+          gt() { return chain; },
+          then(resolve: any) { resolve({ data: [], error: null }); },
+        };
+        return chain;
+      }
+      return { select: () => Promise.resolve({ data: [], error: null }) };
+    });
+    const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    const stray = r.inputErrors.find(e => e.reconciled_member_id === 'M_STRAY');
+    expect(stray).toBeTruthy();
+    expect(stray!.reason).toBe('batch_statement_month_unresolved');
+    expect(stray!.batch_id).toBe('B_INVALID');
+    const pRows = rpcMock.mock.calls[0][1].p_rows;
+    // No clearing row for the stray member.
+    expect(pRows.find((row: any) => row.unpaid_batch_id === 'B_INVALID')).toBeFalsy();
+  });
+
+  it('Test D — two unpaid rows collapse to same identity key with conflicting subscriber IDs → ambiguous_policy_identity_key_before_grain', async () => {
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01')],
+      reconciled: [
+        makeUnpaidRM('M1', 'B1', { policy_number: 'p1', issuer_subscriber_id: 'sida' }),
+        makeUnpaidRM('M2', 'B1', { policy_number: 'p1', issuer_subscriber_id: 'sidb' }),
+      ],
+    });
+    const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    const ambig = r.inputErrors.filter(e => e.reason === 'ambiguous_policy_identity_key_before_grain');
+    expect(ambig.map(e => e.reconciled_member_id).sort()).toEqual(['M1', 'M2']);
+    const pRows = rpcMock.mock.calls[0][1].p_rows;
+    const collision = pRows.find((row: any) =>
+      row.policy_identity_key === 'ambetter|p1' && row.target_service_month === '2026-02'
+    );
+    expect(collision).toBeFalsy();
+  });
+});
