@@ -484,3 +484,38 @@ describe('crossBatchClearingSweep — performance shape', () => {
     expect(fromMock.mock.calls.length).toBeLessThan(20);
   });
 });
+
+// ---------- Group: empty-grain edge cases ----------
+describe('crossBatchClearingSweep — additional edge cases', () => {
+  it('no unpaid rows → success with zero clearing rows', async () => {
+    setupFixture({ batches: [baseBatch('B1', '2026-02-01')], reconciled: [] });
+    const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    expect(r.aborted).toBe(false);
+    expect(r.clearingRowsWritten).toBe(0);
+    expect(rpcMock).toHaveBeenCalled();
+  });
+
+  it('in_commission rows are skipped', async () => {
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01')],
+      reconciled: [{ ...makeUnpaidRM('M1', 'B1'), in_commission: true }],
+    });
+    const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    expect(r.clearingRowsWritten).toBe(0);
+  });
+
+  it('id-matched but no service month overlap → not_cleared', async () => {
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01'), baseBatch('B2', '2026-03-01')],
+      reconciled: [makeUnpaidRM('M1', 'B1')],
+      boEde: [ambetterBoEde('E1', 'B1', 'p1')],
+      commission: [{
+        ...commissionRow('C1', 'B2', 'p1', 100),
+        paid_to_date: '2025-12-31', months_paid: 1, // covers Dec 2025, not Feb 2026
+      }],
+    });
+    await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    const row = rpcMock.mock.calls[0][1].p_rows[0];
+    expect(row.clearing_state).toBe('not_cleared');
+  });
+});
