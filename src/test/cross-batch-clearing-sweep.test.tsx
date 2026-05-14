@@ -475,7 +475,7 @@ describe('crossBatchClearingSweep — performance shape', () => {
   it('250 grains: total DB calls bounded by O(batches + chunks), not O(grains)', async () => {
     const reconciled: RM[] = [];
     for (let i = 0; i < 250; i++) {
-      reconciled.push(makeUnpaidRM(`M${i}`, 'B1', { policy_number: `P${i}` }));
+      reconciled.push(makeUnpaidRM(`M${i}`, 'B1', { policy_number: `p${i}` }));
     }
     setupFixture({ batches: [baseBatch('B1', '2026-02-01')], reconciled });
     fromMock.mockClear();
