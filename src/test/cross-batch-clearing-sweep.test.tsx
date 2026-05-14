@@ -309,7 +309,7 @@ describe('crossBatchClearingSweep — Q22 cleared_then_reversed', () => {
         baseBatch('B3', '2026-03-01'),
       ],
       reconciled: [makeUnpaidRM('M1', 'B1')],
-      boEde: [ambetterBoEde('E1', 'B1', 'p1')],
+      boEde: [{ ...ambetterBoEde('E1', 'B1', 'p1'), effective_date: '2026-01-15' }],
       commission: [
         commissionRow('C1', 'B2', 'p1', 100),
         commissionRow('C2', 'B3', 'p1', -100),
@@ -331,7 +331,7 @@ describe('crossBatchClearingSweep — Q22 cleared_then_reversed', () => {
         baseBatch('B4', '2026-04-01'),
       ],
       reconciled: [makeUnpaidRM('M1', 'B1')],
-      boEde: [ambetterBoEde('E1', 'B1', 'p1')],
+      boEde: [{ ...ambetterBoEde('E1', 'B1', 'p1'), effective_date: '2026-01-15' }],
       commission: [
         commissionRow('C1', 'B2', 'p1', 100),
         commissionRow('C2', 'B3', 'p1', -100),
