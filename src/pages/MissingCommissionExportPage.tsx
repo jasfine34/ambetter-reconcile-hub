@@ -1046,10 +1046,9 @@ export default function MissingCommissionExportPage() {
             </div>
           </div>
         ) : (
-
-          // to displayed.rows (the snapshot from the last run).
           <div className="rounded-lg border overflow-auto" data-testid="results-table">
             <Table>
+
             <TableHeader>
               <TableRow>
                 {/* Operator-aid column: FFM ID = issuer_subscriber_id, the
