@@ -841,7 +841,7 @@ export default function MissingCommissionExportPage() {
   }
 
   function handleDownload() {
-    if (!displayed || !ranFilters || displayed.rows.length === 0) return;
+    if (!isDownloadable || !displayed || !ranFilters) return;
     const csv = buildMesserCsv(displayed.rows);
     const filename = buildMesserCsvFilename({
       scope: ranFilters.scope,
