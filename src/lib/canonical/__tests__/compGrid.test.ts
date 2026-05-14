@@ -150,11 +150,14 @@ describe('compGrid — seed integrity', () => {
 });
 
 describe('mapPolicyYearTo2026Grid', () => {
-  it('maps any year to 2026 in v1', () => {
-    expect(mapPolicyYearTo2026Grid(2024)).toBe(2026);
+  it('maps 2025 and 2026 to 2026', () => {
     expect(mapPolicyYearTo2026Grid(2025)).toBe(2026);
     expect(mapPolicyYearTo2026Grid(2026)).toBe(2026);
-    expect(mapPolicyYearTo2026Grid(2030)).toBe(2026);
+  });
+  it('passes through unknown years (forward compatibility)', () => {
+    expect(mapPolicyYearTo2026Grid(2024)).toBe(2024);
+    expect(mapPolicyYearTo2026Grid(2027)).toBe(2027);
+    expect(mapPolicyYearTo2026Grid(2030)).toBe(2030);
   });
 });
 
