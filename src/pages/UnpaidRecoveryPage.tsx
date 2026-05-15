@@ -209,6 +209,7 @@ function deriveDisplayRow(
   r: any,
   universe: { boOnly: readonly any[]; edeOnly: readonly any[] },
   getFfmId: (row: any) => string = () => '',
+  adjustedDollar?: number | null,
 ) {
   return {
     ffm_id: getFfmId(r),
@@ -219,7 +220,9 @@ function deriveDisplayRow(
     source_type: classifySourceTypeForRow(r, universe),
     premium_bucket: isZeroNetPremium(r) ? 'Zero Net Premium' : 'Has Premium',
     net_premium: r.net_premium ?? null,
-    estimated_missing_commission: r.estimated_missing_commission ?? null,
+    estimated_missing_commission: adjustedDollar !== undefined && adjustedDollar !== null
+      ? adjustedDollar
+      : (r.estimated_missing_commission ?? null),
     effective_date: r.effective_date ?? '',
     status: r.status ?? '',
     issue_type: r.issue_type ?? '',
@@ -230,9 +233,14 @@ export function buildUnpaidRecoveryCsv(
   rows: any[],
   universe: { boOnly: readonly any[]; edeOnly: readonly any[] },
   getFfmId: (row: any) => string = () => '',
+  adjustedByRow?: Map<any, AdjustedRow>,
 ): string {
   const data = rows.map((r) => {
-    const d = deriveDisplayRow(r, universe, getFfmId);
+    const adj = adjustedByRow?.get(r);
+    const dollar = adj?.adjustment.kind === 'reduce_dollars'
+      ? adj.effectiveEstMissing
+      : undefined;
+    const d = deriveDisplayRow(r, universe, getFfmId, dollar);
     const obj: Record<string, string> = {};
     for (const col of COLUMNS) {
       const v = (d as any)[col.key];
