@@ -342,6 +342,18 @@ export default function DashboardPage() {
   const { toast } = useToast();
   const navigate = useNavigate();
 
+  // Bundle 13c — cross-batch clearing overlay. C7: when load fails, fall back
+  // to legacy/batch-only by substituting an empty overlay for downstream wiring,
+  // so a previously-successful (but now stale) overlay doesn't leak through.
+  const {
+    overlay: clearingOverlay,
+    loading: overlayLoading,
+    error: overlayError,
+  } = useCrossBatchOverlay();
+  const dashboardClearingOverlay = overlayError
+    ? EMPTY_CLEARING_OVERLAY_MAP
+    : clearingOverlay;
+
   // Covered months for this batch (prior month + statement month). Drives the
   // drilldown buttons, subtitle month breakdown, and the expected-EDE filter.
   // Empty array if no batch is selected.
