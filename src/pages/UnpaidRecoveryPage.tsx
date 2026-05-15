@@ -198,6 +198,7 @@ export const UNPAID_RECOVERY_COLUMNS: Array<{ key: string; label: string }> = [
   { key: 'premium_bucket', label: 'Premium Bucket' },
   { key: 'net_premium', label: 'Net Premium' },
   { key: 'estimated_missing_commission', label: 'Est. Missing Commission' },
+  { key: '_clearingStatus', label: 'Clearing' },
   { key: 'effective_date', label: 'Effective Date' },
   { key: 'status', label: 'Policy Status' },
   { key: 'issue_type', label: 'Issue / Missing Reason' },
