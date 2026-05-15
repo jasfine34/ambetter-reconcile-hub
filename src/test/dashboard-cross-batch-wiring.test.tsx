@@ -239,10 +239,10 @@ describe('Bundle 13c — DashboardPage wiring guards', () => {
 
   it('invokes useCrossBatchOverlay at component top level (not inside useMemo)', () => {
     expect(page).toMatch(/useCrossBatchOverlay\(/);
-    const hookIdx = page.indexOf('useCrossBatchOverlay(');
-    const memoIdx = page.indexOf('useMemo(');
-    expect(hookIdx).toBeGreaterThan(0);
-    expect(hookIdx).toBeLessThan(memoIdx);
+    const memoBodies = page.match(/useMemo\(\(\)\s*=>\s*\{[\s\S]*?\},\s*\[/g) ?? [];
+    for (const body of memoBodies) {
+      expect(body).not.toMatch(/useCrossBatchOverlay\(/);
+    }
   });
 
   it('derives dashboardClearingOverlay = overlayError ? EMPTY_CLEARING_OVERLAY_MAP : clearingOverlay', () => {
