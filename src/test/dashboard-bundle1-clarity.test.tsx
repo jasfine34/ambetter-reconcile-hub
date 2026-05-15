@@ -292,11 +292,11 @@ describe('Bundle 7 — Total Policies Paid attribution + unpaid premium chips wi
   it('Top KPI Expected But Unpaid card renders both source-type splits and premium splits2', () => {
     const idx = dashboardSource.indexOf("setDrilldown('unpaid')");
     const block = dashboardSource.slice(dashboardSource.lastIndexOf('<MetricCard', idx), idx + 1200);
-    expect(block).toMatch(/unpaidSplit\.matched/);
-    expect(block).toMatch(/unpaidSplit\.boOnly/);
-    expect(block).toMatch(/unpaidSplit\.edeOnly/);
-    expect(block).toMatch(/unpaidPremiumSplit\.zeroNetPremium/);
-    expect(block).toMatch(/unpaidPremiumSplit\.hasPremium/);
+    expect(block).toMatch(/adjustedUnpaidSplit\.matched/);
+    expect(block).toMatch(/adjustedUnpaidSplit\.boOnly/);
+    expect(block).toMatch(/adjustedUnpaidSplit\.edeOnly/);
+    expect(block).toMatch(/adjustedUnpaidPremiumSplit\.zeroNetPremium/);
+    expect(block).toMatch(/adjustedUnpaidPremiumSplit\.hasPremium/);
     expect(block).toMatch(/Zero Net Premium/);
     expect(block).toMatch(/Has Premium/);
   });
@@ -395,7 +395,7 @@ describe('Bundle 8 — Source Coverage Expected But Unpaid ownership chips wirin
     const start = dashboardSource.lastIndexOf('<MetricCard', idx);
     const end = dashboardSource.indexOf('/>', idx);
     const block = dashboardSource.slice(start, end);
-    expect(block).toMatch(/unpaidOwnerSplit/);
+    expect(block).toMatch(/adjustedUnpaidOwnerSplit/);
     expect(block).toMatch(/label:\s*'JF'/);
     expect(block).toMatch(/label:\s*'EF'/);
     expect(block).toMatch(/label:\s*'BS'/);
@@ -430,7 +430,7 @@ describe('Bundle 10 — Total Policies Paid commission-only fallback wiring', ()
   it('EBU chip rendering still uses no-fallback path (Bundle 8 behavior unchanged)', () => {
     const idx = dashboardSource.indexOf("setDrilldown('unpaidExpected')");
     const block = dashboardSource.slice(dashboardSource.lastIndexOf('<MetricCard', idx), idx + 1500);
-    expect(block).toMatch(/unpaidOwnerSplit/);
+    expect(block).toMatch(/adjustedUnpaidOwnerSplit/);
     // EBU MUST NOT consume the commission-only Set or render Commission-Only.
     expect(block).not.toMatch(/Commission-Only/);
     expect(block).not.toMatch(/commissionStatementOnlyKeys/);
