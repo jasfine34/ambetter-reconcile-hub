@@ -395,7 +395,7 @@ describe('Bundle 8 — Source Coverage Expected But Unpaid ownership chips wirin
     const start = dashboardSource.lastIndexOf('<MetricCard', idx);
     const end = dashboardSource.indexOf('/>', idx);
     const block = dashboardSource.slice(start, end);
-    expect(block).toMatch(/unpaidOwnerSplit/);
+    expect(block).toMatch(/adjustedUnpaidOwnerSplit/);
     expect(block).toMatch(/label:\s*'JF'/);
     expect(block).toMatch(/label:\s*'EF'/);
     expect(block).toMatch(/label:\s*'BS'/);
