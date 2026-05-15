@@ -224,6 +224,75 @@ const ERICA_NPN = '21277051';
 
 type PayEntityFilter = 'Coverall' | 'Vix' | 'All';
 
+// Bundle 13c — page-scoped helpers for cross-batch overlay wiring.
+
+function relativeTime(iso: string): string {
+  try {
+    const then = new Date(iso).getTime();
+    if (!Number.isFinite(then)) return iso;
+    const diff = Date.now() - then;
+    const m = Math.floor(diff / 60000);
+    if (m < 1) return 'just now';
+    if (m < 60) return `${m} minute${m === 1 ? '' : 's'} ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h} hour${h === 1 ? '' : 's'} ago`;
+    const d = Math.floor(h / 24);
+    return `${d} day${d === 1 ? '' : 's'} ago`;
+  } catch {
+    return iso;
+  }
+}
+
+function isReviewWorthyAdjustment(it: AdjustedRow): boolean {
+  return (
+    it.adjustment.kind === 'mark_needs_review' ||
+    it.adjustment.kind === 'partial_amount_unavailable'
+  );
+}
+
+function recomputeUnpaidSplit(
+  rows: readonly any[],
+  universe: { boOnly: readonly any[]; edeOnly: readonly any[] },
+): { matched: number; boOnly: number; edeOnly: number } {
+  const out = { matched: 0, boOnly: 0, edeOnly: 0 };
+  for (const row of rows) {
+    const bucket = classifySourceTypeForRow(row, universe);
+    if (bucket === 'BO Only') out.boOnly += 1;
+    else if (bucket === 'EDE Only') out.edeOnly += 1;
+    else out.matched += 1;
+  }
+  return out;
+}
+
+function recomputeUnpaidPremiumSplit(
+  rows: readonly any[],
+): { zeroNetPremium: number; hasPremium: number } {
+  const out = { zeroNetPremium: 0, hasPremium: 0 };
+  for (const row of rows) {
+    if (isZeroNetPremium(row)) out.zeroNetPremium += 1;
+    else out.hasPremium += 1;
+  }
+  return out;
+}
+
+function recomputeUnpaidOwnerSplit(
+  rows: readonly any[],
+): { JF: number; EF: number; BS: number; Other: number } {
+  const out = { JF: 0, EF: 0, BS: 0, Other: 0 };
+  for (const row of rows) {
+    out[classifyPolicyOwnerFromCurrentAor(row?.current_policy_aor)] += 1;
+  }
+  return out;
+}
+
+function sumReversedAmount(items: readonly AdjustedRow[]): number {
+  return items.reduce((sum, it) => {
+    if (it.adjustment.kind !== 'move_to_reversed_bucket') return sum;
+    const value = Number(it.adjustment.overlay.actual_reversal_amount);
+    return sum + (Number.isFinite(value) ? Math.abs(value) : 0);
+  }, 0);
+}
+
 export default function DashboardPage() {
   const { reconciled, loading, counts, debugStats, currentBatchId, refreshAll, batches, resolverIndex, refreshResolverIndex } = useBatch();
   const currentBatch = useMemo(() => batches.find((b: any) => b.id === currentBatchId), [batches, currentBatchId]);
