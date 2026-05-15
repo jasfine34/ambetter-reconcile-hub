@@ -55,6 +55,19 @@ import {
   pickStableKey,
   type WeakMatchOverride,
 } from '@/lib/weakMatch';
+import { useCrossBatchOverlay } from '@/hooks/useCrossBatchOverlay';
+import {
+  EMPTY_CLEARING_OVERLAY_MAP,
+  partitionUnpaidRowsByOverlay,
+  type AdjustedRow,
+  type ClearingOverlayMap,
+  type ClearingState,
+} from '@/lib/canonical/crossBatchOverlay';
+import {
+  CrossBatchOverlayLoadErrorBanner,
+  OVERLAY_LOAD_ERROR_MESSAGE,
+} from '@/components/CrossBatchOverlayLoadErrorBanner';
+import { ClearingStatusChip } from '@/components/ClearingStatusChip';
 
 
 type PremiumBucket = 'all' | 'zero_premium' | 'has_premium';
@@ -88,6 +101,10 @@ interface ExportRow {
   _email: EnrichedField<string>;
   /** Phase 1.5 — Source/Evidence Type for the unpaid expected-payment row. */
   _sourceType: 'Matched' | 'BO Only' | 'EDE Only';
+  /** Bundle 13c — preview-only cross-batch clearing state (NOT in CSV). */
+  _clearingStatus: ClearingState | null;
+  /** Bundle 13c — preview-only render flag for the "Needs review" badge. */
+  _clearingNeedsReview: boolean;
 }
 
 const MESSER_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
@@ -117,6 +134,7 @@ const INTERNAL_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
   { key: '_missingReason', label: 'Missing reason' },
   { key: '_estimatedMissingCommission', label: 'Est. missing commission' },
   { key: '_sourceType', label: 'Source Type' },
+  { key: '_clearingStatus', label: 'Clearing' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -462,6 +480,24 @@ export function filtersMatchRanFilters(
   );
 }
 
+/**
+ * Bundle 13c — co-located helper. Returns true when the adjustment kind
+ * warrants a "Needs review" badge on the row (mirrors UR's predicate so
+ * MCE chip parity is exact).
+ */
+export function isReviewWorthyAdjustment(it: AdjustedRow): boolean {
+  return (
+    it.adjustment.kind === 'mark_needs_review' ||
+    it.adjustment.kind === 'partial_amount_unavailable'
+  );
+}
+
+type OverlayRunState = {
+  overlay: ClearingOverlayMap;
+  loading: boolean;
+  error: Error | null;
+};
+
 export default function MissingCommissionExportPage() {
   const {
     batches, currentBatchId, setCurrentBatchId, reconciled, resolverIndex,
@@ -492,6 +528,52 @@ export default function MissingCommissionExportPage() {
   const [displayed, setDisplayed] = useState<ReportResult | null>(null);
   const [ranFilters, setRanFilters] = useState<ReportFilters | null>(null);
   const currentRunGen = useRef(0);
+
+  // ---- Bundle 13c — cross-batch clearing overlay --------------------------
+  const {
+    overlay: clearingOverlay,
+    loading: overlayLoading,
+    error: overlayError,
+  } = useCrossBatchOverlay();
+  // C7: force legacy on overlay error, even after a previous successful load.
+  const mceClearingOverlay = overlayError
+    ? EMPTY_CLEARING_OVERLAY_MAP
+    : clearingOverlay;
+
+  // C13 await-overlay infrastructure (page-local — does NOT touch the hook).
+  const overlayStateRef = useRef<OverlayRunState>({
+    overlay: clearingOverlay,
+    loading: overlayLoading,
+    error: overlayError,
+  });
+  const overlayWaitersRef = useRef<Array<(state: OverlayRunState) => void>>([]);
+
+  useEffect(() => {
+    const next: OverlayRunState = {
+      overlay: clearingOverlay,
+      loading: overlayLoading,
+      error: overlayError,
+    };
+    overlayStateRef.current = next;
+    if (!overlayLoading) {
+      const waiters = overlayWaitersRef.current.splice(0);
+      for (const resolve of waiters) resolve(next);
+    }
+  }, [clearingOverlay, overlayLoading, overlayError]);
+
+  function waitForOverlayIdle(timeoutMs = 5000): Promise<OverlayRunState> {
+    const current = overlayStateRef.current;
+    if (!current.loading) return Promise.resolve(current);
+    return new Promise((resolve) => {
+      const timer = window.setTimeout(() => {
+        resolve(overlayStateRef.current);
+      }, timeoutMs);
+      overlayWaitersRef.current.push((state) => {
+        window.clearTimeout(timer);
+        resolve(state);
+      });
+    });
+  }
 
   const filters: ReportFilters = useMemo(
     () => ({ scope, premiumBucket, batchId: currentBatchId ?? null }),
@@ -604,6 +686,7 @@ export default function MissingCommissionExportPage() {
     // Compute selected-batch-only EE universe.
     let breakdown: ReturnType<typeof getExpectedPaymentBreakdown>;
     let missingMembers: any[];
+    let adjustedByRow: Map<any, AdjustedRow> = new Map();
     try {
       const ranFilteredEde = computeFilteredEde(
         selectedBatchRecords,
@@ -633,7 +716,39 @@ export default function MissingCommissionExportPage() {
       breakdown = getExpectedPaymentBreakdown(
         reconciledSnapshot, f.scope, ranFilteredEde, confirmedUpgradeMemberKeys,
       );
-      missingMembers = breakdown.unpaidRows;
+
+      // ---- Bundle 13c — C13 await-overlay-at-Run-Report -------------------
+      // Await any in-flight overlay load. On error (settled or new), surface
+      // the C7 warning toast + fall back to legacy (EMPTY overlay map). NEVER
+      // partition against a stale loading state without an explicit warning.
+      let overlayState = overlayStateRef.current;
+      if (overlayState.loading) {
+        overlayState = await waitForOverlayIdle();
+      }
+      let overlayForRun: ClearingOverlayMap = overlayState.overlay;
+      if (overlayState.loading || overlayState.error) {
+        toast({
+          title: 'Cross-batch payment clearings unavailable',
+          description: OVERLAY_LOAD_ERROR_MESSAGE,
+        });
+        overlayForRun = EMPTY_CLEARING_OVERLAY_MAP;
+      }
+
+      const partition = partitionUnpaidRowsByOverlay(breakdown.unpaidRows, overlayForRun);
+      adjustedByRow = new Map<any, AdjustedRow>();
+      for (const it of [
+        ...partition.regular,
+        ...partition.reversed,
+        ...partition.removed,
+        ...partition.needsReview,
+      ]) {
+        adjustedByRow.set(it.row, it);
+      }
+
+      // C6 — missingMembers excludes remove_from_unpaid + move_to_reversed_bucket.
+      // partition.regular already includes mark_needs_review; do NOT also append
+      // partition.needsReview (which would duplicate those rows).
+      missingMembers = partition.regular.map((it) => it.row);
     } catch (err) {
       if (!isLatest()) return;
       commit(() => {
@@ -779,10 +894,25 @@ export default function MissingCommissionExportPage() {
 
         const bucket = classifyNetPremium(m);
 
-        const estMissing =
+        // ---- Bundle 13c — overlay-aware estimated dollar + chip metadata --
+        const adj = adjustedByRow.get(m);
+        const legacyEst =
           typeof m.estimated_missing_commission === 'number' && m.estimated_missing_commission > 0
             ? m.estimated_missing_commission
             : DEFAULT_COMMISSION_ESTIMATE;
+        const estMissing =
+          adj && adj.adjustment.kind === 'reduce_dollars'
+            ? adj.effectiveEstMissing
+            : legacyEst;
+        let clearingStatus: ClearingState | null = null;
+        if (adj && adj.adjustment.kind !== 'no_overlay') {
+          if (adj.adjustment.kind === 'no_adjustment') {
+            clearingStatus = adj.adjustment.overlay?.clearing_state ?? null;
+          } else {
+            clearingStatus = adj.adjustment.overlay.clearing_state;
+          }
+        }
+        const clearingNeedsReview = adj ? isReviewWorthyAdjustment(adj) : false;
 
         const hasConflict =
           profile.applicant_name.conflict ||
@@ -823,6 +953,8 @@ export default function MissingCommissionExportPage() {
           _profile: profile,
           _hasConflict: hasConflict,
           _sourceType: classifySourceTypeForRow(m, breakdown.universe),
+          _clearingStatus: clearingStatus,
+          _clearingNeedsReview: clearingNeedsReview,
         });
       }
 
@@ -877,6 +1009,7 @@ export default function MissingCommissionExportPage() {
   return (
     <TooltipProvider>
       <div className="space-y-6">
+        {overlayError && <CrossBatchOverlayLoadErrorBanner />}
         <header className="space-y-1">
           <h1 className="text-2xl font-bold tracking-tight">Missing Commission Export</h1>
           <p className="text-sm text-muted-foreground max-w-3xl">
@@ -1175,6 +1308,20 @@ export default function MissingCommissionExportPage() {
                     );
                   })}
                   {INTERNAL_COLUMNS.map((c) => {
+                    if (c.key === '_clearingStatus') {
+                      return (
+                        <TableCell key={String(c.key)} className="text-sm whitespace-nowrap bg-muted/20 text-muted-foreground">
+                          <span className="inline-flex items-center gap-1.5">
+                            {row._clearingStatus
+                              ? <ClearingStatusChip state={row._clearingStatus} />
+                              : <span className="text-muted-foreground">—</span>}
+                            {row._clearingNeedsReview && (
+                              <Badge variant="secondary" data-testid="mce-needs-review-badge">Needs review</Badge>
+                            )}
+                          </span>
+                        </TableCell>
+                      );
+                    }
                     const v = row[c.key];
                     let display: React.ReactNode;
                     if (c.key === '_ffmId' || c.key === '_phone' || c.key === '_email') {

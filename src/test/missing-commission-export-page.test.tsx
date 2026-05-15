@@ -26,6 +26,14 @@ const mockToast = vi.fn();
 vi.mock('@/hooks/use-toast', () => ({
   useToast: () => ({ toast: mockToast }),
 }));
+vi.mock('@/hooks/useCrossBatchOverlay', () => ({
+  useCrossBatchOverlay: () => ({
+    overlay: { byGrain: new Map(), lastEvaluatedAt: null, totalActiveCount: 0 },
+    loading: false,
+    error: null,
+    reload: async () => {},
+  }),
+}));
 vi.mock('@/lib/persistence', () => ({
   getAllNormalizedRecords: (...a: any[]) => mockGetAll(...a),
   getNormalizedRecords: (...a: any[]) => mockGetNormalized(...a),
