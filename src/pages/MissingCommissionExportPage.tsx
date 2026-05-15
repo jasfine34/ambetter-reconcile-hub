@@ -480,6 +480,24 @@ export function filtersMatchRanFilters(
   );
 }
 
+/**
+ * Bundle 13c — co-located helper. Returns true when the adjustment kind
+ * warrants a "Needs review" badge on the row (mirrors UR's predicate so
+ * MCE chip parity is exact).
+ */
+export function isReviewWorthyAdjustment(it: AdjustedRow): boolean {
+  return (
+    it.adjustment.kind === 'mark_needs_review' ||
+    it.adjustment.kind === 'partial_amount_unavailable'
+  );
+}
+
+type OverlayRunState = {
+  overlay: ClearingOverlayMap;
+  loading: boolean;
+  error: Error | null;
+};
+
 export default function MissingCommissionExportPage() {
   const {
     batches, currentBatchId, setCurrentBatchId, reconciled, resolverIndex,
