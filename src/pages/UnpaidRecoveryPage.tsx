@@ -198,6 +198,7 @@ export const UNPAID_RECOVERY_COLUMNS: Array<{ key: string; label: string }> = [
   { key: 'premium_bucket', label: 'Premium Bucket' },
   { key: 'net_premium', label: 'Net Premium' },
   { key: 'estimated_missing_commission', label: 'Est. Missing Commission' },
+  { key: '_clearingStatus', label: 'Clearing' },
   { key: 'effective_date', label: 'Effective Date' },
   { key: 'status', label: 'Policy Status' },
   { key: 'issue_type', label: 'Issue / Missing Reason' },
@@ -209,6 +210,7 @@ function deriveDisplayRow(
   r: any,
   universe: { boOnly: readonly any[]; edeOnly: readonly any[] },
   getFfmId: (row: any) => string = () => '',
+  adjustedDollar?: number | null,
 ) {
   return {
     ffm_id: getFfmId(r),
@@ -219,7 +221,9 @@ function deriveDisplayRow(
     source_type: classifySourceTypeForRow(r, universe),
     premium_bucket: isZeroNetPremium(r) ? 'Zero Net Premium' : 'Has Premium',
     net_premium: r.net_premium ?? null,
-    estimated_missing_commission: r.estimated_missing_commission ?? null,
+    estimated_missing_commission: adjustedDollar !== undefined && adjustedDollar !== null
+      ? adjustedDollar
+      : (r.estimated_missing_commission ?? null),
     effective_date: r.effective_date ?? '',
     status: r.status ?? '',
     issue_type: r.issue_type ?? '',
@@ -230,17 +234,23 @@ export function buildUnpaidRecoveryCsv(
   rows: any[],
   universe: { boOnly: readonly any[]; edeOnly: readonly any[] },
   getFfmId: (row: any) => string = () => '',
+  adjustedByRow?: Map<any, AdjustedRow>,
 ): string {
+  const csvCols = COLUMNS.filter((c) => c.key !== '_clearingStatus');
   const data = rows.map((r) => {
-    const d = deriveDisplayRow(r, universe, getFfmId);
+    const adj = adjustedByRow?.get(r);
+    const dollar = adj?.adjustment.kind === 'reduce_dollars'
+      ? adj.effectiveEstMissing
+      : undefined;
+    const d = deriveDisplayRow(r, universe, getFfmId, dollar);
     const obj: Record<string, string> = {};
-    for (const col of COLUMNS) {
+    for (const col of csvCols) {
       const v = (d as any)[col.key];
       obj[col.label] = v == null ? '' : String(v);
     }
     return obj;
   });
-  return Papa.unparse({ fields: COLUMNS.map((c) => c.label), data });
+  return Papa.unparse({ fields: csvCols.map((c) => c.label), data });
 }
 
 export function buildUnpaidRecoveryFilename(opts: {
@@ -407,7 +417,12 @@ export default function UnpaidRecoveryPage() {
   // Map row → AdjustedRow for badge / dollar lookups.
   const adjustedByRow = useMemo(() => {
     const m = new Map<any, AdjustedRow>();
-    for (const it of [...partition.regular, ...partition.reversed]) m.set(it.row, it);
+    for (const it of [
+      ...partition.regular,
+      ...partition.reversed,
+      ...partition.removed,
+      ...partition.needsReview,
+    ]) m.set(it.row, it);
     return m;
   }, [partition]);
 
@@ -450,7 +465,7 @@ export default function UnpaidRecoveryPage() {
 
   function handleExport() {
     const batchMonth = currentBatch?.statement_month ? String(currentBatch.statement_month).substring(0, 7) : '';
-    const csv = buildUnpaidRecoveryCsv(filteredRows, universe, getFfmId);
+    const csv = buildUnpaidRecoveryCsv(filteredRows, universe, getFfmId, adjustedByRow);
     const filename = buildUnpaidRecoveryFilename({ scope, batchMonth, downloadDate: new Date() });
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -564,14 +579,45 @@ export default function UnpaidRecoveryPage() {
                 </TableCell>
               </TableRow>
             ) : pagedRows.map((r, i) => {
-              const d = deriveDisplayRow(r, universe, getFfmId);
+              const adj = adjustedByRow.get(r);
+              const dollarOverride = adj?.adjustment.kind === 'reduce_dollars'
+                ? adj.effectiveEstMissing
+                : undefined;
+              const d = deriveDisplayRow(r, universe, getFfmId, dollarOverride);
+              const clearingState = adj && adj.adjustment.kind !== 'no_overlay'
+                ? (adj.adjustment.kind === 'no_adjustment'
+                    ? adj.adjustment.overlay?.clearing_state
+                    : (adj.adjustment as any).overlay?.clearing_state)
+                : undefined;
+              const needsReview = adj?.adjustment.kind === 'mark_needs_review';
               return (
                 <TableRow key={r.member_key ?? i} data-testid="ur-row">
-                  {COLUMNS.map((c) => (
-                    <TableCell key={c.key} className="whitespace-nowrap text-sm">
-                      {formatCell(c.key, (d as any)[c.key])}
-                    </TableCell>
-                  ))}
+                  {COLUMNS.map((c) => {
+                    if (c.key === '_clearingStatus') {
+                      return (
+                        <TableCell key={c.key} className="whitespace-nowrap text-sm">
+                          <span className="inline-flex items-center gap-1">
+                            {clearingState ? <ClearingStatusChip state={clearingState} /> : <span className="text-muted-foreground">—</span>}
+                            {needsReview && (
+                              <span data-testid="ur-needs-review-badge" className="text-[10px] text-amber-700">Needs review</span>
+                            )}
+                          </span>
+                        </TableCell>
+                      );
+                    }
+                    if (c.key === 'estimated_missing_commission') {
+                      return (
+                        <TableCell key={c.key} className="whitespace-nowrap text-sm">
+                          {d.estimated_missing_commission == null ? '—' : formatMoney(d.estimated_missing_commission as number)}
+                        </TableCell>
+                      );
+                    }
+                    return (
+                      <TableCell key={c.key} className="whitespace-nowrap text-sm">
+                        {formatCell(c.key, (d as any)[c.key])}
+                      </TableCell>
+                    );
+                  })}
                 </TableRow>
               );
             })}

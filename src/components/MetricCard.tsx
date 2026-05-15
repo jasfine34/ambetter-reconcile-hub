@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 import { Info } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Badge, type BadgeProps } from '@/components/ui/badge';
 
 interface MetricCardProps {
   title: string;
@@ -10,20 +11,13 @@ interface MetricCardProps {
   onClick?: () => void;
   subtitle?: string;
   tooltip?: string | { text: string; why: string };
-  /**
-   * Optional compact bottom split-chips. Renders a row of small label/value
-   * pills below the main value. Used by the expected-payment cards (Should
-   * Be Paid / Expected Payments Received / Expected But Unpaid) to show the
-   * Matched / BO Only / EDE Only decomposition.
-   */
   splits?: Array<{ label: string; value: number }>;
-  /**
-   * Optional second row of compact split-chips, rendered below `splits`.
-   * Used by the top-KPI Expected But Unpaid card to show a premium-evidence
-   * group (Zero Net Premium / Has Premium) alongside the existing source-type
-   * group (Matched / BO Only / EDE Only).
-   */
   splits2?: Array<{ label: string; value: number }>;
+  /**
+   * Bundle 13c — optional small badge rendered under the value (e.g. "Needs review: 3").
+   * When omitted, the card renders identically to today.
+   */
+  badge?: { label: string; variant?: BadgeProps['variant']; testId?: string };
 }
 
 const variantStyles = {
@@ -42,7 +36,7 @@ const valueStyles = {
   info: 'text-info',
 };
 
-export function MetricCard({ title, value, icon, variant = 'default', onClick, subtitle, tooltip, splits, splits2 }: MetricCardProps) {
+export function MetricCard({ title, value, icon, variant = 'default', onClick, subtitle, tooltip, splits, splits2, badge }: MetricCardProps) {
   const tooltipContent = tooltip ? (
     typeof tooltip === 'string' ? tooltip : (
       <div className="space-y-1.5">
@@ -108,6 +102,13 @@ export function MetricCard({ title, value, icon, variant = 'default', onClick, s
               <span className="text-foreground font-semibold">{s.value.toLocaleString()}</span>
             </span>
           ))}
+        </div>
+      )}
+      {badge && (
+        <div className="mt-2" data-testid={badge.testId ?? 'metric-card-badge'}>
+          <Badge variant={badge.variant ?? 'secondary'} className="text-[10px]">
+            {badge.label}
+          </Badge>
         </div>
       )}
     </button>

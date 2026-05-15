@@ -467,7 +467,7 @@ describe('Bundle 12 — EBU batch-scope disclaimer (centralized constant)', () =
   // The exact disclaimer text — sourced from constants.ts at import time so
   // this test never hard-codes a duplicate of the literal string.
   const DISCLAIMER_TEXT =
-    "Unpaid counts are based on the selected batch's files only. Payments that appeared in later commission statements may not be cleared here.";
+    "Unpaid counts now reflect cross-batch payment clearings where available. Last sweep: see the Dashboard timestamp.";
 
   it('constant is defined exactly once in src/lib/constants.ts', () => {
     expect(constantsSrc).toMatch(/export const EBU_BATCH_SCOPE_DISCLAIMER\s*=/);
