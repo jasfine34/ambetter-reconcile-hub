@@ -589,7 +589,9 @@ export default function UnpaidRecoveryPage() {
                     ? adj.adjustment.overlay?.clearing_state
                     : (adj.adjustment as any).overlay?.clearing_state)
                 : undefined;
-              const needsReview = adj?.adjustment.kind === 'mark_needs_review';
+              const needsReview =
+                adj?.adjustment.kind === 'mark_needs_review' ||
+                adj?.adjustment.kind === 'partial_amount_unavailable';
               return (
                 <TableRow key={r.member_key ?? i} data-testid="ur-row">
                   {COLUMNS.map((c) => {
