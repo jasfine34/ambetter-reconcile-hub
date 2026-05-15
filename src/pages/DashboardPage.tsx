@@ -1083,7 +1083,7 @@ export default function DashboardPage() {
       case 'paidEdeOnly': return sc.paidEdeOnly.rows.map((x) => ({ ...x.row, bo_reason: x.bo_reason }));
       case 'commissionOnly': return sc.paidCommissionStatementOnly.rows;
       case 'backOfficeOnly': return sc.unpaidBackOfficeOnly.rows;
-      case 'unpaidExpected': return sc.expectedButUnpaid.rows;
+      case 'unpaidExpected': return metrics.adjustedSourceCoverage.expectedButUnpaid.rows;
       case 'totalPaidAll': return sc.totalPoliciesPaid.rows;
       // Diagnostic-only: BO Active w/ Non-current EDE (Interpretation C).
       // Excluded from Should Be Paid; visible separately for review.
