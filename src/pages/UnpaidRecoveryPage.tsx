@@ -417,7 +417,12 @@ export default function UnpaidRecoveryPage() {
   // Map row → AdjustedRow for badge / dollar lookups.
   const adjustedByRow = useMemo(() => {
     const m = new Map<any, AdjustedRow>();
-    for (const it of [...partition.regular, ...partition.reversed]) m.set(it.row, it);
+    for (const it of [
+      ...partition.regular,
+      ...partition.reversed,
+      ...partition.removed,
+      ...partition.needsReview,
+    ]) m.set(it.row, it);
     return m;
   }, [partition]);
 
