@@ -1072,7 +1072,7 @@ export default function DashboardPage() {
       case 'shouldPay': return epb.universe.rows;
       case 'paidComm': return sc.totalPoliciesPaid.rows;
       case 'paidEligible': return epb.paidRows;
-      case 'unpaid': return epb.unpaidRows.map((r) => ({ ...r, _sourceType: sourceTypeForUnpaid(r) }));
+      case 'unpaid': return metrics.adjustedUnpaidRows.map((r: any) => ({ ...r, _sourceType: sourceTypeForUnpaid(r) }));
       case 'fullyMatched': return sc.fullyMatchedPaid.rows;
       // New Phase 1 tile: Paid: Back Office Only (was wrapped under
       // "Paid but Missing from EDE" / paidOutsideEde — now 4-bucket math).
