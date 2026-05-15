@@ -44,8 +44,22 @@ import {
   getTotalPoliciesPaidAttribution,
   classifySourceTypeForRow,
   filterCommissionRowsByScope,
+  isZeroNetPremium,
 } from '@/lib/canonical';
 import { getIssueTypeLabel, EBU_BATCH_SCOPE_DISCLAIMER } from '@/lib/constants';
+import { Badge } from '@/components/ui/badge';
+import { formatMoney } from '@/lib/utils';
+import { useCrossBatchOverlay } from '@/hooks/useCrossBatchOverlay';
+import {
+  EMPTY_CLEARING_OVERLAY_MAP,
+  partitionUnpaidRowsByOverlay,
+  sumEffectiveEstMissing,
+  type AdjustedRow,
+} from '@/lib/canonical/crossBatchOverlay';
+import { classifyPolicyOwnerFromCurrentAor } from '@/lib/canonical/policyOwner';
+import { CrossBatchRolloutBanner } from '@/components/CrossBatchRolloutBanner';
+import { CrossBatchStaleSweepBanner } from '@/components/CrossBatchStaleSweepBanner';
+import { CrossBatchOverlayLoadErrorBanner } from '@/components/CrossBatchOverlayLoadErrorBanner';
 
 /** Format '2026-01' as '1/1/2026' for display. */
 function formatMonthStart(monthKey: string): string {
