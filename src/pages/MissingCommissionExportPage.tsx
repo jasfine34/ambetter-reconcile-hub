@@ -686,6 +686,7 @@ export default function MissingCommissionExportPage() {
     // Compute selected-batch-only EE universe.
     let breakdown: ReturnType<typeof getExpectedPaymentBreakdown>;
     let missingMembers: any[];
+    let adjustedByRow: Map<any, AdjustedRow> = new Map();
     try {
       const ranFilteredEde = computeFilteredEde(
         selectedBatchRecords,
@@ -715,7 +716,39 @@ export default function MissingCommissionExportPage() {
       breakdown = getExpectedPaymentBreakdown(
         reconciledSnapshot, f.scope, ranFilteredEde, confirmedUpgradeMemberKeys,
       );
-      missingMembers = breakdown.unpaidRows;
+
+      // ---- Bundle 13c — C13 await-overlay-at-Run-Report -------------------
+      // Await any in-flight overlay load. On error (settled or new), surface
+      // the C7 warning toast + fall back to legacy (EMPTY overlay map). NEVER
+      // partition against a stale loading state without an explicit warning.
+      let overlayState = overlayStateRef.current;
+      if (overlayState.loading) {
+        overlayState = await waitForOverlayIdle();
+      }
+      let overlayForRun: ClearingOverlayMap = overlayState.overlay;
+      if (overlayState.loading || overlayState.error) {
+        toast({
+          title: 'Cross-batch payment clearings unavailable',
+          description: OVERLAY_LOAD_ERROR_MESSAGE,
+        });
+        overlayForRun = EMPTY_CLEARING_OVERLAY_MAP;
+      }
+
+      const partition = partitionUnpaidRowsByOverlay(breakdown.unpaidRows, overlayForRun);
+      adjustedByRow = new Map<any, AdjustedRow>();
+      for (const it of [
+        ...partition.regular,
+        ...partition.reversed,
+        ...partition.removed,
+        ...partition.needsReview,
+      ]) {
+        adjustedByRow.set(it.row, it);
+      }
+
+      // C6 — missingMembers excludes remove_from_unpaid + move_to_reversed_bucket.
+      // partition.regular already includes mark_needs_review; do NOT also append
+      // partition.needsReview (which would duplicate those rows).
+      missingMembers = partition.regular.map((it) => it.row);
     } catch (err) {
       if (!isLatest()) return;
       commit(() => {
