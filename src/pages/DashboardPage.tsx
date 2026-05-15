@@ -789,8 +789,53 @@ export default function DashboardPage() {
     const paidCommRecords = sourceCoverage.totalPoliciesPaid.count;
     const boActiveNonCurrentEde = sourceCoverage.boActiveNonCurrentEde.count;
 
-    return { expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay, eligibleCohort, expectedPaymentBreakdown, sourceCoverage, paidAttribution, paidCommRecords, paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance, totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidBackOfficeOnly, paidEdeOnly, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll, boActiveNonCurrentEde, coverallDirectNet, downlineNet, netPaidTotal, splitDelta, coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet };
-  }, [filtered, reconciled, normalizedRecords, payEntityFilter, filteredEde, eeUniverseKeys, priorMonth, statementMonth, effInBO, confirmedUpgradeMemberKeys, coveredMonths]);
+    // Bundle 13c — adjusted-cohort partition for Dashboard EBU + Source Coverage EBU.
+    const dashPartition = partitionUnpaidRowsByOverlay(expectedPaymentBreakdown.unpaidRows, dashboardClearingOverlay);
+    const dashRegular = dashPartition.regular;
+    const dashReversed = dashPartition.reversed;
+    const dashReviewRows = dashRegular.filter(isReviewWorthyAdjustment);
+
+    const scPartition = partitionUnpaidRowsByOverlay(sourceCoverage.expectedButUnpaid.rows, dashboardClearingOverlay);
+    const scRegular = scPartition.regular;
+    const scReviewRows = scRegular.filter(isReviewWorthyAdjustment);
+
+    const dashRegularRows = dashRegular.map((it) => it.row);
+    const scRegularRows = scRegular.map((it) => it.row);
+
+    const adjustedUnpaidSplit = recomputeUnpaidSplit(dashRegularRows, expectedPaymentBreakdown.universe);
+    const adjustedUnpaidPremiumSplit = recomputeUnpaidPremiumSplit(dashRegularRows);
+    const adjustedUnpaidOwnerSplit = recomputeUnpaidOwnerSplit(scRegularRows);
+
+    const adjustedSourceCoverage = {
+      expectedButUnpaid: {
+        count: scRegular.length,
+        rows: scRegularRows,
+      },
+    };
+
+    return {
+      expected, expectedPriorMonth, expectedStatementMonth, foundBO, eligible, shouldPay,
+      eligibleCohort, expectedPaymentBreakdown, sourceCoverage, paidAttribution, paidCommRecords,
+      paidEligible, unpaid, totalComm, totalClawbacks, estMissing, difference, unpaidVariance,
+      totalEdeRaw, hasAnyEde, hasExpectedEde, expectedWithBO, fullyMatched, paidBackOfficeOnly,
+      paidEdeOnly, commissionOnly, backOfficeOnly, unpaidExpected, totalPaidAll,
+      boActiveNonCurrentEde, coverallDirectNet, downlineNet, netPaidTotal, splitDelta,
+      coverallDirectRows, downlineRows, unclassifiedRows, unclassifiedNet,
+      // Bundle 13c — adjusted cohort fields (raw fields above are PRESERVED).
+      adjustedUnpaid: dashRegular.length,
+      adjustedEstMissing: sumEffectiveEstMissing(dashRegular),
+      adjustedUnpaidExpected: scRegular.length,
+      adjustedUnpaidSplit,
+      adjustedUnpaidPremiumSplit,
+      adjustedUnpaidOwnerSplit,
+      adjustedUnpaidRows: dashRegularRows,
+      adjustedSourceCoverage,
+      dashboardReviewRows: dashReviewRows,
+      sourceCoverageReviewRows: scReviewRows,
+      reversedAdjustedRows: dashReversed,
+      reversedUnpaidAmount: sumReversedAmount(dashReversed),
+    };
+  }, [filtered, reconciled, normalizedRecords, payEntityFilter, filteredEde, eeUniverseKeys, priorMonth, statementMonth, effInBO, confirmedUpgradeMemberKeys, coveredMonths, dashboardClearingOverlay]);
 
   // Phase 1.7: keep metricsRef in sync so executeInvariants reads the latest.
   useEffect(() => { metricsRef.current = metrics; }, [metrics]);
