@@ -430,7 +430,7 @@ describe('Bundle 10 — Total Policies Paid commission-only fallback wiring', ()
   it('EBU chip rendering still uses no-fallback path (Bundle 8 behavior unchanged)', () => {
     const idx = dashboardSource.indexOf("setDrilldown('unpaidExpected')");
     const block = dashboardSource.slice(dashboardSource.lastIndexOf('<MetricCard', idx), idx + 1500);
-    expect(block).toMatch(/unpaidOwnerSplit/);
+    expect(block).toMatch(/adjustedUnpaidOwnerSplit/);
     // EBU MUST NOT consume the commission-only Set or render Commission-Only.
     expect(block).not.toMatch(/Commission-Only/);
     expect(block).not.toMatch(/commissionStatementOnlyKeys/);
