@@ -36,7 +36,7 @@ const valueStyles = {
   info: 'text-info',
 };
 
-export function MetricCard({ title, value, icon, variant = 'default', onClick, subtitle, tooltip, splits, splits2 }: MetricCardProps) {
+export function MetricCard({ title, value, icon, variant = 'default', onClick, subtitle, tooltip, splits, splits2, badge }: MetricCardProps) {
   const tooltipContent = tooltip ? (
     typeof tooltip === 'string' ? tooltip : (
       <div className="space-y-1.5">
