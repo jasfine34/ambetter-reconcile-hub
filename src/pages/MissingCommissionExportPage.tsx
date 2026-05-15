@@ -101,6 +101,10 @@ interface ExportRow {
   _email: EnrichedField<string>;
   /** Phase 1.5 — Source/Evidence Type for the unpaid expected-payment row. */
   _sourceType: 'Matched' | 'BO Only' | 'EDE Only';
+  /** Bundle 13c — preview-only cross-batch clearing state (NOT in CSV). */
+  _clearingStatus: ClearingState | null;
+  /** Bundle 13c — preview-only render flag for the "Needs review" badge. */
+  _clearingNeedsReview: boolean;
 }
 
 const MESSER_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
