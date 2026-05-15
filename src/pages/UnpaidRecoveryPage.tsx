@@ -236,6 +236,7 @@ export function buildUnpaidRecoveryCsv(
   getFfmId: (row: any) => string = () => '',
   adjustedByRow?: Map<any, AdjustedRow>,
 ): string {
+  const csvCols = COLUMNS.filter((c) => c.key !== '_clearingStatus');
   const data = rows.map((r) => {
     const adj = adjustedByRow?.get(r);
     const dollar = adj?.adjustment.kind === 'reduce_dollars'
@@ -243,13 +244,13 @@ export function buildUnpaidRecoveryCsv(
       : undefined;
     const d = deriveDisplayRow(r, universe, getFfmId, dollar);
     const obj: Record<string, string> = {};
-    for (const col of COLUMNS) {
+    for (const col of csvCols) {
       const v = (d as any)[col.key];
       obj[col.label] = v == null ? '' : String(v);
     }
     return obj;
   });
-  return Papa.unparse({ fields: COLUMNS.map((c) => c.label), data });
+  return Papa.unparse({ fields: csvCols.map((c) => c.label), data });
 }
 
 export function buildUnpaidRecoveryFilename(opts: {
