@@ -81,13 +81,14 @@ export function CrossBatchStaleSweepBanner() {
   if (dismissed) return null;
   const lastEvaluatedAt = overlay.lastEvaluatedAt;
 
-  // Both null → hide.
-  if (!lastEvaluatedAt && !maxRebuild) return null;
+  // No rebuild timestamp means there is nothing to compare against.
+  if (!maxRebuild) return null;
+
   // Sweep fresh enough → hide.
-  if (lastEvaluatedAt && maxRebuild && maxRebuild <= lastEvaluatedAt) return null;
-  // Sweep absent but rebuilds exist → never-run.
-  // Sweep stale relative to rebuild → stale.
-  const isNeverRun = !lastEvaluatedAt && !!maxRebuild;
+  if (lastEvaluatedAt && maxRebuild <= lastEvaluatedAt) return null;
+
+  // Reaching here means maxRebuild is non-null AND (lastEvaluatedAt is null OR maxRebuild > lastEvaluatedAt).
+  const isNeverRun = !lastEvaluatedAt;
 
   const dismiss = () => {
     try { window.sessionStorage.setItem(SESSION_KEY, '1'); } catch { /* ignore */ }
