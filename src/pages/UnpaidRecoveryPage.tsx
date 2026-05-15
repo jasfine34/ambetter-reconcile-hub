@@ -579,14 +579,45 @@ export default function UnpaidRecoveryPage() {
                 </TableCell>
               </TableRow>
             ) : pagedRows.map((r, i) => {
-              const d = deriveDisplayRow(r, universe, getFfmId);
+              const adj = adjustedByRow.get(r);
+              const dollarOverride = adj?.adjustment.kind === 'reduce_dollars'
+                ? adj.effectiveEstMissing
+                : undefined;
+              const d = deriveDisplayRow(r, universe, getFfmId, dollarOverride);
+              const clearingState = adj && adj.adjustment.kind !== 'no_overlay'
+                ? (adj.adjustment.kind === 'no_adjustment'
+                    ? adj.adjustment.overlay?.clearing_state
+                    : (adj.adjustment as any).overlay?.clearing_state)
+                : undefined;
+              const needsReview = adj?.adjustment.kind === 'mark_needs_review';
               return (
                 <TableRow key={r.member_key ?? i} data-testid="ur-row">
-                  {COLUMNS.map((c) => (
-                    <TableCell key={c.key} className="whitespace-nowrap text-sm">
-                      {formatCell(c.key, (d as any)[c.key])}
-                    </TableCell>
-                  ))}
+                  {COLUMNS.map((c) => {
+                    if (c.key === '_clearingStatus') {
+                      return (
+                        <TableCell key={c.key} className="whitespace-nowrap text-sm">
+                          <span className="inline-flex items-center gap-1">
+                            {clearingState ? <ClearingStatusChip state={clearingState} /> : <span className="text-muted-foreground">—</span>}
+                            {needsReview && (
+                              <span data-testid="ur-needs-review-badge" className="text-[10px] text-amber-700">Needs review</span>
+                            )}
+                          </span>
+                        </TableCell>
+                      );
+                    }
+                    if (c.key === 'estimated_missing_commission') {
+                      return (
+                        <TableCell key={c.key} className="whitespace-nowrap text-sm">
+                          {d.estimated_missing_commission == null ? '—' : formatMoney(d.estimated_missing_commission as number)}
+                        </TableCell>
+                      );
+                    }
+                    return (
+                      <TableCell key={c.key} className="whitespace-nowrap text-sm">
+                        {formatCell(c.key, (d as any)[c.key])}
+                      </TableCell>
+                    );
+                  })}
                 </TableRow>
               );
             })}
