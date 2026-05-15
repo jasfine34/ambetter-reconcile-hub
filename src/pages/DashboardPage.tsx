@@ -1094,7 +1094,7 @@ export default function DashboardPage() {
       case 'exceptionNotEligible': return exceptionRowsByIssue['Not Eligible for Commission'];
       default: return filtered;
     }
-  }, [drilldown, filtered, eeUniverseKeys, metrics.sourceCoverage, metrics.expectedPaymentBreakdown, exceptionRowsByIssue]);
+  }, [drilldown, filtered, eeUniverseKeys, metrics.sourceCoverage, metrics.expectedPaymentBreakdown, metrics.adjustedUnpaidRows, metrics.adjustedSourceCoverage, exceptionRowsByIssue]);
 
   const isCoverageDrilldown = ['fullyMatched', 'paidBackOfficeOnly', 'paidEdeOnly', 'commissionOnly', 'backOfficeOnly', 'unpaidExpected', 'totalPaidAll', 'boActiveNonCurrentEde'].includes(drilldown || '');
   const isExceptionDrilldown = drilldown === 'exceptionWrongPayEntity' || drilldown === 'exceptionNotEligible';
