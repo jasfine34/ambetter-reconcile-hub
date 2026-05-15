@@ -104,6 +104,13 @@ export function MetricCard({ title, value, icon, variant = 'default', onClick, s
           ))}
         </div>
       )}
+      {badge && (
+        <div className="mt-2" data-testid={badge.testId ?? 'metric-card-badge'}>
+          <Badge variant={badge.variant ?? 'secondary'} className="text-[10px]">
+            {badge.label}
+          </Badge>
+        </div>
+      )}
     </button>
   );
 }
