@@ -1140,6 +1140,15 @@ export default function DashboardPage() {
           <RebuildBatchButton />
           <RebuildAllBatchesButton />
           <RebuildCrossBatchClearingsButton />
+          <span
+            className="text-xs text-muted-foreground"
+            data-testid="dashboard-cross-batch-last-updated"
+            title={dashboardClearingOverlay.lastEvaluatedAt ?? ''}
+          >
+            Last updated: {dashboardClearingOverlay.lastEvaluatedAt
+              ? relativeTime(dashboardClearingOverlay.lastEvaluatedAt)
+              : 'Never run'}
+          </span>
           <BatchSelector />
         </div>
       </div>
