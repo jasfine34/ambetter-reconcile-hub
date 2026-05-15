@@ -1230,6 +1230,8 @@ export default function DashboardPage() {
       {/* Bundle 13c — stale sweep + overlay load error banners (C12: 5th + 6th). */}
       <CrossBatchStaleSweepBanner />
       {overlayError && <CrossBatchOverlayLoadErrorBanner />}
+
+      {currentBatchId && lastRebuildAt && !logicChanged && (
         <div className="text-xs text-muted-foreground flex items-center gap-2">
           <Hammer className="h-3 w-3" />
           Last full rebuild: {new Date(lastRebuildAt).toLocaleString()} · logic <code className="font-mono">{lastRebuildVersion}</code>
