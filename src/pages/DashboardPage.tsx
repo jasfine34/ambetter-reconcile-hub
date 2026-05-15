@@ -1407,23 +1407,69 @@ export default function DashboardPage() {
                 { label: 'EDE Only', value: metrics.expectedPaymentBreakdown.paidSplit.edeOnly },
               ]}
             />
-            <MetricCard
-              title="Expected But Unpaid"
-              value={metrics.unpaid}
-              icon={<XCircle className="h-4 w-4" />}
-              variant="destructive"
-              onClick={() => setDrilldown('unpaid')}
-              tooltip={{ text: "Members in the expected-payment universe (Matched + BO Only + EDE Only) that were not paid.", why: "Primary recovery target — expected revenue that was not received." }}
-              splits={[
-                { label: 'Matched', value: metrics.expectedPaymentBreakdown.unpaidSplit.matched },
-                { label: 'BO Only', value: metrics.expectedPaymentBreakdown.unpaidSplit.boOnly },
-                { label: 'EDE Only', value: metrics.expectedPaymentBreakdown.unpaidSplit.edeOnly },
-              ]}
-              splits2={[
-                { label: 'Zero Net Premium', value: metrics.expectedPaymentBreakdown.unpaidPremiumSplit.zeroNetPremium },
-                { label: 'Has Premium', value: metrics.expectedPaymentBreakdown.unpaidPremiumSplit.hasPremium },
-              ]}
-            />
+            <div className="relative">
+              <MetricCard
+                title="Expected But Unpaid"
+                value={metrics.adjustedUnpaid}
+                icon={<XCircle className="h-4 w-4" />}
+                variant="destructive"
+                onClick={() => setDrilldown('unpaid')}
+                tooltip={{ text: "Members in the expected-payment universe (Matched + BO Only + EDE Only) that were not paid, after applying cross-batch payment clearings.", why: "Primary recovery target — expected revenue that was not received." }}
+                splits={[
+                  { label: 'Matched', value: metrics.adjustedUnpaidSplit.matched },
+                  { label: 'BO Only', value: metrics.adjustedUnpaidSplit.boOnly },
+                  { label: 'EDE Only', value: metrics.adjustedUnpaidSplit.edeOnly },
+                ]}
+                splits2={[
+                  { label: 'Zero Net Premium', value: metrics.adjustedUnpaidPremiumSplit.zeroNetPremium },
+                  { label: 'Has Premium', value: metrics.adjustedUnpaidPremiumSplit.hasPremium },
+                ]}
+              />
+              {metrics.dashboardReviewRows.length > 0 && (
+                <Badge
+                  data-testid="dashboard-ebu-needs-review-chip"
+                  className="absolute top-2 right-2 border-amber-300 bg-amber-50 text-amber-700"
+                  variant="outline"
+                >
+                  Needs review: {metrics.dashboardReviewRows.length}
+                </Badge>
+              )}
+            </div>
+            {/* Bundle 13c — Cleared then reversed cohort tile (always renders). */}
+            <div
+              className="relative rounded-xl border p-5 text-left bg-amber-50/60 border-amber-300/60"
+              data-testid="dashboard-cleared-then-reversed-tile"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Cleared then reversed
+                </span>
+                <AlertTriangle className="h-4 w-4 text-amber-600" />
+              </div>
+              <div className="text-3xl font-bold text-foreground" data-testid="dashboard-reversed-count">
+                {metrics.reversedAdjustedRows.length}
+              </div>
+              <div className="text-xs text-muted-foreground mt-1" data-testid="dashboard-reversed-amount">
+                {formatMoney(metrics.reversedUnpaidAmount)} reversed
+              </div>
+              {metrics.reversedAdjustedRows.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => navigate('/unpaid-recovery?filter=clearedThenReversed')}
+                  className="mt-3 text-xs text-primary hover:underline"
+                  data-testid="dashboard-reversed-link"
+                >
+                  View details
+                </button>
+              ) : (
+                <span
+                  className="mt-3 inline-block text-xs text-muted-foreground"
+                  data-testid="dashboard-reversed-empty"
+                >
+                  No reversals
+                </span>
+              )}
+            </div>
             <div className="relative rounded-xl border p-5 text-left bg-success/10 border-success/30">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Net Paid Commission</span>
