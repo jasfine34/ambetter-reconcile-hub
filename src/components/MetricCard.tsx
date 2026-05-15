@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 import { Info } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Badge, type BadgeProps } from '@/components/ui/badge';
 
 interface MetricCardProps {
   title: string;
@@ -10,20 +11,13 @@ interface MetricCardProps {
   onClick?: () => void;
   subtitle?: string;
   tooltip?: string | { text: string; why: string };
-  /**
-   * Optional compact bottom split-chips. Renders a row of small label/value
-   * pills below the main value. Used by the expected-payment cards (Should
-   * Be Paid / Expected Payments Received / Expected But Unpaid) to show the
-   * Matched / BO Only / EDE Only decomposition.
-   */
   splits?: Array<{ label: string; value: number }>;
-  /**
-   * Optional second row of compact split-chips, rendered below `splits`.
-   * Used by the top-KPI Expected But Unpaid card to show a premium-evidence
-   * group (Zero Net Premium / Has Premium) alongside the existing source-type
-   * group (Matched / BO Only / EDE Only).
-   */
   splits2?: Array<{ label: string; value: number }>;
+  /**
+   * Bundle 13c — optional small badge rendered under the value (e.g. "Needs review: 3").
+   * When omitted, the card renders identically to today.
+   */
+  badge?: { label: string; variant?: BadgeProps['variant']; testId?: string };
 }
 
 const variantStyles = {
