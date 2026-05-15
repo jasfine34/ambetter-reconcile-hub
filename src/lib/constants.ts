@@ -123,4 +123,4 @@ export const DEFAULT_COMMISSION_ESTIMATE = 18.00;
  * cross-batch payment clearing.
  */
 export const EBU_BATCH_SCOPE_DISCLAIMER =
-  "Unpaid counts are based on the selected batch's files only. Payments that appeared in later commission statements may not be cleared here.";
+  "Unpaid counts now reflect cross-batch payment clearings where available. Last sweep: see the Dashboard timestamp.";
