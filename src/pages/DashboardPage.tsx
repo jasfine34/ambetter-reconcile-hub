@@ -1153,6 +1153,9 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Bundle 13c — rollout banner (C12 mount order: top of stack). */}
+      <CrossBatchRolloutBanner />
+
       {/* Cross-batch staleness banner */}
       {staleBatchesCount > 0 && (
         <Card className="border-yellow-500/40 bg-yellow-500/10">
