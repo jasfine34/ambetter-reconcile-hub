@@ -294,7 +294,7 @@ describe('Bundle 11 — cross-surface parity with Dashboard EBU', () => {
 // Bundle 12.5 — column cleanup + FFM ID re-source
 // ---------------------------------------------------------------------------
 describe('Bundle 12.5 — column order + Current Policy AOR removal', () => {
-  const EXPECTED_LABELS = [
+  const EXPECTED_VISIBLE_LABELS = [
     'FFM ID',
     'Member Name',
     'Policy #',
@@ -311,10 +311,10 @@ describe('Bundle 12.5 — column order + Current Policy AOR removal', () => {
   ];
 
   // CSV intentionally excludes the UI-only `_clearingStatus` column.
-  const EXPECTED_CSV_LABELS = EXPECTED_LABELS.filter((l) => l !== 'Clearing');
+  const EXPECTED_CSV_LABELS = EXPECTED_VISIBLE_LABELS.filter((l) => l !== 'Clearing');
 
   it('UNPAID_RECOVERY_COLUMNS labels match the spec order exactly', () => {
-    expect(UNPAID_RECOVERY_COLUMNS.map((c) => c.label)).toEqual(EXPECTED_LABELS);
+    expect(UNPAID_RECOVERY_COLUMNS.map((c) => c.label)).toEqual(EXPECTED_VISIBLE_LABELS);
   });
 
   it('Current Policy AOR column is removed', () => {
