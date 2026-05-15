@@ -243,6 +243,156 @@ export type Database = {
           },
         ]
       }
+      cross_batch_clearings: {
+        Row: {
+          actual_net_amount: number | null
+          actual_positive_amount: number | null
+          actual_reversal_amount: number | null
+          agent_npn: string | null
+          carrier: string
+          clearing_state: string
+          clearing_statement_months: Json | null
+          comp_grid_evidence: Json | null
+          comp_rate_id: string | null
+          evaluated_at: string
+          expected_amount: number | null
+          first_full_clear_statement_month: string | null
+          id: string
+          identity_match_evidence: Json | null
+          identity_match_keys: Json | null
+          ignored_record_ids: Json | null
+          issuer_subscriber_id: string | null
+          logic_version: string
+          manual_review_reason: string | null
+          matched_paid_record_ids: Json | null
+          member_count: number | null
+          months_covered: number | null
+          pay_entity: string | null
+          payment_batch_ids: Json
+          policy_identity_key: string
+          policy_number: string | null
+          policy_year: number | null
+          reason: string | null
+          reconciled_member_id: string | null
+          remainder_owed: number | null
+          reversal_record_ids: Json | null
+          reversed_at_statement_month: string | null
+          run_id: string
+          source_batch_ids: Json | null
+          staging_status: string
+          state_resolution_evidence: Json | null
+          superseded_at: string | null
+          target_service_month: string
+          threshold_amount: number | null
+          unpaid_batch_id: string
+          unpaid_batch_ids: Json
+          unpaid_statement_month: string
+        }
+        Insert: {
+          actual_net_amount?: number | null
+          actual_positive_amount?: number | null
+          actual_reversal_amount?: number | null
+          agent_npn?: string | null
+          carrier: string
+          clearing_state: string
+          clearing_statement_months?: Json | null
+          comp_grid_evidence?: Json | null
+          comp_rate_id?: string | null
+          evaluated_at?: string
+          expected_amount?: number | null
+          first_full_clear_statement_month?: string | null
+          id?: string
+          identity_match_evidence?: Json | null
+          identity_match_keys?: Json | null
+          ignored_record_ids?: Json | null
+          issuer_subscriber_id?: string | null
+          logic_version: string
+          manual_review_reason?: string | null
+          matched_paid_record_ids?: Json | null
+          member_count?: number | null
+          months_covered?: number | null
+          pay_entity?: string | null
+          payment_batch_ids?: Json
+          policy_identity_key: string
+          policy_number?: string | null
+          policy_year?: number | null
+          reason?: string | null
+          reconciled_member_id?: string | null
+          remainder_owed?: number | null
+          reversal_record_ids?: Json | null
+          reversed_at_statement_month?: string | null
+          run_id: string
+          source_batch_ids?: Json | null
+          staging_status?: string
+          state_resolution_evidence?: Json | null
+          superseded_at?: string | null
+          target_service_month: string
+          threshold_amount?: number | null
+          unpaid_batch_id: string
+          unpaid_batch_ids?: Json
+          unpaid_statement_month: string
+        }
+        Update: {
+          actual_net_amount?: number | null
+          actual_positive_amount?: number | null
+          actual_reversal_amount?: number | null
+          agent_npn?: string | null
+          carrier?: string
+          clearing_state?: string
+          clearing_statement_months?: Json | null
+          comp_grid_evidence?: Json | null
+          comp_rate_id?: string | null
+          evaluated_at?: string
+          expected_amount?: number | null
+          first_full_clear_statement_month?: string | null
+          id?: string
+          identity_match_evidence?: Json | null
+          identity_match_keys?: Json | null
+          ignored_record_ids?: Json | null
+          issuer_subscriber_id?: string | null
+          logic_version?: string
+          manual_review_reason?: string | null
+          matched_paid_record_ids?: Json | null
+          member_count?: number | null
+          months_covered?: number | null
+          pay_entity?: string | null
+          payment_batch_ids?: Json
+          policy_identity_key?: string
+          policy_number?: string | null
+          policy_year?: number | null
+          reason?: string | null
+          reconciled_member_id?: string | null
+          remainder_owed?: number | null
+          reversal_record_ids?: Json | null
+          reversed_at_statement_month?: string | null
+          run_id?: string
+          source_batch_ids?: Json | null
+          staging_status?: string
+          state_resolution_evidence?: Json | null
+          superseded_at?: string | null
+          target_service_month?: string
+          threshold_amount?: number | null
+          unpaid_batch_id?: string
+          unpaid_batch_ids?: Json
+          unpaid_statement_month?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cross_batch_clearings_comp_rate_id_fkey"
+            columns: ["comp_rate_id"]
+            isOneToOne: false
+            referencedRelation: "carrier_comp_rates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cross_batch_clearings_reconciled_member_id_fkey"
+            columns: ["reconciled_member_id"]
+            isOneToOne: false
+            referencedRelation: "reconciled_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ede_snapshots: {
         Row: {
           created_at: string
@@ -830,6 +980,10 @@ export type Database = {
       }
       release_rebuild_lock: {
         Args: { _batch_id: string; _session_id: string }
+        Returns: undefined
+      }
+      replace_cross_batch_clearings_for_run: {
+        Args: { p_rows: Json; p_run_id: string; p_scope?: string }
         Returns: undefined
       }
       replace_normalized_for_file_set: {
