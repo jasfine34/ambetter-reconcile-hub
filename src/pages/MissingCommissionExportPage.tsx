@@ -1308,6 +1308,20 @@ export default function MissingCommissionExportPage() {
                     );
                   })}
                   {INTERNAL_COLUMNS.map((c) => {
+                    if (c.key === '_clearingStatus') {
+                      return (
+                        <TableCell key={String(c.key)} className="text-sm whitespace-nowrap bg-muted/20 text-muted-foreground">
+                          <span className="inline-flex items-center gap-1.5">
+                            {row._clearingStatus
+                              ? <ClearingStatusChip state={row._clearingStatus} />
+                              : <span className="text-muted-foreground">—</span>}
+                            {row._clearingNeedsReview && (
+                              <Badge variant="secondary" data-testid="mce-needs-review-badge">Needs review</Badge>
+                            )}
+                          </span>
+                        </TableCell>
+                      );
+                    }
                     const v = row[c.key];
                     let display: React.ReactNode;
                     if (c.key === '_ffmId' || c.key === '_phone' || c.key === '_email') {
