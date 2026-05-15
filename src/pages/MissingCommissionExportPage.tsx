@@ -529,6 +529,52 @@ export default function MissingCommissionExportPage() {
   const [ranFilters, setRanFilters] = useState<ReportFilters | null>(null);
   const currentRunGen = useRef(0);
 
+  // ---- Bundle 13c — cross-batch clearing overlay --------------------------
+  const {
+    overlay: clearingOverlay,
+    loading: overlayLoading,
+    error: overlayError,
+  } = useCrossBatchOverlay();
+  // C7: force legacy on overlay error, even after a previous successful load.
+  const mceClearingOverlay = overlayError
+    ? EMPTY_CLEARING_OVERLAY_MAP
+    : clearingOverlay;
+
+  // C13 await-overlay infrastructure (page-local — does NOT touch the hook).
+  const overlayStateRef = useRef<OverlayRunState>({
+    overlay: clearingOverlay,
+    loading: overlayLoading,
+    error: overlayError,
+  });
+  const overlayWaitersRef = useRef<Array<(state: OverlayRunState) => void>>([]);
+
+  useEffect(() => {
+    const next: OverlayRunState = {
+      overlay: clearingOverlay,
+      loading: overlayLoading,
+      error: overlayError,
+    };
+    overlayStateRef.current = next;
+    if (!overlayLoading) {
+      const waiters = overlayWaitersRef.current.splice(0);
+      for (const resolve of waiters) resolve(next);
+    }
+  }, [clearingOverlay, overlayLoading, overlayError]);
+
+  function waitForOverlayIdle(timeoutMs = 5000): Promise<OverlayRunState> {
+    const current = overlayStateRef.current;
+    if (!current.loading) return Promise.resolve(current);
+    return new Promise((resolve) => {
+      const timer = window.setTimeout(() => {
+        resolve(overlayStateRef.current);
+      }, timeoutMs);
+      overlayWaitersRef.current.push((state) => {
+        window.clearTimeout(timer);
+        resolve(state);
+      });
+    });
+  }
+
   const filters: ReportFilters = useMemo(
     () => ({ scope, premiumBucket, batchId: currentBatchId ?? null }),
     [scope, premiumBucket, currentBatchId],
