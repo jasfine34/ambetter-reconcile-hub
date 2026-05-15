@@ -55,6 +55,19 @@ import {
   pickStableKey,
   type WeakMatchOverride,
 } from '@/lib/weakMatch';
+import { useCrossBatchOverlay } from '@/hooks/useCrossBatchOverlay';
+import {
+  EMPTY_CLEARING_OVERLAY_MAP,
+  partitionUnpaidRowsByOverlay,
+  type AdjustedRow,
+  type ClearingOverlayMap,
+  type ClearingState,
+} from '@/lib/canonical/crossBatchOverlay';
+import {
+  CrossBatchOverlayLoadErrorBanner,
+  OVERLAY_LOAD_ERROR_MESSAGE,
+} from '@/components/CrossBatchOverlayLoadErrorBanner';
+import { ClearingStatusChip } from '@/components/ClearingStatusChip';
 
 
 type PremiumBucket = 'all' | 'zero_premium' | 'has_premium';
