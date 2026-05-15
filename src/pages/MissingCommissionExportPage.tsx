@@ -894,10 +894,25 @@ export default function MissingCommissionExportPage() {
 
         const bucket = classifyNetPremium(m);
 
-        const estMissing =
+        // ---- Bundle 13c — overlay-aware estimated dollar + chip metadata --
+        const adj = adjustedByRow.get(m);
+        const legacyEst =
           typeof m.estimated_missing_commission === 'number' && m.estimated_missing_commission > 0
             ? m.estimated_missing_commission
             : DEFAULT_COMMISSION_ESTIMATE;
+        const estMissing =
+          adj && adj.adjustment.kind === 'reduce_dollars'
+            ? adj.effectiveEstMissing
+            : legacyEst;
+        let clearingStatus: ClearingState | null = null;
+        if (adj && adj.adjustment.kind !== 'no_overlay') {
+          if (adj.adjustment.kind === 'no_adjustment') {
+            clearingStatus = adj.adjustment.overlay?.clearing_state ?? null;
+          } else {
+            clearingStatus = adj.adjustment.overlay.clearing_state;
+          }
+        }
+        const clearingNeedsReview = adj ? isReviewWorthyAdjustment(adj) : false;
 
         const hasConflict =
           profile.applicant_name.conflict ||
@@ -938,6 +953,8 @@ export default function MissingCommissionExportPage() {
           _profile: profile,
           _hasConflict: hasConflict,
           _sourceType: classifySourceTypeForRow(m, breakdown.universe),
+          _clearingStatus: clearingStatus,
+          _clearingNeedsReview: clearingNeedsReview,
         });
       }
 
