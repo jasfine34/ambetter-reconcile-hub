@@ -304,10 +304,14 @@ describe('Bundle 12.5 — column order + Current Policy AOR removal', () => {
     'Premium Bucket',
     'Net Premium',
     'Est. Missing Commission',
+    'Clearing',
     'Effective Date',
     'Policy Status',
     'Issue / Missing Reason',
   ];
+
+  // CSV intentionally excludes the UI-only `_clearingStatus` column.
+  const EXPECTED_CSV_LABELS = EXPECTED_LABELS.filter((l) => l !== 'Clearing');
 
   it('UNPAID_RECOVERY_COLUMNS labels match the spec order exactly', () => {
     expect(UNPAID_RECOVERY_COLUMNS.map((c) => c.label)).toEqual(EXPECTED_LABELS);
@@ -323,13 +327,37 @@ describe('Bundle 12.5 — column order + Current Policy AOR removal', () => {
     expect(UNPAID_RECOVERY_COLUMNS.find((c) => c.key === 'issuer_subscriber_id')).toBeUndefined();
   });
 
-  it('CSV header matches spec exactly (no Current Policy AOR)', () => {
+  it('CSV header excludes UI-only Clearing column but keeps every other label', () => {
     const csv = buildUnpaidRecoveryCsv([], { boOnly: [], edeOnly: [] });
     const parsed = Papa.parse(csv.trim(), { header: false });
-    expect((parsed.data as string[][])[0]).toEqual(EXPECTED_LABELS);
+    expect((parsed.data as string[][])[0]).toEqual(EXPECTED_CSV_LABELS);
     expect(csv).not.toContain('Current Policy AOR');
+    expect(csv).not.toContain('Clearing');
   });
 });
+
+describe('Bundle 13c — partial_amount_unavailable badge regression', () => {
+  const page = readFileSync(resolve(__dirname, '..', 'pages/UnpaidRecoveryPage.tsx'), 'utf8');
+  const overlay = readFileSync(
+    resolve(__dirname, '..', 'lib/canonical/crossBatchOverlay.ts'),
+    'utf8',
+  );
+
+  it('classifyOverlay yields partial_amount_unavailable for partially_cleared with no remainder', () => {
+    // Guard the source-of-truth in crossBatchOverlay.ts:151-156 so this test
+    // catches any future drift in the classifier branch the badge depends on.
+    expect(overlay).toMatch(/case 'partially_cleared':[\s\S]*partial_amount_unavailable/);
+  });
+
+  it('Needs review badge fires for both mark_needs_review AND partial_amount_unavailable', () => {
+    // The inline JSX uses a single `needsReview` predicate; both adjustment
+    // kinds must light it up so partially-cleared rows missing a remainder
+    // still surface the amber chip.
+    expect(page).toMatch(/needsReview\s*=[\s\S]*'mark_needs_review'[\s\S]*'partial_amount_unavailable'/);
+    expect(page).toMatch(/data-testid="ur-needs-review-badge"/);
+  });
+});
+
 
 describe('Bundle 12.5 — buildFfmIdResolver (FFM ID re-source)', () => {
   it('resolves FFM ID from matched EDE record raw_json.ffmAppId — never falls back to policy/subscriber IDs', () => {
