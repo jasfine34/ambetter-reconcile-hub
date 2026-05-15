@@ -1009,6 +1009,7 @@ export default function MissingCommissionExportPage() {
   return (
     <TooltipProvider>
       <div className="space-y-6">
+        {overlayError && <CrossBatchOverlayLoadErrorBanner />}
         <header className="space-y-1">
           <h1 className="text-2xl font-bold tracking-tight">Missing Commission Export</h1>
           <p className="text-sm text-muted-foreground max-w-3xl">
