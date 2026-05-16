@@ -402,19 +402,63 @@ export async function runCrossBatchClearingSweep(opts: SweepOptions): Promise<Sw
       continue;
     }
 
-    // D5 — getExpectedCommission
+    // D5 — wrapper call with pre-D5 owner + memberPayee resolution.
     const policyYear = parseInt(g.target_service_month.slice(0, 4), 10);
-    const expected = getExpectedCommission({
+    const owner = classifyPolicyOwnerFromCurrentAor(g.current_policy_aor);
+
+    // Aggregate concrete actual_pay_entity across ALL grain members.
+    const concreteMemberPayees = new Set<'Coverall' | 'Vix'>(
+      g.members
+        .map(m => m.actual_pay_entity)
+        .filter((p): p is 'Coverall' | 'Vix' => p === 'Coverall' || p === 'Vix'),
+    );
+
+    if (owner === 'EF' && concreteMemberPayees.size > 1) {
+      clearingRows.push(makeRow(g, {
+        clearing_state: 'manual_review_required',
+        manual_review_reason: 'conflicting_override_payee',
+        state_resolution_evidence: evidence,
+        member_count: memberRes.memberCount,
+        months_covered: 1,
+        policy_year: policyYear,
+        comp_grid_evidence: {
+          reason: 'conflicting concrete actual_pay_entity values across grain members',
+          concreteMemberPayees: Array.from(concreteMemberPayees),
+        },
+      }, run_id, logic_version));
+      continue;
+    }
+
+    const memberPayee: 'Coverall' | 'Vix' | null =
+      owner === 'EF' && concreteMemberPayees.size === 1
+        ? Array.from(concreteMemberPayees)[0]
+        : null;
+
+    const baseCompArgs = {
       carrier: g.canonicalCarrier,
       state: stateRes.state!,
       members: memberRes.memberCount!,
       months: 1,
       planVariant: null,
       policyYear,
-    } as any, compRates as any);
+    };
+
+    const expected = getExpectedCommissionForClearing(
+      baseCompArgs as any,
+      compRates as any,
+      {
+        current_policy_aor: g.current_policy_aor,
+        matched_payee: owner === 'EF' ? memberPayee : null,
+        policy_identity_key: g.policy_identity_key,
+        target_service_month: g.target_service_month,
+      },
+    );
+
+    const isEricaWithoutMemberPayee = owner === 'EF' && memberPayee === null;
+    let pendingD5FailureRow: any = null;
 
     if (expected.supportStatus === 'unsupported_v1') {
-      clearingRows.push(makeRow(g, {
+      const failureRow = makeRow(g, {
         clearing_state: 'manual_review_required',
         manual_review_reason: expected.unsupportedReason ?? 'unsupported_v1',
         state_resolution_evidence: evidence,
@@ -423,11 +467,15 @@ export async function runCrossBatchClearingSweep(opts: SweepOptions): Promise<Sw
         member_count: memberRes.memberCount,
         months_covered: 1,
         policy_year: policyYear,
-      }, run_id, logic_version));
-      continue;
-    }
-    if (expected.supportStatus === 'not_found') {
-      clearingRows.push(makeRow(g, {
+      }, run_id, logic_version);
+      if (isEricaWithoutMemberPayee) {
+        pendingD5FailureRow = failureRow;
+      } else {
+        clearingRows.push(failureRow);
+        continue;
+      }
+    } else if (expected.supportStatus === 'not_found') {
+      const failureRow = makeRow(g, {
         clearing_state: 'manual_review_required',
         manual_review_reason: 'carrier_state_not_in_grid',
         state_resolution_evidence: evidence,
@@ -435,12 +483,15 @@ export async function runCrossBatchClearingSweep(opts: SweepOptions): Promise<Sw
         member_count: memberRes.memberCount,
         months_covered: 1,
         policy_year: policyYear,
-      }, run_id, logic_version));
-      continue;
-    }
-
-    if (expected.expectedAmount === 0) {
-      clearingRows.push(makeRow(g, {
+      }, run_id, logic_version);
+      if (isEricaWithoutMemberPayee) {
+        pendingD5FailureRow = failureRow;
+      } else {
+        clearingRows.push(failureRow);
+        continue;
+      }
+    } else if (expected.expectedAmount === 0) {
+      const zeroRow = makeRow(g, {
         clearing_state: 'zero_expected_no_payment_required',
         expected_amount: 0,
         comp_rate_id: expected.rateRecordId,
@@ -449,8 +500,13 @@ export async function runCrossBatchClearingSweep(opts: SweepOptions): Promise<Sw
         member_count: memberRes.memberCount,
         months_covered: 1,
         policy_year: policyYear,
-      }, run_id, logic_version));
-      continue;
+      }, run_id, logic_version);
+      if (isEricaWithoutMemberPayee) {
+        pendingD5FailureRow = zeroRow;
+      } else {
+        clearingRows.push(zeroRow);
+        continue;
+      }
     }
 
     // D6: filter candidates
@@ -485,7 +541,17 @@ export async function runCrossBatchClearingSweep(opts: SweepOptions): Promise<Sw
       continue;
     }
 
+    // Build matchedCandidates BEFORE D7.5 (single source for D7.5/D7.6/D8).
+    const matchedIds = new Set(
+      idMatch.match === 'identified' ? idMatch.matchedRows.map(m => m.id) : [],
+    );
+    const matchedCandidates = candidates.filter(c => matchedIds.has(c.id));
+
     if (idMatch.match === 'no_match') {
+      if (pendingD5FailureRow) {
+        clearingRows.push(pendingD5FailureRow);
+        continue;
+      }
       clearingRows.push(makeRow(g, {
         clearing_state: 'not_cleared',
         reason: idMatch.reason,
@@ -505,31 +571,97 @@ export async function runCrossBatchClearingSweep(opts: SweepOptions): Promise<Sw
       continue;
     }
 
-    // D8 — evaluateAmountClearing
-    const matchedIds = new Set(idMatch.matchedRows.map(m => m.id));
-    const matchedCandidates = candidates.filter(c => matchedIds.has(c.id));
+    // D7.5 — post-D7 candidate-payee refinement.
+    let revisedExpected = expected;
+    let resolvedPayeeForRow: 'Coverall' | 'Vix' | null = owner === 'EF' ? memberPayee : null;
+    let conflictingPayee = false;
+
+    if (owner === 'EF') {
+      const candidatePayees = new Set<'Coverall' | 'Vix'>(
+        matchedCandidates
+          .map(c => c.pay_entity)
+          .filter((p): p is 'Coverall' | 'Vix' => p === 'Coverall' || p === 'Vix'),
+      );
+
+      if (memberPayee) {
+        resolvedPayeeForRow = memberPayee;
+        if (candidatePayees.size > 1 || (candidatePayees.size === 1 && !candidatePayees.has(memberPayee))) {
+          conflictingPayee = true;
+        }
+      } else if (candidatePayees.size === 1) {
+        resolvedPayeeForRow = Array.from(candidatePayees)[0];
+        const candidateResolvedExpected = getExpectedCommissionForClearing(
+          baseCompArgs as any,
+          compRates as any,
+          {
+            current_policy_aor: g.current_policy_aor,
+            matched_payee: resolvedPayeeForRow,
+            policy_identity_key: g.policy_identity_key,
+            target_service_month: g.target_service_month,
+          },
+        );
+        if (candidateResolvedExpected.supportStatus === 'supported' && candidateResolvedExpected.expectedAmount != null) {
+          revisedExpected = candidateResolvedExpected;
+          pendingD5FailureRow = null;
+        } else if (pendingD5FailureRow) {
+          clearingRows.push(pendingD5FailureRow);
+          continue;
+        } else {
+          revisedExpected = candidateResolvedExpected;
+        }
+      } else if (candidatePayees.size > 1) {
+        conflictingPayee = true;
+      } else if (pendingD5FailureRow) {
+        clearingRows.push(pendingD5FailureRow);
+        continue;
+      }
+
+      if (conflictingPayee) {
+        clearingRows.push(makeRow(g, {
+          clearing_state: 'manual_review_required',
+          manual_review_reason: 'conflicting_override_payee',
+          expected_amount: revisedExpected.expectedAmount,
+          comp_rate_id: revisedExpected.rateRecordId,
+          comp_grid_evidence: revisedExpected.evidence,
+          state_resolution_evidence: evidence,
+          member_count: memberRes.memberCount,
+          months_covered: 1,
+          policy_year: policyYear,
+          identity_match_keys: idMatch.identityKeys,
+          matched_paid_record_ids: Array.from(matchedIds),
+          payment_batch_ids: Array.from(new Set(matchedCandidates.map((c: any) => c.batch_id))),
+        }, run_id, logic_version));
+        continue;
+      }
+    }
+
+    // D8 — evaluateAmountClearing using revisedExpected.
     const amount = evaluateCrossBatchAmountClearing({
-      expected_amount: expected.expectedAmount,
+      expected_amount: revisedExpected.expectedAmount,
       candidates: matchedCandidates.map(m => ({
         id: m.id, commission_amount: m.commission_amount,
         statement_month: m.statement_month, created_at: m.created_at, raw_json: m.raw_json,
+        pay_entity: m.pay_entity ?? null,
       })),
     });
 
-    const paymentBatchIds = Array.from(new Set(matchedCandidates.filter(m => matchedIds.has(m.id)).map((m: any) => m.batch_id)));
+    const paymentBatchIds = Array.from(new Set(matchedCandidates.map((m: any) => m.batch_id)));
+
+    const resolvedPayEntityForRow =
+      owner === 'EF' && resolvedPayeeForRow ? resolvedPayeeForRow : g.pay_entity;
 
     clearingRows.push(makeRow(g, {
       clearing_state: amount.clearing_state,
       reason: amount.reason,
       manual_review_reason: amount.manual_review_reason,
-      expected_amount: expected.expectedAmount,
+      expected_amount: revisedExpected.expectedAmount,
       threshold_amount: amount.threshold_amount,
       actual_positive_amount: amount.actual_positive_amount,
       actual_reversal_amount: amount.actual_reversal_amount,
       actual_net_amount: amount.actual_net_amount,
       remainder_owed: amount.remainder_owed,
-      comp_rate_id: expected.rateRecordId,
-      comp_grid_evidence: expected.evidence,
+      comp_rate_id: revisedExpected.rateRecordId,
+      comp_grid_evidence: revisedExpected.evidence,
       state_resolution_evidence: evidence,
       member_count: memberRes.memberCount,
       months_covered: 1,
@@ -542,6 +674,7 @@ export async function runCrossBatchClearingSweep(opts: SweepOptions): Promise<Sw
       first_full_clear_statement_month: amount.firstFullClearStatementMonth,
       reversed_at_statement_month: amount.reversedAtStatementMonth,
       payment_batch_ids: paymentBatchIds,
+      pay_entity: resolvedPayEntityForRow,
     }, run_id, logic_version));
   }
 
