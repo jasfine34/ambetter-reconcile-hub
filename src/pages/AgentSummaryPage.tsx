@@ -261,16 +261,20 @@ export default function AgentSummaryPage() {
   // below surfaces canonical Expected But Unpaid rows whose EDE
   // current_policy_aor owner bucket is "Other" — same single classifier
   // (no second predicate, no re-classification).
-  const otherUnpaidRows = useMemo(
-    () => canonicalUnpaidRows.filter(
-      (r: any) => classifyPolicyOwnerFromCurrentAor(r.current_policy_aor) === 'Other',
+  const otherAdjustedItems = useMemo(
+    () => adjustedPartition.regular.filter(
+      (item: AdjustedRow) => classifyPolicyOwnerFromCurrentAor((item.row as any).current_policy_aor) === 'Other',
     ),
-    [canonicalUnpaidRows],
+    [adjustedPartition],
   );
-  const otherUnpaidCount = otherUnpaidRows.length;
+  const otherUnpaidCount = otherAdjustedItems.length;
   const otherEstMissing = useMemo(
-    () => otherUnpaidRows.reduce((sum: number, r: any) => sum + (Number(r.estimated_missing_commission) || 0), 0),
-    [otherUnpaidRows],
+    () => sumEffectiveEstMissing(otherAdjustedItems),
+    [otherAdjustedItems],
+  );
+  const otherUnpaidReviewCount = useMemo(
+    () => otherAdjustedItems.filter(isReviewWorthyAdjustment).length,
+    [otherAdjustedItems],
   );
   const tableData = useMemo(() => {
     if (otherUnpaidCount === 0) return agentData;
@@ -285,11 +289,12 @@ export default function AgentSummaryPage() {
         eligible_count: 0,
         paid_count: 0,
         unpaid_count: otherUnpaidCount,
+        unpaid_review_count: otherUnpaidReviewCount,
         total_paid_commission: 0,
         estimated_missing_commission: otherEstMissing,
       },
     ];
-  }, [agentData, otherUnpaidCount, otherEstMissing]);
+  }, [agentData, otherUnpaidCount, otherEstMissing, otherUnpaidReviewCount]);
 
   return (
     <div className="space-y-6">
