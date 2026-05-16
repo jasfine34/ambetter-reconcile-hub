@@ -178,10 +178,10 @@ describe('AgentSummaryPage — overlay behavior (Bundle 13c)', () => {
     );
     render(<AgentSummaryPage />);
     const row = findAgentRow('Erica Fine');
-    const cells = within(row).getAllByRole('cell');
+    const cells = cellTexts(row);
     // Columns: Agent, NPN, Expected (AOR), Written by, Back Office, Eligible, Paid, Unpaid, Needs Review, Total Commission, Est. Missing
-    expect(cells[7].textContent).toBe('0'); // Unpaid
-    expect(cells[10].textContent).toContain('0'); // Est. Missing
+    expect(cells[7]).toBe('0'); // Unpaid
+    expect(cells[10]).toContain('0'); // Est. Missing
   });
 
   it('B2: partial_cleared contributes only remainder to Est. Missing', () => {
@@ -199,10 +199,10 @@ describe('AgentSummaryPage — overlay behavior (Bundle 13c)', () => {
     );
     render(<AgentSummaryPage />);
     const row = findAgentRow('Erica Fine');
-    const cells = within(row).getAllByRole('cell');
-    expect(cells[7].textContent).toBe('1'); // Unpaid still counted
-    expect(cells[10].textContent).toContain('0.5'); // remainder only
-    expect(cells[10].textContent).not.toContain('34');
+    const cells = cellTexts(row);
+    expect(cells[7]).toBe('1'); // Unpaid still counted
+    expect(cells[10]).toContain('0.5'); // remainder only
+    expect(cells[10]).not.toContain('34');
   });
 
   it('B3: cleared_then_reversed excluded from regular bucket', () => {
@@ -220,8 +220,8 @@ describe('AgentSummaryPage — overlay behavior (Bundle 13c)', () => {
     );
     render(<AgentSummaryPage />);
     const row = findAgentRow('Erica Fine');
-    const cells = within(row).getAllByRole('cell');
-    expect(cells[7].textContent).toBe('0');
+    const cells = cellTexts(row);
+    expect(cells[7]).toBe('0');
   });
 
   it('B4: Needs Review count = manual_review_required rows', () => {
@@ -239,9 +239,9 @@ describe('AgentSummaryPage — overlay behavior (Bundle 13c)', () => {
     );
     render(<AgentSummaryPage />);
     const row = findAgentRow('Erica Fine');
-    const cells = within(row).getAllByRole('cell');
-    expect(cells[7].textContent).toBe('1'); // still in regular
-    expect(cells[8].textContent).toBe('1'); // Needs Review
+    const cells = cellTexts(row);
+    expect(cells[7]).toBe('1'); // still in regular
+    expect(cells[8]).toBe('1'); // Needs Review
   });
 
   it('B5: partial_amount_unavailable counts as needs review and stays in regular', () => {
@@ -259,9 +259,9 @@ describe('AgentSummaryPage — overlay behavior (Bundle 13c)', () => {
     );
     render(<AgentSummaryPage />);
     const row = findAgentRow('Erica Fine');
-    const cells = within(row).getAllByRole('cell');
-    expect(cells[7].textContent).toBe('1');
-    expect(cells[8].textContent).toBe('1');
+    const cells = cellTexts(row);
+    expect(cells[7]).toBe('1');
+    expect(cells[8]).toBe('1');
   });
 
   it('B6: Other AORs aggregate uses adjusted rows (fully_cleared excluded)', () => {
@@ -304,10 +304,10 @@ describe('AgentSummaryPage — overlay behavior (Bundle 13c)', () => {
     );
     render(<AgentSummaryPage />);
     const row = findAgentRow('Erica Fine');
-    const cells = within(row).getAllByRole('cell');
-    expect(cells[7].textContent).toBe('0');
-    expect(cells[10].textContent).toContain('0');
-    expect(cells[10].textContent).not.toContain('34');
+    const cells = cellTexts(row);
+    expect(cells[7]).toBe('0');
+    expect(cells[10]).toContain('0');
+    expect(cells[10]).not.toContain('34');
   });
 
   it('B8: empty overlay → rows fall through to regular with legacy dollars', () => {
@@ -315,8 +315,8 @@ describe('AgentSummaryPage — overlay behavior (Bundle 13c)', () => {
     setFixture([r], EMPTY_CLEARING_OVERLAY_MAP);
     render(<AgentSummaryPage />);
     const row = findAgentRow('Erica Fine');
-    const cells = within(row).getAllByRole('cell');
-    expect(cells[7].textContent).toBe('1');
-    expect(cells[10].textContent).toContain('12.34');
+    const cells = cellTexts(row);
+    expect(cells[7]).toBe('1');
+    expect(cells[10]).toContain('12.34');
   });
 });
