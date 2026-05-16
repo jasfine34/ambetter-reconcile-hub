@@ -96,6 +96,7 @@ function buildBreakdownStub(rows: any[]) {
   };
 }
 
+const ffmIdByMemberKey = new Map<string, string>();
 vi.mock('@/lib/canonical/memberProfileView', () => {
   const blank = (v = '') => ({
     value: v,
@@ -114,7 +115,7 @@ vi.mock('@/lib/canonical/memberProfileView', () => {
       dob: blank('1990-01-01'),
       phone: blank(''),
       email: blank(''),
-      ffm_id: blank(''),
+      ffm_id: blank(ffmIdByMemberKey.get(memberKey) ?? ''),
     }),
     splitNameLastSpace: (n: string) => {
       const parts = String(n || '').trim().split(/\s+/);
