@@ -23,6 +23,7 @@
  * RECONCILE_LOGIC_VERSION bump (UI/export-only — same precedent as #90).
  */
 import type { NormalizedRecord } from '../normalize';
+import { compareEDEForAor } from '../aorPicker';
 
 // ---------------------------------------------------------------------------
 // Public types
