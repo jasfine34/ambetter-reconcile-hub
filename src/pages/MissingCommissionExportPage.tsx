@@ -1224,16 +1224,17 @@ export default function MissingCommissionExportPage() {
 
             <TableHeader>
               <TableRow>
-                {/* Operator-aid column: FFM ID = issuer_subscriber_id, the
-                    primary lookup key for researching members in Ambetter's
-                    carrier system. Placed first so operators can read it at
-                    a glance without scrolling. Not part of the Messer CSV
-                    column set (issuer_subscriber_id already flows into the
-                    Messer "Member ID" column via resolveMemberId). */}
+                {/* Operator-aid column: FFM ID = the federal marketplace (Healthcare.gov)
+                    application ID, sourced from EDE raw_json.ffmAppId via the canonical
+                    member profile. Placed first so operators can read it at a glance for
+                    Healthcare.gov cross-reference. Not part of the Messer CSV column set
+                    (issuer_subscriber_id still flows into the Messer "Member ID" column
+                    via resolveMemberId — that's the Ambetter portal lookup key, distinct
+                    from the FFM application ID shown here). */}
                 <TableHead
                   data-testid="ffm-id-header"
                   className="whitespace-nowrap text-xs uppercase tracking-wide bg-primary/5 text-foreground"
-                  title="Issuer Subscriber ID (FFM ID) — primary Ambetter lookup key"
+                  title="FFM application ID — Healthcare.gov / federal marketplace lookup key"
                 >
                   FFM ID
                 </TableHead>
@@ -1261,14 +1262,14 @@ export default function MissingCommissionExportPage() {
             <TableBody>
               {displayed!.rows.slice(0, 250).map((row) => (
                 <TableRow key={row._memberKey}>
-                  {/* FFM ID cell — issuer_subscriber_id from the row's
-                      canonical source (BO for Missing-from-Commission). */}
+                  {/* FFM ID cell — FFM application ID from EDE raw_json.ffmAppId via
+                      profile.ffm_id. Empty for BO-only members (no EDE row); renders "—". */}
                   <TableCell
                     data-testid="ffm-id-cell"
                     className="text-sm whitespace-nowrap font-mono bg-primary/5"
                   >
-                    {row._issuerSubscriberId
-                      ? row._issuerSubscriberId
+                    {row._ffmId?.value
+                      ? row._ffmId.value
                       : <span className="text-muted-foreground">—</span>}
                   </TableCell>
                   {MESSER_COLUMNS.map((c) => {
