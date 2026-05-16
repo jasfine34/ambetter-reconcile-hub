@@ -10,7 +10,8 @@ import { derivePolicyIdentityKey } from '@/lib/canonical/policyIdentityKey';
 import { deriveCoveredServiceMonths } from '@/lib/canonical/serviceMonth';
 import { resolvePolicyStateForCompGrid } from '@/lib/canonical/policyState';
 import { resolvePolicyMemberCountForCompGrid } from '@/lib/canonical/policyMemberCount';
-import { getExpectedCommission } from '@/lib/canonical/compGrid';
+import { getExpectedCommissionForClearing } from '@/lib/canonical/expectedCommissionForClearing';
+import { classifyPolicyOwnerFromCurrentAor } from '@/lib/canonical/policyOwner';
 import { loadCarrierCompRates } from '@/lib/canonical/compGridLoader';
 import { isCrossBatchIdentityMatch } from '@/lib/canonical/crossBatchIdentityMatch';
 import { evaluateCrossBatchAmountClearing, type AmountClearingCandidate } from '@/lib/canonical/crossBatchAmountClearing';
@@ -174,6 +175,8 @@ export async function runCrossBatchClearingSweep(opts: SweepOptions): Promise<Sw
     created_at: string;
     pay_entity: string | null;
     agent_npn: string | null;
+    current_policy_aor: string | null;
+    actual_pay_entity: string | null;
     raw: any;
   };
   const surfacing: Surfacing[] = [];
@@ -221,6 +224,8 @@ export async function runCrossBatchClearingSweep(opts: SweepOptions): Promise<Sw
       created_at: batchCreatedAtById[r.batch_id] ?? '',
       pay_entity: r.expected_pay_entity ?? r.actual_pay_entity ?? null,
       agent_npn: r.agent_npn ?? null,
+      current_policy_aor: r.current_policy_aor ?? null,
+      actual_pay_entity: r.actual_pay_entity ?? null,
       raw: r,
     });
   }
