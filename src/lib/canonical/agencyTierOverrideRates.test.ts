@@ -6,7 +6,7 @@ import {
   AGENCY_TIER_OVERRIDE_RATES,
   findAgencyTierOverrideRate,
   type AgencyTierOverrideRate,
-} from '../agencyTierOverrideRates';
+} from './agencyTierOverrideRates';
 
 const EF = '21277051';
 
