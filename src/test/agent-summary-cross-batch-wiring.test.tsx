@@ -110,12 +110,18 @@ vi.mock('@/hooks/useCrossBatchOverlay', () => ({
 
 import AgentSummaryPage from '@/pages/AgentSummaryPage';
 
-// Find the table row whose first cell text matches `agentName`.
+// Find the table row (within a <table>) whose first cell text matches `agentName`.
 function findAgentRow(agentName: string): HTMLElement {
-  const cell = screen.getByText(agentName);
-  const row = cell.closest('tr');
-  if (!row) throw new Error(`No row for ${agentName}`);
-  return row as HTMLElement;
+  const matches = screen.getAllByText(agentName);
+  for (const el of matches) {
+    const tr = el.closest('tr');
+    if (tr) return tr as HTMLElement;
+  }
+  throw new Error(`No table row for ${agentName}`);
+}
+
+function cellTexts(row: HTMLElement): string[] {
+  return Array.from(row.querySelectorAll('td')).map((td) => td.textContent ?? '');
 }
 
 const ERICA_AOR = 'Erica Fine (21277051)';
