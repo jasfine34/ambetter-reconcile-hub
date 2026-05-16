@@ -10,6 +10,7 @@ import { normalizeUsStateCode } from '@/lib/canonical/stateCode';
 import { derivePolicyIdentityKey } from '@/lib/canonical/policyIdentityKey';
 import type { PolicyStateRecord } from '@/lib/canonical/policyState';
 import type { PolicyMemberCountRecord } from '@/lib/canonical/policyMemberCount';
+import { firstNonblankString } from '@/lib/utils/firstNonblankString';
 
 export interface NormalizedRecordShape {
   id: string;
@@ -92,7 +93,12 @@ export function buildPolicyStateRecords(args: {
     if (!src) continue;
     const asOf = asOfMonthFor(row, args.batchMonthById);
     if (!asOf) continue;
-    const stateRaw = row.client_state_full ?? row.raw_json?.clientState ?? null;
+    const stateRaw = firstNonblankString(
+      row.client_state_full,
+      row.raw_json?.clientState,
+      row.raw_json?.state,
+      row.raw_json?.State,
+    );
     const state = normalizeUsStateCode(stateRaw);
     if (!state) continue;
     out.push({ source: src, asOfMonth: asOf, state });
