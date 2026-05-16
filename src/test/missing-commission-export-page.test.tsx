@@ -211,6 +211,7 @@ beforeEach(() => {
   mockGetEligible.mockReset();
   mockGetBreakdown.mockReset();
   mockToast.mockReset();
+  ffmIdByMemberKey.clear();
   mockGetAll.mockResolvedValue([]);
   mockGetNormalized.mockResolvedValue([]);
   mockGetByMemberKeys.mockResolvedValue([]);
