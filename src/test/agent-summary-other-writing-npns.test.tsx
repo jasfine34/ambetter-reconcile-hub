@@ -92,9 +92,9 @@ describe('Agent Summary — Other AORs aggregate row (Bundle 7)', () => {
 describe('Agent Summary — regression guard against re-classification (Bundle 7)', () => {
   const src = readFileSync(resolve(__dirname, '../pages/AgentSummaryPage.tsx'), 'utf8');
 
-  it('reuses canonicalUnpaidRows + classifyPolicyOwnerFromCurrentAor for Other AORs', () => {
-    expect(src).toMatch(/otherUnpaidRows\s*=\s*useMemo/);
-    expect(src).toMatch(/canonicalUnpaidRows\.filter[\s\S]*?classifyPolicyOwnerFromCurrentAor[\s\S]*?===\s*'Other'/);
+  it('reuses adjustedPartition.regular + classifyPolicyOwnerFromCurrentAor for Other AORs (Bundle 13c)', () => {
+    expect(src).toMatch(/otherAdjustedItems\s*=\s*useMemo/);
+    expect(src).toMatch(/adjustedPartition\.regular\.filter[\s\S]*?classifyPolicyOwnerFromCurrentAor[\s\S]*?===\s*'Other'/);
   });
 
   it('does NOT introduce a second classifier or fall back to writing-agent NPN bucketing', () => {
