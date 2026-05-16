@@ -14,8 +14,8 @@ vi.mock('@/lib/canonical/compGridLoader', () => ({
 }));
 
 const getExpectedCommissionMock = vi.fn();
-vi.mock('@/lib/canonical/compGrid', () => ({
-  getExpectedCommission: (...args: any[]) => getExpectedCommissionMock(...args),
+vi.mock('@/lib/canonical/expectedCommissionForClearing', () => ({
+  getExpectedCommissionForClearing: (...args: any[]) => getExpectedCommissionMock(...args),
 }));
 
 import { runCrossBatchClearingSweep } from '@/lib/sweep/crossBatchClearingSweep';
