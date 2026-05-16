@@ -247,8 +247,8 @@ describe('crossBatchClearingSweep — pre-grain inputErrors', () => {
       reconciled: [makeUnpaidRM('M1', 'B1', { carrier: 'WeirdCo' })],
     });
     await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
-    const rpcArgs = rpcMock.mock.calls[0][1];
-    expect(rpcArgs.p_rows).toEqual([]);
+    expect(insertCallCount()).toBe(0);
+    expect(insertedRows()).toEqual([]);
   });
 });
 
