@@ -120,9 +120,49 @@ describe('buildPolicyStateRecords', () => {
     expect(out[0].state).toBe('TX');
   });
 
-  it('excludes commission rows', () => {
+  it('client_state_full="FL" emits FL', () => {
     const out = buildPolicyStateRecords({
-      normalizedRecords: [row({ source_type: 'COMMISSION' })],
+      normalizedRecords: [row({ client_state_full: 'FL', effective_date: '2026-02-15' })],
+      batchMonthById,
+    });
+    expect(out[0].state).toBe('FL');
+  });
+
+  it('blank client_state_full falls back to raw_json.clientState', () => {
+    const out = buildPolicyStateRecords({
+      normalizedRecords: [row({ client_state_full: '', raw_json: { clientState: 'FL' }, effective_date: '2026-02-15' })],
+      batchMonthById,
+    });
+    expect(out[0].state).toBe('FL');
+  });
+
+  it('CRITICAL: blank client_state_full and blank raw_json.clientState falls through to raw_json.State (Erica Flowers)', () => {
+    const out = buildPolicyStateRecords({
+      normalizedRecords: [row({ client_state_full: '', raw_json: { clientState: '', State: 'FL' }, effective_date: '2026-02-15' })],
+      batchMonthById,
+    });
+    expect(out[0].state).toBe('FL');
+  });
+
+  it('blank client_state_full falls through to raw_json.State (capital)', () => {
+    const out = buildPolicyStateRecords({
+      normalizedRecords: [row({ client_state_full: '', raw_json: { State: 'TX' }, effective_date: '2026-02-15' })],
+      batchMonthById,
+    });
+    expect(out[0].state).toBe('TX');
+  });
+
+  it('blank client_state_full and blank raw_json.clientState falls through to raw_json.state', () => {
+    const out = buildPolicyStateRecords({
+      normalizedRecords: [row({ client_state_full: '', raw_json: { clientState: '', state: 'FL' }, effective_date: '2026-02-15' })],
+      batchMonthById,
+    });
+    expect(out[0].state).toBe('FL');
+  });
+
+  it('no state fields anywhere → adapter skips', () => {
+    const out = buildPolicyStateRecords({
+      normalizedRecords: [row({ client_state_full: '', raw_json: {}, effective_date: '2026-02-15' })],
       batchMonthById,
     });
     expect(out).toHaveLength(0);
