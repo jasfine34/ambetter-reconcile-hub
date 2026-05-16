@@ -504,29 +504,7 @@ export default function MemberTimelinePage() {
   }, [classifiedRows]);
 
   const handleExport = () => {
-    const flat = filteredRows.map(r => {
-      const base: Record<string, unknown> = {
-        member: r.applicant_name,
-        policy_number: r.policy_number,
-        exchange_subscriber_id: r.exchange_subscriber_id,
-        issuer_subscriber_id: r.issuer_subscriber_id,
-        agent_name: r.agent_name,
-        aor_bucket: r.aor_bucket,
-        months_due: r.months_due,
-        months_paid: r.months_paid,
-        months_unpaid: r.months_unpaid,
-        total_paid: r.total_paid.toFixed(2),
-      };
-      for (const m of monthList) {
-        const c = r.cells[m];
-        const sources = [c.in_ede && 'EDE', c.in_back_office && 'BO', c.in_commission && 'COM']
-          .filter(Boolean).join('+');
-        base[`${m}_status`] = c.due ? (c.paid_amount > 0.0001 ? 'PAID' : 'UNPAID') : (sources ? 'PRESENT' : '');
-        base[`${m}_paid`] = c.paid_amount.toFixed(2);
-        base[`${m}_sources`] = sources;
-      }
-      return base;
-    });
+    const flat = buildMemberTimelineExportRows(filteredRows, monthList);
     exportToCSV(flat, `member_timeline_${startMonth}_${endMonth}.csv`);
   };
 
