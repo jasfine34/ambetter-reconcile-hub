@@ -302,14 +302,65 @@ export function buildMemberProfile(
   const refMonth = input.referenceMonth ?? '';
   const fields: EnrichedFieldName[] = [
     'applicant_name', 'address1', 'city', 'state', 'zip',
-    'dob', 'phone', 'email', 'ffm_id',
+    'dob', 'phone', 'email',
   ];
   const profile: any = { member_key: memberKey };
   for (const f of fields) {
     const cands = gatherCandidates(input.records, f, refMonth, input.batchMonthByBatchId);
     profile[f] = pickWinner(cands);
   }
+  // FFM ID is special-cased: uses the #76 multi-FFM picker rule
+  // (effective_date → status → file label → lastEDESync) rather than the
+  // generic BO-first/EDE-tier walk used for descriptive fields.
+  profile.ffm_id = pickFfmIdCandidate(input.records, input.batchMonthByBatchId);
   return profile as MemberProfile;
+}
+
+/**
+ * Pick the canonical FFM application ID for a member, using the #76 picker
+ * precedence (effective_date desc → status priority → file label priority →
+ * lastEDESync desc) — shared with `pickCurrentPolicyAor` via
+ * {@link compareEDEForAor}. Only EDE rows with a nonblank
+ * `raw_json.ffmAppId` qualify; BO-only members return an empty
+ * EnrichedField.
+ */
+function pickFfmIdCandidate(
+  records: NormalizedRecord[],
+  batchMonthByBatchId: Map<string, string> | undefined,
+): EnrichedField<string> {
+  const ede = records.filter(
+    (r) =>
+      r.source_type === 'EDE' &&
+      String((r.raw_json as any)?.['ffmAppId'] ?? '').trim() !== '',
+  );
+  if (ede.length === 0) return emptyEnriched<string>();
+  const sorted = [...ede].sort(compareEDEForAor);
+  const winner = sorted[0];
+  const winnerValue = String((winner.raw_json as any)['ffmAppId']).trim();
+  const winnerMonth = batchMonthByBatchId?.get((winner as any).batch_id ?? '') ?? '';
+
+  // Conflict metadata: any losing row whose ffmAppId differs from winner.
+  const conflict_values: EnrichedField<string>['conflict_values'] = [];
+  const seen = new Set<string>([winnerValue]);
+  for (let i = 1; i < sorted.length; i++) {
+    const v = String((sorted[i].raw_json as any)['ffmAppId']).trim();
+    if (!v || seen.has(v)) continue;
+    seen.add(v);
+    conflict_values.push({
+      value: v,
+      source_type: 'ede',
+      source_month: batchMonthByBatchId?.get((sorted[i] as any).batch_id ?? '') ?? '',
+      source_file_label: sorted[i].source_file_label || '',
+    });
+  }
+  return {
+    value: winnerValue,
+    source_type: 'ede',
+    source_month: winnerMonth,
+    source_file_label: winner.source_file_label || '',
+    conflict: conflict_values.length > 0,
+    conflict_values,
+  };
 }
 
 /**
