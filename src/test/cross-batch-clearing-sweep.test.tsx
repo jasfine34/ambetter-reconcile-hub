@@ -199,12 +199,15 @@ describe('crossBatchClearingSweep — safety guards', () => {
     expect(r.clearingRowsWritten).toBe(0);
   });
 
-  it('rejects on RPC failure', async () => {
+  it('rejects on supersede RPC failure', async () => {
     setupFixture({ batches: [baseBatch('B1', '2026-02-01')] });
     rpcMock.mockReset();
-    rpcMock.mockResolvedValueOnce({ error: new Error('rpc fail') });
+    rpcMock.mockImplementation((name: string) => {
+      if (name === 'supersede_active_clearings_batch') return Promise.resolve({ data: null, error: new Error('rpc fail') });
+      return Promise.resolve({ data: 0, error: null });
+    });
     await expect(runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true }))
-      .rejects.toThrow();
+      .rejects.toThrow(/supersede_active_clearings_batch/);
   });
 });
 
