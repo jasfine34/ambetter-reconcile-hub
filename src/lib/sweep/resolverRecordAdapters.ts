@@ -10,6 +10,7 @@ import { normalizeUsStateCode } from '@/lib/canonical/stateCode';
 import { derivePolicyIdentityKey } from '@/lib/canonical/policyIdentityKey';
 import type { PolicyStateRecord } from '@/lib/canonical/policyState';
 import type { PolicyMemberCountRecord } from '@/lib/canonical/policyMemberCount';
+import { firstNonblankString } from '@/lib/utils/firstNonblankString';
 
 export interface NormalizedRecordShape {
   id: string;
