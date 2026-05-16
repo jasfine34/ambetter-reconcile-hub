@@ -12,7 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Search, Download, ChevronDown, ChevronLeft, Info, Bug } from 'lucide-react';
 import { getNormalizedRecords, getAllNormalizedRecords } from '@/lib/persistence';
-import { buildMemberTimeline, buildMonthList, formatMonthLabel, type MemberTimelineRow } from '@/lib/memberTimeline';
+import { buildMemberTimeline, buildMemberTimelineExportRows, buildMonthList, formatMonthLabel, type MemberTimelineRow } from '@/lib/memberTimeline';
 import { mergeRecordsToMemberKeys } from '@/lib/canonical/memberKeyMerge';
 import { exportToCSV } from '@/lib/csvParser';
 import { NPN_MAP } from '@/lib/constants';
