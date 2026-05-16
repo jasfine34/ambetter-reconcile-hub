@@ -23,6 +23,15 @@ import {
   pickStableKey,
   type WeakMatchOverride,
 } from '@/lib/weakMatch';
+import { useCrossBatchOverlay } from '@/hooks/useCrossBatchOverlay';
+import {
+  EMPTY_CLEARING_OVERLAY_MAP,
+  partitionUnpaidRowsByOverlay,
+  sumEffectiveEstMissing,
+  type AdjustedRow,
+} from '@/lib/canonical/crossBatchOverlay';
+import { CrossBatchOverlayLoadErrorBanner } from '@/components/CrossBatchOverlayLoadErrorBanner';
+import { isReviewWorthyAdjustment } from '@/pages/MissingCommissionExportPage';
 
 const AGENTS = Object.entries(NPN_MAP).map(([npn, info]) => ({ npn, ...info }));
 
