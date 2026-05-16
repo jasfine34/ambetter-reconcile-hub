@@ -130,6 +130,14 @@ vi.mock('@/lib/expectedEde', () => ({
   computeFilteredEde: vi.fn().mockReturnValue({ uniqueMembers: [], uniqueKeys: 0, byMonth: {}, inBOCount: 0, notInBOCount: 0, missingFromBO: [] }),
 }));
 vi.mock('@/components/BatchSelector', () => ({ BatchSelector: () => null }));
+vi.mock('@/hooks/useCrossBatchOverlay', () => ({
+  useCrossBatchOverlay: () => ({
+    overlay: { byGrain: new Map(), lastEvaluatedAt: null, totalActiveCount: 0 },
+    loading: false,
+    error: null,
+    reload: vi.fn(),
+  }),
+}));
 
 import AgentSummaryPage from '@/pages/AgentSummaryPage';
 
