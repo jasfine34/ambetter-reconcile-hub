@@ -240,6 +240,8 @@ export async function runCrossBatchClearingSweep(opts: SweepOptions): Promise<Sw
     carrier: string;
     pay_entity: string | null;
     agent_npn: string | null;
+    current_policy_aor: string | null;
+    actual_pay_entity: string | null;
     policy_number_clean: string;
     issuer_subscriber_id_clean: string;
     canonical_statement_month: string;
@@ -260,6 +262,8 @@ export async function runCrossBatchClearingSweep(opts: SweepOptions): Promise<Sw
         carrier: s.carrier,
         pay_entity: s.pay_entity,
         agent_npn: s.agent_npn,
+        current_policy_aor: s.current_policy_aor,
+        actual_pay_entity: s.actual_pay_entity,
         policy_number_clean: s.policy_number_clean,
         issuer_subscriber_id_clean: s.issuer_subscriber_id_clean,
         canonical_statement_month: s.statement_month,
@@ -282,6 +286,8 @@ export async function runCrossBatchClearingSweep(opts: SweepOptions): Promise<Sw
       g.canonical_unpaid_batch_id = s.batch_id;
       g.canonical_statement_month = s.statement_month;
       g.canonical_reconciled_member_id = s.reconciled_member_id;
+      g.current_policy_aor = s.current_policy_aor;
+      g.actual_pay_entity = s.actual_pay_entity;
     }
   }
 
@@ -337,6 +343,7 @@ export async function runCrossBatchClearingSweep(opts: SweepOptions): Promise<Sw
       statement_month: sm,
       created_at: row.created_at,
       raw_json: row.raw_json,
+      pay_entity: row.pay_entity ?? null,
       carrier: row.carrier,
       policy_number: row.policy_number,
       issuer_subscriber_id: row.issuer_subscriber_id,
