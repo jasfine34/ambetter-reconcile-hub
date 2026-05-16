@@ -533,15 +533,45 @@ export async function runCrossBatchClearingSweep(opts: SweepOptions): Promise<Sw
     }, run_id, logic_version));
   }
 
-  // PHASE E
+  // PHASE E — client-side chunked supersede + insert.
+  // Many small RPC calls so each stays under the 60s gateway cap.
   if (!opts.shouldContinue()) return aborted('stale_generation', 'Sweep aborted because a newer rebuild was started.');
 
-  const { error: rpcErr } = await (supabase as any).rpc('replace_cross_batch_clearings_for_run', {
-    p_run_id: run_id, p_rows: clearingRows, p_scope: 'global_full_rebuild',
-  });
-  if (rpcErr) throw new Error(`replace_cross_batch_clearings_for_run failed: ${rpcErr.message ?? rpcErr}`);
+  const RPC_BATCH_SIZE = 500;
 
-  return { run_id, clearingRowsWritten: clearingRows.length, inputErrors, aborted: false };
+  // Strict numeric validation on RPC returns. Treating null/non-numeric as 0
+  // would silently terminate the supersede loop or underreport insert success.
+  function rpcCount(value: unknown, rpcName: string): number {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    throw new Error(`${rpcName} returned a non-numeric count: ${JSON.stringify(value)}`);
+  }
+
+  // E1 — supersede phase: loop until no active rows remain.
+  while (true) {
+    if (!opts.shouldContinue()) return aborted('stale_generation', 'Sweep aborted because a newer rebuild was started.');
+    const { data: superseded, error: superErr } = await (supabase as any).rpc(
+      'supersede_active_clearings_batch',
+      { p_batch_size: RPC_BATCH_SIZE },
+    );
+    if (superErr) throw new Error(`supersede_active_clearings_batch failed: ${superErr.message ?? superErr}`);
+    const count = rpcCount(superseded, 'supersede_active_clearings_batch');
+    if (count === 0) break;
+  }
+
+  // E2 — insert phase: chunk clearingRows into RPC_BATCH_SIZE batches.
+  let totalInserted = 0;
+  for (let i = 0; i < clearingRows.length; i += RPC_BATCH_SIZE) {
+    if (!opts.shouldContinue()) return aborted('stale_generation', 'Sweep aborted because a newer rebuild was started.');
+    const chunk = clearingRows.slice(i, i + RPC_BATCH_SIZE);
+    const { data: inserted, error: insertErr } = await (supabase as any).rpc(
+      'insert_clearing_rows',
+      { p_run_id: run_id, p_rows: chunk },
+    );
+    if (insertErr) throw new Error(`insert_clearing_rows failed at chunk ${i / RPC_BATCH_SIZE}: ${insertErr.message ?? insertErr}`);
+    totalInserted += rpcCount(inserted, 'insert_clearing_rows');
+  }
+
+  return { run_id, clearingRowsWritten: totalInserted, inputErrors, aborted: false };
 }
 
 function makeRow(
