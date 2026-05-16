@@ -110,8 +110,29 @@ beforeEach(() => {
   getExpectedCommissionMock.mockReturnValue({
     supportStatus: 'supported', expectedAmount: 100, rateRecordId: 'rate-100', evidence: {},
   });
-  rpcMock.mockResolvedValue({ error: null });
+  // Default dispatcher: supersede returns 0 (no active rows), insert returns chunk length.
+  rpcMock.mockImplementation((name: string, args: any) => {
+    if (name === 'supersede_active_clearings_batch') return Promise.resolve({ data: 0, error: null });
+    if (name === 'insert_clearing_rows') {
+      const len = Array.isArray(args?.p_rows) ? args.p_rows.length : 0;
+      return Promise.resolve({ data: len, error: null });
+    }
+    return Promise.resolve({ data: null, error: null });
+  });
 });
+
+// Test helpers for the chunked RPC pattern.
+function insertedRows(): any[] {
+  return rpcMock.mock.calls
+    .filter((c: any[]) => c[0] === 'insert_clearing_rows')
+    .flatMap((c: any[]) => c[1].p_rows);
+}
+function supersedeCallCount(): number {
+  return rpcMock.mock.calls.filter((c: any[]) => c[0] === 'supersede_active_clearings_batch').length;
+}
+function insertCallCount(): number {
+  return rpcMock.mock.calls.filter((c: any[]) => c[0] === 'insert_clearing_rows').length;
+}
 
 const ambetter = 'AMBETTER';
 const baseBatch = (id: string, sm: string): Batch => ({ id, statement_month: sm, created_at: '2026-02-01' });
