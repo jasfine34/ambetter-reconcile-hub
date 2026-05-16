@@ -30,6 +30,7 @@
  */
 import { NPN_MAP } from './constants';
 import { getBackOfficeAdapter } from './carriers';
+import { firstNonblankString } from './utils/firstNonblankString';
 
 export function stripApostrophe(val: string | undefined | null): string {
   if (!val) return '';
