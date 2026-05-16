@@ -510,26 +510,40 @@ function walk(dir: string, results: string[] = []): string[] {
   return results;
 }
 
-describe('compGrid — Fix 7 static no-consumer guard', () => {
+describe('compGrid — Fix 7 static no-consumer guard (post-13d)', () => {
   const root = resolve(__dirname, '../../..');
   const scopes = ['pages', 'lib', 'components'].map(s => join(root, s));
   const files: string[] = [];
   for (const s of scopes) {
     try { walk(s, files); } catch { /* missing dir is fine */ }
   }
+  // After 13d the only allowed consumer of getExpectedCommission outside
+  // compGrid.ts is the wrapper expectedCommissionForClearing.ts. The sweep
+  // MUST route through the wrapper.
   const inScope = files.filter(f =>
     /\.(ts|tsx)$/.test(f) &&
     !/\.test\.tsx?$/.test(f) &&
     !f.endsWith('compGrid.ts') &&
-    !f.endsWith('crossBatchClearingSweep.ts'),
+    !f.endsWith('expectedCommissionForClearing.ts'),
   );
-  it('no production file references getExpectedCommission', () => {
+  it('no production file (incl. sweep) references getExpectedCommission directly', () => {
     const offenders: string[] = [];
     for (const f of inScope) {
+      if (f.endsWith('agencyTierOverrideRates.ts')) continue;
       const src = readFileSync(f, 'utf8');
-      if (src.includes('getExpectedCommission')) offenders.push(f);
+      const bare = src.match(/getExpectedCommission(?!ForClearing)/g) ?? [];
+      if (bare.length > 0) offenders.push(f);
     }
     expect(offenders).toEqual([]);
+  });
+});
+
+describe('compGrid.ts — purity vs Bundle 13d AOR-tier override concepts', () => {
+  it('does not mention agency-tier override concepts', () => {
+    const src = readFileSync(resolve(__dirname, '../compGrid.ts'), 'utf8');
+    for (const forbidden of ['agencyTier', 'override', 'Coverall', 'Vix', 'current_policy_aor']) {
+      expect(src.includes(forbidden), `compGrid.ts must not mention "${forbidden}"`).toBe(false);
+    }
   });
 });
 

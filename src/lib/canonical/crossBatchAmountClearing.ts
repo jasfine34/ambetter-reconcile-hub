@@ -8,6 +8,9 @@ export interface AmountClearingCandidate {
   statement_month: string;
   created_at?: string | null;
   raw_json?: any;
+  /** Bundle 13d — concrete pay_entity used by sweep-side override resolution.
+   *  Not consumed by evaluateCrossBatchAmountClearing itself. */
+  pay_entity?: string | null;
 }
 
 export type AmountClearingResult = {
