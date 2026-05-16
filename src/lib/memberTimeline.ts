@@ -304,3 +304,40 @@ export function formatMonthLabel(ym: string): string {
   const d = new Date(y, m - 1, 1);
   return d.toLocaleString('en-US', { month: 'short', year: '2-digit' });
 }
+
+/**
+ * Pure helper that flattens timeline rows into export-ready records for
+ * `exportToCSV`. Extracted from `MemberTimelinePage.handleExport` so it can
+ * be unit-tested without rendering the page. Places `ffm_app_id` as the
+ * first column (operator's primary Healthcare.gov lookup key); multiple
+ * FFM IDs are joined with `'; '`, none → empty string.
+ */
+export function buildMemberTimelineExportRows(
+  rows: MemberTimelineRow[],
+  monthList: string[],
+): Record<string, unknown>[] {
+  return rows.map(r => {
+    const base: Record<string, unknown> = {
+      ffm_app_id: (r.ffm_app_ids ?? []).join('; '),
+      member: r.applicant_name,
+      policy_number: r.policy_number,
+      exchange_subscriber_id: r.exchange_subscriber_id,
+      issuer_subscriber_id: r.issuer_subscriber_id,
+      agent_name: r.agent_name,
+      aor_bucket: r.aor_bucket,
+      months_due: r.months_due,
+      months_paid: r.months_paid,
+      months_unpaid: r.months_unpaid,
+      total_paid: r.total_paid.toFixed(2),
+    };
+    for (const m of monthList) {
+      const c = r.cells[m];
+      const sources = [c.in_ede && 'EDE', c.in_back_office && 'BO', c.in_commission && 'COM']
+        .filter(Boolean).join('+');
+      base[`${m}_status`] = c.due ? (c.paid_amount > 0.0001 ? 'PAID' : 'UNPAID') : (sources ? 'PRESENT' : '');
+      base[`${m}_paid`] = c.paid_amount.toFixed(2);
+      base[`${m}_sources`] = sources;
+    }
+    return base;
+  });
+}
