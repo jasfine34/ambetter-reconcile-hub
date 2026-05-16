@@ -542,7 +542,7 @@ export default function MissingCommissionExportPage() {
 
   // C13 await-overlay infrastructure (page-local — does NOT touch the hook).
   const overlayStateRef = useRef<OverlayRunState>({
-    overlay: clearingOverlay,
+    overlay: mceClearingOverlay,
     loading: overlayLoading,
     error: overlayError,
   });
@@ -550,7 +550,7 @@ export default function MissingCommissionExportPage() {
 
   useEffect(() => {
     const next: OverlayRunState = {
-      overlay: clearingOverlay,
+      overlay: mceClearingOverlay,
       loading: overlayLoading,
       error: overlayError,
     };
@@ -559,7 +559,7 @@ export default function MissingCommissionExportPage() {
       const waiters = overlayWaitersRef.current.splice(0);
       for (const resolve of waiters) resolve(next);
     }
-  }, [clearingOverlay, overlayLoading, overlayError]);
+  }, [mceClearingOverlay, overlayLoading, overlayError]);
 
   function waitForOverlayIdle(timeoutMs = 5000): Promise<OverlayRunState> {
     const current = overlayStateRef.current;
