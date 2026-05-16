@@ -974,16 +974,16 @@ export type Database = {
         Args: { _batch_id: string; _session_id: string }
         Returns: string
       }
+      insert_clearing_rows: {
+        Args: { p_rows: Json; p_run_id: string }
+        Returns: number
+      }
       preflush_stale_staged_rows: {
         Args: { _batch_id: string; _file_ids: string[] }
         Returns: number
       }
       release_rebuild_lock: {
         Args: { _batch_id: string; _session_id: string }
-        Returns: undefined
-      }
-      replace_cross_batch_clearings_for_run: {
-        Args: { p_rows: Json; p_run_id: string; p_scope?: string }
         Returns: undefined
       }
       replace_normalized_for_file_set: {
@@ -997,6 +997,10 @@ export type Database = {
       }
       replace_reconciled_members_for_batch: {
         Args: { _batch_id: string; _estimates?: Json; _members: Json }
+        Returns: number
+      }
+      supersede_active_clearings_batch: {
+        Args: { p_batch_size?: number }
         Returns: number
       }
       upload_replace_file: {
