@@ -314,6 +314,7 @@ export default function AgentSummaryPage() {
           <BatchSelector />
         </div>
       </div>
+      {overlayError && <CrossBatchOverlayLoadErrorBanner />}
       <div className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
         <strong className="text-foreground">Expected (AOR)</strong> counts members whose <code>currentPolicyAOR</code> on EDE
         matches this agent — the canonical "ownership" definition.{' '}
@@ -337,6 +338,10 @@ export default function AgentSummaryPage() {
         ) : (
           <>.</>
         )}
+        {' '}Counts and Est. Missing dollars are adjusted by the active cross-batch clearing overlay: fully-cleared
+        and cleared-then-reversed rows are excluded; partially-cleared rows contribute only the remainder.{' '}
+        <strong className="text-foreground">Needs Review</strong> counts rows in{' '}
+        <code>manual_review_required</code> or <code>partial_amount_unavailable</code> state from the clearing overlay.
       </div>
       <p
         data-testid="agent-summary-ebu-disclaimer"
