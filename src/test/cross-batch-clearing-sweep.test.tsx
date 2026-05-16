@@ -658,3 +658,244 @@ describe('crossBatchClearingSweep — v12 branch coverage', () => {
     expect(collision).toBeFalsy();
   });
 });
+
+// ---------- Group: client-side chunked RPC pattern (v3.1) ----------
+describe('crossBatchClearingSweep — client-side chunked supersede + insert', () => {
+  it('1. Empty active + small clearingRows (<500): supersede once (returns 0), insert once', async () => {
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01'), baseBatch('B2', '2026-03-01')],
+      reconciled: [makeUnpaidRM('M1', 'B1')],
+      boEde: [ambetterBoEde('E1', 'B1', 'p1')],
+      commission: [commissionRow('C1', 'B2', 'p1', 100)],
+    });
+    const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    expect(r.aborted).toBe(false);
+    expect(supersedeCallCount()).toBe(1);
+    expect(insertCallCount()).toBe(1);
+    expect(insertedRows().length).toBe(1);
+  });
+
+  it('2. N>500 active + N>500 clearingRows: supersede until 0, then insert ceil(N/500) chunks', async () => {
+    // 600 clearing rows requires 2 insert chunks.
+    const reconciled: RM[] = [];
+    const boEde: NR[] = [];
+    const commission: NR[] = [];
+    for (let i = 0; i < 600; i++) {
+      const pn = `p${i}`;
+      reconciled.push(makeUnpaidRM(`M${i}`, 'B1', { policy_number: pn }));
+      boEde.push(ambetterBoEde(`E${i}`, 'B1', pn));
+      commission.push(commissionRow(`C${i}`, 'B2', pn, 100));
+    }
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01'), baseBatch('B2', '2026-03-01')],
+      reconciled, boEde, commission,
+    });
+    // Supersede returns [500, 200, 0] then 0.
+    let superCalls = 0;
+    const superReturns = [500, 200, 0];
+    rpcMock.mockReset();
+    rpcMock.mockImplementation((name: string, args: any) => {
+      if (name === 'supersede_active_clearings_batch') {
+        const v = superReturns[superCalls] ?? 0;
+        superCalls++;
+        return Promise.resolve({ data: v, error: null });
+      }
+      if (name === 'insert_clearing_rows') {
+        return Promise.resolve({ data: args.p_rows.length, error: null });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+    const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    expect(r.aborted).toBe(false);
+    expect(supersedeCallCount()).toBe(3);
+    expect(insertCallCount()).toBe(2);
+    // Each insert chunk ≤ 500.
+    for (const c of rpcMock.mock.calls.filter(c => c[0] === 'insert_clearing_rows')) {
+      expect((c[1].p_rows as any[]).length).toBeLessThanOrEqual(500);
+    }
+    expect(r.clearingRowsWritten).toBe(600);
+  });
+
+  it('3. Supersede mid-flight failure → throws, no insert calls', async () => {
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01'), baseBatch('B2', '2026-03-01')],
+      reconciled: [makeUnpaidRM('M1', 'B1')],
+      boEde: [ambetterBoEde('E1', 'B1', 'p1')],
+      commission: [commissionRow('C1', 'B2', 'p1', 100)],
+    });
+    let superCalls = 0;
+    rpcMock.mockReset();
+    rpcMock.mockImplementation((name: string) => {
+      if (name === 'supersede_active_clearings_batch') {
+        superCalls++;
+        if (superCalls === 1) return Promise.resolve({ data: 500, error: null });
+        return Promise.resolve({ data: null, error: new Error('boom') });
+      }
+      return Promise.resolve({ data: 0, error: null });
+    });
+    await expect(runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true }))
+      .rejects.toThrow(/supersede_active_clearings_batch/);
+    expect(insertCallCount()).toBe(0);
+  });
+
+  it('4. Insert mid-flight failure includes chunk index', async () => {
+    const reconciled: RM[] = [];
+    const boEde: NR[] = [];
+    const commission: NR[] = [];
+    for (let i = 0; i < 1100; i++) {
+      const pn = `p${i}`;
+      reconciled.push(makeUnpaidRM(`M${i}`, 'B1', { policy_number: pn }));
+      boEde.push(ambetterBoEde(`E${i}`, 'B1', pn));
+      commission.push(commissionRow(`C${i}`, 'B2', pn, 100));
+    }
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01'), baseBatch('B2', '2026-03-01')],
+      reconciled, boEde, commission,
+    });
+    let insCalls = 0;
+    rpcMock.mockReset();
+    rpcMock.mockImplementation((name: string, args: any) => {
+      if (name === 'supersede_active_clearings_batch') return Promise.resolve({ data: 0, error: null });
+      if (name === 'insert_clearing_rows') {
+        insCalls++;
+        if (insCalls === 3) return Promise.resolve({ data: null, error: new Error('insert boom') });
+        return Promise.resolve({ data: args.p_rows.length, error: null });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+    await expect(runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true }))
+      .rejects.toThrow(/insert_clearing_rows failed at chunk 2/);
+  });
+
+  it('5. shouldContinue false mid-supersede → aborted stale_generation', async () => {
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01'), baseBatch('B2', '2026-03-01')],
+      reconciled: [makeUnpaidRM('M1', 'B1')],
+      boEde: [ambetterBoEde('E1', 'B1', 'p1')],
+      commission: [commissionRow('C1', 'B2', 'p1', 100)],
+    });
+    let superCalls = 0;
+    rpcMock.mockReset();
+    rpcMock.mockImplementation((name: string) => {
+      if (name === 'supersede_active_clearings_batch') {
+        superCalls++;
+        return Promise.resolve({ data: 500, error: null });
+      }
+      return Promise.resolve({ data: 0, error: null });
+    });
+    let calls = 0;
+    const r = await runCrossBatchClearingSweep({
+      generationId: 1,
+      shouldContinue: () => { calls++; return calls < 12; },
+    });
+    expect(r.aborted).toBe(true);
+    expect(r.abortReason).toBe('stale_generation');
+    expect(insertCallCount()).toBe(0);
+  });
+
+  it('6. shouldContinue false mid-insert → aborted stale_generation after in-flight chunk', async () => {
+    const reconciled: RM[] = [];
+    const boEde: NR[] = [];
+    const commission: NR[] = [];
+    for (let i = 0; i < 1100; i++) {
+      const pn = `p${i}`;
+      reconciled.push(makeUnpaidRM(`M${i}`, 'B1', { policy_number: pn }));
+      boEde.push(ambetterBoEde(`E${i}`, 'B1', pn));
+      commission.push(commissionRow(`C${i}`, 'B2', pn, 100));
+    }
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01'), baseBatch('B2', '2026-03-01')],
+      reconciled, boEde, commission,
+    });
+    // Allow phases A-D plus E1 supersede loop, then trip after one insert.
+    let cont = true;
+    const r = await runCrossBatchClearingSweep({
+      generationId: 1,
+      shouldContinue: () => {
+        const v = cont;
+        if (insertCallCount() >= 1) cont = false;
+        return v;
+      },
+    });
+    expect(r.aborted).toBe(true);
+    expect(r.abortReason).toBe('stale_generation');
+    expect(insertCallCount()).toBeGreaterThanOrEqual(1);
+    expect(insertCallCount()).toBeLessThan(3);
+  });
+
+  it('7. clearingRowsWritten reflects actual insert return values, not clearingRows.length', async () => {
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01'), baseBatch('B2', '2026-03-01')],
+      reconciled: [makeUnpaidRM('M1', 'B1')],
+      boEde: [ambetterBoEde('E1', 'B1', 'p1')],
+      commission: [commissionRow('C1', 'B2', 'p1', 100)],
+    });
+    rpcMock.mockReset();
+    rpcMock.mockImplementation((name: string) => {
+      if (name === 'supersede_active_clearings_batch') return Promise.resolve({ data: 0, error: null });
+      if (name === 'insert_clearing_rows') return Promise.resolve({ data: 42, error: null }); // lie
+      return Promise.resolve({ data: null, error: null });
+    });
+    const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    expect(r.clearingRowsWritten).toBe(42);
+  });
+
+  it('8. Supersede-before-insert ordering: insert only fires after terminal 0', async () => {
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01'), baseBatch('B2', '2026-03-01')],
+      reconciled: [makeUnpaidRM('M1', 'B1')],
+      boEde: [ambetterBoEde('E1', 'B1', 'p1')],
+      commission: [commissionRow('C1', 'B2', 'p1', 100)],
+    });
+    const order: string[] = [];
+    const superReturns = [500, 200, 0];
+    let s = 0;
+    rpcMock.mockReset();
+    rpcMock.mockImplementation((name: string, args: any) => {
+      order.push(name);
+      if (name === 'supersede_active_clearings_batch') {
+        const v = superReturns[s] ?? 0; s++;
+        // Assert no insert has fired before the terminal 0.
+        if (v !== 0) expect(order.filter(n => n === 'insert_clearing_rows').length).toBe(0);
+        return Promise.resolve({ data: v, error: null });
+      }
+      if (name === 'insert_clearing_rows') {
+        // Before this insert there must have been a terminal 0 supersede.
+        expect(order.filter(n => n === 'supersede_active_clearings_batch').length).toBe(3);
+        return Promise.resolve({ data: args.p_rows.length, error: null });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+    await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    expect(supersedeCallCount()).toBe(3);
+    expect(insertCallCount()).toBe(1);
+  });
+
+  it('9. Non-numeric supersede return throws with RPC name', async () => {
+    setupFixture({ batches: [baseBatch('B1', '2026-02-01')] });
+    rpcMock.mockReset();
+    rpcMock.mockImplementation((name: string) => {
+      if (name === 'supersede_active_clearings_batch') return Promise.resolve({ data: null, error: null });
+      return Promise.resolve({ data: 0, error: null });
+    });
+    await expect(runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true }))
+      .rejects.toThrow(/supersede_active_clearings_batch/);
+  });
+
+  it('10. Non-numeric insert return (string) throws', async () => {
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01'), baseBatch('B2', '2026-03-01')],
+      reconciled: [makeUnpaidRM('M1', 'B1')],
+      boEde: [ambetterBoEde('E1', 'B1', 'p1')],
+      commission: [commissionRow('C1', 'B2', 'p1', 100)],
+    });
+    rpcMock.mockReset();
+    rpcMock.mockImplementation((name: string) => {
+      if (name === 'supersede_active_clearings_batch') return Promise.resolve({ data: 0, error: null });
+      if (name === 'insert_clearing_rows') return Promise.resolve({ data: '500', error: null });
+      return Promise.resolve({ data: null, error: null });
+    });
+    await expect(runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true }))
+      .rejects.toThrow(/insert_clearing_rows/);
+  });
+});
