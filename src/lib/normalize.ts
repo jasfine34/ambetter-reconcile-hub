@@ -380,7 +380,7 @@ export function normalizeEDERow(row: Record<string, string>, fileLabel: string):
     client_address_1: (row['clientAddress1'] || '').trim(),
     client_address_2: (row['clientAddress2'] || '').trim(),
     client_city: (row['clientCity'] || '').trim(),
-    client_state_full: (row['clientState'] || '').trim(),
+    client_state_full: firstNonblankString(row['clientState'], row['state'], row['State']) ?? '',
     client_zip: (row['clientZipCode'] || '').trim(),
     raw_json: row,
   });
