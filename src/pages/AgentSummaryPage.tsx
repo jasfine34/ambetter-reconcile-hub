@@ -163,21 +163,38 @@ export default function AgentSummaryPage() {
     [reconciled, scope, filteredEde, confirmedUpgradeMemberKeys],
   );
 
-  // Group canonical unpaid rows by EDE current_policy_aor ownership bucket
-  // (Bundle 7). Replaces Bundle 1.6's writing-agent NPN grouping. JF/EF/BS
-  // map to the active AOR agents in NPN_MAP; everything else aggregates
-  // into the "Other AORs" row below.
+  const {
+    overlay: clearingOverlay,
+    error: overlayError,
+  } = useCrossBatchOverlay();
+
+  const agentSummaryClearingOverlay = overlayError
+    ? EMPTY_CLEARING_OVERLAY_MAP
+    : clearingOverlay;
+
+  const adjustedPartition = useMemo(
+    () => partitionUnpaidRowsByOverlay(canonicalUnpaidRows, agentSummaryClearingOverlay),
+    [canonicalUnpaidRows, agentSummaryClearingOverlay],
+  );
+
+  // Group canonical unpaid rows by EDE current_policy_aor ownership bucket,
+  // adjusted by the cross-batch clearing overlay (Bundle 13c slice). Only
+  // `partition.regular` items contribute — fully_cleared, cleared_then_reversed,
+  // and zero_expected rows are excluded. Partial-cleared rows contribute only
+  // their remainder via `effectiveEstMissing`.
   const unpaidByOwnerBucket = useMemo(() => {
-    const m = new Map<PolicyOwnerBucket, { count: number; estMissing: number }>();
-    for (const r of canonicalUnpaidRows) {
+    const m = new Map<PolicyOwnerBucket, { count: number; estMissing: number; reviewCount: number }>();
+    for (const item of adjustedPartition.regular) {
+      const r = item.row;
       const bucket = classifyPolicyOwnerFromCurrentAor((r as any).current_policy_aor);
-      const entry = m.get(bucket) ?? { count: 0, estMissing: 0 };
+      const entry = m.get(bucket) ?? { count: 0, estMissing: 0, reviewCount: 0 };
       entry.count += 1;
-      entry.estMissing += Number((r as any).estimated_missing_commission) || 0;
+      entry.estMissing += item.effectiveEstMissing;
+      if (isReviewWorthyAdjustment(item)) entry.reviewCount += 1;
       m.set(bucket, entry);
     }
     return m;
-  }, [canonicalUnpaidRows]);
+  }, [adjustedPartition]);
 
   // NPN → owner bucket lookup for the per-agent rows below.
   const NPN_TO_BUCKET: Readonly<Record<string, PolicyOwnerBucket>> = {
