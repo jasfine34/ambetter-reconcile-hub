@@ -265,9 +265,10 @@ describe('crossBatchClearingSweep — clearing rows', () => {
     expect(r.clearingRowsWritten).toBe(1);
     const rows = insertedRows();
     expect(rows[0].clearing_state).toBe('fully_cleared');
+    expect(rpcMock).toHaveBeenCalledWith('supersede_active_clearings_batch', { p_batch_size: 500 });
     expect(rpcMock).toHaveBeenCalledWith(
-      'replace_cross_batch_clearings_for_run',
-      expect.objectContaining({ p_scope: 'global_full_rebuild' }),
+      'insert_clearing_rows',
+      expect.objectContaining({ p_run_id: expect.any(String), p_rows: expect.any(Array) }),
     );
   });
 
