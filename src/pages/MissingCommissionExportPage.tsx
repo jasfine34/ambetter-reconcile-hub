@@ -1324,7 +1324,7 @@ export default function MissingCommissionExportPage() {
                     }
                     const v = row[c.key];
                     let display: React.ReactNode;
-                    if (c.key === '_ffmId' || c.key === '_phone' || c.key === '_email') {
+                    if (c.key === '_phone' || c.key === '_email') {
                       const f = v as EnrichedField<string>;
                       display = f?.value ? f.value : <span className="text-muted-foreground">—</span>;
                     } else if (c.key === '_estimatedMissingCommission') {
