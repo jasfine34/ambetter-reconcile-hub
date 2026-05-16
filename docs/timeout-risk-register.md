@@ -1,0 +1,83 @@
+# Timeout Risk Register
+
+Audit date: 2026-05-16  
+Repo HEAD inspected: `d9b4c41e`  
+Scope: static repo inspection only. No live database queries and no production/test/migration changes.
+
+## Executive Verdict
+
+Verdict: **Yellow with one Red hotfix**
+
+The app is not broadly broken, but it now has enough row volume and rebuild/report complexity that every large Supabase path must be treated as a timeout-sensitive path. The recurring failures are the same family: browser-triggered reads or RPCs crossing Supabase's short authenticated-role statement timeout. Prior fixes were valid, but they fixed specific paths. This register identifies the next likely paths before they become user-facing failures.
+
+Immediate priority:
+
+1. **Fix now:** add `statement_timeout=120s` to `replace_reconciled_members_for_batch(uuid, jsonb, jsonb)`.
+2. **Fix before next identity-resolution expansion:** convert the all-batch identity resolver scan from `.range()` offset pagination to keyset pagination and tighten the active predicate.
+3. **Monitor / pre-specify:** any future report or Bundle 14 path that touches all-batch `normalized_records`, all snapshot history, or all `reconciled_members` must include query-shape constraints before Lovable implements it.
+
+## Severity Definitions
+
+- **Red:** already failing or very likely to fail under current live row counts; fix before more user work depends on it.
+- **Yellow:** reachable path with known timeout-shaped query/RPC pattern; safe today if bounded, but must be pre-specified before expanding the feature.
+- **Green:** currently bounded, indexed, chunked, or low-cardinality; keep guard tests but no immediate change.
+
+## Risk Register
+
+| Risk | Severity | Evidence | Affected action/page | Why it can timeout | Recommendation |
+|---|---:|---|---|---|---|
+| `replace_reconciled_members_for_batch` heavy RPC lacks function-level timeout | **Red** | Caller at `src/lib/persistence.ts:818`; function defined at `supabase/migrations/20260430151956_a34de515-5f65-4c8f-9da1-9b53b7b30ac4.sql:1`; deletes at lines `19-20`; chunked inserts at lines `34` and `144`; `jsonb_to_recordset` at lines `97` and `155`; sibling timeout migration covers only `upload_replace_file` and `replace_normalized_for_file_set` at `supabase/migrations/20260505024209_8e47e24f-ca18-4a31-83b4-89acf7e377d9.sql:1-5`. | Rebuild Entire Batch, Re-run Reconciliation, upload save verification paths that persist reconciled members. | One transaction does delete + chunked inserts for thousands of reconciled rows and estimates. Internal chunking bounds individual insert statements, but the whole RPC still runs under the authenticated-role timeout unless the function has its own timeout setting. | **Fix now.** Add SQL-only migration: `ALTER FUNCTION public.replace_reconciled_members_for_batch(uuid, jsonb, jsonb) SET statement_timeout = '120s';` Add static migration test checking `proconfig`. If still slow after that, split into delete + insert-chunk RPCs. |
+| Identity-resolution all-batch scan uses offset pagination and `raw_json` | **Red / high Yellow** | `runIdentityResolution()` calls `fetchAllNormalizedRecordsForResolver()` at `src/lib/resolvedIdentities.ts:110-115`; scan is all non-superseded normalized rows with projected `raw_json` at `src/lib/resolvedIdentities.ts:274-286`; it uses `.range(from, from + pageSize - 1)` at line `286`; Dashboard button calls it at `src/pages/DashboardPage.tsx:484`. | "Resolve Identities Across Batches" button. | This is an all-batch normalized-record scan. It is projected, but still includes `raw_json`, uses offset pagination, and filters only `superseded_at IS NULL` rather than the full active predicate. As row counts grow, later pages can degrade exactly like the previous offset-pagination timeout class. | **Fix before expanding identity resolution.** Use keyset pagination by `id`, apply `staging_status='active' AND superseded_at IS NULL`, keep projection minimal, and consider a typed `ffm_app_id` column/index if `raw_json.ffmAppId` remains load-bearing. |
+| Cross-batch sweep Phase A loads unpaid `reconciled_members` with `select('*')` and offset pagination | **Yellow** | `src/lib/sweep/crossBatchClearingSweep.ts:152-155` selects all columns from `reconciled_members` per batch and pages with `.range(from, from + 999)`. | Rebuild Cross-Batch Clearings. | It is per-batch and currently bounded, but it grows with every batch and reads all columns just to filter `!in_commission` client-side. Offset pagination is the known timeout-prone class. | **Fix on next sweep touch.** Replace with keyset pagination by `id`, project only fields needed for grain/inputErrors, and push `.eq('in_commission', false)` server-side if null semantics are understood. |
+| BO/EDE cross-batch sweep lookups use `.in(policy_number/issuer_subscriber_id)` with keyset but no query-specific composite index | **Yellow** | Generic loader at `src/lib/sweep/crossBatchClearingSweep.ts:75-103`; `.in('source_type', ['BACK_OFFICE', 'EDE'])` at line `89`; `.in(column, chunk).order('id').limit(...)` at line `91`; existing simple indexes include `idx_normalized_policy_number`, `idx_normalized_issuer_subscriber_id`, and `idx_normalized_agent_npn` at `supabase/migrations/20260415003124_0d4c9ffc-7276-4a76-bde5-321ed4fd411f.sql:55-57`. | Rebuild Cross-Batch Clearings resolver evidence load. | The query is chunked and keyset-paginated, so it is much safer than offset. The remaining risk is planner choice under `IN (...) + source_type + active predicate + ORDER BY id` without a composite partial index matching the query shape. | **Monitor.** If sweep slows again, add partial composite indexes such as `(policy_number, id)` and `(issuer_subscriber_id, id)` for active BO/EDE rows, or split BO/EDE loaders by exact query shape. |
+| MCE member-key enrichment still projects `raw_json`, but now has a supporting composite index | **Green / monitor** | `MCE_ENRICHMENT_COLUMNS` includes `raw_json` at `src/lib/persistence.ts:523-527`; `getNormalizedRecordsByMemberKeys()` filters `.in('member_key', chunk)` at `src/lib/persistence.ts:548-555`; migration adds `normalized_records_active_member_key_id_idx` at `supabase/migrations/20260516211341_698fa6cc-9c9c-4281-80c2-224acd46153c.sql:11-13`. | Missing Commission Export "Run Report" source enrichment. | This was a live timeout path. The new `(member_key, id)` active partial index matches the chunked keyset traversal, but `raw_json` remains a heavy payload. | **Monitor after live smoke.** Keep `raw_json` because profile enrichment uses it. If this regresses, consider typed columns for the few raw_json fields MCE needs rather than dropping `raw_json` blindly. |
+| MCE commission-triple fallback uses `.in(agent_npn)` with active/source filters and keyset | **Yellow / low** | `getCommissionRecordsByTriples()` at `src/lib/persistence.ts:578-622`; query filters `source_type='COMMISSION'` at line `606`, `.in('agent_npn', chunk)` at line `607`, keysets with `gt('id')` at line `610`; only simple `idx_normalized_agent_npn` exists at `supabase/migrations/20260415003124_0d4c9ffc-7276-4a76-bde5-321ed4fd411f.sql:57`. | Missing Commission Export fallback for historical writing-agent-carrier-id. | Projection is slim and source-filtered, but cross-batch commission rows will grow. The simple NPN index may not fully support `source_type + active + agent_npn + ORDER BY id`. | **Monitor.** If fallback becomes slow, add active partial composite index for commission rows: `(agent_npn, id) WHERE staging_status='active' AND superseded_at IS NULL AND source_type='COMMISSION'`. |
+| `getAllNormalizedRecords()` loads all active normalized rows with `select('*')` | **Yellow** | `src/lib/persistence.ts:485-497`; all active records, `.select('*')` at line `491`, keyset by `id` at lines `494-496`; `MemberTimelinePage` can call it at `src/pages/MemberTimelinePage.tsx:155`. | Member Timeline with all-batches scope. | Keyset pagination removes offset risk, but this still transfers every active row including `raw_json`. It is acceptable for occasional timeline inspection at current scale, but risky for default dashboards/reports. | **Monitor / constrain future use.** Do not reuse this helper in new reports. New all-batch consumers should define a projected loader for exactly the needed columns. |
+| `getNormalizedRecords(batchId)` loads full active batch rows with `select('*')` | **Green / monitor** | `src/lib/persistence.ts:453-467`; `.select('*')` at line `459`, batch filter at line `462`, keyset at lines `463-465`; comments document prior `.range()` timeout and intentional keyset fix at `src/lib/persistence.ts:436-451`. | Rebuild Phase 4, Dashboard, Agent Summary, Manual Match, Unpaid Recovery, Entity Summary. | This is a known heavy path, but it is batch-scoped and keyset-paginated. It intentionally keeps `raw_json` because reconcile/classifier/AOR/gross commission logic depend on it. | **Keep as-is for now.** Future refactors can split "reconcile full row" from "dashboard metric projection," but do not drop `raw_json` without inventorying consumers. |
+| `getNormalizedRecordsAllSnapshots()` is dormant but has the highest-risk read shape | **Yellow if activated; Green while unused** | Function at `src/lib/persistence.ts:636-650`; `.select('*')` at line `643`; `.range(...)` at line `646`; search shows no current callers except its definition. | Future snapshot-history analysis / Bundle 14 style reporting if adopted. | It reads all snapshot history for a batch, including superseded rows and `raw_json`, with offset pagination. As history grows, this is a textbook timeout candidate. | **Do not use until fixed.** Before any directive consumes it, convert to keyset pagination and projected columns, or create a purpose-specific RPC/query. |
+| `getReconciledMembers(batchId)` uses `select('*')` and offset pagination | **Yellow / low** | `src/lib/persistence.ts:908-922`; `.select('*')` at line `915`; `.range(...)` at line `917`. | Any caller that needs all reconciled rows for a batch. Currently most visible table usage goes through `getReconciledMembersPage()`. | Per-batch row counts are currently around 3.7k-3.9k, so risk is lower, but offset pagination plus full-row projection can degrade with larger batches. | **Fix opportunistically.** Convert to keyset pagination or ensure new callers use a projected/page-based loader. Do not use for all-batch reports. |
+| `getReconciledMembersPage()` uses server-side `.range()` intentionally | **Green / monitor search** | `src/lib/persistence.ts:938-982`; batch filter at line `953`; `.range(from, to)` at line `980`. | All Records page. | This is user-facing page pagination, not "load all pages in a loop." The page size is bounded. Search uses multi-column `ilike`, which may become slow but does not transfer thousands of rows. | **Keep.** If search gets slow, add search-specific indexes or a search RPC. Do not replace this with loading all rows client-side. |
+| `loadResolverIndex()` reads all `resolved_identities` via `select('*')` and offset pagination | **Yellow / low** | `src/lib/resolvedIdentities.ts:324-346`; `.select('*')` at line `334`; `.range(...)` at line `336`; consumers include Dashboard re-run at `src/pages/DashboardPage.tsx:495`, Upload at `src/pages/UploadPage.tsx:219`, and read-through lookups in reconcile/timeline. | Rebuild/reconcile read-through of identity sidecar. | Sidecar is probably much smaller than `normalized_records`, but it can grow with cross-batch identity resolution. Offset pagination is avoidable. | **Monitor / fix with identity work.** Convert to keyset pagination by `id` and project only lookup/display fields. |
+| `getResolverConflicts()` unbounded conflict query | **Yellow / low** | `src/lib/resolvedIdentities.ts:411-417`; `.select('*')`, `.gt('conflict_count', 0)`, ordered by `resolved_at`; panel imports it at `src/components/IdentityResolutionConflictsPanel.tsx:9` and calls it at line `42`. | Identity Resolution Conflicts panel. | It only loads conflict rows, likely low-cardinality. If conflicts pile up, no limit/page cap exists. | **Monitor.** Add `limit`/pagination if conflict count grows. |
+| Weak-match override load is unbounded `select('*')` | **Green** | `src/lib/weakMatch.ts:286-296`; `.select('*')` at line `293`; ordered by `decided_at`. | Manual Match override application. | Manual override table should stay small. Latest-decision-wins logic wants all rows. | **Defer.** Add pagination only if manual override volume becomes unexpectedly high. |
+
+## Existing Protections Worth Preserving
+
+- `getNormalizedRecords(batchId)` and `getAllNormalizedRecords()` use keyset pagination by `id`, not offset pagination: `src/lib/persistence.ts:453-497`.
+- MCE Path B now has an active partial `(member_key, id)` index: `supabase/migrations/20260516211341_698fa6cc-9c9c-4281-80c2-224acd46153c.sql:11-13`.
+- Upload and normalized-promotion RPCs already have 120s statement timeouts: `supabase/migrations/20260505024209_8e47e24f-ca18-4a31-83b4-89acf7e377d9.sql:1-5`.
+- Cross-batch clearing writes are now client-side chunked through `supersede_active_clearings_batch` and `insert_clearing_rows`: `src/lib/sweep/crossBatchClearingSweep.ts:683-716`.
+- `getReconciledMembersPage()` is a bounded server-paginated page query, not a load-all loop: `src/lib/persistence.ts:938-982`.
+
+## Guardrail Text For Claude / Lovable Directives
+
+Use this block in any directive touching rebuilds, reports, sweeps, identity resolution, all-batch views, or `normalized_records` / `reconciled_members`:
+
+```text
+Timeout-risk preflight is mandatory.
+
+Before editing, inspect every Supabase query/RPC touched by this directive and classify it:
+- Does it read normalized_records, reconciled_members, cross_batch_clearings, resolved_identities, or commission_estimates?
+- Does it use select('*')?
+- Does it use .range(from, to) in a load-all loop?
+- Does it scan across all batches?
+- Does it project raw_json?
+- Does it use .in(...) without a matching composite/partial index?
+- Does it call or create an RPC that does DELETE/INSERT/jsonb_to_recordset?
+
+Rules:
+- Load-all loops must use keyset pagination, not offset/range pagination.
+- New large reads must project explicit columns; do not use select('*') unless a source-field inventory proves it is necessary.
+- Any .in(...) + ORDER BY id + active predicate query must either have a matching index or include a static test documenting why the existing index is sufficient.
+- Heavy RPCs doing DELETE/INSERT/jsonb_to_recordset must have a function-level statement_timeout or be split into bounded chunk RPCs.
+- Do not remove raw_json from a projection unless every consumer has been inventoried.
+- Add a regression test for query shape or migration shape for every timeout-class fix.
+```
+
+## Recommended Next Actions
+
+1. **Immediate hotfix:** add the `statement_timeout=120s` migration for `replace_reconciled_members_for_batch(uuid, jsonb, jsonb)`.
+2. **Create a small static timeout-risk test suite:** assert no new production load-all `.range()` loops are added against `normalized_records` or `reconciled_members` without an allowlist comment.
+3. **Before Bundle 14 / snapshot-history work:** fix or replace `getNormalizedRecordsAllSnapshots()`.
+4. **Before identity-resolution expansion:** fix `runIdentityResolution()` pagination and active predicate.
+5. **For future Lovable work:** keep timeout-sensitive changes in Red-lane, single-surface directives. Do not bundle UI changes with query/RPC timeout fixes unless Codex approves the scope first.
