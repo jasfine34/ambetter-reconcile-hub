@@ -348,10 +348,12 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
 
 // ---------------------------------------------------------------------------
 // FFM ID front-of-table column (operator lookup aid).
-//
-// Verifies that issuer_subscriber_id is surfaced as the first table column
-// labeled "FFM ID", that the value matches the row's canonical
-// issuer_subscriber_id, and that blanks render as "—" (never empty cells).
+// Verifies that the FFM application ID (federal marketplace / Healthcare.gov)
+// is surfaced as the first table column labeled "FFM ID", sourced from EDE
+// raw_json.ffmAppId via the canonical member profile (profile.ffm_id).
+// Blanks render as "—" (BO-only members have no EDE row and therefore no FFM
+// application ID). The Ambetter portal lookup key (issuer_subscriber_id) is
+// still preserved in the Messer CSV "Member ID" column via resolveMemberId.
 // ---------------------------------------------------------------------------
 describe('MissingCommissionExportPage — FFM ID front column', () => {
   it('renders FFM ID as the first column header with the right label', async () => {
@@ -365,15 +367,17 @@ describe('MissingCommissionExportPage — FFM ID front column', () => {
     expect(header).toBeInTheDocument();
     expect(header).toHaveTextContent(/^FFM ID$/);
 
-    // Confirm it's positioned BEFORE the first Messer header ("Carrier Name").
     const headerRow = header.closest('tr')!;
     const cells = Array.from(headerRow.querySelectorAll('th'));
     expect(cells[0]).toBe(header);
     expect(cells[1]).toHaveTextContent(/Carrier Name/i);
   });
 
-  it('renders the row issuer_subscriber_id in the FFM ID cell', async () => {
-    mockGetEligible.mockReturnValue([makeMissingMember('m-1'), makeMissingMember('m-2')]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([makeMissingMember('m-1'), makeMissingMember('m-2')]));
+  it('renders profile.ffm_id (from EDE raw_json.ffmAppId via canonical picker) in the FFM ID cell', async () => {
+    ffmIdByMemberKey.set('m-1', 'FFM-AAA-111');
+    ffmIdByMemberKey.set('m-2', 'FFM-BBB-222');
+    const rows = [makeMissingMember('m-1'), makeMissingMember('m-2')];
+    mockGetEligible.mockReturnValue(rows); mockGetBreakdown.mockReturnValue(buildBreakdownStub(rows));
     render(<MissingCommissionExportPage />);
     await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('run-report'));
@@ -381,14 +385,12 @@ describe('MissingCommissionExportPage — FFM ID front column', () => {
 
     const cells = screen.getAllByTestId('ffm-id-cell');
     expect(cells).toHaveLength(2);
-    // makeMissingMember sets issuer_subscriber_id = `iss-${memberKey}`.
-    expect(cells[0]).toHaveTextContent('iss-m-1');
-    expect(cells[1]).toHaveTextContent('iss-m-2');
+    expect(cells[0]).toHaveTextContent('FFM-AAA-111');
+    expect(cells[1]).toHaveTextContent('FFM-BBB-222');
   });
 
-  it('renders "—" when issuer_subscriber_id is blank (never an empty cell)', async () => {
+  it('renders "—" when FFM application ID is missing', async () => {
     const m = makeMissingMember('m-blank');
-    m.issuer_subscriber_id = '';
     mockGetEligible.mockReturnValue([m]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([m]));
     render(<MissingCommissionExportPage />);
     await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
@@ -399,9 +401,35 @@ describe('MissingCommissionExportPage — FFM ID front column', () => {
     expect(cell).toHaveTextContent('—');
   });
 
-  it('CSV download still includes FFM ID via the Messer "Member ID" column (no regression)', async () => {
-    // resolveMemberId prefers issuer_subscriber_id; verify a populated row
-    // still yields that value in the Messer Member ID CSV column.
+  it('internal _ffmId column is no longer rendered (visible cell is the only FFM ID render)', async () => {
+    ffmIdByMemberKey.set('m-1', 'FFM-XYZ-999');
+    const rows = [makeMissingMember('m-1')];
+    mockGetEligible.mockReturnValue(rows); mockGetBreakdown.mockReturnValue(buildBreakdownStub(rows));
+    render(<MissingCommissionExportPage />);
+    await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('run-report'));
+    await waitFor(() => expect(screen.getByTestId('results-table')).toBeInTheDocument());
+
+    // Only one cell renders the FFM ID — the visible first column.
+    const tbody = screen.getByTestId('results-table');
+    const matches = Array.from(tbody.querySelectorAll('td')).filter(
+      (td) => td.textContent?.includes('FFM-XYZ-999'),
+    );
+    expect(matches).toHaveLength(1);
+  });
+
+  it('BO-only member with no ffm_app_id shows "—" (no EDE row)', async () => {
+    const m = makeMissingMember('m-bo-only');
+    mockGetEligible.mockReturnValue([m]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([m]));
+    render(<MissingCommissionExportPage />);
+    await waitFor(() => expect(screen.getByTestId('initial-state')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('run-report'));
+    await waitFor(() => expect(screen.getByTestId('results-table')).toBeInTheDocument());
+
+    expect(screen.getByTestId('ffm-id-cell')).toHaveTextContent('—');
+  });
+
+  it('CSV download still emits issuer_subscriber_id in the Messer "Member ID" column (Ambetter portal lookup key preserved)', async () => {
     const m = makeMissingMember('m-csv');
     mockGetEligible.mockReturnValue([m]); mockGetBreakdown.mockReturnValue(buildBreakdownStub([m]));
     render(<MissingCommissionExportPage />);
@@ -426,12 +454,7 @@ describe('MissingCommissionExportPage — FFM ID front column', () => {
 
     fireEvent.click(screen.getByTestId('messer-download'));
     (global as any).Blob = realBlob;
-    // Restore only the document.createElement spy. vi.restoreAllMocks would
-    // also reset the inline vi.fn() mocks created in vi.mock(...) factories
-    // (loadWeakMatchOverrides, etc.), which then breaks subsequent tests
-    // because useEffect's Promise.all rejects on `undefined.catch`.
     vi.restoreAllMocks();
-    // Re-prime module-level inline mocks that restoreAllMocks just wiped.
     const weakMatch = await import('@/lib/weakMatch');
     (weakMatch.loadWeakMatchOverrides as any).mockResolvedValue(new Map());
     (weakMatch.findWeakMatches as any).mockReturnValue([]);
@@ -440,7 +463,6 @@ describe('MissingCommissionExportPage — FFM ID front column', () => {
     const expectedEde = await import('@/lib/expectedEde');
     (expectedEde.computeFilteredEde as any).mockReturnValue({ uniqueMembers: [] });
 
-    // CSV header must include Member ID; data row must include the FFM ID value.
     expect(csvText).toMatch(/Member ID/);
     expect(csvText).toMatch(/iss-m-csv/);
   });
