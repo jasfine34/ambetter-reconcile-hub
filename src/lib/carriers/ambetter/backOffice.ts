@@ -110,7 +110,7 @@ export function normalizeAmbetterBackOfficeRow(
     client_address_1: '',
     client_address_2: '',
     client_city: '',
-    client_state_full: '',
+    client_state_full: firstNonblankString(row['State'], row['Client State'], row['StateCode']) ?? '',
     client_zip: '',
     paid_to_date: null,
     months_paid: null,
