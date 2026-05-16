@@ -64,6 +64,14 @@ vi.mock('@/lib/canonical', async (importOriginal) => {
   };
 });
 vi.mock('@/components/BatchSelector', () => ({ BatchSelector: () => null }));
+vi.mock('@/hooks/useCrossBatchOverlay', () => ({
+  useCrossBatchOverlay: () => ({
+    overlay: { byGrain: new Map(), lastEvaluatedAt: null, totalActiveCount: 0 },
+    loading: false,
+    error: null,
+    reload: vi.fn(),
+  }),
+}));
 
 import AgentSummaryPage from '@/pages/AgentSummaryPage';
 
