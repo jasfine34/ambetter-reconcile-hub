@@ -124,7 +124,6 @@ const MESSER_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
 
 const INTERNAL_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
   { key: '_memberKey', label: 'member_key' },
-  { key: '_ffmId', label: 'FFM ID' },
   { key: '_phone', label: 'Phone' },
   { key: '_email', label: 'Email' },
   { key: '_exchangeSubscriberId', label: 'exchange_subscriber_id' },
