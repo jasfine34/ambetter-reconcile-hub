@@ -23,6 +23,15 @@ import {
   pickStableKey,
   type WeakMatchOverride,
 } from '@/lib/weakMatch';
+import { useCrossBatchOverlay } from '@/hooks/useCrossBatchOverlay';
+import {
+  EMPTY_CLEARING_OVERLAY_MAP,
+  partitionUnpaidRowsByOverlay,
+  sumEffectiveEstMissing,
+  type AdjustedRow,
+} from '@/lib/canonical/crossBatchOverlay';
+import { CrossBatchOverlayLoadErrorBanner } from '@/components/CrossBatchOverlayLoadErrorBanner';
+import { isReviewWorthyAdjustment } from '@/pages/MissingCommissionExportPage';
 
 const AGENTS = Object.entries(NPN_MAP).map(([npn, info]) => ({ npn, ...info }));
 
@@ -154,21 +163,38 @@ export default function AgentSummaryPage() {
     [reconciled, scope, filteredEde, confirmedUpgradeMemberKeys],
   );
 
-  // Group canonical unpaid rows by EDE current_policy_aor ownership bucket
-  // (Bundle 7). Replaces Bundle 1.6's writing-agent NPN grouping. JF/EF/BS
-  // map to the active AOR agents in NPN_MAP; everything else aggregates
-  // into the "Other AORs" row below.
+  const {
+    overlay: clearingOverlay,
+    error: overlayError,
+  } = useCrossBatchOverlay();
+
+  const agentSummaryClearingOverlay = overlayError
+    ? EMPTY_CLEARING_OVERLAY_MAP
+    : clearingOverlay;
+
+  const adjustedPartition = useMemo(
+    () => partitionUnpaidRowsByOverlay(canonicalUnpaidRows, agentSummaryClearingOverlay),
+    [canonicalUnpaidRows, agentSummaryClearingOverlay],
+  );
+
+  // Group canonical unpaid rows by EDE current_policy_aor ownership bucket,
+  // adjusted by the cross-batch clearing overlay (Bundle 13c slice). Only
+  // `partition.regular` items contribute — fully_cleared, cleared_then_reversed,
+  // and zero_expected rows are excluded. Partial-cleared rows contribute only
+  // their remainder via `effectiveEstMissing`.
   const unpaidByOwnerBucket = useMemo(() => {
-    const m = new Map<PolicyOwnerBucket, { count: number; estMissing: number }>();
-    for (const r of canonicalUnpaidRows) {
+    const m = new Map<PolicyOwnerBucket, { count: number; estMissing: number; reviewCount: number }>();
+    for (const item of adjustedPartition.regular) {
+      const r = item.row;
       const bucket = classifyPolicyOwnerFromCurrentAor((r as any).current_policy_aor);
-      const entry = m.get(bucket) ?? { count: 0, estMissing: 0 };
+      const entry = m.get(bucket) ?? { count: 0, estMissing: 0, reviewCount: 0 };
       entry.count += 1;
-      entry.estMissing += Number((r as any).estimated_missing_commission) || 0;
+      entry.estMissing += item.effectiveEstMissing;
+      if (isReviewWorthyAdjustment(item)) entry.reviewCount += 1;
       m.set(bucket, entry);
     }
     return m;
-  }, [canonicalUnpaidRows]);
+  }, [adjustedPartition]);
 
   // NPN → owner bucket lookup for the per-agent rows below.
   const NPN_TO_BUCKET: Readonly<Record<string, PolicyOwnerBucket>> = {
@@ -195,6 +221,7 @@ export default function AgentSummaryPage() {
       const bucket = NPN_TO_BUCKET[agent.npn];
       const unpaidEntry = bucket ? unpaidByOwnerBucket.get(bucket) : undefined;
       const unpaid = unpaidEntry?.count ?? 0;
+      const unpaidReviewCount = unpaidEntry?.reviewCount ?? 0;
       const totalComm = commissionByNpn.get(agent.npn) || 0;
       // Est. Missing now sums ONLY canonical unpaid rows for this owner
       // bucket, matching the count above (single definition for count + dollars).
@@ -208,6 +235,7 @@ export default function AgentSummaryPage() {
         eligible_count: eligible,
         paid_count: paid,
         unpaid_count: unpaid,
+        unpaid_review_count: unpaidReviewCount,
         total_paid_commission: totalComm,
         estimated_missing_commission: estMissing,
       };
@@ -223,6 +251,7 @@ export default function AgentSummaryPage() {
     { key: 'eligible_count', label: 'Eligible' },
     { key: 'paid_count', label: 'Paid' },
     { key: 'unpaid_count', label: 'Unpaid' },
+    { key: 'unpaid_review_count', label: 'Needs Review' },
     { key: 'total_paid_commission', label: 'Total Commission' },
     { key: 'estimated_missing_commission', label: 'Est. Missing' },
   ];
@@ -232,16 +261,20 @@ export default function AgentSummaryPage() {
   // below surfaces canonical Expected But Unpaid rows whose EDE
   // current_policy_aor owner bucket is "Other" — same single classifier
   // (no second predicate, no re-classification).
-  const otherUnpaidRows = useMemo(
-    () => canonicalUnpaidRows.filter(
-      (r: any) => classifyPolicyOwnerFromCurrentAor(r.current_policy_aor) === 'Other',
+  const otherAdjustedItems = useMemo(
+    () => adjustedPartition.regular.filter(
+      (item: AdjustedRow) => classifyPolicyOwnerFromCurrentAor((item.row as any).current_policy_aor) === 'Other',
     ),
-    [canonicalUnpaidRows],
+    [adjustedPartition],
   );
-  const otherUnpaidCount = otherUnpaidRows.length;
+  const otherUnpaidCount = otherAdjustedItems.length;
   const otherEstMissing = useMemo(
-    () => otherUnpaidRows.reduce((sum: number, r: any) => sum + (Number(r.estimated_missing_commission) || 0), 0),
-    [otherUnpaidRows],
+    () => sumEffectiveEstMissing(otherAdjustedItems),
+    [otherAdjustedItems],
+  );
+  const otherUnpaidReviewCount = useMemo(
+    () => otherAdjustedItems.filter(isReviewWorthyAdjustment).length,
+    [otherAdjustedItems],
   );
   const tableData = useMemo(() => {
     if (otherUnpaidCount === 0) return agentData;
@@ -256,11 +289,12 @@ export default function AgentSummaryPage() {
         eligible_count: 0,
         paid_count: 0,
         unpaid_count: otherUnpaidCount,
+        unpaid_review_count: otherUnpaidReviewCount,
         total_paid_commission: 0,
         estimated_missing_commission: otherEstMissing,
       },
     ];
-  }, [agentData, otherUnpaidCount, otherEstMissing]);
+  }, [agentData, otherUnpaidCount, otherEstMissing, otherUnpaidReviewCount]);
 
   return (
     <div className="space-y-6">
@@ -280,6 +314,7 @@ export default function AgentSummaryPage() {
           <BatchSelector />
         </div>
       </div>
+      {overlayError && <CrossBatchOverlayLoadErrorBanner />}
       <div className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
         <strong className="text-foreground">Expected (AOR)</strong> counts members whose <code>currentPolicyAOR</code> on EDE
         matches this agent — the canonical "ownership" definition.{' '}
@@ -303,6 +338,10 @@ export default function AgentSummaryPage() {
         ) : (
           <>.</>
         )}
+        {' '}Counts and Est. Missing dollars are adjusted by the active cross-batch clearing overlay: fully-cleared
+        and cleared-then-reversed rows are excluded; partially-cleared rows contribute only the remainder.{' '}
+        <strong className="text-foreground">Needs Review</strong> counts rows in{' '}
+        <code>manual_review_required</code> or <code>partial_amount_unavailable</code> state from the clearing overlay.
       </div>
       <p
         data-testid="agent-summary-ebu-disclaimer"
