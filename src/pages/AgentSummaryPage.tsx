@@ -221,6 +221,7 @@ export default function AgentSummaryPage() {
       const bucket = NPN_TO_BUCKET[agent.npn];
       const unpaidEntry = bucket ? unpaidByOwnerBucket.get(bucket) : undefined;
       const unpaid = unpaidEntry?.count ?? 0;
+      const unpaidReviewCount = unpaidEntry?.reviewCount ?? 0;
       const totalComm = commissionByNpn.get(agent.npn) || 0;
       // Est. Missing now sums ONLY canonical unpaid rows for this owner
       // bucket, matching the count above (single definition for count + dollars).
@@ -234,6 +235,7 @@ export default function AgentSummaryPage() {
         eligible_count: eligible,
         paid_count: paid,
         unpaid_count: unpaid,
+        unpaid_review_count: unpaidReviewCount,
         total_paid_commission: totalComm,
         estimated_missing_commission: estMissing,
       };
@@ -249,6 +251,7 @@ export default function AgentSummaryPage() {
     { key: 'eligible_count', label: 'Eligible' },
     { key: 'paid_count', label: 'Paid' },
     { key: 'unpaid_count', label: 'Unpaid' },
+    { key: 'unpaid_review_count', label: 'Needs Review' },
     { key: 'total_paid_commission', label: 'Total Commission' },
     { key: 'estimated_missing_commission', label: 'Est. Missing' },
   ];
