@@ -260,7 +260,7 @@ describe('crossBatchClearingSweep — clearing rows', () => {
     });
     const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
     expect(r.clearingRowsWritten).toBe(1);
-    const rows = rpcMock.mock.calls[0][1].p_rows;
+    const rows = insertedRows();
     expect(rows[0].clearing_state).toBe('fully_cleared');
     expect(rpcMock).toHaveBeenCalledWith(
       'replace_cross_batch_clearings_for_run',
@@ -276,7 +276,7 @@ describe('crossBatchClearingSweep — clearing rows', () => {
       commission: [commissionRow('C1', 'B2', 'p1', 100)],
     });
     await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
-    const row = rpcMock.mock.calls[0][1].p_rows[0];
+    const row = insertedRows()[0];
     expect(row.policy_identity_key).toBe('ambetter|p1');
     expect(row.target_service_month).toBe('2026-02');
     expect(row.unpaid_batch_id).toBe('B1');
@@ -300,7 +300,7 @@ describe('crossBatchClearingSweep — clearing rows', () => {
       commission: [commissionRow('C1', 'B2', 'p1', 50)],
     });
     await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
-    const row = rpcMock.mock.calls[0][1].p_rows[0];
+    const row = insertedRows()[0];
     expect(row.clearing_state).toBe('partially_cleared');
     expect(row.remainder_owed).toBe(50);
   });
@@ -315,7 +315,7 @@ describe('crossBatchClearingSweep — clearing rows', () => {
       boEde: [ambetterBoEde('E1', 'B1', 'p1')],
     });
     await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
-    const row = rpcMock.mock.calls[0][1].p_rows[0];
+    const row = insertedRows()[0];
     expect(row.clearing_state).toBe('zero_expected_no_payment_required');
   });
 });
@@ -337,7 +337,7 @@ describe('crossBatchClearingSweep — Q22 cleared_then_reversed', () => {
       ],
     });
     await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
-    const row = rpcMock.mock.calls[0][1].p_rows[0];
+    const row = insertedRows()[0];
     expect(row.clearing_state).toBe('cleared_then_reversed');
     expect(row.first_full_clear_statement_month).toBe('2026-02');
     expect(row.reversed_at_statement_month).toBe('2026-03');
@@ -360,7 +360,7 @@ describe('crossBatchClearingSweep — Q22 cleared_then_reversed', () => {
       ],
     });
     await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
-    const row = rpcMock.mock.calls[0][1].p_rows[0];
+    const row = insertedRows()[0];
     expect(row.clearing_state).toBe('cleared_then_reversed');
     expect(row.matched_paid_record_ids).toEqual(expect.arrayContaining(['C1', 'C3']));
   });
@@ -384,7 +384,7 @@ describe('crossBatchClearingSweep — alias-aware resolver lookup', () => {
     });
     const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
     expect(r.clearingRowsWritten).toBe(1);
-    const row = rpcMock.mock.calls[0][1].p_rows[0];
+    const row = insertedRows()[0];
     expect(row.clearing_state).toBe('fully_cleared');
   });
 
@@ -400,7 +400,7 @@ describe('crossBatchClearingSweep — alias-aware resolver lookup', () => {
       }],
     });
     await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
-    const row = rpcMock.mock.calls[0][1].p_rows[0];
+    const row = insertedRows()[0];
     expect(row.clearing_state).toBe('manual_review_required');
     expect(row.manual_review_reason).toBe('state_unresolved');
   });
@@ -416,7 +416,7 @@ describe('crossBatchClearingSweep — post-grain manual review', () => {
       boEde: [ambetterBoEde('E1', 'B1', 'p1')],
     });
     await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
-    const row = rpcMock.mock.calls[0][1].p_rows[0];
+    const row = insertedRows()[0];
     expect(row.clearing_state).toBe('manual_review_required');
     expect(row.manual_review_reason).toBe('carrier_state_not_in_grid');
   });
@@ -431,7 +431,7 @@ describe('crossBatchClearingSweep — post-grain manual review', () => {
       boEde: [ambetterBoEde('E1', 'B1', 'p1')],
     });
     await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
-    const row = rpcMock.mock.calls[0][1].p_rows[0];
+    const row = insertedRows()[0];
     expect(row.manual_review_reason).toBe('percent_of_premium_not_implemented');
   });
 
@@ -442,7 +442,7 @@ describe('crossBatchClearingSweep — post-grain manual review', () => {
       boEde: [], // no EDE rows → state resolver unresolved
     });
     await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
-    const row = rpcMock.mock.calls[0][1].p_rows[0];
+    const row = insertedRows()[0];
     expect(row.clearing_state).toBe('manual_review_required');
     expect(row.manual_review_reason).toBe('state_unresolved');
   });
@@ -465,7 +465,7 @@ describe('crossBatchClearingSweep — payment_batch_ids', () => {
       ],
     });
     await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
-    const row = rpcMock.mock.calls[0][1].p_rows[0];
+    const row = insertedRows()[0];
     expect(new Set(row.payment_batch_ids)).toEqual(new Set(['B2', 'B3']));
   });
 });
@@ -536,7 +536,7 @@ describe('crossBatchClearingSweep — additional edge cases', () => {
       }],
     });
     await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
-    const row = rpcMock.mock.calls[0][1].p_rows[0];
+    const row = insertedRows()[0];
     expect(row.clearing_state).toBe('not_cleared');
   });
 });
@@ -563,7 +563,7 @@ describe('crossBatchClearingSweep — v12 branch coverage', () => {
       ],
     });
     await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
-    const rows = rpcMock.mock.calls[0][1].p_rows;
+    const rows = insertedRows();
     expect(rows.length).toBe(1);
     expect(rows[0].clearing_state).toBe('manual_review_required');
     expect(rows[0].manual_review_reason).toBe('state_manual_review');
@@ -583,7 +583,7 @@ describe('crossBatchClearingSweep — v12 branch coverage', () => {
       }],
     });
     await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
-    const row = rpcMock.mock.calls[0][1].p_rows[0];
+    const row = insertedRows()[0];
     expect(row.clearing_state).toBe('manual_review_required');
     expect(row.manual_review_reason).toBe('member_count_unresolved');
     expect(row.state_resolution_evidence.memberCount.status).toBe('unresolved');
@@ -631,7 +631,7 @@ describe('crossBatchClearingSweep — v12 branch coverage', () => {
     expect(stray).toBeTruthy();
     expect(stray!.reason).toBe('batch_statement_month_unresolved');
     expect(stray!.batch_id).toBe('B_INVALID');
-    const pRows = rpcMock.mock.calls[0][1].p_rows;
+    const pRows = insertedRows();
     // No clearing row for the stray member.
     expect(pRows.find((row: any) => row.unpaid_batch_id === 'B_INVALID')).toBeFalsy();
   });
@@ -647,7 +647,7 @@ describe('crossBatchClearingSweep — v12 branch coverage', () => {
     const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
     const ambig = r.inputErrors.filter(e => e.reason === 'ambiguous_policy_identity_key_before_grain');
     expect(ambig.map(e => e.reconciled_member_id).sort()).toEqual(['M1', 'M2']);
-    const pRows = rpcMock.mock.calls[0][1].p_rows;
+    const pRows = insertedRows();
     const collision = pRows.find((row: any) =>
       row.policy_identity_key === 'ambetter|p1' && row.target_service_month === '2026-02'
     );
