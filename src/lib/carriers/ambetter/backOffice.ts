@@ -40,6 +40,7 @@ import {
   buildMemberKey,
   applyNpnBucket,
 } from '../../normalize';
+import { firstNonblankString } from '../../utils/firstNonblankString';
 
 export const AMBETTER_CARRIER = 'Ambetter';
 
