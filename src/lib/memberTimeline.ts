@@ -1,6 +1,6 @@
 import type { NormalizedRecord } from './normalize';
 import type { ClassificationState, RollupStatus } from './classifier';
-import { pickCurrentPolicyAor, collectFfmAppIds } from './aorPicker';
+import { pickCurrentPolicyAor, collectFfmAppIds, buildEdeFfmFallbackIndex } from './aorPicker';
 
 export interface MonthCell {
   month: string;                   // 'YYYY-MM'
@@ -193,6 +193,12 @@ export function buildMemberTimeline(
     arr.push(r);
   }
 
+  // Class-A FFM ID fallback index: built from the full records pool so a
+  // member whose same-key recs carry no `ffmAppId` can still surface one
+  // from an EDE row under a different member_key but the same subscriber id
+  // within the same batch. Display/export only — does not feed reconcile.
+  const ffmFallbackIndex = buildEdeFfmFallbackIndex(records);
+
   const rows: MemberTimelineRow[] = [];
 
   for (const [key, recs] of byMember) {
@@ -201,6 +207,16 @@ export function buildMemberTimeline(
 
     // Identity: prefer EDE/BO record with most info
     const sample = recs.find(r => r.applicant_name) || recs[0];
+    const groupBatchId = (recs.find(r => (r as any).batch_id) as any)?.batch_id;
+    const groupCarrier = recs.find(r => r.carrier)?.carrier;
+    const groupEsid = recs.find(r => r.exchange_subscriber_id)?.exchange_subscriber_id;
+    const groupIsid = recs.find(r => r.issuer_subscriber_id)?.issuer_subscriber_id;
+    const fallbackFfmCandidates = ffmFallbackIndex.lookup({
+      batch_id: groupBatchId,
+      carrier: groupCarrier,
+      exchange_subscriber_id: groupEsid,
+      issuer_subscriber_id: groupIsid,
+    });
     const row: MemberTimelineRow = {
       member_key: key,
       applicant_name: sample?.applicant_name || '',
@@ -210,7 +226,7 @@ export function buildMemberTimeline(
       agent_name: recs.find(r => r.agent_name)?.agent_name || '',
       aor_bucket: recs.find(r => r.aor_bucket)?.aor_bucket || '',
       current_policy_aor: pickCurrentPolicyAor(recs),
-      ffm_app_ids: collectFfmAppIds(recs),
+      ffm_app_ids: collectFfmAppIds(recs, fallbackFfmCandidates),
       cells,
       total_paid: 0,
       months_due: 0,

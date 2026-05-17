@@ -90,6 +90,15 @@ export interface BuildMemberProfileInput {
    * "earlier" (lowest tier).
    */
   batchMonthByBatchId?: Map<string, string>;
+  /**
+   * Optional Class-A FFM ID fallback candidates (EDE rows under a different
+   * member_key that share a subscriber id within the same batch). Used ONLY
+   * when `records` carry no `ffmAppId`. Caller is responsible for
+   * safety-rule filtering — typically via
+   * `buildEdeFfmFallbackIndex(...).lookup(...)` from `aorPicker.ts`.
+   * Display/export only — never feeds reconcile.
+   */
+  fallbackFfmCandidates?: NormalizedRecord[];
 }
 
 // ---------------------------------------------------------------------------
@@ -312,7 +321,11 @@ export function buildMemberProfile(
   // FFM ID is special-cased: uses the #76 multi-FFM picker rule
   // (effective_date → status → file label → lastEDESync) rather than the
   // generic BO-first/EDE-tier walk used for descriptive fields.
-  profile.ffm_id = pickFfmIdCandidate(input.records, input.batchMonthByBatchId);
+  profile.ffm_id = pickFfmIdCandidate(
+    input.records,
+    input.batchMonthByBatchId,
+    input.fallbackFfmCandidates,
+  );
   return profile as MemberProfile;
 }
 
@@ -323,16 +336,29 @@ export function buildMemberProfile(
  * {@link compareEDEForAor}. Only EDE rows with a nonblank
  * `raw_json.ffmAppId` qualify; BO-only members return an empty
  * EnrichedField.
+ *
+ * Optional `fallbackCandidates` are EDE rows under a different member_key
+ * that share a subscriber id within the same batch (Class-A fallback). Used
+ * ONLY when the same-key EDE pool is empty. Caller must have already
+ * applied the 8 safety rules (see `buildEdeFfmFallbackIndex`).
  */
 function pickFfmIdCandidate(
   records: NormalizedRecord[],
   batchMonthByBatchId: Map<string, string> | undefined,
+  fallbackCandidates?: NormalizedRecord[],
 ): EnrichedField<string> {
-  const ede = records.filter(
+  let ede = records.filter(
     (r) =>
       r.source_type === 'EDE' &&
       String((r.raw_json as any)?.['ffmAppId'] ?? '').trim() !== '',
   );
+  if (ede.length === 0 && fallbackCandidates && fallbackCandidates.length > 0) {
+    ede = fallbackCandidates.filter(
+      (r) =>
+        r.source_type === 'EDE' &&
+        String((r.raw_json as any)?.['ffmAppId'] ?? '').trim() !== '',
+    );
+  }
   if (ede.length === 0) return emptyEnriched<string>();
   const sorted = [...ede].sort(compareEDEForAor);
   const winner = sorted[0];

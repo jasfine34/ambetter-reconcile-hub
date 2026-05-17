@@ -68,6 +68,7 @@ import {
   OVERLAY_LOAD_ERROR_MESSAGE,
 } from '@/components/CrossBatchOverlayLoadErrorBanner';
 import { ClearingStatusChip } from '@/components/ClearingStatusChip';
+import { buildEdeFfmFallbackIndex } from '@/lib/aorPicker';
 
 
 type PremiumBucket = 'all' | 'zero_premium' | 'has_premium';
@@ -837,14 +838,27 @@ export default function MissingCommissionExportPage() {
         batchMonthByBatchId: batchMonthByBatchIdSnap,
       });
 
+      // Class-A FFM ID fallback index: built from selected-batch records so
+      // missing members whose BO `issub:*` key isn't merged with the EDE
+      // `sub:*` key can still surface a FFM ID via shared subscriber IDs.
+      // Display/export only — does not feed reconcile.
+      const ffmFallbackIndex = buildEdeFfmFallbackIndex(selectedBatchRecords);
+
       const allBeforeBucket: ExportRow[] = [];
       for (const m of missingMembers) {
         const memberKey = m.member_key;
         const records = profileRecordsByMemberKey.get(memberKey) ?? [];
+        const fallbackFfmCandidates = ffmFallbackIndex.lookup({
+          batch_id: m.batch_id ?? f.batchId,
+          carrier: m.carrier,
+          exchange_subscriber_id: m.exchange_subscriber_id,
+          issuer_subscriber_id: m.issuer_subscriber_id,
+        });
         const profile = buildMemberProfile(memberKey, {
           records,
           referenceMonth: ranBatchMonth,
           batchMonthByBatchId: batchMonthByBatchIdSnap,
+          fallbackFfmCandidates,
         });
 
         const nameVal = profile.applicant_name.value || m.applicant_name || '';
