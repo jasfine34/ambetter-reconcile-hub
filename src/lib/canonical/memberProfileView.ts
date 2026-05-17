@@ -90,6 +90,15 @@ export interface BuildMemberProfileInput {
    * "earlier" (lowest tier).
    */
   batchMonthByBatchId?: Map<string, string>;
+  /**
+   * Optional Class-A FFM ID fallback candidates (EDE rows under a different
+   * member_key that share a subscriber id within the same batch). Used ONLY
+   * when `records` carry no `ffmAppId`. Caller is responsible for
+   * safety-rule filtering — typically via
+   * `buildEdeFfmFallbackIndex(...).lookup(...)` from `aorPicker.ts`.
+   * Display/export only — never feeds reconcile.
+   */
+  fallbackFfmCandidates?: NormalizedRecord[];
 }
 
 // ---------------------------------------------------------------------------
