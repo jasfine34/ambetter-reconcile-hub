@@ -121,8 +121,24 @@ export function pickCurrentPolicyAor(recs: NormalizedRecord[]): string {
   return '';
 }
 
-/** Surface all distinct ffmAppIds across a member's normalized records. */
-export function collectFfmAppIds(recs: NormalizedRecord[]): string[] {
+/**
+ * Surface all distinct ffmAppIds across a member's normalized records.
+ *
+ * Optional `fallbackCandidates` (added for FFM-ID Class-A display/export
+ * fallback) are consulted ONLY when the same-group lookup is empty. Caller
+ * is responsible for filtering candidates per the 8 safety rules
+ * (source_type, batch, carrier, subscriber match) — typically via
+ * {@link buildEdeFfmFallbackIndex}. When candidates are used, they are sorted
+ * by `compareEDEForAor` so the surfaced order reflects #76 precedence.
+ *
+ * IMPORTANT: with no second argument, behavior is byte-equivalent to the
+ * pre-fallback version. `reconcile.ts` callers MUST continue to call this
+ * with a single argument.
+ */
+export function collectFfmAppIds(
+  recs: NormalizedRecord[],
+  fallbackCandidates?: NormalizedRecord[],
+): string[] {
   const set = new Set<string>();
   for (const r of recs) {
     const v = r.raw_json?.['ffmAppId'];
@@ -130,5 +146,110 @@ export function collectFfmAppIds(recs: NormalizedRecord[]): string[] {
     const s = String(v).trim();
     if (s) set.add(s);
   }
+  if (set.size > 0 || !fallbackCandidates || fallbackCandidates.length === 0) {
+    return Array.from(set);
+  }
+  const sorted = [...fallbackCandidates].sort(compareEDEForAor);
+  for (const r of sorted) {
+    if (r.source_type !== 'EDE') continue;
+    const v = String(r.raw_json?.['ffmAppId'] ?? '').trim();
+    if (v) set.add(v);
+  }
   return Array.from(set);
+}
+
+// ---------------------------------------------------------------------------
+// FFM-ID Class-A fallback index (display/export only)
+//
+// Resolves the identity-resolution gap where a BO `issub:*` member key is not
+// merged with the EDE `sub:*` member key despite sharing
+// `exchange_subscriber_id`. We index already-loaded EDE rows by subscriber
+// IDs (scoped to batch_id) so callers can recover the FFM ID for members
+// whose same-key records carry no `ffmAppId`. The index never reaches into
+// the DB and never mutates records.
+//
+// Safety rules enforced here / by `lookup`:
+//   (a) source_type === 'EDE'
+//   (b) nonblank `raw_json.ffmAppId`
+//   (c) same `batch_id` as the requesting scope
+//   (d) carrier-family match when BOTH sides have nonblank carrier
+//   (e) EXACT subscriber-id match (exchange_subscriber_id OR
+//       issuer_subscriber_id); no name/DOB / partial-id fallback
+// ---------------------------------------------------------------------------
+
+export interface FfmFallbackLookupScope {
+  batch_id: string | undefined;
+  carrier: string | undefined;
+  exchange_subscriber_id?: string;
+  issuer_subscriber_id?: string;
+}
+
+export interface FfmFallbackIndex {
+  lookup(scope: FfmFallbackLookupScope): NormalizedRecord[];
+}
+
+function carrierFamily(c: string | undefined | null): string {
+  return String(c ?? '').trim().toLowerCase();
+}
+
+function indexKey(batchId: string, subId: string): string {
+  return `${batchId}::${subId}`;
+}
+
+/**
+ * Build a batch-scoped index of EDE rows that carry a nonblank `ffmAppId`,
+ * keyed by `(batch_id, exchange_subscriber_id)` and
+ * `(batch_id, issuer_subscriber_id)`. Pure, no DB calls. Empty input → an
+ * empty index whose `lookup` always returns `[]`.
+ */
+export function buildEdeFfmFallbackIndex(records: NormalizedRecord[]): FfmFallbackIndex {
+  const byExchange = new Map<string, NormalizedRecord[]>();
+  const byIssuer = new Map<string, NormalizedRecord[]>();
+
+  for (const r of records) {
+    if (r.source_type !== 'EDE') continue;
+    const ffm = String(r.raw_json?.['ffmAppId'] ?? '').trim();
+    if (!ffm) continue;
+    const batchId = String((r as any).batch_id ?? '');
+    if (!batchId) continue;
+    const esid = String(r.exchange_subscriber_id ?? '').trim();
+    const isid = String(r.issuer_subscriber_id ?? '').trim();
+    if (esid) {
+      const k = indexKey(batchId, esid);
+      const arr = byExchange.get(k); if (arr) arr.push(r); else byExchange.set(k, [r]);
+    }
+    if (isid) {
+      const k = indexKey(batchId, isid);
+      const arr = byIssuer.get(k); if (arr) arr.push(r); else byIssuer.set(k, [r]);
+    }
+  }
+
+  return {
+    lookup(scope: FfmFallbackLookupScope): NormalizedRecord[] {
+      const batchId = String(scope.batch_id ?? '');
+      if (!batchId) return [];
+      const scopeCarrier = carrierFamily(scope.carrier);
+      const seen = new Set<NormalizedRecord>();
+      const out: NormalizedRecord[] = [];
+
+      const consider = (cands: NormalizedRecord[] | undefined) => {
+        if (!cands) return;
+        for (const c of cands) {
+          if (seen.has(c)) continue;
+          const candCarrier = carrierFamily(c.carrier);
+          // Carrier family check: only enforce when BOTH sides are nonblank.
+          if (scopeCarrier && candCarrier && scopeCarrier !== candCarrier) continue;
+          seen.add(c);
+          out.push(c);
+        }
+      };
+
+      const esid = String(scope.exchange_subscriber_id ?? '').trim();
+      if (esid) consider(byExchange.get(indexKey(batchId, esid)));
+      const isid = String(scope.issuer_subscriber_id ?? '').trim();
+      if (isid) consider(byIssuer.get(indexKey(batchId, isid)));
+
+      return out;
+    },
+  };
 }
