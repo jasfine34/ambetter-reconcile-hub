@@ -68,6 +68,7 @@ import {
   OVERLAY_LOAD_ERROR_MESSAGE,
 } from '@/components/CrossBatchOverlayLoadErrorBanner';
 import { ClearingStatusChip } from '@/components/ClearingStatusChip';
+import { buildEdeFfmFallbackIndex } from '@/lib/aorPicker';
 
 
 type PremiumBucket = 'all' | 'zero_premium' | 'has_premium';
