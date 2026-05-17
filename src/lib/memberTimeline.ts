@@ -1,6 +1,6 @@
 import type { NormalizedRecord } from './normalize';
 import type { ClassificationState, RollupStatus } from './classifier';
-import { pickCurrentPolicyAor, collectFfmAppIds } from './aorPicker';
+import { pickCurrentPolicyAor, collectFfmAppIds, buildEdeFfmFallbackIndex } from './aorPicker';
 
 export interface MonthCell {
   month: string;                   // 'YYYY-MM'
