@@ -326,6 +326,32 @@ export function formatMonthLabel(ym: string): string {
  * matches the visible page rendering. Falls back to legacy due+paid logic for
  * cells that have no classifier state (older callers / tests).
  */
+/**
+ * Assembly-layer no-source invariant guard. If the displayed/exported source
+ * flags are all false and there is no paid amount, this cell cannot be
+ * UNPAID / PENDING / MANUAL_REVIEW / premium_unpaid regardless of what the
+ * classifier's internal record set inferred — there is no current evidence
+ * the member is ours for this month. Force not_expected_cancelled and clear
+ * `due` so downstream counts and the cell tooltip both reflect the override.
+ */
+export function applyNoSourceInvariantToMonthCell(cell: MonthCell): MonthCell {
+  if (
+    cell.paid_amount === 0 &&
+    !cell.in_ede &&
+    !cell.in_back_office &&
+    !cell.in_commission
+  ) {
+    return {
+      ...cell,
+      due: false,
+      state: 'not_expected_cancelled',
+      state_reason:
+        'No current EDE, canonically-active Back Office, or commission source supports this month.',
+    };
+  }
+  return cell;
+}
+
 export function exportStatusForMonthCell(c: MonthCell): string {
   const sources = [c.in_ede && 'EDE', c.in_back_office && 'BO', c.in_commission && 'COM']
     .filter(Boolean).join('+');
