@@ -31,6 +31,21 @@ Shared computation anchors:
 
 Mutation policy for all phases: this audit is read-only. Do not click Rebuild, Upload, Save, Submit, Delete, or any live action that changes data unless Jason explicitly approves that action in the request file. Audit queries may read live data and local raw files. Lovable must not change source code during framework design; corrective patches require a separate Jason-approved directive.
 
+## 1A. Production-Loader Parity Contract
+
+Replay and collector scripts are not allowed to become a second implementation of a page's data layer. Every source-to-screen collector MUST load runtime data through the same production helpers or hooks used by the surface under audit before calling canonical helper logic. For Dashboard, that means using `getBatches`, `getNormalizedRecords`, `getReconciledMembers`, `loadResolverIndex`, and `loadWeakMatchOverrides` for the same inputs Dashboard uses. For another page, the collector must name that page's production loaders before it computes counts, row keys, or dollars.
+
+Manual REST queries, hand-rolled keyset loops, direct `supabase.from(...)` calls, and parallel pagination paths are PROHIBITED inside replay collectors unless all of the following are true:
+
+- No production loader exists for that exact runtime input, such as a React hook that cannot be called from a Node collector.
+- The collector documents an inline `AUDIT_DIRECT_DB_PARITY_EXCEPTION` comment naming the production file and lines it mirrors.
+- The direct query uses the same projection, predicates, ordering, paging semantics, and fallback behavior as the production path.
+- The verdict reports a parity check against a current-source UI capture or a replay using production loaders.
+
+Each collector that computes helper outputs must include an `AUDIT_LOADER_CONTRACT` header naming the production loaders it uses. If a collector cannot include that header, it is not eligible to certify source-to-screen values.
+
+Why this is a hard rule: Phase 2.1 initially reported false Dashboard Est. Missing deltas for January and March 2026 Coverall (`+$28.41` and `+$26.17`). The Dashboard was correct. The standalone collector had manually loaded `reconciled_members` with a different ordering than the UI loader, then fed those rows into `computeFilteredEde`. That helper has first-wins candidate registration for BO lookup, so a small ordering difference changed the derived row sets and created a false money finding. Audit code must therefore reuse the page's data loaders; matching the pure helper calls alone is not enough.
+
 ## 2. Canaries - Named Members and Edge Cases
 
 Phase 2 should maintain a canary registry with these columns: canary id, person/policy label, month/batch, scope, expected edge case, raw-file locator, normalized ids, reconciled member id, clearing grain key, views to inspect, status.
