@@ -505,6 +505,98 @@ export async function getAllNormalizedRecords() {
 }
 
 // ---------------------------------------------------------------------------
+// Member Timeline all-batch loader (Phase 2.3 timeout fix).
+//
+// getAllNormalizedRecords() selects '*' including the heavy raw_json jsonb
+// payload, which on ~27K active rows trips Postgres statement_timeout (57014).
+// This helper projects only the typed columns + 8 raw_json subkeys that
+// Member Timeline + its helpers actually read, then reconstructs a minimal
+// raw_json object with the original key names so downstream helpers
+// (memberTimeline, classifier, aorPicker, paidDollarsAudit, MemberTimelinePage)
+// continue to work unchanged.
+//
+// Keep getAllNormalizedRecords() unchanged — its select('*') contract is
+// pinned in #116 tests and used elsewhere.
+// ---------------------------------------------------------------------------
+
+const MEMBER_TIMELINE_TYPED_COLUMNS = [
+  'id','batch_id','uploaded_file_id','bo_snapshot_id','ede_snapshot_id',
+  'source_type','source_file_label','carrier','applicant_name',
+  'first_name','last_name','dob','member_id',
+  'policy_number','exchange_subscriber_id','exchange_policy_id',
+  'issuer_policy_id','issuer_subscriber_id',
+  'agent_name','agent_npn','aor_bucket','pay_entity',
+  'status','effective_date','premium','net_premium','commission_amount',
+  'eligible_for_commission','policy_term_date','paid_through_date',
+  'broker_effective_date','broker_term_date','on_off_exchange','auto_renewal',
+  'ede_policy_origin_type','ede_bucket','policy_modified_date',
+  'paid_to_date','months_paid','writing_agent_carrier_id','member_key',
+  'created_at','staging_status','superseded_at',
+].join(',');
+
+// Stable aliases for the 8 raw_json subkeys Member Timeline depends on.
+// PostgREST supports `alias:column->>key` and double-quoted keys for those
+// with spaces. These aliases are required by tests so we never regress to
+// default `?column?` names.
+const MEMBER_TIMELINE_RAW_JSON_PROJECTION = [
+  'raw_ffm_app_id:raw_json->>ffmAppId',
+  'raw_current_policy_aor:raw_json->>currentPolicyAOR',
+  'raw_policy_status:raw_json->>policyStatus',
+  'raw_issuer:raw_json->>issuer',
+  'raw_last_ede_sync:raw_json->>lastEDESync',
+  'raw_months_paid:raw_json->>"Months Paid"',
+  'raw_broker_name_title:raw_json->>"Broker Name"',
+  'raw_broker_name:raw_json->>broker_name',
+].join(',');
+
+export const MEMBER_TIMELINE_ALL_BATCH_COLUMNS =
+  `${MEMBER_TIMELINE_TYPED_COLUMNS},${MEMBER_TIMELINE_RAW_JSON_PROJECTION}`;
+
+function reconstructRawJson(row: any): any {
+  const raw: Record<string, any> = {};
+  if (row.raw_ffm_app_id != null) raw.ffmAppId = row.raw_ffm_app_id;
+  if (row.raw_current_policy_aor != null) raw.currentPolicyAOR = row.raw_current_policy_aor;
+  if (row.raw_policy_status != null) raw.policyStatus = row.raw_policy_status;
+  if (row.raw_issuer != null) raw.issuer = row.raw_issuer;
+  if (row.raw_last_ede_sync != null) raw.lastEDESync = row.raw_last_ede_sync;
+  if (row.raw_months_paid != null) raw['Months Paid'] = row.raw_months_paid;
+  if (row.raw_broker_name_title != null) raw['Broker Name'] = row.raw_broker_name_title;
+  if (row.raw_broker_name != null) raw.broker_name = row.raw_broker_name;
+  const cleaned = { ...row, raw_json: raw };
+  delete cleaned.raw_ffm_app_id;
+  delete cleaned.raw_current_policy_aor;
+  delete cleaned.raw_policy_status;
+  delete cleaned.raw_issuer;
+  delete cleaned.raw_last_ede_sync;
+  delete cleaned.raw_months_paid;
+  delete cleaned.raw_broker_name_title;
+  delete cleaned.raw_broker_name;
+  return cleaned;
+}
+
+export async function getAllNormalizedRecordsForMemberTimeline() {
+  const allData: any[] = [];
+  let lastId: string | null = null;
+  while (true) {
+    let q: any = (supabase as any)
+      .from('normalized_records')
+      .select(MEMBER_TIMELINE_ALL_BATCH_COLUMNS)
+      .eq('staging_status', 'active')
+      .is('superseded_at', null)
+      .order('id', { ascending: true })
+      .limit(NORMALIZED_PAGE_SIZE);
+    if (lastId !== null) q = q.gt('id', lastId);
+    const { data, error } = await q;
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    for (const row of data) allData.push(reconstructRawJson(row));
+    if (data.length < NORMALIZED_PAGE_SIZE) break;
+    lastId = data[data.length - 1].id;
+  }
+  return allData;
+}
+
+// ---------------------------------------------------------------------------
 // Bundle 12.6 — Slim cross-batch loaders for MCE.
 //
 // These exist so MCE can stop calling getAllNormalizedRecords() on mount
