@@ -4,6 +4,138 @@ Created: 2026-05-17
 
 Purpose: define a read-only audit that proves the app's visible numbers, row cells, badges, and exports are explainable from raw source files through `normalized_records`, `reconciled_members`, active `cross_batch_clearings`, and page/export logic. This framework is for audit design only; Phase 2 performs view-by-view traces.
 
+## 0. Audit Standard - 100% Source Traceability
+
+Our audit standard is **100% source traceability**.
+
+For current, future, and prior audits, a CLEAN verdict means more than UI-helper parity. It means every material count, dollar, row, badge, status, and export value can be traced back to raw source data and justified through each transformation layer.
+
+Future audits must validate:
+
+```text
+raw file row -> normalized_records -> reconciled_members / cross_batch_clearings when applicable -> helper/classifier decision -> UI/export
+```
+
+They must also validate **exclusions**: rows that should not count, such as stale BO, ineligible BO, wrong AOR, off-scope pay entity, no current source, or invalid FFM fallback, must be proven absent from the relevant outputs.
+
+If an audit only proves helper-to-screen agreement, label it `HELPER_PARITY_ONLY`, not CLEAN.
+
+For prior audits already marked CLEAN, review whether they included raw-source truth and negative-control coverage. If not, classify them as needing amendment or targeted re-run.
+
+The existing Production-Loader Parity Contract remains required. Production-loader parity proves the audit is using the same app data path as the UI; source traceability proves that path is correct against raw evidence. Both are required for a CLEAN verdict.
+
+## 0A. Audit Reclassification Labels
+
+Use these labels when reviewing prior or partial audits against the 100% source traceability standard:
+
+| Label | Definition | Action |
+|---|---|---|
+| `RAW_SOURCE_CLEAN` | Audit meets the new standard: raw-source truth was validated through every relevant transformation layer, and applicable negative-control strata were covered. | Leave CLEAN status intact; cite the evidence rows/trace artifacts. |
+| `HELPER_PARITY_ONLY` | Audit was valid for helper-to-UI/export parity but did not prove raw-source truth or exclusions. | Preserve as useful evidence, but do not treat as final source-to-screen proof. Add targeted raw-source checks before relying on it for business closure. |
+| `NEEDS_TARGETED_RERUN` | Specific negative-control strata or raw-source traces are missing. | Rerun only the missing strata or canaries; do not redo the whole audit unless the targeted rerun finds a broader defect. |
+| `NEEDS_FULL_RERUN` | Audit is fundamentally inadequate against the new standard, or its loader/path diverged from production. | Redo the audit from the production-loader and raw-source layers. |
+
+## 0B. Required Negative-Control Strata
+
+For any audit of expected/unpaid/due/missing-commission surfaces, include these negative-control strata. A CLEAN verdict must prove that these rows are absent from outputs where they should not count.
+
+1. **Stale/historical Back Office rows**
+   - BO rows whose `paid_through_date` or `policy_term_date` predates the selected month/range.
+   - Expected: do not create current-month due, unpaid, pending, MCE, EBU, or missing-commission rows unless another current source supports the month.
+
+2. **BO ineligible rows**
+   - `eligible_for_commission = No` / false.
+   - Expected: do not enter expected-payment/due/unpaid cohorts as active commission-eligible BO evidence.
+
+3. **No-current-source rows**
+   - No current EDE, no canonically-active BO for the month, and no commission source for the month.
+   - Expected: cannot render/export as `UNPAID` or `PENDING`; cannot contribute to `months_due` or equivalent counts.
+
+4. **Wrong-AOR / transferred-AOR rows**
+   - Raw source row exists, but current AOR is not one of the selected/official AORs for the scope.
+   - Expected: excluded from due/unpaid/missing surfaces unless a pay-entity or override rule explicitly says otherwise.
+
+5. **Coverall/Vix scope leakage rows**
+   - Commission or enrollment evidence belongs to one pay entity but the user is viewing another.
+   - Expected: no off-scope commission dollars or paid statuses leak into the selected scope.
+
+6. **Blank FFM expected-vs-bug rows**
+   - Expected blank: true BO-only / SBE / direct-write member with no EDE/SBE FFM source available.
+   - Bug blank: EDE/SBE source has an FFM/application ID but the app failed to link or fall back to it.
+   - Expected: audit must distinguish these two; a blank FFM is not automatically a bug, and a populated FFM is not enough to prove the row belongs in the current unpaid universe.
+
+## 0C. Required Record-Level Trace Shape
+
+For each named canary and each sampled aggregate row, include this trace. Do not issue a CLEAN verdict without enough evidence to explain the row from raw source to UI/export.
+
+```text
+Raw row evidence:
+- source file name
+- source type: EDE / BACK_OFFICE / COMMISSION / SBE if applicable
+- statement/upload month
+- source row number if available
+- applicant/member name
+- policy/subscriber/exchange/FFM ids
+- AOR / broker / NPN / pay entity
+- effective date, term date, paid-through date, eligible flag, status
+- commission amount and paid-to/service month fields where relevant
+
+normalized_records evidence:
+- id, batch_id, source_type, staging_status, superseded_at
+- member_key and all relevant IDs
+- carrier, AOR, agent_npn, pay_entity
+- effective/term/paid-through/eligible typed fields
+- raw_json fields used by the helper
+
+reconciled_members evidence, if used by the surface:
+- reconciled_member_id, batch_id, member_key
+- in_ede, in_back_office, in_commission
+- eligible_for_commission
+- is_in_expected_ede_universe / current_policy_aor
+- estimated_missing_commission and issue fields
+
+cross_batch_clearings evidence, if relevant:
+- clearing row id, clearing_state
+- threshold_amount, actual_net_amount, remainder_owed
+- payment_batch_ids, clearing_statement_months
+
+helper/classifier evidence:
+- exact helper/classifier function used
+- input row ids/member keys
+- intermediate cohort decision: included/excluded and why
+- active BO predicate result for the month
+- scope/pay-entity predicate result
+- cross-batch clearing overlay result if applicable
+
+UI/export evidence:
+- visible card/cell/table value
+- row count or dollar value
+- badges/source flags
+- CSV/export columns and values
+```
+
+## 0D. Inaugural Failure Example - Member Timeline Stale BO
+
+The 2026-05-18 Member Timeline stale-BO finding is the first canonical example of why this standard exists.
+
+Phase 2.3 closed CLEAN on helper-to-UI parity, but the Member Timeline export later showed 525 of Becky Shuta's 550 rows with blank source columns paired with UNPAID/PENDING statuses. Named canaries included Aaron Stanley, Alexis Gibson, and Amanda Price. These were historical members present in the current 2026 Ambetter BO upload, but their `paid_through_date` or `policy_term_date` predates 2026 and no current EDE/commission source supported Jan-May 2026 due months.
+
+Root cause: the Member Timeline classifier's per-cell BO-active check was looser than the canonical `isActiveBackOfficeRecord` predicate, and the classifier lacked a no-current-source guard. The UI/export accurately reflected helper output; the helper output admitted the wrong source universe.
+
+Lesson: helper-to-UI parity is necessary but not sufficient. Audits must prove both inclusions and exclusions against raw-source truth.
+
+## 0E. Retroactive Review Process
+
+For each prior CLEAN verdict, including Phase 2.1 Dashboard, Phase 2.2 MCE, Phase 2.2 extension, Phase 2.3 Member Timeline, and Phase 2.4 cross-batch reconciliation:
+
+1. Review whether the audit included raw-source truth validation.
+2. Review whether the audit covered all negative-control strata applicable to that surface.
+3. Apply one label: `RAW_SOURCE_CLEAN`, `HELPER_PARITY_ONLY`, `NEEDS_TARGETED_RERUN`, or `NEEDS_FULL_RERUN`.
+4. Annotate the verdict file with the reclassification and reasoning.
+5. Queue any `NEEDS_TARGETED_RERUN` or `NEEDS_FULL_RERUN` audits for execution.
+
+Retroactive reclassification depends on the targeted stale-BO contamination check against each affected surface's actual row source. Do not reopen full audits automatically when a targeted stratum can answer the risk.
+
 ## 1. Scope - Views in Audit
 
 Audit highest-stakes views first. A surface is high-stakes when its output is used as an operational truth, feeds a carrier/Messer follow-up, or rolls up many hidden transformations.
