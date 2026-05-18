@@ -56,16 +56,16 @@ describe('buildMemberTimelineExportRows', () => {
     expect(out1[0].ffm_app_id).toBe('');
     const out2 = buildMemberTimelineExportRows([row({ ffm_app_ids: undefined as any })], ['2026-01']);
     expect(out2[0].ffm_app_id).toBe('');
+  });
+
   it('exports PENDING for pending state even when due and unpaid', () => {
     const r = row({ cells: { '2026-01': cell('2026-01', { due: true, in_ede: true, state: 'pending' as any }) } });
-    const out = buildMemberTimelineExportRows([r], ['2026-01']);
-    expect(out[0]['2026-01_status']).toBe('PENDING');
+    expect(buildMemberTimelineExportRows([r], ['2026-01'])[0]['2026-01_status']).toBe('PENDING');
   });
 
   it('exports REVIEW for manual_review state even when due and unpaid', () => {
     const r = row({ cells: { '2026-01': cell('2026-01', { due: true, in_ede: true, state: 'manual_review' as any }) } });
-    const out = buildMemberTimelineExportRows([r], ['2026-01']);
-    expect(out[0]['2026-01_status']).toBe('REVIEW');
+    expect(buildMemberTimelineExportRows([r], ['2026-01'])[0]['2026-01_status']).toBe('REVIEW');
   });
 
   it.each([
@@ -75,8 +75,7 @@ describe('buildMemberTimelineExportRows', () => {
     'not_expected_not_ours',
   ])('exports N/A for %s when sources exist', (state) => {
     const r = row({ cells: { '2026-01': cell('2026-01', { in_back_office: true, state: state as any }) } });
-    const out = buildMemberTimelineExportRows([r], ['2026-01']);
-    expect(out[0]['2026-01_status']).toBe('N/A');
+    expect(buildMemberTimelineExportRows([r], ['2026-01'])[0]['2026-01_status']).toBe('N/A');
   });
 
   it.each([
@@ -86,8 +85,7 @@ describe('buildMemberTimelineExportRows', () => {
     'not_expected_not_ours',
   ])('exports empty string for %s when no sources', (state) => {
     const r = row({ cells: { '2026-01': cell('2026-01', { state: state as any }) } });
-    const out = buildMemberTimelineExportRows([r], ['2026-01']);
-    expect(out[0]['2026-01_status']).toBe('');
+    expect(buildMemberTimelineExportRows([r], ['2026-01'])[0]['2026-01_status']).toBe('');
   });
 
   it('preserves legacy fallback when cell has no state field', () => {
@@ -110,7 +108,6 @@ describe('buildMemberTimelineExportRows', () => {
     const r = row({ cells: { '2026-01': cell('2026-01', { due: true, in_ede: true, state: 'unpaid' as any }) } });
     expect(buildMemberTimelineExportRows([r], ['2026-01'])[0]['2026-01_status']).toBe('UNPAID');
   });
-});
 
   it('preserves all prior keys and per-month columns', () => {
     const monthList = ['2026-01', '2026-02'];
