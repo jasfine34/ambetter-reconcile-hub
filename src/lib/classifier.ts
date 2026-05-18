@@ -369,6 +369,18 @@ function classifyCell(
     return { ...base, state: 'not_expected_cancelled', reason: 'Broker term date is in the past as of this month.' };
   }
 
+  // Stale-source guard: member was historically ours (passed not_ours / pre-eligibility
+  // / firstEligible / brokerTerminated checks), but NO current source supports this
+  // month. Without this guard, stale historical BO evidence would let the cell fall
+  // through to pending/unpaid/manual_review even though the source badges are empty.
+  if (paid_amount === 0 && !in_ede && !in_back_office && !in_commission) {
+    return {
+      ...base,
+      state: 'not_expected_cancelled',
+      reason: 'No current EDE, canonically-active Back Office, or commission source supports this month.',
+    };
+  }
+
   // Rule 2: Pending (not ripe)
   if (!isMonthRipe(month, context)) {
     return {
