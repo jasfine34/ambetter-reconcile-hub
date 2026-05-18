@@ -152,7 +152,7 @@ export default function MemberTimelinePage() {
   useEffect(() => {
     setLoading(true);
     const fetch = batchScope === 'all'
-      ? getAllNormalizedRecords()
+      ? getAllNormalizedRecordsForMemberTimeline()
       : currentBatchId
         ? getNormalizedRecords(currentBatchId)
         : Promise.resolve([] as any[]);
