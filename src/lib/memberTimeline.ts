@@ -322,12 +322,29 @@ export function formatMonthLabel(ym: string): string {
 }
 
 /**
- * Pure helper that flattens timeline rows into export-ready records for
- * `exportToCSV`. Extracted from `MemberTimelinePage.handleExport` so it can
- * be unit-tested without rendering the page. Places `ffm_app_id` as the
- * first column (operator's primary Healthcare.gov lookup key); multiple
- * FFM IDs are joined with `'; '`, none → empty string.
+ * Map a classifier-stamped MonthCell to its export status string so the CSV
+ * matches the visible page rendering. Falls back to legacy due+paid logic for
+ * cells that have no classifier state (older callers / tests).
  */
+export function exportStatusForMonthCell(c: MonthCell): string {
+  const sources = [c.in_ede && 'EDE', c.in_back_office && 'BO', c.in_commission && 'COM']
+    .filter(Boolean).join('+');
+  switch (c.state) {
+    case 'paid': return 'PAID';
+    case 'unpaid': return 'UNPAID';
+    case 'pending': return 'PENDING';
+    case 'manual_review': return 'REVIEW';
+    case 'not_expected_premium_unpaid':
+    case 'not_expected_pre_eligibility':
+    case 'not_expected_cancelled':
+    case 'not_expected_not_ours':
+      return sources ? 'N/A' : '';
+    default:
+      // Legacy fallback for cells without a classifier state.
+      return c.due ? (c.paid_amount > 0.0001 ? 'PAID' : 'UNPAID') : (sources ? 'PRESENT' : '');
+  }
+}
+
 export function buildMemberTimelineExportRows(
   rows: MemberTimelineRow[],
   monthList: string[],
@@ -350,7 +367,7 @@ export function buildMemberTimelineExportRows(
       const c = r.cells[m];
       const sources = [c.in_ede && 'EDE', c.in_back_office && 'BO', c.in_commission && 'COM']
         .filter(Boolean).join('+');
-      base[`${m}_status`] = c.due ? (c.paid_amount > 0.0001 ? 'PAID' : 'UNPAID') : (sources ? 'PRESENT' : '');
+      base[`${m}_status`] = exportStatusForMonthCell(c);
       base[`${m}_paid`] = c.paid_amount.toFixed(2);
       base[`${m}_sources`] = sources;
     }
