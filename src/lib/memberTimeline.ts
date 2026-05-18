@@ -322,13 +322,6 @@ export function formatMonthLabel(ym: string): string {
 }
 
 /**
- * Pure helper that flattens timeline rows into export-ready records for
- * `exportToCSV`. Extracted from `MemberTimelinePage.handleExport` so it can
- * be unit-tested without rendering the page. Places `ffm_app_id` as the
- * first column (operator's primary Healthcare.gov lookup key); multiple
- * FFM IDs are joined with `'; '`, none → empty string.
- */
-/**
  * Map a classifier-stamped MonthCell to its export status string so the CSV
  * matches the visible page rendering. Falls back to legacy due+paid logic for
  * cells that have no classifier state (older callers / tests).
