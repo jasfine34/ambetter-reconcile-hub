@@ -364,11 +364,11 @@ export default function MemberTimelinePage() {
         const c = classification.cells[m];
         const existing = newCells[m];
         if (!c || !existing) continue;
-        newCells[m] = {
+        newCells[m] = applyNoSourceInvariantToMonthCell({
           ...existing,
           state: c.state,
           state_reason: c.reason,
-        };
+        });
         // Count states. Only eligible cells contribute to due/paid/unpaid.
         switch (c.state) {
           case 'paid':
