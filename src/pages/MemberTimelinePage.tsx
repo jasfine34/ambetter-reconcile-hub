@@ -370,7 +370,7 @@ export default function MemberTimelinePage() {
           state_reason: c.reason,
         });
         // Count states. Only eligible cells contribute to due/paid/unpaid.
-        switch (c.state) {
+        switch (newCells[m].state) {
           case 'paid':
             months_paid++;
             months_due++;
