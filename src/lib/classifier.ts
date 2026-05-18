@@ -271,9 +271,8 @@ function hasActiveBoForMonth(records: NormalizedRecord[], month: MonthKey): bool
     if (r.source_type !== 'BACK_OFFICE') return false;
     const eff = r.effective_date || '';
     if (eff && eff > firstOfMonth) return false;
-    const term = r.policy_term_date || '';
-    if (term && term <= firstOfMonth) return false;
-    return true;
+    // Delegate active-window + eligibility + term checks to the canonical predicate.
+    return isActiveBackOfficeRecord(r, firstOfMonth);
   });
 }
 
