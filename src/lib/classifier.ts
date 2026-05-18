@@ -271,9 +271,8 @@ function hasActiveBoForMonth(records: NormalizedRecord[], month: MonthKey): bool
     if (r.source_type !== 'BACK_OFFICE') return false;
     const eff = r.effective_date || '';
     if (eff && eff > firstOfMonth) return false;
-    const term = r.policy_term_date || '';
-    if (term && term <= firstOfMonth) return false;
-    return true;
+    // Delegate active-window + eligibility + term checks to the canonical predicate.
+    return isActiveBackOfficeRecord(r, firstOfMonth);
   });
 }
 
@@ -368,6 +367,18 @@ function classifyCell(
   const brokerTerminated = activeTermBy.length > 0 && activeTermBy.every(t => t <= firstOfMonth);
   if (brokerTerminated) {
     return { ...base, state: 'not_expected_cancelled', reason: 'Broker term date is in the past as of this month.' };
+  }
+
+  // Stale-source guard: member was historically ours (passed not_ours / pre-eligibility
+  // / firstEligible / brokerTerminated checks), but NO current source supports this
+  // month. Without this guard, stale historical BO evidence would let the cell fall
+  // through to pending/unpaid/manual_review even though the source badges are empty.
+  if (paid_amount === 0 && !in_ede && !in_back_office && !in_commission) {
+    return {
+      ...base,
+      state: 'not_expected_cancelled',
+      reason: 'No current EDE, canonically-active Back Office, or commission source supports this month.',
+    };
   }
 
   // Rule 2: Pending (not ripe)
