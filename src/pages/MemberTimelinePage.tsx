@@ -12,7 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Search, Download, ChevronDown, ChevronLeft, Info, Bug } from 'lucide-react';
 import { getNormalizedRecords, getAllNormalizedRecordsForMemberTimeline } from '@/lib/persistence';
-import { buildMemberTimeline, buildMemberTimelineExportRows, buildMonthList, formatMonthLabel, type MemberTimelineRow } from '@/lib/memberTimeline';
+import { buildMemberTimeline, buildMemberTimelineExportRows, buildMonthList, formatMonthLabel, applyNoSourceInvariantToMonthCell, type MemberTimelineRow } from '@/lib/memberTimeline';
 import { mergeRecordsToMemberKeys } from '@/lib/canonical/memberKeyMerge';
 import { exportToCSV } from '@/lib/csvParser';
 import { NPN_MAP } from '@/lib/constants';
@@ -364,13 +364,13 @@ export default function MemberTimelinePage() {
         const c = classification.cells[m];
         const existing = newCells[m];
         if (!c || !existing) continue;
-        newCells[m] = {
+        newCells[m] = applyNoSourceInvariantToMonthCell({
           ...existing,
           state: c.state,
           state_reason: c.reason,
-        };
+        });
         // Count states. Only eligible cells contribute to due/paid/unpaid.
-        switch (c.state) {
+        switch (newCells[m].state) {
           case 'paid':
             months_paid++;
             months_due++;
