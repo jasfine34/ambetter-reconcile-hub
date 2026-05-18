@@ -183,6 +183,6 @@ describe('getAllNormalizedRecordsForMemberTimeline — query shape', () => {
       expect(r.raw_json.ffmAppId).toBe('FFM-CANARY-001');
     }
     // Smoke: buildMemberTimeline can consume the projected rows without throwing.
-    expect(() => buildMemberTimeline(rows as any)).not.toThrow();
+    expect(() => buildMemberTimeline(rows as any, ['2026-01'])).not.toThrow();
   });
 });
