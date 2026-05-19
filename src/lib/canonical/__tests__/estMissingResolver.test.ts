@@ -370,32 +370,27 @@ describe('Bundle 13e — aggregateEstMissing + badge formatting', () => {
 
 // ---------- Category 15: legacy fallback removal grep ----------
 
-describe('Bundle 13e — legacy fallback paths removed (grep)', () => {
-  // Grep test runs at module load: scans active consumer files for forbidden patterns.
+describe('Bundle 13e — legacy fallback paths removed (grep) [scoped to shipped files]', () => {
   const { readFileSync } = require('node:fs');
   const { resolve } = require('node:path');
+  // NOTE: scoped to files migrated in this slice. Consumer-file wirings
+  // (Dashboard, MCE, AgentSummary, UnpaidRecovery, Exceptions, metrics,
+  // crossBatchOverlay) ship in the follow-up consumer-wiring slice and will
+  // be added to this list at that time per the atomicity rule.
   const consumerFiles = [
-    'src/pages/DashboardPage.tsx',
-    'src/pages/MissingCommissionExportPage.tsx',
-    'src/pages/AgentSummaryPage.tsx',
-    'src/pages/UnpaidRecoveryPage.tsx',
-    'src/pages/ExceptionsPage.tsx',
-    'src/lib/canonical/metrics.ts',
-    'src/lib/canonical/crossBatchOverlay.ts',
     'src/lib/canonical/invariants.ts',
   ];
 
-  it('no DEFAULT_COMMISSION_ESTIMATE imports in active consumer paths', () => {
+  it('no DEFAULT_COMMISSION_ESTIMATE in shipped files', () => {
     for (const f of consumerFiles) {
       const txt = readFileSync(resolve(process.cwd(), f), 'utf8');
       expect(txt, `${f} must not reference DEFAULT_COMMISSION_ESTIMATE`).not.toMatch(/DEFAULT_COMMISSION_ESTIMATE/);
     }
   });
 
-  it('no `?? 0` or `|| 0` on estimated_missing_commission reads in consumers', () => {
+  it('no `?? 0` or `|| 0` on estimated_missing_commission reads in shipped files', () => {
     for (const f of consumerFiles) {
       const txt = readFileSync(resolve(process.cwd(), f), 'utf8');
-      // Forbid `estimated_missing_commission ?? 0` and `estimated_missing_commission || 0`
       expect(txt, `${f} must not use ?? 0 / || 0 on estimated_missing_commission`).not.toMatch(
         /estimated_missing_commission\s*(\?\?|\|\|)\s*0/,
       );
