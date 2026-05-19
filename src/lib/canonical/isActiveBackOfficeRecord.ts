@@ -31,7 +31,7 @@ export interface ActiveBoCandidate {
   policy_term_date?: string | null;
   paid_through_date?: string | null;
   broker_term_date?: string | null;
-  eligible_for_commission?: string | boolean | null;
+  eligible_for_commission?: string | boolean | number | null;
 }
 
 function toIsoDate(d: Date | string): string {
@@ -58,10 +58,23 @@ export function isActiveBackOfficeRecord(
     endIso = getStatementMonthBounds(startIso).end;
   }
 
-  // (1) Eligibility flag.
-  const elig = record.eligible_for_commission;
-  if (elig === false) return false;
-  if (typeof elig === 'string' && elig.trim().toLowerCase() === 'no') return false;
+  // (1) Eligibility flag — Phase 1 repair: normalize all ineligible variants
+  // (case-insensitive 'no'/'n'/'false', numeric 0, string '0', boolean false).
+  // null/undefined treated as "not explicitly ineligible" → pass.
+  const eligValue = record.eligible_for_commission;
+  if (eligValue !== null && eligValue !== undefined) {
+    const normalized =
+      typeof eligValue === 'string' ? eligValue.trim().toLowerCase() : eligValue;
+    const ineligibleTokens: Set<unknown> = new Set([
+      'no',
+      'n',
+      'false',
+      '0',
+      0,
+      false,
+    ]);
+    if (ineligibleTokens.has(normalized)) return false;
+  }
 
   // (2) Policy term date — independent (no fallback to paid_through_date).
   const policyTerm = record.policy_term_date || '';
