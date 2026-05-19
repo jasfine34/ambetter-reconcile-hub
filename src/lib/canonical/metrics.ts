@@ -620,6 +620,7 @@ export function getSourceCoverageBuckets(
     if (rec.member_key && !boByMemberKey.has(rec.member_key)) boByMemberKey.set(rec.member_key, rec);
   }
   const periodStart = periodStartIso(coveredMonthsOrReconcileMonth);
+  const periodEnd = periodEndIso(coveredMonthsOrReconcileMonth);
   const findBoRecord = (m: any): any | null => {
     return (
       (m.issuer_subscriber_id && boByIssuer.get(m.issuer_subscriber_id)) ||
@@ -642,7 +643,7 @@ export function getSourceCoverageBuckets(
     let bo_reason: 'BO inactive/terminated' | 'BO absent';
     if (boRec) {
       const active = periodStart
-        ? isActiveBackOfficeRecord({ source_type: 'BACK_OFFICE', ...boRec }, periodStart)
+        ? isActiveBackOfficeRecord({ source_type: 'BACK_OFFICE', ...boRec }, periodStart, periodEnd || undefined)
         : true;
       bo_reason = active ? 'BO absent' : 'BO inactive/terminated';
     } else {
