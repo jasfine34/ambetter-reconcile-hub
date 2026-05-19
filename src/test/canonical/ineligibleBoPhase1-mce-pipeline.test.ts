@@ -433,6 +433,7 @@ describe('3.5 — reconcile producer-side mixed BO records', () => {
     });
 
     const { members } = reconcile([recA, recB, recC, recD] as any, reconcileMonth);
+    console.log('MEMBERS:', members.map(m => ({k:m.member_key, n:m.applicant_name, bo:m.in_back_office, isid:m.issuer_subscriber_id})));
     const byKey = new Map(members.map((m) => [m.member_key, m]));
     // ISIDs clean to lowercase alnum: 'U-A' → 'ua', etc.
     expect(byKey.get('issub:ua')?.in_back_office).toBe(true);
