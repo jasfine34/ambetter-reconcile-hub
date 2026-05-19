@@ -62,7 +62,9 @@ function bo(opts: {
     'Broker Term Date': '12/31/9999',
     'Policy Effective Date': '2026-02-01',
     'Policy Term Date': '2026-12-31',
-    'Paid Through Date': '2026-02-28',
+    // Phase 1: omit Paid Through Date — past values now mean "behind on
+    // payments" but ALSO must be < monthEnd to be active. Leaving null keeps
+    // BO active in the test (no exclusion evidence).
     'Monthly Premium Amount': '500.00',
     'Exchange Subscriber ID': opts.exchangeSubId ?? '',
     'Eligible for Commission': 'Yes',
