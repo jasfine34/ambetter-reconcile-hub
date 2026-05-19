@@ -43,7 +43,7 @@ import {
   filterReconciledByScope,
 } from '@/lib/canonical/scope';
 import { extractNpnFromAorString } from '@/lib/agents';
-import { NPN_MAP, DEFAULT_COMMISSION_ESTIMATE, EBU_BATCH_SCOPE_DISCLAIMER } from '@/lib/constants';
+import { NPN_MAP, EBU_BATCH_SCOPE_DISCLAIMER } from '@/lib/constants';
 import { computeFilteredEde } from '@/lib/expectedEde';
 import { getExpectedPaymentBreakdown, isZeroNetPremium } from '@/lib/canonical/metrics';
 import { classifySourceTypeForRow } from '@/lib/canonical/sourceTypeForRow';
@@ -69,6 +69,12 @@ import {
 } from '@/components/CrossBatchOverlayLoadErrorBanner';
 import { ClearingStatusChip } from '@/components/ClearingStatusChip';
 import { buildEdeFfmFallbackIndex } from '@/lib/aorPicker';
+import { loadCarrierCompRates } from '@/lib/canonical/compGridLoader';
+import {
+  createEstMissingResolver,
+  type EstMissingStatus,
+} from '@/lib/canonical/estMissingResolver';
+import { buildSourceEvidenceMap } from '@/lib/canonical/estMissingEvidenceAdapter';
 
 
 type PremiumBucket = 'all' | 'zero_premium' | 'has_premium';
