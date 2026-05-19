@@ -74,7 +74,9 @@ describe('canonical/isActiveBackOfficeRecord', () => {
     ).toBe(true);
   });
 
-  it('falls back to paid_through_date when policy_term_date is null', () => {
+  it('paid_through_date is INDEPENDENT (Phase 1) — past paid_through alone does not exclude', () => {
+    // Phase 1: paid_through is "paid through this date" → past value means
+    // behind on payments → active. Old combined-fallback semantic removed.
     expect(
       isActiveBackOfficeRecord(
         {
@@ -85,7 +87,7 @@ describe('canonical/isActiveBackOfficeRecord', () => {
         },
         periodStart,
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('passes through non-BACK_OFFICE records as active', () => {
