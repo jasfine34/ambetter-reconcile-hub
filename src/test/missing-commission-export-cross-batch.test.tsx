@@ -184,7 +184,7 @@ describe('Bundle 13c — MESSER_COLUMNS stability + CSV-only export', () => {
     expect(csv).not.toContain('Clearing');
   });
 
-  it('CSV header is the locked 12-column Messer set in order', () => {
+  it('CSV header is the locked Messer set + Bundle 13e est-missing columns in order', () => {
     const csv = buildMesserCsv([]);
     const parsed = Papa.parse(csv.trim(), { header: false });
     expect((parsed.data as string[][])[0]).toEqual([
@@ -200,6 +200,8 @@ describe('Bundle 13c — MESSER_COLUMNS stability + CSV-only export', () => {
       'SSN',
       'Member ID',
       'Address (Street, City, State, Zip)',
+      'Estimated Missing Commission',
+      'Est_Missing_Status',
     ]);
   });
 
@@ -256,8 +258,11 @@ describe('Bundle 13c — MissingCommissionExportPage wiring guards', () => {
     expect(page).not.toMatch(/\[\s*\.\.\.partition\.regular\s*,\s*\.\.\.partition\.needsReview/);
   });
 
-  it('_estimatedMissingCommission branches on adj.adjustment.kind === "reduce_dollars"', () => {
-    expect(page).toMatch(/adj\.adjustment\.kind\s*===\s*'reduce_dollars'[\s\S]{0,160}effectiveEstMissing/);
+  it('estMissing routed through Bundle 13e resolver (no $18/legacy fallback)', () => {
+    // Bundle 13e: the page must call the shared resolver with the AdjustedRow
+    // so PARTIAL_CLEARED_REMAINDER is honored without a separate legacy branch.
+    expect(page).toMatch(/estMissingResolver\.resolve\(\s*\{[\s\S]{0,120}adjustedRow:\s*adj/);
+    expect(page).not.toMatch(/DEFAULT_COMMISSION_ESTIMATE/);
   });
 
   it('ExportRow build loop derives clearingStatus + clearingNeedsReview from adj while m in scope', () => {

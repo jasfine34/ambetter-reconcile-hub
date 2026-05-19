@@ -43,7 +43,7 @@ import {
   filterReconciledByScope,
 } from '@/lib/canonical/scope';
 import { extractNpnFromAorString } from '@/lib/agents';
-import { NPN_MAP, DEFAULT_COMMISSION_ESTIMATE, EBU_BATCH_SCOPE_DISCLAIMER } from '@/lib/constants';
+import { NPN_MAP, EBU_BATCH_SCOPE_DISCLAIMER } from '@/lib/constants';
 import { computeFilteredEde } from '@/lib/expectedEde';
 import { getExpectedPaymentBreakdown, isZeroNetPremium } from '@/lib/canonical/metrics';
 import { classifySourceTypeForRow } from '@/lib/canonical/sourceTypeForRow';
@@ -69,6 +69,12 @@ import {
 } from '@/components/CrossBatchOverlayLoadErrorBanner';
 import { ClearingStatusChip } from '@/components/ClearingStatusChip';
 import { buildEdeFfmFallbackIndex } from '@/lib/aorPicker';
+import { loadCarrierCompRates } from '@/lib/canonical/compGridLoader';
+import {
+  createEstMissingResolver,
+  type EstMissingStatus,
+} from '@/lib/canonical/estMissingResolver';
+import { buildSourceEvidenceMap } from '@/lib/canonical/estMissingEvidenceAdapter';
 
 
 type PremiumBucket = 'all' | 'zero_premium' | 'has_premium';
@@ -87,6 +93,10 @@ interface ExportRow {
   ssn: string; // blank v1
   memberId: string;
   address: string;
+  /** Bundle 13e — resolved est-missing dollars; blank in CSV when not RESOLVED/REMAINDER. */
+  estimatedMissingCommission: number | null;
+  /** Bundle 13e — adjacent status column. */
+  estMissingStatus: EstMissingStatus | null;
   // Internal preview-only columns
   _memberKey: string;
   _ffmId: EnrichedField<string>;
@@ -96,6 +106,8 @@ interface ExportRow {
   _netPremiumBucket: PremiumBucket;
   _missingReason: string;
   _estimatedMissingCommission: number | null;
+  /** Bundle 13e — resolver status accompanying the resolved amount. */
+  _estMissingStatus: EstMissingStatus | null;
   _profile: MemberProfile;
   _hasConflict: boolean;
   _phone: EnrichedField<string>;
@@ -121,6 +133,8 @@ const MESSER_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
   { key: 'ssn', label: 'SSN' },
   { key: 'memberId', label: 'Member ID' },
   { key: 'address', label: 'Address (Street, City, State, Zip)' },
+  { key: 'estimatedMissingCommission', label: 'Estimated Missing Commission' },
+  { key: 'estMissingStatus', label: 'Est_Missing_Status' },
 ];
 
 const INTERNAL_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
@@ -445,7 +459,15 @@ export function buildMesserCsv(rows: ExportRow[]): string {
     const obj: Record<string, string> = {};
     for (const col of MESSER_COLUMNS) {
       const v = r[col.key];
-      const raw = v == null ? '' : String(v);
+      let raw: string;
+      if (col.key === 'estimatedMissingCommission') {
+        // Bundle 13e — numeric-or-blank. No $18 fallback, no "TBD" string.
+        raw = typeof v === 'number' && Number.isFinite(v) ? v.toFixed(2) : '';
+      } else if (col.key === 'estMissingStatus') {
+        raw = v == null ? '' : String(v);
+      } else {
+        raw = v == null ? '' : String(v);
+      }
       // #109: strip leading Excel text-format apostrophe ONLY for the
       // Writing Agent Carrier ID column, ONLY at the export boundary.
       obj[col.label] = col.key === 'writingAgentCarrierId' ? stripExcelTextMarker(raw) : raw;
@@ -844,6 +866,30 @@ export default function MissingCommissionExportPage() {
       // Display/export only — does not feed reconcile.
       const ffmFallbackIndex = buildEdeFfmFallbackIndex(selectedBatchRecords);
 
+      // ---- Bundle 13e — rate-chart resolver for estimated_missing_commission.
+      // Derive effective year from ranBatchMonth (YYYY-MM); fall back to 2026
+      // to match loadCarrierCompRates default when batch month is unknown.
+      const yearFromBatchMonth = Number(ranBatchMonth?.substring(0, 4));
+      const effectiveYear = Number.isFinite(yearFromBatchMonth) && yearFromBatchMonth > 0
+        ? yearFromBatchMonth
+        : 2026;
+      let rateRows: Awaited<ReturnType<typeof loadCarrierCompRates>> = [];
+      try {
+        rateRows = await loadCarrierCompRates({ effectiveYear });
+      } catch (e) {
+        console.warn('MCE: loadCarrierCompRates failed; resolver will return UNSUPPORTED.', e);
+        rateRows = [];
+      }
+      if (!isLatest()) return;
+      const evidenceMap = buildSourceEvidenceMap(missingMembers);
+      const estMissingResolver = createEstMissingResolver({
+        rateRows,
+        batchMonth: ranBatchMonth,
+        scope: f.scope,
+        overlayMap: clearingOverlay,
+        sourceEvidenceByMemberKey: evidenceMap,
+      });
+
       const allBeforeBucket: ExportRow[] = [];
       for (const m of missingMembers) {
         const memberKey = m.member_key;
@@ -907,16 +953,16 @@ export default function MissingCommissionExportPage() {
 
         const bucket = classifyNetPremium(m);
 
-        // ---- Bundle 13c — overlay-aware estimated dollar + chip metadata --
+        // ---- Bundle 13e — resolver-driven est-missing + status (replaces
+        // legacy $18 fallback). PARTIAL_CLEARED_REMAINDER is handled inside
+        // the resolver via the AdjustedRow input.
         const adj = adjustedByRow.get(m);
-        const legacyEst =
-          typeof m.estimated_missing_commission === 'number' && m.estimated_missing_commission > 0
-            ? m.estimated_missing_commission
-            : DEFAULT_COMMISSION_ESTIMATE;
-        const estMissing =
-          adj && adj.adjustment.kind === 'reduce_dollars'
-            ? adj.effectiveEstMissing
-            : legacyEst;
+        const resolution = estMissingResolver.resolve({
+          row: m,
+          adjustedRow: adj,
+        });
+        const estMissing = resolution.amount;
+        const estMissingStatus = resolution.status;
         let clearingStatus: ClearingState | null = null;
         if (adj && adj.adjustment.kind !== 'no_overlay') {
           if (adj.adjustment.kind === 'no_adjustment') {
@@ -953,6 +999,8 @@ export default function MissingCommissionExportPage() {
           ssn: '',
           memberId,
           address,
+          estimatedMissingCommission: estMissing,
+          estMissingStatus,
           _memberKey: memberKey,
           _ffmId: profile.ffm_id,
           _phone: profile.phone,
@@ -963,6 +1011,7 @@ export default function MissingCommissionExportPage() {
           _netPremiumBucket: bucket,
           _missingReason: m.issue_type || 'Missing from Commission',
           _estimatedMissingCommission: estMissing,
+          _estMissingStatus: estMissingStatus,
           _profile: profile,
           _hasConflict: hasConflict,
           _sourceType: classifySourceTypeForRow(m, breakdown.universe),
@@ -1342,9 +1391,16 @@ export default function MissingCommissionExportPage() {
                       const f = v as EnrichedField<string>;
                       display = f?.value ? f.value : <span className="text-muted-foreground">—</span>;
                     } else if (c.key === '_estimatedMissingCommission') {
-                      display = typeof v === 'number'
-                        ? `$${v.toFixed(2)}`
-                        : <span className="text-muted-foreground">TBD</span>;
+                      const status = row._estMissingStatus;
+                      if (typeof v === 'number' && Number.isFinite(v)) {
+                        display = `$${v.toFixed(2)}`;
+                      } else if (status === 'TBD_AMBIGUOUS_PAYEE') {
+                        display = <span className="text-muted-foreground">TBD</span>;
+                      } else if (status === 'UNSUPPORTED') {
+                        display = <span className="text-muted-foreground">Needs review</span>;
+                      } else {
+                        display = <span className="text-muted-foreground">—</span>;
+                      }
                     } else if (v == null || v === '') {
                       display = <span className="text-muted-foreground">—</span>;
                     } else {
