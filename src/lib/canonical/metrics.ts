@@ -569,6 +569,17 @@ function periodStartIso(coveredMonths: string[] | string | undefined): string {
   return `${first.substring(0, 7)}-01`;
 }
 
+function periodEndIso(coveredMonths: string[] | string | undefined): string {
+  if (!coveredMonths) return '';
+  if (typeof coveredMonths === 'string') {
+    return coveredMonths.length >= 7 ? getStatementMonthBounds(coveredMonths).end : '';
+  }
+  const sorted = coveredMonths.filter(Boolean).slice().sort();
+  const last = sorted[sorted.length - 1];
+  if (!last) return '';
+  return getStatementMonthBounds(last).end;
+}
+
 /**
  * Single-helper Source Coverage tile producer. Returns rows + counts for
  * every Source Coverage tile so cards and drilldowns share one source.
