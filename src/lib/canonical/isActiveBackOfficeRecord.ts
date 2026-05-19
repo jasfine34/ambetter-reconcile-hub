@@ -1,27 +1,29 @@
 /**
- * Canonical "is this BO record active during the reconcile period?" predicate.
+ * Canonical "is this BO record active during the statement month?" predicate.
  *
- * Single source of truth for BO active-record disqualification — replaces
- * three divergent inline implementations in:
- *   - src/lib/reconcile.ts (per-member BO active filter)
- *   - src/lib/classifier.ts (Source Funnel BO predicate)
- *   - src/pages/DashboardPage.tsx (BO mismatch reason inference)
+ * Phase 1 — Ineligible-BO fix. Three INDEPENDENT disqualification conditions
+ * (any returns false):
  *
- * Disqualification rules (any one returns false):
- *   1. Policy Term Date past — policy_term_date set and <= periodStart.
- *      Falls back to paid_through_date when policy_term_date is null.
- *   2. Broker Term Date past — broker_term_date set and <= periodStart.
- *      The 12/31/9999 sentinel (Ambetter convention for "no end") is
- *      treated as null/active.
- *   3. Eligible for Commission flag — 'No' or boolean false → not active.
+ *   1. eligible_for_commission — 'No' or boolean false → not active.
+ *   2. policy_term_date — set and <= statementMonthStart → terminated.
+ *   3. paid_through_date — set and >= statementMonthEnd → already paid through
+ *      the statement month (last-day-inclusive).
  *
- * Carrier-specific column mapping happens upstream in adapters; this
- * function operates on the normalized field names only and is therefore
- * carrier-agnostic.
+ * Plus the existing broker_term check (with 9999-* sentinel) is preserved
+ * as the "active window" guard.
  *
- * Non-BACK_OFFICE records are passed through as active (true) so callers
- * can apply this predicate to mixed record streams without pre-filtering.
+ * Single source of truth shared by reconcile, classifier, weakMatch,
+ * metrics, dashboard (Phase 2+ surfaces). Carrier-agnostic — column mapping
+ * happens upstream in adapters.
+ *
+ * Non-BACK_OFFICE records pass through as active (true) so callers can
+ * apply this predicate to mixed record streams without pre-filtering.
+ *
+ * Signature: ISO YYYY-MM-DD strings. statementMonthEnd is OPTIONAL for
+ * backward compatibility with Phase 2+ callers that still pass a single
+ * Date|string periodStart; when omitted, end is derived from start.
  */
+import { getStatementMonthBounds } from './statementMonthBounds';
 
 /** Minimal shape — keeps this file decoupled from the full NormalizedRecord. */
 export interface ActiveBoCandidate {
@@ -32,40 +34,46 @@ export interface ActiveBoCandidate {
   eligible_for_commission?: string | boolean | null;
 }
 
-/** Sentinel "no end date" value used by Ambetter feeds. */
-const FAR_FUTURE_SENTINEL = '9999-12-31';
-
 function toIsoDate(d: Date | string): string {
   if (typeof d === 'string') return d.length >= 10 ? d.substring(0, 10) : d;
   return d.toISOString().substring(0, 10);
 }
 
 function isSentinel(date: string): boolean {
-  // Treat any 9999-* date as the "no end" sentinel.
   return date.startsWith('9999-');
 }
 
 export function isActiveBackOfficeRecord(
   record: ActiveBoCandidate,
-  periodStart: Date | string,
+  statementMonthStart: Date | string,
+  statementMonthEnd?: string,
 ): boolean {
-  // Pass-through for non-BO records so this can be applied to mixed streams.
+  // Pass-through for non-BO records.
   if (record.source_type && record.source_type !== 'BACK_OFFICE') return true;
 
-  const periodIso = toIsoDate(periodStart);
+  const startIso = toIsoDate(statementMonthStart);
+  let endIso = statementMonthEnd;
+  if (!endIso) {
+    // Backward-compat: derive last-day-inclusive end from the start month.
+    endIso = getStatementMonthBounds(startIso).end;
+  }
 
-  // (3) Eligibility flag.
+  // (1) Eligibility flag.
   const elig = record.eligible_for_commission;
   if (elig === false) return false;
   if (typeof elig === 'string' && elig.trim().toLowerCase() === 'no') return false;
 
-  // (1) Policy term date — fall back to paid_through_date when absent.
-  const policyTerm = record.policy_term_date || record.paid_through_date || '';
-  if (policyTerm && !isSentinel(policyTerm) && policyTerm <= periodIso) return false;
+  // (2) Policy term date — independent (no fallback to paid_through_date).
+  const policyTerm = record.policy_term_date || '';
+  if (policyTerm && !isSentinel(policyTerm) && policyTerm <= startIso) return false;
 
-  // (2) Broker term date.
+  // (3) Paid Through Date — independent, last-day-inclusive.
+  const paidThrough = record.paid_through_date || '';
+  if (paidThrough && !isSentinel(paidThrough) && paidThrough >= endIso) return false;
+
+  // Broker term date (preserved active-window guard).
   const brokerTerm = record.broker_term_date || '';
-  if (brokerTerm && !isSentinel(brokerTerm) && brokerTerm <= periodIso) return false;
+  if (brokerTerm && !isSentinel(brokerTerm) && brokerTerm <= startIso) return false;
 
   return true;
 }
