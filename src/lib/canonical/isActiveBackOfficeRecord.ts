@@ -31,7 +31,7 @@ export interface ActiveBoCandidate {
   policy_term_date?: string | null;
   paid_through_date?: string | null;
   broker_term_date?: string | null;
-  eligible_for_commission?: string | boolean | null;
+  eligible_for_commission?: string | boolean | number | null;
 }
 
 function toIsoDate(d: Date | string): string {
