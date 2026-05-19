@@ -184,7 +184,7 @@ describe('Bundle 13c — MESSER_COLUMNS stability + CSV-only export', () => {
     expect(csv).not.toContain('Clearing');
   });
 
-  it('CSV header is the locked 12-column Messer set in order', () => {
+  it('CSV header is the locked Messer set + Bundle 13e est-missing columns in order', () => {
     const csv = buildMesserCsv([]);
     const parsed = Papa.parse(csv.trim(), { header: false });
     expect((parsed.data as string[][])[0]).toEqual([
@@ -200,6 +200,8 @@ describe('Bundle 13c — MESSER_COLUMNS stability + CSV-only export', () => {
       'SSN',
       'Member ID',
       'Address (Street, City, State, Zip)',
+      'Estimated Missing Commission',
+      'Est_Missing_Status',
     ]);
   });
 
