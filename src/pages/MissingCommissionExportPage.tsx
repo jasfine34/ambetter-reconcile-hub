@@ -102,6 +102,8 @@ interface ExportRow {
   _netPremiumBucket: PremiumBucket;
   _missingReason: string;
   _estimatedMissingCommission: number | null;
+  /** Bundle 13e — resolver status accompanying the resolved amount. */
+  _estMissingStatus: EstMissingStatus | null;
   _profile: MemberProfile;
   _hasConflict: boolean;
   _phone: EnrichedField<string>;
