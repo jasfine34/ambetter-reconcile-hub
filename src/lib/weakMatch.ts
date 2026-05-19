@@ -33,6 +33,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { cleanId, cleanSubscriberId } from './normalize';
 import type { FilteredEdeRow } from './expectedEde';
 import { isActiveBackOfficeRecord } from './canonical/isActiveBackOfficeRecord';
+import { getStatementMonthBounds } from './canonical/statementMonthBounds';
 
 /**
  * Carriers for which the BO `policy_number` field is structurally redundant
