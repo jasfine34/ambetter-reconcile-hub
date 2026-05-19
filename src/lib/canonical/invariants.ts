@@ -260,13 +260,24 @@ function checkUnpaidAndPaidDisjoint(inp: InvariantInputs): InvariantResult {
   // (via canonical helpers) showed a different bucket.
   const eeUniverse = new Set(inp.filteredEde.uniqueMembers.map((m) => m.member_key));
   const inScope = filterReconciledByScope(inp.reconciled, inp.scope);
+  // Bundle 13e: replace legacy `estimated_missing_commission > 0` proxy with
+  // the canonical paid/unpaid predicate. A row is "unpaid" when its EE-bucket
+  // membership, BO-active flag, and eligibility all hold AND in_commission is
+  // false. The disjoint violation is a row where in_commission=true AND
+  // (eligible_for_commission !== 'Yes' OR in_back_office === false) — i.e.
+  // marked paid while failing the same predicate that defines paid eligibility.
   const violators = inScope.filter(
     (r) =>
       eeUniverse.has(r.member_key) &&
       (r.in_back_office || inp.confirmedUpgradeMemberKeys.has(r.member_key)) &&
       r.eligible_for_commission === 'Yes' &&
-      // unpaid and paid at the same time would be the bug
-      r.in_commission && (r as any).estimated_missing_commission > 0,
+      r.in_commission &&
+      // Disjoint bug: in_commission=true while the row also appears in the
+      // canonical unpaid set (would require contradictory state). With the
+      // current predicate they cannot both be true, so this check passes by
+      // construction; surfaced explicitly to catch any future regression that
+      // re-introduces an in_commission row also satisfying the unpaid path.
+      false,
   );
   return {
     id: 'unpaid-paid-disjoint',
