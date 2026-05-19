@@ -866,6 +866,30 @@ export default function MissingCommissionExportPage() {
       // Display/export only — does not feed reconcile.
       const ffmFallbackIndex = buildEdeFfmFallbackIndex(selectedBatchRecords);
 
+      // ---- Bundle 13e — rate-chart resolver for estimated_missing_commission.
+      // Derive effective year from ranBatchMonth (YYYY-MM); fall back to 2026
+      // to match loadCarrierCompRates default when batch month is unknown.
+      const yearFromBatchMonth = Number(ranBatchMonth?.substring(0, 4));
+      const effectiveYear = Number.isFinite(yearFromBatchMonth) && yearFromBatchMonth > 0
+        ? yearFromBatchMonth
+        : 2026;
+      let rateRows: Awaited<ReturnType<typeof loadCarrierCompRates>> = [];
+      try {
+        rateRows = await loadCarrierCompRates({ effectiveYear });
+      } catch (e) {
+        console.warn('MCE: loadCarrierCompRates failed; resolver will return UNSUPPORTED.', e);
+        rateRows = [];
+      }
+      if (!isLatest()) return;
+      const evidenceMap = buildSourceEvidenceMap(missingMembers);
+      const estMissingResolver = createEstMissingResolver({
+        rateRows,
+        batchMonth: ranBatchMonth,
+        scope: f.scope,
+        overlayMap: clearingOverlay,
+        sourceEvidenceByMemberKey: evidenceMap,
+      });
+
       const allBeforeBucket: ExportRow[] = [];
       for (const m of missingMembers) {
         const memberKey = m.member_key;
