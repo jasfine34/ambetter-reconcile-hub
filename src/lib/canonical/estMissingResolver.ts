@@ -176,10 +176,12 @@ export function createEstMissingResolver(ctx: EstMissingResolverContext): {
       ctx.sourceEvidenceByMemberKey?.get(input.row.member_key) ??
       undefined;
     const baseEvidence = buildBaseEvidence(ev);
+    const adj = input.adjustedRow?.adjustment;
+    const hasPartialRemainder = adj?.kind === 'reduce_dollars';
 
     // 1. PARTIAL_CLEARED_REMAINDER — overlay wins.
-    if (input.adjustedRow?.adjustment?.kind === 'reduce_dollars') {
-      const remainder = input.adjustedRow.adjustment.remainder;
+    if (adj && adj.kind === 'reduce_dollars') {
+      const remainder = adj.remainder;
       return {
         amount: remainder,
         status: 'PARTIAL_CLEARED_REMAINDER',
@@ -208,8 +210,6 @@ export function createEstMissingResolver(ctx: EstMissingResolverContext): {
     }
 
     const owner = classifyPolicyOwnerFromCurrentAor(ev.current_policy_aor);
-    const hasPartialRemainder =
-      input.adjustedRow?.adjustment?.kind === 'reduce_dollars';
 
     // 3. TBD_AMBIGUOUS_PAYEE — Erica with unknown payee blocks override
     //    AND blocks rate-chart resolution (we don't know which payee to bill).
