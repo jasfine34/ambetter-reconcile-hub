@@ -433,10 +433,11 @@ describe('3.5 — reconcile producer-side mixed BO records', () => {
     });
 
     const { members } = reconcile([recA, recB, recC, recD] as any, reconcileMonth);
-    const byName = new Map(members.map((m) => [m.applicant_name, m]));
-    expect(byName.get('Active')?.in_back_office).toBe(true);
-    expect(byName.get('Terminated')?.in_back_office).toBe(false);
-    expect(byName.get('PaidThru')?.in_back_office).toBe(false);
-    expect(byName.get('Ineligible')?.in_back_office).toBe(false);
+    const byKey = new Map(members.map((m) => [m.member_key, m]));
+    // ISIDs clean to lowercase alnum: 'U-A' → 'ua', etc.
+    expect(byKey.get('issub:ua')?.in_back_office).toBe(true);
+    expect(byKey.get('issub:ub')?.in_back_office).toBe(false);
+    expect(byKey.get('issub:uc')?.in_back_office).toBe(false);
+    expect(byKey.get('issub:ud')?.in_back_office).toBe(false);
   });
 });
