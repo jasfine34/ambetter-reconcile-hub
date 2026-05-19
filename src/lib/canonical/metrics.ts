@@ -24,6 +24,7 @@ import {
   filterCommissionRowsByScope,
 } from './scope';
 import { isActiveBackOfficeRecord } from './isActiveBackOfficeRecord';
+import { getStatementMonthBounds } from './statementMonthBounds';
 import { classifyPolicyOwnerFromCurrentAor as _classifyOwnerEarly } from './policyOwner';
 
 export interface NetPaidBreakdown {
@@ -568,6 +569,17 @@ function periodStartIso(coveredMonths: string[] | string | undefined): string {
   return `${first.substring(0, 7)}-01`;
 }
 
+function periodEndIso(coveredMonths: string[] | string | undefined): string {
+  if (!coveredMonths) return '';
+  if (typeof coveredMonths === 'string') {
+    return coveredMonths.length >= 7 ? getStatementMonthBounds(coveredMonths).end : '';
+  }
+  const sorted = coveredMonths.filter(Boolean).slice().sort();
+  const last = sorted[sorted.length - 1];
+  if (!last) return '';
+  return getStatementMonthBounds(last).end;
+}
+
 /**
  * Single-helper Source Coverage tile producer. Returns rows + counts for
  * every Source Coverage tile so cards and drilldowns share one source.
@@ -608,6 +620,7 @@ export function getSourceCoverageBuckets(
     if (rec.member_key && !boByMemberKey.has(rec.member_key)) boByMemberKey.set(rec.member_key, rec);
   }
   const periodStart = periodStartIso(coveredMonthsOrReconcileMonth);
+  const periodEnd = periodEndIso(coveredMonthsOrReconcileMonth);
   const findBoRecord = (m: any): any | null => {
     return (
       (m.issuer_subscriber_id && boByIssuer.get(m.issuer_subscriber_id)) ||
@@ -630,7 +643,7 @@ export function getSourceCoverageBuckets(
     let bo_reason: 'BO inactive/terminated' | 'BO absent';
     if (boRec) {
       const active = periodStart
-        ? isActiveBackOfficeRecord({ source_type: 'BACK_OFFICE', ...boRec }, periodStart)
+        ? isActiveBackOfficeRecord({ source_type: 'BACK_OFFICE', ...boRec }, periodStart, periodEnd || undefined)
         : true;
       bo_reason = active ? 'BO absent' : 'BO inactive/terminated';
     } else {

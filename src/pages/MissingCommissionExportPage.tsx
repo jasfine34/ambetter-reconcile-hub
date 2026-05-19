@@ -44,7 +44,9 @@ import {
 } from '@/lib/canonical/scope';
 import { extractNpnFromAorString } from '@/lib/agents';
 import { NPN_MAP, EBU_BATCH_SCOPE_DISCLAIMER } from '@/lib/constants';
-import { computeFilteredEde } from '@/lib/expectedEde';
+import { computeFilteredEde, type FilteredEdeResult } from '@/lib/expectedEde';
+import { getStatementMonthBounds } from '@/lib/canonical/statementMonthBounds';
+import { applyRuntimeBOActive } from '@/lib/canonical/applyRuntimeBOActive';
 import { getExpectedPaymentBreakdown, isZeroNetPremium } from '@/lib/canonical/metrics';
 import { classifySourceTypeForRow } from '@/lib/canonical/sourceTypeForRow';
 import { getCoveredMonths } from '@/lib/dateRange';
@@ -710,22 +712,66 @@ export default function MissingCommissionExportPage() {
     let missingMembers: any[];
     let adjustedByRow: Map<any, AdjustedRow> = new Map();
     try {
-      const ranFilteredEde = computeFilteredEde(
+      // ---- Ineligible-BO Phase 1 — runtime BO-active re-evaluation ----
+      // Re-derive in_back_office from the canonical helper against raw BO
+      // records (don't trust persisted reconciled.in_back_office). Also
+      // compute an exclusion set to plug the EDE-Only no-eligibility-gate
+      // leak: members whose only BO evidence fails the helper are removed
+      // from the FilteredEdeResult AND from reconciled-for-breakdown.
+      const boNormalizedRecords = selectedBatchRecords.filter(
+        (n: any) => n.source_type === 'BACK_OFFICE',
+      );
+      const monthBounds = ranBatchMonth
+        ? getStatementMonthBounds(ranBatchMonth)
+        : { start: '', end: '' };
+      const { adjustedReconciled, mceExclusionMemberKeys } = ranBatchMonth
+        ? applyRuntimeBOActive(reconciledSnapshot, boNormalizedRecords, monthBounds)
+        : { adjustedReconciled: reconciledSnapshot, mceExclusionMemberKeys: new Set<string>() };
+
+      const ranFilteredEdeRaw = computeFilteredEde(
         selectedBatchRecords,
-        reconciledSnapshot,
+        adjustedReconciled,
         f.scope,
         ranCoveredMonths,
         resolverIndexSnapshot,
+      );
+
+      // Filter the returned FilteredEdeResult by the exclusion set and
+      // recompute metadata. Never pre-filter computeFilteredEde's INPUT —
+      // it needs the full reconciled list to resolve pre-Union-Find keys.
+      const filteredUniqueMembers = ranFilteredEdeRaw.uniqueMembers.filter(
+        (m: any) => !mceExclusionMemberKeys.has(m.member_key),
+      );
+      const filteredMissingFromBO = ranFilteredEdeRaw.missingFromBO.filter(
+        (m: any) => !mceExclusionMemberKeys.has(m.member_key),
+      );
+      const byMonth: Record<string, number> = {};
+      for (const m of filteredUniqueMembers) {
+        const month = (m as any).effective_month;
+        if (!month) continue;
+        byMonth[month] = (byMonth[month] ?? 0) + 1;
+      }
+      const ranFilteredEde: FilteredEdeResult = {
+        uniqueMembers: filteredUniqueMembers,
+        uniqueKeys: filteredUniqueMembers.length,
+        byMonth,
+        inBOCount: filteredUniqueMembers.filter((m: any) => m.in_back_office).length,
+        notInBOCount: filteredMissingFromBO.length,
+        missingFromBO: filteredMissingFromBO,
+      };
+      const reconciledForBreakdown = adjustedReconciled.filter(
+        (r: any) => !mceExclusionMemberKeys.has(r.member_key),
       );
 
       const periodStart = ranBatch?.statement_month ?? null;
       const candidates = findWeakMatches(ranFilteredEde.uniqueMembers, selectedBatchRecords, { periodStart });
       const { confirmedKeys } = applyOverrides(candidates, weakOverrides);
       const confirmedUpgradeMemberKeys = new Set<string>();
-      if (confirmedKeys.size && reconciledSnapshot.length) {
-        const inScope = filterReconciledByScope(reconciledSnapshot, f.scope);
+      if (confirmedKeys.size && reconciledForBreakdown.length) {
+        const inScope = filterReconciledByScope(reconciledForBreakdown, f.scope);
         for (const r of inScope) {
           if (r.in_back_office) continue;
+          if (mceExclusionMemberKeys.has(r.member_key)) continue;
           const key = pickStableKey({
             issuer_subscriber_id: r.issuer_subscriber_id,
             exchange_subscriber_id: r.exchange_subscriber_id,
@@ -736,7 +782,7 @@ export default function MissingCommissionExportPage() {
       }
 
       breakdown = getExpectedPaymentBreakdown(
-        reconciledSnapshot, f.scope, ranFilteredEde, confirmedUpgradeMemberKeys,
+        reconciledForBreakdown, f.scope, ranFilteredEde, confirmedUpgradeMemberKeys,
       );
 
       // ---- Bundle 13c — C13 await-overlay-at-Run-Report -------------------

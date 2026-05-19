@@ -6,6 +6,7 @@ import { getCoveredMonths, fallbackReconcileMonth } from './dateRange';
 import { lookupResolved, type ResolverIndex } from './resolvedIdentities';
 import { pickCurrentPolicyAor, collectFfmAppIds } from './aorPicker';
 import { isActiveBackOfficeRecord as canonicalIsActiveBackOfficeRecord } from './canonical/isActiveBackOfficeRecord';
+import { getStatementMonthBounds } from './canonical/statementMonthBounds';
 import { classifyPolicyOwnerFromCurrentAor, expectedPayEntityForOwner } from './canonical/policyOwner';
 
 const SBA_STATE_SET: ReadonlySet<string> = new Set(SBA_STATES);
@@ -194,11 +195,14 @@ export interface MatchDebugStats {
 
 /**
  * Determines if a Back Office record represents an active policy during the
- * reconciliation month. Delegates to the canonical predicate (#29 Phase 1) so
- * reconcile / classifier / dashboard share one definition of "active BO".
+ * reconciliation month. Delegates to the canonical predicate (Ineligible-BO
+ * Phase 1) so reconcile / classifier / dashboard share one definition.
+ * Phase 1: passes both statementMonthStart and statementMonthEnd
+ * (last-day-inclusive) so paid_through_date is evaluated independently.
  */
 function isActiveBackOfficeRecord(r: NormalizedRecord, reconcileMonth: string): boolean {
-  return canonicalIsActiveBackOfficeRecord(r, `${reconcileMonth}-01`);
+  const { start, end } = getStatementMonthBounds(reconcileMonth);
+  return canonicalIsActiveBackOfficeRecord(r, start, end);
 }
 
 /**

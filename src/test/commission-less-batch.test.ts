@@ -49,7 +49,7 @@ function bo(overrides: Partial<any> = {}): any {
     policy_number: 'P100',
     effective_date: '2026-04-01',
     policy_term_date: '2026-12-31',
-    paid_through_date: '2026-04-30',
+    paid_through_date: null,
     eligible_for_commission: 'Yes',
     agent_npn: '21055210',
     aor_bucket: 'Coverall',

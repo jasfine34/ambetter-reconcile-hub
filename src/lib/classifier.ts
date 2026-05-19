@@ -13,6 +13,7 @@ import { addMonths, monthKeyToFirstOfMonth, type MonthKey } from './dateRange';
 import { isCoverallAORByName, isCoverallAORByNPN } from './agents';
 import { canonicalCarrier } from './carrierCanonical';
 import { isActiveBackOfficeRecord } from './canonical/isActiveBackOfficeRecord';
+import { getStatementMonthBounds } from './canonical/statementMonthBounds';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Types
@@ -267,12 +268,13 @@ function hasEdeForMonth(records: NormalizedRecord[], month: MonthKey): boolean {
  */
 function hasActiveBoForMonth(records: NormalizedRecord[], month: MonthKey): boolean {
   const firstOfMonth = monthKeyToFirstOfMonth(month);
+  const { end } = getStatementMonthBounds(firstOfMonth);
   return records.some(r => {
     if (r.source_type !== 'BACK_OFFICE') return false;
     const eff = r.effective_date || '';
     if (eff && eff > firstOfMonth) return false;
-    // Delegate active-window + eligibility + term checks to the canonical predicate.
-    return isActiveBackOfficeRecord(r, firstOfMonth);
+    // Delegate active-window + eligibility + term + paid_through checks.
+    return isActiveBackOfficeRecord(r, firstOfMonth, end);
   });
 }
 
@@ -584,11 +586,11 @@ export function computeFunnelForMonth(
       .filter(r => isBoRecordOurs(r) && recordMatchesCarrier(r, canonicalCarrierKey))
       .some(r => {
         const firstOfMonth = monthKeyToFirstOfMonth(month);
+        const { end } = getStatementMonthBounds(firstOfMonth);
         const eff = r.effective_date || '';
         if (eff && eff > firstOfMonth) return false;
-        // Canonical BO active predicate (#29 Phase 1) — checks policy term,
-        // broker term (with 9999-* sentinel), and eligible_for_commission.
-        return isActiveBackOfficeRecord(r, firstOfMonth);
+        // Canonical BO active predicate — Ineligible-BO Phase 1.
+        return isActiveBackOfficeRecord(r, firstOfMonth, end);
       });
     const commissionMatch = records.some(r => {
       if (r.source_type !== 'COMMISSION') return false;
