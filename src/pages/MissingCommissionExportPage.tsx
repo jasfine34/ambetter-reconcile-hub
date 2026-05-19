@@ -459,7 +459,15 @@ export function buildMesserCsv(rows: ExportRow[]): string {
     const obj: Record<string, string> = {};
     for (const col of MESSER_COLUMNS) {
       const v = r[col.key];
-      const raw = v == null ? '' : String(v);
+      let raw: string;
+      if (col.key === 'estimatedMissingCommission') {
+        // Bundle 13e — numeric-or-blank. No $18 fallback, no "TBD" string.
+        raw = typeof v === 'number' && Number.isFinite(v) ? v.toFixed(2) : '';
+      } else if (col.key === 'estMissingStatus') {
+        raw = v == null ? '' : String(v);
+      } else {
+        raw = v == null ? '' : String(v);
+      }
       // #109: strip leading Excel text-format apostrophe ONLY for the
       // Writing Agent Carrier ID column, ONLY at the export boundary.
       obj[col.label] = col.key === 'writingAgentCarrierId' ? stripExcelTextMarker(raw) : raw;
