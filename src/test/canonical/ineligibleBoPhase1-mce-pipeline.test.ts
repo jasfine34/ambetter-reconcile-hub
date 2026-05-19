@@ -414,31 +414,29 @@ describe('3.5 — reconcile producer-side mixed BO records', () => {
       ...over,
     });
 
-    const recA = make('Active', 'U-A', {
+    const recA = make('Active', 'UA1', {
       policy_term_date: '2027-12-31',
       paid_through_date: '2026-01-31',
       eligible_for_commission: 'Yes',
     });
-    const recB = make('Terminated', 'U-B', {
+    const recB = make('Terminated', 'UB1', {
       policy_term_date: '2026-03-15',
       eligible_for_commission: 'Yes',
     });
-    const recC = make('PaidThru', 'U-C', {
+    const recC = make('PaidThru', 'UC1', {
       paid_through_date: '2026-04-30',
       eligible_for_commission: 'Yes',
     });
-    const recD = make('Ineligible', 'U-D', {
+    const recD = make('Ineligible', 'UD1', {
       policy_term_date: '2027-12-31',
       eligible_for_commission: 'No',
     });
 
     const { members } = reconcile([recA, recB, recC, recD] as any, reconcileMonth);
-    console.log('MEMBERS:', members.map(m => ({k:m.member_key, n:m.applicant_name, bo:m.in_back_office, isid:m.issuer_subscriber_id})));
     const byKey = new Map(members.map((m) => [m.member_key, m]));
-    // ISIDs clean to lowercase alnum: 'U-A' → 'ua', etc.
-    expect(byKey.get('issub:ua')?.in_back_office).toBe(true);
-    expect(byKey.get('issub:ub')?.in_back_office).toBe(false);
-    expect(byKey.get('issub:uc')?.in_back_office).toBe(false);
-    expect(byKey.get('issub:ud')?.in_back_office).toBe(false);
+    expect(byKey.get('issub:ua1')?.in_back_office).toBe(true);
+    expect(byKey.get('issub:ub1')?.in_back_office).toBe(false);
+    expect(byKey.get('issub:uc1')?.in_back_office).toBe(false);
+    expect(byKey.get('issub:ud1')?.in_back_office).toBe(false);
   });
 });
