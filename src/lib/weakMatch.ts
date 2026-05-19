@@ -156,11 +156,14 @@ export function findWeakMatches(
     else m.set(k, [r]);
   };
 
+  const periodBounds = periodStart
+    ? getStatementMonthBounds(typeof periodStart === 'string' ? periodStart : String(periodStart).substring(0, 10))
+    : null;
   for (const r of normalizedRecords) {
     if (r.source_type !== 'BACK_OFFICE') continue;
-    // #129: exclude inactive/terminated BO rows so we don't surface them
-    // as weak-match candidates. Mirrors strict reconcile's active-BO filter.
-    if (periodStart && !isActiveBackOfficeRecord(r, periodStart)) continue;
+    // Exclude inactive/terminated/ineligible/paid-through BO rows so we
+    // don't surface them as weak-match candidates.
+    if (periodBounds && !isActiveBackOfficeRecord(r, periodBounds.start, periodBounds.end)) continue;
     const nm = normName(r.applicant_name);
     if (nm) push(boByName, nm, r);
     if (r.exchange_subscriber_id) push(boByEsid, cleanSubscriberId(r.exchange_subscriber_id), r);
