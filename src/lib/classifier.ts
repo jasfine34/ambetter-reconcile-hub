@@ -268,12 +268,13 @@ function hasEdeForMonth(records: NormalizedRecord[], month: MonthKey): boolean {
  */
 function hasActiveBoForMonth(records: NormalizedRecord[], month: MonthKey): boolean {
   const firstOfMonth = monthKeyToFirstOfMonth(month);
+  const { end } = getStatementMonthBounds(firstOfMonth);
   return records.some(r => {
     if (r.source_type !== 'BACK_OFFICE') return false;
     const eff = r.effective_date || '';
     if (eff && eff > firstOfMonth) return false;
-    // Delegate active-window + eligibility + term checks to the canonical predicate.
-    return isActiveBackOfficeRecord(r, firstOfMonth);
+    // Delegate active-window + eligibility + term + paid_through checks.
+    return isActiveBackOfficeRecord(r, firstOfMonth, end);
   });
 }
 
