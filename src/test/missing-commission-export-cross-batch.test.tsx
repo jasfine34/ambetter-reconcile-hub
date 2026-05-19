@@ -256,8 +256,11 @@ describe('Bundle 13c — MissingCommissionExportPage wiring guards', () => {
     expect(page).not.toMatch(/\[\s*\.\.\.partition\.regular\s*,\s*\.\.\.partition\.needsReview/);
   });
 
-  it('_estimatedMissingCommission branches on adj.adjustment.kind === "reduce_dollars"', () => {
-    expect(page).toMatch(/adj\.adjustment\.kind\s*===\s*'reduce_dollars'[\s\S]{0,160}effectiveEstMissing/);
+  it('estMissing routed through Bundle 13e resolver (no $18/legacy fallback)', () => {
+    // Bundle 13e: the page must call the shared resolver with the AdjustedRow
+    // so PARTIAL_CLEARED_REMAINDER is honored without a separate legacy branch.
+    expect(page).toMatch(/estMissingResolver\.resolve\(\s*\{[\s\S]{0,120}adjustedRow:\s*adj/);
+    expect(page).not.toMatch(/DEFAULT_COMMISSION_ESTIMATE/);
   });
 
   it('ExportRow build loop derives clearingStatus + clearingNeedsReview from adj while m in scope', () => {
