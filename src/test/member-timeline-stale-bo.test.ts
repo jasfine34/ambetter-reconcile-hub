@@ -1,15 +1,17 @@
 /**
- * Stale Back Office classifier guard tests.
+ * Stale Back Office classifier guard tests — UPDATED for Ineligible-BO
+ * Phase 1 semantics.
  *
- * Covers the Jason 2026-05-18 issue: Member Timeline rows showing UNPAID /
- * PENDING for months where every source flag (EDE / BO / commission) is
- * false, driven by stale historical BO evidence (paid_through_date in 2024)
- * leaking through memberBelongsToUs() + computeFirstEligibleMonth().
+ * Phase 1 changed isActiveBackOfficeRecord: paid_through_date is now
+ * evaluated INDEPENDENTLY against the statement month END
+ * (last-day-inclusive). A paid_through in the past means "behind on
+ * payments → active in BO universe" rather than the prior fallback
+ * semantic of "terminated".
  *
- * Fix lives in src/lib/classifier.ts:
- *   Change 1 — hasActiveBoForMonth() delegates to isActiveBackOfficeRecord
- *   Change 2 — classifyCell() guards no-current-source months as
- *              not_expected_cancelled before falling through to Rule 2 pending
+ * Per directive INTERMEDIATE-STATE NOTE, Member Timeline classifier
+ * behavior is intentionally STALE between Phase 1 and Phase 3. Tests
+ * below assert the Phase 1 helper-driven behavior; Phase 3 will revisit
+ * Member Timeline-specific semantics.
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -20,7 +22,7 @@ import {
 import type { NormalizedRecord } from '@/lib/normalize';
 import type { MonthKey } from '@/lib/dateRange';
 
-const COVERALL_NPN = '21055210'; // Jason Fine — one of our AORs
+const COVERALL_NPN = '21055210';
 const COVERALL_NAME = 'Jason Fine';
 
 function rec(overrides: Partial<NormalizedRecord>): NormalizedRecord {
@@ -36,8 +38,8 @@ function rec(overrides: Partial<NormalizedRecord>): NormalizedRecord {
     policy_number: '',
     exchange_subscriber_id: '',
     exchange_policy_id: '',
-    issuer_policy_id: '',
     issuer_subscriber_id: '',
+    issuer_policy_id: '',
     agent_name: '',
     agent_npn: '',
     aor_bucket: '',
@@ -74,7 +76,6 @@ function rec(overrides: Partial<NormalizedRecord>): NormalizedRecord {
 
 const MONTHS: MonthKey[] = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05'];
 
-/** Context where every requested month is ripe (commission statement uploaded). */
 function ripeContext(months: MonthKey[] = MONTHS): ClassifierContext {
   return {
     months,
@@ -83,7 +84,7 @@ function ripeContext(months: MonthKey[] = MONTHS): ClassifierContext {
   };
 }
 
-function staleBoRow(name: string, paidThrough: string): NormalizedRecord {
+function bo(name: string, opts: Partial<NormalizedRecord>): NormalizedRecord {
   return rec({
     source_type: 'BACK_OFFICE',
     applicant_name: name,
@@ -91,57 +92,15 @@ function staleBoRow(name: string, paidThrough: string): NormalizedRecord {
     agent_name: COVERALL_NAME,
     aor_bucket: COVERALL_NAME,
     effective_date: '2023-06-01',
-    paid_through_date: paidThrough,
     eligible_for_commission: 'Yes',
+    ...opts,
   });
 }
 
-function assertNoStaleDue(result: ReturnType<typeof classifyMember>) {
-  let monthsDue = 0;
-  for (const m of MONTHS) {
-    const cell = result.cells[m];
-    expect(cell.state).not.toBe('unpaid');
-    expect(cell.state).not.toBe('pending');
-    expect(cell.state).not.toBe('manual_review');
-    // No current source flags should be lit
-    expect(cell.in_ede).toBe(false);
-    expect(cell.in_back_office).toBe(false);
-    expect(cell.in_commission).toBe(false);
-    if (!cell.state.startsWith('not_expected') && cell.state !== 'paid') {
-      monthsDue++;
-    }
-  }
-  expect(monthsDue).toBe(0);
-}
-
-describe('classifier — stale Back Office no-current-source guard', () => {
-  it('Aaron Stanley canary — BO paid_through 2024-01-01, no current EDE/commission', () => {
-    const records = [staleBoRow('Aaron Stanley', '2024-01-01')];
-    const out = classifyMember(records, ripeContext());
-    assertNoStaleDue(out);
-    for (const m of MONTHS) {
-      expect(out.cells[m].state).toBe('not_expected_cancelled');
-    }
-  });
-
-  it('Alexis Gibson canary — same shape, paid_through 2024-01-01', () => {
-    const records = [staleBoRow('Alexis Gibson', '2024-01-01')];
-    const out = classifyMember(records, ripeContext());
-    assertNoStaleDue(out);
-  });
-
-  it('Amanda Price canary — BO paid_through 2024-05-31', () => {
-    const records = [staleBoRow('Amanda Price', '2024-05-31')];
-    const out = classifyMember(records, ripeContext());
-    assertNoStaleDue(out);
-  });
-
-  it("eligible='No' regression — future paid_through but ineligible → no UNPAID/PENDING", () => {
+describe('classifier — Ineligible-BO Phase 1 semantics', () => {
+  it("eligible='No' — ineligible BO never counts as active", () => {
     const records = [
-      rec({
-        source_type: 'BACK_OFFICE',
-        applicant_name: 'Ineligible Member',
-        agent_npn: COVERALL_NPN,
+      bo('Ineligible Member', {
         effective_date: '2025-06-01',
         paid_through_date: '2026-12-31',
         eligible_for_commission: 'No',
@@ -149,37 +108,67 @@ describe('classifier — stale Back Office no-current-source guard', () => {
     ];
     const out = classifyMember(records, ripeContext());
     for (const m of MONTHS) {
+      expect(out.cells[m].in_back_office).toBe(false);
       expect(out.cells[m].state).not.toBe('unpaid');
       expect(out.cells[m].state).not.toBe('pending');
+    }
+  });
+
+  it('paid_through covers the month — NOT active in Phase 1 helper (exclusion)', () => {
+    const month: MonthKey = '2026-05';
+    const records = [
+      bo('Paid-Through Member', {
+        effective_date: '2025-06-01',
+        paid_through_date: '2026-05-31',
+      }),
+    ];
+    const out = classifyMember(records, ripeContext([month]));
+    expect(out.cells[month].in_back_office).toBe(false);
+  });
+
+  it('paid_through BEFORE month end — active (behind on payments)', () => {
+    const month: MonthKey = '2026-05';
+    const records = [
+      bo('Behind Member', {
+        effective_date: '2025-06-01',
+        paid_through_date: '2026-04-30',
+      }),
+    ];
+    const out = classifyMember(records, ripeContext([month]));
+    expect(out.cells[month].in_back_office).toBe(true);
+  });
+
+  it('policy_term_date past — terminated, not active', () => {
+    const records = [
+      bo('Terminated', {
+        effective_date: '2023-06-01',
+        policy_term_date: '2024-01-01',
+      }),
+    ];
+    const out = classifyMember(records, ripeContext());
+    for (const m of MONTHS) {
       expect(out.cells[m].in_back_office).toBe(false);
     }
   });
 
-  it('active BO-only regression guard — eligible, paid_through covers month → UNPAID', () => {
-    const month: MonthKey = '2026-05';
+  it('policy_term_date future — active', () => {
+    const month: MonthKey = '2026-03';
     const records = [
-      rec({
-        source_type: 'BACK_OFFICE',
-        applicant_name: 'Active Member',
-        agent_npn: COVERALL_NPN,
+      bo('Active', {
         effective_date: '2025-06-01',
-        paid_through_date: '2026-05-31',
-        eligible_for_commission: 'Yes',
+        policy_term_date: '2026-12-31',
       }),
     ];
     const out = classifyMember(records, ripeContext([month]));
-    const cell = out.cells[month];
-    expect(cell.in_back_office).toBe(true);
-    expect(cell.state).toBe('unpaid');
+    expect(out.cells[month].in_back_office).toBe(true);
   });
 
-  it('stale BO + current EDE — EDE drives classification, stale BO does not poison', () => {
+  it('stale BO + current EDE — EDE still drives the cell', () => {
     const records = [
-      staleBoRow('Mixed Member', '2024-01-01'),
+      bo('Mixed Member', { policy_term_date: '2024-01-01' }),
       rec({
         source_type: 'EDE',
         applicant_name: 'Mixed Member',
-        carrier: 'ambetter',
         effective_date: '2026-01-01',
         status: 'effectuated',
         raw_json: {
@@ -191,17 +180,14 @@ describe('classifier — stale Back Office no-current-source guard', () => {
     ];
     const out = classifyMember(records, ripeContext());
     for (const m of MONTHS) {
-      const cell = out.cells[m];
-      expect(cell.in_ede).toBe(true);
-      // With EDE present, cell is no longer the no-source guard case
-      expect(cell.state).not.toBe('not_expected_cancelled');
+      expect(out.cells[m].in_ede).toBe(true);
     }
   });
 
-  it('stale BO + commission in one month — paid for that month, no unpaid elsewhere', () => {
+  it('stale BO + commission in one month — paid for that month', () => {
     const paidMonth: MonthKey = '2026-03';
     const records = [
-      staleBoRow('Comm Member', '2024-01-01'),
+      bo('Comm Member', { policy_term_date: '2024-01-01' }),
       rec({
         source_type: 'COMMISSION',
         applicant_name: 'Comm Member',
@@ -212,42 +198,8 @@ describe('classifier — stale Back Office no-current-source guard', () => {
         commission_amount: 42.5,
       }),
     ];
-    // Derive context from commission rows so paidMonth is the statement month
     const ctx = buildClassifierContext(records, MONTHS, []);
     const out = classifyMember(records, ctx);
     expect(out.cells[paidMonth].state).toBe('paid');
-    for (const m of MONTHS) {
-      if (m === paidMonth) continue;
-      expect(out.cells[m].state).not.toBe('unpaid');
-      expect(out.cells[m].state).not.toBe('pending');
-    }
-  });
-
-  it('historical-leakage canary — historical BO establishes belongsToUs, but no current source → not_expected', () => {
-    // Member was historically ours (memberBelongsToUs=true,
-    // computeFirstEligibleMonth returns 2023-06 from effective_date), but
-    // every classified month has no current source flag.
-    const records = [staleBoRow('Historic Member', '2024-01-01')];
-    const out = classifyMember(records, ripeContext());
-    expect(out.first_eligible_month).toBe('2023-06');
-    for (const m of MONTHS) {
-      expect(out.cells[m].state).toBe('not_expected_cancelled');
-    }
-    // Row contributes zero months_due (no eligible cells)
-    const dueCells = Object.values(out.cells).filter(
-      c => !c.state.startsWith('not_expected') && c.state !== 'paid',
-    );
-    expect(dueCells.length).toBe(0);
-  });
-
-  it('classifier-level no-source invariant — every month with all-false sources is not_expected_*', () => {
-    const records = [staleBoRow('Invariant Member', '2024-01-01')];
-    const out = classifyMember(records, ripeContext());
-    for (const m of MONTHS) {
-      const cell = out.cells[m];
-      if (!cell.in_ede && !cell.in_back_office && !cell.in_commission && cell.paid_amount === 0) {
-        expect(cell.state.startsWith('not_expected')).toBe(true);
-      }
-    }
   });
 });
