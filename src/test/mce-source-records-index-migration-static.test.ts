@@ -39,9 +39,11 @@ describe('persistence.ts hotfix scope discipline (static)', () => {
     expect(m).not.toBeNull();
     expect(m![1]).toMatch(/raw_json/);
   });
-  it('getNormalizedRecords still uses select(\'*\')', () => {
-    const m = TS.match(/export async function getNormalizedRecords\b[\s\S]*?\n}\n/);
-    expect(m).not.toBeNull();
-    expect(m![0]).toMatch(/\.select\(\s*['"]\*['"]\s*\)/);
+  it("getNormalizedRecords still uses select('*')", () => {
+    const start = TS.indexOf('export async function getNormalizedRecords');
+    expect(start).toBeGreaterThanOrEqual(0);
+    const nextExport = TS.indexOf('export async function', start + 1);
+    const body = TS.slice(start, nextExport === -1 ? undefined : nextExport);
+    expect(body).toMatch(/\.select\(\s*['"]\*['"]\s*\)/);
   });
 });
