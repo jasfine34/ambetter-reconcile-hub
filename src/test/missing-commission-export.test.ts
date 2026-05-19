@@ -292,6 +292,7 @@ describe('buildMesserCsv + buildMesserCsvFilename', () => {
       'Carrier Name', 'NPN', 'Writing Agent Carrier ID', 'Writing Agent Name',
       'Policy Effective Date', 'Policy #', 'Member First Name', 'Member Last Name',
       'DOB', 'SSN', 'Member ID', 'Address (Street, City, State, Zip)',
+      'Estimated Missing Commission', 'Est_Missing_Status',
     ]);
     // SSN present but blank (v1)
     const data = parsed.data as Record<string, string>[];
