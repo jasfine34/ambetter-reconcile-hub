@@ -1391,9 +1391,16 @@ export default function MissingCommissionExportPage() {
                       const f = v as EnrichedField<string>;
                       display = f?.value ? f.value : <span className="text-muted-foreground">—</span>;
                     } else if (c.key === '_estimatedMissingCommission') {
-                      display = typeof v === 'number'
-                        ? `$${v.toFixed(2)}`
-                        : <span className="text-muted-foreground">TBD</span>;
+                      const status = row._estMissingStatus;
+                      if (typeof v === 'number' && Number.isFinite(v)) {
+                        display = `$${v.toFixed(2)}`;
+                      } else if (status === 'TBD_AMBIGUOUS_PAYEE') {
+                        display = <span className="text-muted-foreground">TBD</span>;
+                      } else if (status === 'UNSUPPORTED') {
+                        display = <span className="text-muted-foreground">Needs review</span>;
+                      } else {
+                        display = <span className="text-muted-foreground">—</span>;
+                      }
                     } else if (v == null || v === '') {
                       display = <span className="text-muted-foreground">—</span>;
                     } else {
