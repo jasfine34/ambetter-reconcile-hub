@@ -93,6 +93,10 @@ interface ExportRow {
   ssn: string; // blank v1
   memberId: string;
   address: string;
+  /** Bundle 13e — resolved est-missing dollars; blank in CSV when not RESOLVED/REMAINDER. */
+  estimatedMissingCommission: number | null;
+  /** Bundle 13e — adjacent status column. */
+  estMissingStatus: EstMissingStatus | null;
   // Internal preview-only columns
   _memberKey: string;
   _ffmId: EnrichedField<string>;
