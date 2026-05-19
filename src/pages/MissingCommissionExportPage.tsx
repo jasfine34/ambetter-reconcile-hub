@@ -133,6 +133,8 @@ const MESSER_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
   { key: 'ssn', label: 'SSN' },
   { key: 'memberId', label: 'Member ID' },
   { key: 'address', label: 'Address (Street, City, State, Zip)' },
+  { key: 'estimatedMissingCommission', label: 'Estimated Missing Commission' },
+  { key: 'estMissingStatus', label: 'Est_Missing_Status' },
 ];
 
 const INTERNAL_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
