@@ -1,6 +1,6 @@
 # Source-To-Screen Audit Scorecard
 
-Last updated: 2026-05-18
+Last updated: 2026-05-19
 
 This is the plain-English scorecard for Jason. It summarizes what each audit has actually proven. A `CERTIFIED` cell means the audit traced the output from source data through the app calculation to the visible UI or export for the named scope. It does not automatically certify other months, scopes, tabs, or carriers.
 
@@ -19,13 +19,13 @@ This is the plain-English scorecard for Jason. It summarizes what each audit has
 
 | Tab / Surface | Scope Audited | Raw Rows Included Correctly | Wrong Rows Excluded | Calculations / Dollars | Cross-Batch / Overlay | UI / Export Output | Current Result | Plain-English Meaning |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Missing Commission Export | Jan 2026, Ambetter, Coverall, All Premium | `CERTIFIED` | `CERTIFIED` | `CERTIFIED` | `CERTIFIED` | `CERTIFIED` | `CERTIFIED PILOT` | For this one MCE export slice, the data is accurate: no extra rows, no missing rows, and export values match the source-backed ledger. |
-| Missing Commission Export | Other Ambetter months / scopes / premium buckets | `PENDING` | `PENDING` | `PENDING` | `PENDING` | `PENDING` | `PENDING` | Expected to use the same machinery, but not certified until the Stage 2 matrix runs. |
+| Missing Commission Export | Jan-Apr 2026, Ambetter, Coverall/Vix/All, All/Zero Net/Has Net Premium | `CERTIFIED` | `CERTIFIED` | `CERTIFIED` | `CERTIFIED` | `CERTIFIED` | `CERTIFIED` | The 36-combination MCE matrix is source-certified using normalized raw-json as the source substitute: every audited export slice had 0 extra rows, 0 missing rows, and 0 unresolved row keys. |
+| Missing Commission Export | Non-Ambetter carriers or months outside Jan-Apr 2026 | `PENDING` | `PENDING` | `PENDING` | `PENDING` | `PENDING` | `PENDING` | Not certified yet; future audits need separate source-to-screen runs for those carriers/months. |
 | Dashboard | Current audited portions | `PENDING` | `TARGETED PASS` for stale-BO contamination | `HELPER PARITY ONLY` | `TARGETED PASS` in some paths | `HELPER PARITY ONLY` | `HELPER PARITY ONLY` | We know some display/helper agreement and stale-BO checks passed, but not full raw-source certification. |
 | Member Timeline | Current audited portions | `NEEDS RERUN` | `NEEDS RERUN` | `NEEDS RERUN` | `PENDING` | `HELPER PARITY ONLY` | `NEEDS RERUN` | This is where stale historical BO rows exposed the weakness in earlier audits. It must be rerun under the raw-source standard after the classifier fix. |
 | Agent Summary | Current audited portions | `PENDING` | `TARGETED PASS` for stale-BO contamination | `HELPER PARITY ONLY` | `PENDING` | `HELPER PARITY ONLY` | `HELPER PARITY ONLY` | Useful confidence that the UI follows helpers, but not yet source-certified. |
 | Unpaid Recovery | Current audited portions | `PENDING` | `TARGETED PASS` for stale-BO contamination | `HELPER PARITY ONLY` | `PENDING` | `HELPER PARITY ONLY` | `HELPER PARITY ONLY` | Needs a raw-ledger audit before calling it accurate against source truth. |
-| Cross-Batch Clearings | Jan 2026 Ambetter Coverall MCE pilot impact | `CERTIFIED` | `CERTIFIED` | `CERTIFIED` | `CERTIFIED` | `CERTIFIED` inside MCE output | `CERTIFIED PILOT` | Late payments, including later-statement payments for January, were removed correctly from the pilot MCE owed bucket. |
+| Cross-Batch Clearings | Jan-Apr 2026 Ambetter MCE impact | `CERTIFIED` | `CERTIFIED` | `CERTIFIED` | `CERTIFIED` | `CERTIFIED` inside MCE output | `CERTIFIED` | Late payments and active clearings were applied correctly across the audited MCE matrix. |
 | Cross-Batch Clearings | Global behavior across all tabs/months | `PENDING` | `PENDING` | `PENDING` | `HELPER PARITY ONLY / TARGETED PASS` | `PENDING` | `PENDING` | The mechanism has strong evidence, but global source-truth certification needs broader coverage. |
 | Source Coverage / EBU surfaces | Current audited portions | `PENDING` | `TARGETED PASS` for stale-BO contamination | `HELPER PARITY ONLY` | `PENDING` | `HELPER PARITY ONLY` | `HELPER PARITY ONLY` | Not certified against raw source truth yet. |
 | All Records / Upload Status / operational tabs | None under this standard | `PENDING` | `PENDING` | `PENDING` | `PENDING` | `PENDING` | `PENDING` | Not part of the source-to-screen certification yet. |
@@ -53,4 +53,3 @@ After each Codex verdict, update this scorecard with:
 3. The result for each test category.
 4. A one-sentence plain-English meaning.
 5. Whether the result is full certification, pilot certification, helper parity only, targeted pass, or needs rerun.
-
