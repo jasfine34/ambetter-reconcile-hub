@@ -49,7 +49,14 @@ vi.mock('@/lib/weakMatch', () => ({
 }));
 
 vi.mock('@/lib/expectedEde', () => ({
-  computeFilteredEde: vi.fn().mockReturnValue({ uniqueMembers: [] }),
+  computeFilteredEde: vi.fn().mockReturnValue({
+    uniqueMembers: [],
+    uniqueKeys: 0,
+    byMonth: {},
+    inBOCount: 0,
+    notInBOCount: 0,
+    missingFromBO: [],
+  }),
 }));
 
 const mockGetEligible = vi.fn();
@@ -461,7 +468,14 @@ describe('MissingCommissionExportPage — FFM ID front column', () => {
     (weakMatch.applyOverrides as any).mockReturnValue({ confirmedKeys: new Set(), rejectedKeys: new Set() });
     (weakMatch.pickStableKey as any).mockReturnValue(null);
     const expectedEde = await import('@/lib/expectedEde');
-    (expectedEde.computeFilteredEde as any).mockReturnValue({ uniqueMembers: [] });
+    (expectedEde.computeFilteredEde as any).mockReturnValue({
+      uniqueMembers: [],
+      uniqueKeys: 0,
+      byMonth: {},
+      inBOCount: 0,
+      notInBOCount: 0,
+      missingFromBO: [],
+    });
 
     expect(csvText).toMatch(/Member ID/);
     expect(csvText).toMatch(/iss-m-csv/);
