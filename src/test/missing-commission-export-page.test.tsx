@@ -49,7 +49,14 @@ vi.mock('@/lib/weakMatch', () => ({
 }));
 
 vi.mock('@/lib/expectedEde', () => ({
-  computeFilteredEde: vi.fn().mockReturnValue({ uniqueMembers: [] }),
+  computeFilteredEde: vi.fn().mockReturnValue({
+    uniqueMembers: [],
+    uniqueKeys: 0,
+    byMonth: {},
+    inBOCount: 0,
+    notInBOCount: 0,
+    missingFromBO: [],
+  }),
 }));
 
 const mockGetEligible = vi.fn();
