@@ -739,10 +739,10 @@ export default function MissingCommissionExportPage() {
       // Filter the returned FilteredEdeResult by the exclusion set and
       // recompute metadata. Never pre-filter computeFilteredEde's INPUT —
       // it needs the full reconciled list to resolve pre-Union-Find keys.
-      const filteredUniqueMembers = ranFilteredEdeRaw.uniqueMembers.filter(
+      const filteredUniqueMembers = (ranFilteredEdeRaw.uniqueMembers ?? []).filter(
         (m: any) => !mceExclusionMemberKeys.has(m.member_key),
       );
-      const filteredMissingFromBO = ranFilteredEdeRaw.missingFromBO.filter(
+      const filteredMissingFromBO = (ranFilteredEdeRaw.missingFromBO ?? []).filter(
         (m: any) => !mceExclusionMemberKeys.has(m.member_key),
       );
       const byMonth: Record<string, number> = {};
