@@ -586,11 +586,11 @@ export function computeFunnelForMonth(
       .filter(r => isBoRecordOurs(r) && recordMatchesCarrier(r, canonicalCarrierKey))
       .some(r => {
         const firstOfMonth = monthKeyToFirstOfMonth(month);
+        const { end } = getStatementMonthBounds(firstOfMonth);
         const eff = r.effective_date || '';
         if (eff && eff > firstOfMonth) return false;
-        // Canonical BO active predicate (#29 Phase 1) — checks policy term,
-        // broker term (with 9999-* sentinel), and eligible_for_commission.
-        return isActiveBackOfficeRecord(r, firstOfMonth);
+        // Canonical BO active predicate — Ineligible-BO Phase 1.
+        return isActiveBackOfficeRecord(r, firstOfMonth, end);
       });
     const commissionMatch = records.some(r => {
       if (r.source_type !== 'COMMISSION') return false;
