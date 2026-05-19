@@ -13,6 +13,7 @@ import { addMonths, monthKeyToFirstOfMonth, type MonthKey } from './dateRange';
 import { isCoverallAORByName, isCoverallAORByNPN } from './agents';
 import { canonicalCarrier } from './carrierCanonical';
 import { isActiveBackOfficeRecord } from './canonical/isActiveBackOfficeRecord';
+import { getStatementMonthBounds } from './canonical/statementMonthBounds';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Types
