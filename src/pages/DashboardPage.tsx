@@ -1065,11 +1065,14 @@ export default function DashboardPage() {
       // Canonical BO active predicate (#29 Phase 1) — single source of truth
       // for whether the matched BO record disqualifies on policy term, broker
       // term (with 9999-* sentinel), or eligible_for_commission.
-      const periodStart = (sortedCovered[0] || (fe.effective_date || '').substring(0, 7)) + '-01';
+      const periodStart = monthBounds?.start
+        ?? ((sortedCovered[0] || (fe.effective_date || '').substring(0, 7)) + '-01');
+      const periodEnd = monthBounds?.end ?? getStatementMonthBounds(periodStart).end;
       const boIsActive = boRecord
         ? isActiveBackOfficeRecord(
             { source_type: 'BACK_OFFICE', ...boRecord },
             periodStart,
+            periodEnd,
           )
         : true;
 
