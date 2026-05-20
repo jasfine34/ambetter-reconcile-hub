@@ -632,7 +632,7 @@ export default function DashboardPage() {
   // Confirmed-match members move from missingFromBO into Found-in-BO.
   // Rejected-match members stay in missingFromBO (disputable/waiting split).
   const weakMatchResult = useMemo(() => {
-    if (!filteredEde.uniqueMembers.length || !normalizedRecords.length) {
+    if (!boAdjustedFilteredEde.uniqueMembers.length || !normalizedRecords.length) {
       return {
         candidates: [],
         confirmedKeys: new Set<string>(),
@@ -643,10 +643,10 @@ export default function DashboardPage() {
     // #129 follow-up: pass batch's statement_month as periodStart so this
     // Dashboard count agrees with ManualMatchPage (canonical-predicate parity).
     const periodStart = currentBatch?.statement_month ?? null;
-    const candidates = findWeakMatches(filteredEde.uniqueMembers, normalizedRecords, { periodStart });
+    const candidates = findWeakMatches(boAdjustedFilteredEde.uniqueMembers, normalizedRecords, { periodStart });
     const { confirmedKeys, rejectedKeys, pending } = applyOverrides(candidates, weakOverrides);
     return { candidates, confirmedKeys, rejectedKeys, pending };
-  }, [filteredEde, normalizedRecords, weakOverrides, currentBatch?.statement_month]);
+  }, [boAdjustedFilteredEde, normalizedRecords, weakOverrides, currentBatch?.statement_month]);
 
   // Confirmed weak-match upgrades: build a Set of reconciled-member member_keys
   // whose stable identity key has a 'confirmed' override. These members'
@@ -690,8 +690,8 @@ export default function DashboardPage() {
    * drilldown view).
    */
   const filteredMissingFromBO = useMemo(
-    () => getNotInBackOfficeRows(filteredEde, weakMatchResult.confirmedKeys, pickStableKey),
-    [filteredEde, weakMatchResult.confirmedKeys],
+    () => getNotInBackOfficeRows(boAdjustedFilteredEde, weakMatchResult.confirmedKeys, pickStableKey),
+    [boAdjustedFilteredEde, weakMatchResult.confirmedKeys],
   );
 
   /**
@@ -716,9 +716,9 @@ export default function DashboardPage() {
       try {
         const m = metricsRef.current;
         const results = runInvariants({
-          reconciled,
+          reconciled: boAdjustedReconciled,
           normalizedRecords,
-          filteredEde,
+          filteredEde: boAdjustedFilteredEde,
           confirmedUpgradeMemberKeys,
           confirmedWeakMatchOverrideKeys: weakMatchResult.confirmedKeys,
           weakMatchPendingOverrideKeys: new Set(weakMatchResult.pending.map((c) => c.override_key)),
@@ -751,7 +751,7 @@ export default function DashboardPage() {
         setInvariantsRunning(false);
       }
     }, 0);
-  }, [invariantsRunning, reconciled, normalizedRecords, filteredEde, confirmedUpgradeMemberKeys, weakMatchResult, payEntityFilter]);
+  }, [invariantsRunning, boAdjustedReconciled, normalizedRecords, boAdjustedFilteredEde, confirmedUpgradeMemberKeys, weakMatchResult, payEntityFilter]);
 
   const dashboardTitle = useMemo(() => {
     switch (payEntityFilter) {
@@ -768,8 +768,8 @@ export default function DashboardPage() {
     // to their first active covered month), so the per-month numbers SUM to
     // the card total. Carryover members remain in the total via uniqueKeys
     // but are not double-counted across months.
-    const expectedPriorMonth = priorMonth ? (filteredEde.byMonth[priorMonth] ?? 0) : 0;
-    const expectedStatementMonth = statementMonth ? (filteredEde.byMonth[statementMonth] ?? 0) : 0;
+    const expectedPriorMonth = priorMonth ? (rawFilteredEde.byMonth[priorMonth] ?? 0) : 0;
+    const expectedStatementMonth = statementMonth ? (rawFilteredEde.byMonth[statementMonth] ?? 0) : 0;
     // CANONICAL CARD WIRING (2026-04-28 pass-2): Found / Eligible / Should Pay
     // / Paid Within Eligible / Unpaid all flow through the canonical helpers
     // so the cards EXACTLY match Run Invariants for the same scope. Prior
@@ -777,19 +777,19 @@ export default function DashboardPage() {
     // persistent column), which drifted from the canonical filteredEde-based
     // EE universe (Mar Coverall: 1,297 vs 1,309 invariant).
     const scopeForCanonical = payEntityFilter === 'All' ? 'All' : payEntityFilter;
-    const foundBO = getFoundInBackOffice(reconciled, scopeForCanonical, filteredEde, confirmedUpgradeMemberKeys);
+    const foundBO = getFoundInBackOffice(boAdjustedReconciled, scopeForCanonical, boAdjustedFilteredEde, confirmedUpgradeMemberKeys);
     // Legacy NARROW eligible-cohort (kept for invariant parity, validation
     // sample, AgentSummary parity tests). Phase 1 expanded the top
     // expected-payment cards to the broader workflow universe — see
     // expectedPaymentBreakdown below.
-    const eligibleCohort = getEligibleCohort(reconciled, scopeForCanonical, confirmedUpgradeMemberKeys, filteredEde);
+    const eligibleCohort = getEligibleCohort(boAdjustedReconciled, scopeForCanonical, confirmedUpgradeMemberKeys, boAdjustedFilteredEde);
     const eligible = eligibleCohort.length;
 
     // Phase 1 expected-payment universe: Should Be Paid = Matched + BO Only + EDE Only.
     const expectedPaymentBreakdown = getExpectedPaymentBreakdown(
-      reconciled,
+      boAdjustedReconciled,
       scopeForCanonical,
-      filteredEde,
+      boAdjustedFilteredEde,
       confirmedUpgradeMemberKeys,
     );
     const shouldPay = expectedPaymentBreakdown.universe.total;
@@ -808,7 +808,7 @@ export default function DashboardPage() {
     const unclassifiedNet = split.unclassifiedNet;
     const netPaidTotal = netPaid.net;
     const splitDelta = netPaidTotal - (coverallDirectNet + downlineNet);
-    const estMissing = getExpectedMissingCommissionSum(reconciled, scopeForCanonical, filteredEde, confirmedUpgradeMemberKeys);
+    const estMissing = getExpectedMissingCommissionSum(boAdjustedReconciled, scopeForCanonical, boAdjustedFilteredEde, confirmedUpgradeMemberKeys);
     const difference = shouldPay - paidEligible;
     const unpaidVariance = unpaid - difference;
     const totalEdeRaw = filtered.filter(r => r.in_ede).length;
@@ -821,9 +821,9 @@ export default function DashboardPage() {
     // Received; Jason Option B). New tile: "Paid: EDE Only" (12 rows on
     // Feb 2026 Ambetter All scope) with bo_reason drilldown classification.
     const sourceCoverage = getSourceCoverageBuckets(
-      reconciled,
+      boAdjustedReconciled,
       scopeForCanonical,
-      filteredEde,
+      boAdjustedFilteredEde,
       normalizedRecords,
       coveredMonths,
       confirmedUpgradeMemberKeys,
@@ -901,7 +901,7 @@ export default function DashboardPage() {
       reversedAdjustedRows: dashReversed,
       reversedUnpaidAmount: sumReversedAmount(dashReversed),
     };
-  }, [filtered, reconciled, normalizedRecords, payEntityFilter, filteredEde, eeUniverseKeys, priorMonth, statementMonth, effInBO, confirmedUpgradeMemberKeys, coveredMonths, dashboardClearingOverlay]);
+  }, [filtered, boAdjustedReconciled, reconciled, normalizedRecords, payEntityFilter, boAdjustedFilteredEde, rawFilteredEde, eeUniverseKeys, priorMonth, statementMonth, effInBO, confirmedUpgradeMemberKeys, coveredMonths, dashboardClearingOverlay]);
 
   // Phase 1.7: keep metricsRef in sync so executeInvariants reads the latest.
   useEffect(() => { metricsRef.current = metrics; }, [metrics]);
@@ -1004,7 +1004,7 @@ export default function DashboardPage() {
    * Read-only — does not affect any totals, no DB writes.
    */
   const eeAuditRows = useMemo(() => {
-    if (!filteredEde.uniqueMembers.length) return [] as Array<Record<string, unknown>>;
+    if (!boAdjustedFilteredEde.uniqueMembers.length) return [] as Array<Record<string, unknown>>;
 
     const reconByMemberKey = new Map<string, any>();
     for (const m of reconciled) reconByMemberKey.set(m.member_key, m);
@@ -1032,7 +1032,7 @@ export default function DashboardPage() {
     const latestCovered = sortedCovered[sortedCovered.length - 1] ?? '';
 
     const rows: Array<Record<string, unknown>> = [];
-    for (const fe of filteredEde.uniqueMembers) {
+    for (const fe of boAdjustedFilteredEde.uniqueMembers) {
       // Skip rows already in the actionable Not-in-BO bucket.
       if (!fe.in_back_office) continue;
       const recon = reconByMemberKey.get(fe.member_key);
@@ -1099,7 +1099,7 @@ export default function DashboardPage() {
       });
     }
     return rows;
-  }, [filteredEde, reconciled, normalizedRecords, coveredMonths]);
+  }, [boAdjustedFilteredEde, monthBounds, reconciled, normalizedRecords, coveredMonths]);
 
   // D1 (PR2 follow-up): route through canonical eligibleCohort so the
   // validation sample cannot drift from the Unpaid Policies card/drilldown.
@@ -1130,7 +1130,7 @@ export default function DashboardPage() {
       // (filteredEde.uniqueKeys) exactly. Previously this filtered the
       // legacy `filtered` reconciled array through eeUniverseKeys, which
       // could drift if the reconciled set was stale or out of sync.
-      case 'expected': return filteredEde.uniqueMembers;
+      case 'expected': return rawFilteredEde.uniqueMembers;
       // Phase 1 (#X): top expected-payment cards now slice from the broader
       // expected-payment universe. shouldPay / paidEligible / unpaid all
       // come from the same getExpectedPaymentBreakdown so card values and
@@ -1339,15 +1339,15 @@ export default function DashboardPage() {
               // (raw rows, post issuer/AOR/status/effective-date filter), so it
               // matches the EDE Expected Enrollment Debug panel and the user's
               // manual workbook ground truth.
-              const expectedTotal = filteredEde.uniqueKeys;
-              const tieOut = filteredEde.inBOCount + filteredEde.notInBOCount;
+              const expectedTotal = rawFilteredEde.uniqueKeys;
+              const tieOut = rawFilteredEde.inBOCount + rawFilteredEde.notInBOCount;
               const tiesOut = tieOut === expectedTotal;
-              const monthBreakdown = formatMonthBreakdown(filteredEde.byMonth, { yearless: true });
+              const monthBreakdown = formatMonthBreakdown(rawFilteredEde.byMonth, { yearless: true });
               // Tie-out is the RAW pre-override EDE bucketing (strict BO match vs raw EDE
               // missing-from-BO). It is intentionally distinct from the live "Not in Back Office"
               // Dashboard card, which applies override-aware post weak-match-confirmation logic.
               // Wording uses "Raw strict BO" / "Raw EDE Not-in-BO" to disambiguate.
-              const tooltipText = `Total Ambetter policies with a Coverall AOR (scope: ${payEntityFilter}) in a qualifying status (Effectuated / PendingEffectuation / PendingTermination), active in this batch's covered months. Per-month breakdown shows NEWLY-EFFECTIVE members per actual effective month, so per-month numbers SUM to the total. Sourced from raw EDE rows so this matches the EDE debug panel exactly. This tie-out is the raw pre-override EDE bucketing and is distinct from the override-aware "Not in Back Office" card. Tie-out check: Raw strict BO ${filteredEde.inBOCount} + Raw EDE Not-in-BO ${filteredEde.notInBOCount} = ${tieOut} ${tiesOut ? '✓' : '⚠️ MISMATCH vs ' + expectedTotal}.`;
+              const tooltipText = `Total Ambetter policies with a Coverall AOR (scope: ${payEntityFilter}) in a qualifying status (Effectuated / PendingEffectuation / PendingTermination), active in this batch's covered months. Per-month breakdown shows NEWLY-EFFECTIVE members per actual effective month, so per-month numbers SUM to the total. Sourced from raw EDE rows so this matches the EDE debug panel exactly. This tie-out is the raw pre-override EDE bucketing and is distinct from the override-aware "Not in Back Office" card. Tie-out check: Raw strict BO ${rawFilteredEde.inBOCount} + Raw EDE Not-in-BO ${rawFilteredEde.notInBOCount} = ${tieOut} ${tiesOut ? '✓' : '⚠️ MISMATCH vs ' + expectedTotal}.`;
               return (
                 <MetricCard
                   title="Expected Enrollments"
@@ -1371,7 +1371,7 @@ export default function DashboardPage() {
               // weak-match override write path (issuer sub ID → exchange sub ID
               // → policy #), so lookups against confirmed/pending sets match
               // across rebuilds.
-              const keyFor = (r: typeof filteredEde.missingFromBO[number]) =>
+              const keyFor = (r: typeof boAdjustedFilteredEde.missingFromBO[number]) =>
                 pickStableKey({
                   issuer_subscriber_id: r.issuer_subscriber_id,
                   exchange_subscriber_id: r.exchange_subscriber_id,
@@ -1408,7 +1408,7 @@ export default function DashboardPage() {
                       `Weak BO match = a BO record likely matches but the join is ambiguous — review in Manual Match. ` +
                       `Confirmed overrides (${confirmed.size}) have already been upgraded to Found-in-BO.`,
                     why:
-                      `Tie-out: Found-in-BO (${filteredEde.inBOCount + confirmed.size}) + Disputable (${hasIssuer}) + Waiting (${missingIssuer}) + Weak (${weakPending}) = ${filteredEde.inBOCount + confirmed.size + hasIssuer + missingIssuer + weakPending} (Expected ${filteredEde.uniqueKeys}).`,
+                      `Tie-out: Found-in-BO (${boAdjustedFilteredEde.inBOCount + confirmed.size}) + Disputable (${hasIssuer}) + Waiting (${missingIssuer}) + Weak (${weakPending}) = ${boAdjustedFilteredEde.inBOCount + confirmed.size + hasIssuer + missingIssuer + weakPending} (Expected ${boAdjustedFilteredEde.uniqueKeys}).`,
                   }}
                 />
               );
@@ -1441,8 +1441,8 @@ export default function DashboardPage() {
                 is whole-batch / scope-blind and is intentionally retained for one
                 release as a parity oracle (verified near-equal at scope=All). */}
             {(() => {
-              const tclTotal = getTotalCoveredLives(filteredEde);
-              const tclByMonth = getMonthlyBreakdown('totalCoveredLives', filteredEde);
+              const tclTotal = getTotalCoveredLives(rawFilteredEde);
+              const tclByMonth = getMonthlyBreakdown('totalCoveredLives', rawFilteredEde);
               return (
                 <MetricCard
                   title="Total Covered Lives"
@@ -1929,7 +1929,7 @@ export default function DashboardPage() {
         <CollapsibleDebugCard
           title="EDE Expected Enrollment Debug"
           icon={<Users className="h-4 w-4" />}
-          summary={`${debugStats.edeAfterFilter} qualified · ${formatMonthBreakdown(filteredEde.byMonth) || 'no months'}`}
+          summary={`${debugStats.edeAfterFilter} qualified · ${formatMonthBreakdown(rawFilteredEde.byMonth) || 'no months'}`}
         >
             <div className="flex flex-wrap gap-6 text-sm">
               <span className="text-muted-foreground">Total Raw EDE rows: <strong className="text-foreground">{debugStats.edeRawTotal}</strong></span>
@@ -1941,7 +1941,7 @@ export default function DashboardPage() {
             </div>
             <div className="flex flex-wrap gap-6 text-sm border-t pt-2 items-center">
               <span className="text-muted-foreground font-medium">Expected by month (newly effective):</span>
-              {Object.entries(filteredEde.byMonth)
+              {Object.entries(rawFilteredEde.byMonth)
                 .filter(([m, c]) => m && (c ?? 0) > 0)
                 .sort(([a], [b]) => a.localeCompare(b))
                 .map(([m, c]) => (
