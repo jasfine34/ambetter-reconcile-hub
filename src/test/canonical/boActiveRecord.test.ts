@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { isActiveBackOfficeRecord } from '@/lib/canonical/isActiveBackOfficeRecord';
 
-const periodStart = new Date('2026-04-01');
+const periodStart = '2026-04-01';
+const periodEnd = '2026-04-30';
 
 describe('canonical/isActiveBackOfficeRecord', () => {
   it('(a) policy active + broker active + eligible Yes → true', () => {
@@ -14,6 +15,7 @@ describe('canonical/isActiveBackOfficeRecord', () => {
           eligible_for_commission: 'Yes',
         },
         periodStart,
+        periodEnd,
       ),
     ).toBe(true);
   });
@@ -28,6 +30,7 @@ describe('canonical/isActiveBackOfficeRecord', () => {
           eligible_for_commission: 'Yes',
         },
         periodStart,
+        periodEnd,
       ),
     ).toBe(false);
   });
@@ -42,6 +45,7 @@ describe('canonical/isActiveBackOfficeRecord', () => {
           eligible_for_commission: 'No',
         },
         periodStart,
+        periodEnd,
       ),
     ).toBe(false);
   });
@@ -56,6 +60,7 @@ describe('canonical/isActiveBackOfficeRecord', () => {
           eligible_for_commission: 'Yes',
         },
         periodStart,
+        periodEnd,
       ),
     ).toBe(false);
   });
@@ -70,6 +75,7 @@ describe('canonical/isActiveBackOfficeRecord', () => {
           eligible_for_commission: 'Yes',
         },
         periodStart,
+        periodEnd,
       ),
     ).toBe(true);
   });
@@ -86,6 +92,7 @@ describe('canonical/isActiveBackOfficeRecord', () => {
           eligible_for_commission: 'Yes',
         },
         periodStart,
+        periodEnd,
       ),
     ).toBe(true);
   });
@@ -95,6 +102,7 @@ describe('canonical/isActiveBackOfficeRecord', () => {
       isActiveBackOfficeRecord(
         { source_type: 'EDE', eligible_for_commission: 'No' },
         periodStart,
+        periodEnd,
       ),
     ).toBe(true);
   });
