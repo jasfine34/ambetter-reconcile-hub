@@ -87,9 +87,9 @@ describe('Phase 1 — isActiveBackOfficeRecord edge cases', () => {
     ).toBe(true);
   });
 
-  it('end derived when omitted (backward-compat single-arg)', () => {
+  it('Phase 2 strict signature: both bounds required (TS-enforced — assert behavior with explicit end)', () => {
     expect(
-      isActiveBackOfficeRecord({ ...base, paid_through_date: '2026-04-30' }, START),
+      isActiveBackOfficeRecord({ ...base, paid_through_date: '2026-04-30' }, START, END),
     ).toBe(false);
   });
 });

@@ -642,8 +642,10 @@ export function getSourceCoverageBuckets(
     const boRec = findBoRecord(r);
     let bo_reason: 'BO inactive/terminated' | 'BO absent';
     if (boRec) {
-      const active = periodStart
-        ? isActiveBackOfficeRecord({ source_type: 'BACK_OFFICE', ...boRec }, periodStart, periodEnd || undefined)
+      // Derive end at call site when missing — helper now requires both bounds.
+      const endIso = periodEnd || (periodStart ? getStatementMonthBounds(periodStart).end : '');
+      const active = periodStart && endIso
+        ? isActiveBackOfficeRecord({ source_type: 'BACK_OFFICE', ...boRec }, periodStart, endIso)
         : true;
       bo_reason = active ? 'BO absent' : 'BO inactive/terminated';
     } else {

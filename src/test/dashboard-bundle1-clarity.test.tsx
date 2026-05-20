@@ -200,8 +200,8 @@ describe('Bundle 1.5 — shared classifier import wiring', () => {
 });
 
 describe('Bundle 2 — Expected drilldown + clawback canonical wiring', () => {
-  it('Expected Enrollments drilldown sources rows from filteredEde.uniqueMembers (not filtered + eeUniverseKeys)', () => {
-    expect(dashboardSource).toMatch(/case 'expected':\s*return filteredEde\.uniqueMembers/);
+  it('Expected Enrollments drilldown sources rows from rawFilteredEde.uniqueMembers (raw, pre-overlay)', () => {
+    expect(dashboardSource).toMatch(/case 'expected':\s*return rawFilteredEde\.uniqueMembers/);
     expect(dashboardSource).not.toMatch(
       /case 'expected':\s*return filtered\.filter\(r => eeUniverseKeys\.has/,
     );
@@ -250,13 +250,19 @@ describe('Bundle 3 — P4 KPI canonicalization wiring', () => {
     expect(dashboardSource).not.toMatch(/case 'paidComm':\s*return filtered\.filter\(r => r\.in_commission\)/);
   });
 
-  it('estMissing consumes getExpectedMissingCommissionSum (not inline reduce over estimated_missing_commission)', () => {
+  it('estMissing consumes getExpectedMissingCommissionSum with boAdjusted inputs (Phase 2)', () => {
     expect(dashboardSource).toMatch(
-      /const estMissing = getExpectedMissingCommissionSum\(reconciled,\s*scopeForCanonical,\s*filteredEde,\s*confirmedUpgradeMemberKeys\)/,
+      /const estMissing = getExpectedMissingCommissionSum\(boAdjustedReconciled,\s*scopeForCanonical,\s*boAdjustedFilteredEde,\s*confirmedUpgradeMemberKeys\)/,
     );
     expect(dashboardSource).not.toMatch(
       /const estMissing = filtered\.reduce\(\(s, r\) => s \+ \(r\.estimated_missing_commission \|\| 0\), 0\)/,
     );
+  });
+
+  it('Phase 2 — raw EE / TCL / debug surfaces consume rawFilteredEde', () => {
+    expect(dashboardSource).toMatch(/const expectedTotal = rawFilteredEde\.uniqueKeys/);
+    expect(dashboardSource).toMatch(/getTotalCoveredLives\(rawFilteredEde\)/);
+    expect(dashboardSource).toMatch(/getMonthlyBreakdown\('totalCoveredLives', rawFilteredEde\)/);
   });
 
   it('DashboardPage imports getExpectedMissingCommissionSum from canonical barrel', () => {

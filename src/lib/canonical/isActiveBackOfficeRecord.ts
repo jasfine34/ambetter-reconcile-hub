@@ -1,10 +1,15 @@
 /**
  * Canonical "is this BO record active during the statement month?" predicate.
  *
- * Phase 1 — Ineligible-BO fix. Three INDEPENDENT disqualification conditions
- * (any returns false):
+ * Phase 2 — strict signature. Both `statementMonthStart` and
+ * `statementMonthEnd` are REQUIRED ISO YYYY-MM-DD strings. The Phase 1
+ * backward-compat overload (`Date | string`, optional end) was removed —
+ * callers MUST pass real bounds. Use `getStatementMonthBounds(monthStr)`
+ * at the call site if you only have a YYYY-MM string.
  *
- *   1. eligible_for_commission — 'No' or boolean false → not active.
+ * Three INDEPENDENT disqualification conditions (any returns false):
+ *
+ *   1. eligible_for_commission — 14-variant token normalization (Phase 1).
  *   2. policy_term_date — set and <= statementMonthStart → terminated.
  *   3. paid_through_date — set and >= statementMonthEnd → already paid through
  *      the statement month (last-day-inclusive).
@@ -18,12 +23,7 @@
  *
  * Non-BACK_OFFICE records pass through as active (true) so callers can
  * apply this predicate to mixed record streams without pre-filtering.
- *
- * Signature: ISO YYYY-MM-DD strings. statementMonthEnd is OPTIONAL for
- * backward compatibility with Phase 2+ callers that still pass a single
- * Date|string periodStart; when omitted, end is derived from start.
  */
-import { getStatementMonthBounds } from './statementMonthBounds';
 
 /** Minimal shape — keeps this file decoupled from the full NormalizedRecord. */
 export interface ActiveBoCandidate {
@@ -34,31 +34,22 @@ export interface ActiveBoCandidate {
   eligible_for_commission?: string | boolean | number | null;
 }
 
-function toIsoDate(d: Date | string): string {
-  if (typeof d === 'string') return d.length >= 10 ? d.substring(0, 10) : d;
-  return d.toISOString().substring(0, 10);
-}
-
 function isSentinel(date: string): boolean {
   return date.startsWith('9999-');
 }
 
 export function isActiveBackOfficeRecord(
   record: ActiveBoCandidate,
-  statementMonthStart: Date | string,
-  statementMonthEnd?: string,
+  statementMonthStart: string,
+  statementMonthEnd: string,
 ): boolean {
   // Pass-through for non-BO records.
   if (record.source_type && record.source_type !== 'BACK_OFFICE') return true;
 
-  const startIso = toIsoDate(statementMonthStart);
-  let endIso = statementMonthEnd;
-  if (!endIso) {
-    // Backward-compat: derive last-day-inclusive end from the start month.
-    endIso = getStatementMonthBounds(startIso).end;
-  }
+  const startIso = statementMonthStart;
+  const endIso = statementMonthEnd;
 
-  // (1) Eligibility flag — Phase 1 repair: normalize all ineligible variants
+  // (1) Eligibility flag — Phase 1: normalize all ineligible variants
   // (case-insensitive 'no'/'n'/'false', numeric 0, string '0', boolean false).
   // null/undefined treated as "not explicitly ineligible" → pass.
   const eligValue = record.eligible_for_commission;
