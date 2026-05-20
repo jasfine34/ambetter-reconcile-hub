@@ -222,13 +222,20 @@ const classifierVerdictByMember = new Map<string, string>();
 const firstEligibleByMember = new Map<string, string | null>();
 const paidEvidenceByMember = new Map<string, { paid: boolean; amount: number; payEntities: string[] }>();
 
-// Synchronous handle to the real factory for use inside mock implementations
-// and within tests that want to assert real predicate behavior.
+// Real implementations cached lazily so per-test mocks can fall through to
+// the real helper whenever no per-member override is configured (this keeps
+// the v3 helper-level tests above working under the passthrough mock).
 let realBuildIsDueEligibleRecord: any;
+let realClassifyMemberForMonth: any;
+let realComputeFirstEligibleMonth: any;
+let realPaidForServiceMonth: any;
 async function ensureRealFactory() {
   if (!realBuildIsDueEligibleRecord) {
     const actual = (await vi.importActual('@/lib/classifier')) as any;
     realBuildIsDueEligibleRecord = actual.buildIsDueEligibleRecord;
+    realClassifyMemberForMonth = actual.classifyMemberForMonth;
+    realComputeFirstEligibleMonth = actual.computeFirstEligibleMonth;
+    realPaidForServiceMonth = actual.paidForServiceMonth;
   }
 }
 
@@ -237,26 +244,26 @@ beforeEach(async () => {
   classifierVerdictByMember.clear();
   firstEligibleByMember.clear();
   paidEvidenceByMember.clear();
-  vi.mocked(classifyMemberForMonth).mockImplementation((recs: any[]) => {
-    const mk = recs[0]?.member_key;
+  vi.mocked(classifyMemberForMonth).mockImplementation((recs: any[], month: any, opts: any) => {
+    const mk = recs?.[0]?.member_key;
     if (mk && classifierVerdictByMember.has(mk)) {
       return classifierVerdictByMember.get(mk) as any;
     }
-    return 'unpaid' as any;
+    return realClassifyMemberForMonth(recs, month, opts);
   });
   vi.mocked(computeFirstEligibleMonth).mockImplementation((recs: any[]) => {
-    const mk = recs[0]?.member_key;
+    const mk = recs?.[0]?.member_key;
     if (mk && firstEligibleByMember.has(mk)) {
       return firstEligibleByMember.get(mk) as any;
     }
-    return null;
+    return realComputeFirstEligibleMonth(recs);
   });
-  vi.mocked(paidForServiceMonth).mockImplementation((recs: any[]) => {
-    const mk = recs[0]?.member_key;
+  vi.mocked(paidForServiceMonth).mockImplementation((recs: any[], month: any, opts: any) => {
+    const mk = recs?.[0]?.member_key;
     if (mk && paidEvidenceByMember.has(mk)) {
       return paidEvidenceByMember.get(mk) as any;
     }
-    return { paid: false, amount: 0, payEntities: [] } as any;
+    return realPaidForServiceMonth(recs, month, opts);
   });
   vi.mocked(buildIsDueEligibleRecord).mockImplementation((opts: any) =>
     realBuildIsDueEligibleRecord(opts),
