@@ -6,7 +6,22 @@
  * (mce-source-records-*, missing-commission-export-*). Here we validate
  * the building blocks plus isolated negative controls for each rule.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+
+// Passthrough mock so consumer-path tests can override individual classifier
+// helpers per-call via mockImplementationOnce while the existing v3 helper-
+// level tests continue to exercise the real implementations.
+vi.mock('@/lib/classifier', async () => {
+  const actual = await vi.importActual<any>('@/lib/classifier');
+  return {
+    ...actual,
+    classifyMemberForMonth: vi.fn(actual.classifyMemberForMonth),
+    computeFirstEligibleMonth: vi.fn(actual.computeFirstEligibleMonth),
+    paidForServiceMonth: vi.fn(actual.paidForServiceMonth),
+    buildIsDueEligibleRecord: vi.fn(actual.buildIsDueEligibleRecord),
+  };
+});
+
 import {
   paidForServiceMonth,
   classifyMemberForMonth,
@@ -15,6 +30,16 @@ import {
 } from '@/lib/classifier';
 import { isActiveBackOfficeRecord } from '@/lib/canonical/isActiveBackOfficeRecord';
 import { getStatementMonthBounds } from '@/lib/canonical/statementMonthBounds';
+import {
+  buildMceCandidateSetForServiceMonth,
+  type McePaymentBreakdownLike,
+} from '@/pages/MissingCommissionExportPage';
+import {
+  partitionUnpaidRowsByOverlay,
+  buildClearingOverlayMap,
+  EMPTY_CLEARING_OVERLAY_MAP,
+} from '@/lib/canonical/crossBatchOverlay';
+import { derivePolicyIdentityKey } from '@/lib/canonical/policyIdentityKey';
 
 const baseCommissionRow = (over: Record<string, any> = {}): any => ({
   source_type: 'COMMISSION',
