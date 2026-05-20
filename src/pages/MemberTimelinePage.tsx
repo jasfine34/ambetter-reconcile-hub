@@ -247,60 +247,12 @@ export default function MemberTimelinePage() {
   }, [records]);
 
   // Per-record predicate: does THIS record's AOR / pay-entity belong to us?
-  // Applied at the month-cell level inside buildMemberTimeline so a member
-  // who transferred away mid-period only counts due months while their AOR
-  // was still ours. Source presence (E/B/C badges) and paid amounts still
-  // appear in the cells regardless, so context is preserved.
-  const isDueEligibleRecord = useMemo(() => {
-    return (r: any): boolean => {
-      const isCommission = r.source_type === 'COMMISSION';
-
-      // AOR scope: record must be tied to one of our official AORs.
-      //
-      // Business rule: COMMISSION records are scoped by which statement slot
-      // they were uploaded into (pay_entity), NOT by writing-agent identity.
-      // Downline commissions and former-employee book commissions appearing
-      // on a Coverall/Vix statement are that entity's property regardless of
-      // current AOR mapping. So skip the AOR check for commissions entirely.
-      if (aorScope === 'official' && !isCommission) {
-        // Match on any of the three identifying strings carried by a record:
-        // aor_bucket (our own normalization), EDE's currentPolicyAOR, or
-        // BO's Broker Name. Centralized in isCoverallAORByName so adding or
-        // removing an AOR is a one-file change in src/lib/agents.ts.
-        const aorMatch =
-          isCoverallAORByName(r.aor_bucket) ||
-          isCoverallAORByName(r.raw_json?.['currentPolicyAOR'] as string | undefined) ||
-          isCoverallAORByName(
-            (r.raw_json?.['Broker Name'] as string | undefined) ??
-            (r.raw_json?.['broker_name'] as string | undefined)
-          );
-        if (!aorMatch) return false;
-      }
-      // Pay entity filtering — different rules for commission vs enrollment data:
-      //
-      //   - COMMISSION records carry a direct `pay_entity` from the upload slot
-      //     they came in on ("Coverall Commission Statement" → 'Coverall',
-      //     "Vix Commission Statement" → 'Vix'). Filter strictly on that —
-      //     anything on a statement belongs to that entity (downline included).
-      //
-      //   - EDE / BO records have no pay_entity on the record — use the
-      //     agent's expected_pay_entity from NPN_MAP instead.
-      if (payEntity !== 'All') {
-        if (isCommission) {
-          const recPayEntity = String(r.pay_entity || '').trim();
-          if (recPayEntity !== payEntity) return false;
-        } else {
-          const npn = String(r.agent_npn || '').trim();
-          const info = NPN_MAP[npn as keyof typeof NPN_MAP];
-          if (!info) return false;
-          if (info.expectedPayEntity !== payEntity && info.expectedPayEntity !== 'Coverall_or_Vix') {
-            return false;
-          }
-        }
-      }
-      return true;
-    };
-  }, [aorScope, payEntity]);
+  // Extracted to `buildIsDueEligibleRecord` so the MCE consumer can apply the
+  // SAME scope semantics. PURE REFACTOR — semantics identical to prior inline.
+  const isDueEligibleRecord = useMemo(
+    () => buildIsDueEligibleRecord({ aorScope, payEntity }),
+    [aorScope, payEntity],
+  );
 
   const filteredRecords = useMemo(() => {
     let out = records;
