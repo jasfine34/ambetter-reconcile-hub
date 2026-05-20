@@ -14,6 +14,7 @@ import { isCoverallAORByName, isCoverallAORByNPN } from './agents';
 import { canonicalCarrier } from './carrierCanonical';
 import { isActiveBackOfficeRecord } from './canonical/isActiveBackOfficeRecord';
 import { getStatementMonthBounds } from './canonical/statementMonthBounds';
+import { NPN_MAP } from './constants';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Types
