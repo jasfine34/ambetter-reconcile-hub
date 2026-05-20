@@ -533,27 +533,91 @@ export default function DashboardPage() {
     );
   }, [reconciled, payEntityFilter]);
 
-  // Filtered EDE metrics — counted from RAW normalized records, not from the
-  // post-reconcile member set. This is the count the user validated against
-  // their manual workbook (Jan 2026 Coverall = 1,627). Sourcing from raw rows
-  // keeps the Expected Enrollments card aligned with the EDE Expected
-  // Enrollment Debug panel (which uses the same filter).
-  const filteredEde = useMemo(
+  // Phase 2 — Ineligible-BO runtime BO-active overlay.
+  // ──────────────────────────────────────────────────────────────────────
+  // Apply applyRuntimeBOActive ONCE at this single data-flow node. This
+  // produces:
+  //   - adjustedReconciled: cloned rows with `in_back_office` re-evaluated
+  //     against canonical isActiveBackOfficeRecord. NOT filtered.
+  //   - mceExclusionMemberKeys: member_keys whose BO records all failed the
+  //     canonical predicate; they leak via EDE Only paths if not excluded.
+  //   - boAdjustedReconciled: adjustedReconciled minus exclusion-set members.
+  //     This is what BO/payment consumers use.
+  // Persisted in_back_office is read-with-override; producer-side reconcile
+  // write semantics are unchanged.
+  const monthBounds = useMemo(() => {
+    const sm = currentBatch?.statement_month;
+    if (!sm) return null;
+    try { return getStatementMonthBounds(String(sm)); } catch { return null; }
+  }, [currentBatch?.statement_month]);
+
+  const boNormalized = useMemo(
+    () => normalizedRecords.filter((n: any) => n?.source_type === 'BACK_OFFICE'),
+    [normalizedRecords],
+  );
+
+  const overlayResult = useMemo(() => {
+    if (!monthBounds) {
+      return {
+        adjustedReconciled: reconciled,
+        mceExclusionMemberKeys: new Set<string>(),
+        matchingBoRecordCounts: new Map<string, number>(),
+      };
+    }
+    return applyRuntimeBOActive(reconciled, boNormalized, monthBounds);
+  }, [reconciled, boNormalized, monthBounds]);
+
+  const adjustedReconciled = overlayResult.adjustedReconciled;
+  const mceExclusionMemberKeys = overlayResult.mceExclusionMemberKeys;
+
+  const boAdjustedReconciled = useMemo(
+    () => adjustedReconciled.filter((r: any) => !mceExclusionMemberKeys.has(r.member_key)),
+    [adjustedReconciled, mceExclusionMemberKeys],
+  );
+
+  // Filtered EDE — two flavors:
+  //   rawFilteredEde: source-faithful, feeds raw Expected Enrollments, TCL,
+  //     and EDE debug surfaces.
+  //   boAdjustedFilteredEde: override-aware, feeds BO/payment consumers.
+  // Per the Phase 1 invariant, computeFilteredEde's INPUT (reconciled arg)
+  // is the BO-flag-flipped-but-UNFILTERED collection (adjustedReconciled);
+  // the exclusion set then filters its OUTPUT.
+  const rawFilteredEde = useMemo(
     () => computeFilteredEde(normalizedRecords, reconciled, payEntityFilter, coveredMonths, resolverIndex),
     [normalizedRecords, reconciled, payEntityFilter, coveredMonths, resolverIndex]
   );
 
+  const boAdjustedFilteredEde = useMemo(() => {
+    const raw = computeFilteredEde(normalizedRecords, adjustedReconciled, payEntityFilter, coveredMonths, resolverIndex);
+    const filteredUniqueMembers = raw.uniqueMembers.filter((m: any) => !mceExclusionMemberKeys.has(m.member_key));
+    const filteredMissingFromBO = raw.missingFromBO.filter((m: any) => !mceExclusionMemberKeys.has(m.member_key));
+    const byMonth: Record<string, number> = {};
+    for (const m of filteredUniqueMembers) {
+      const em = (m as any).effective_month;
+      if (em) byMonth[em] = (byMonth[em] ?? 0) + 1;
+    }
+    return {
+      ...raw,
+      uniqueMembers: filteredUniqueMembers,
+      missingFromBO: filteredMissingFromBO,
+      uniqueKeys: filteredUniqueMembers.length,
+      byMonth,
+      inBOCount: filteredUniqueMembers.filter((m: any) => m.in_back_office).length,
+      notInBOCount: filteredMissingFromBO.length,
+    };
+  }, [normalizedRecords, adjustedReconciled, payEntityFilter, coveredMonths, resolverIndex, mceExclusionMemberKeys]);
+
   /**
    * Canonical EE-universe member_key set (#118 migration, 2026-05-06).
-   * Sourced from `filteredEde.uniqueMembers` (current-batch span, AOR-based)
+   * Sourced from `rawFilteredEde.uniqueMembers` (source-faithful, pre-overlay)
    * — this is the SAME predicate the canonical helpers use. Replaces the
    * persistent `reconciled_members.is_in_expected_ede_universe` flag for
    * every UI metric, drilldown, and unpaid sample. The persistent column
    * is retained as a diagnostic readout in the debug strip below.
    */
   const eeUniverseKeys = useMemo(
-    () => new Set(filteredEde.uniqueMembers.map((m) => m.member_key)),
-    [filteredEde]
+    () => new Set(rawFilteredEde.uniqueMembers.map((m) => m.member_key)),
+    [rawFilteredEde]
   );
 
   // Weak-match resolution (2026-04-27). For each EE-universe member that
