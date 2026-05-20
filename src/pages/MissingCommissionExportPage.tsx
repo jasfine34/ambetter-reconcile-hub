@@ -529,6 +529,98 @@ type OverlayRunState = {
   error: Error | null;
 };
 
+/**
+ * MCE Inclusion-Rule Fixes — REPAIR turn page-local helper.
+ *
+ * Builds the MCE candidate set for a viewed service month with the
+ * SCOPED record set (output of `memberRecords.filter(isDueEligibleRecord)`)
+ * driving every rule evaluation (computeFirstEligibleMonth /
+ * classifyMemberForMonth / paidForServiceMonth / boActiveNonCurrentEde
+ * four-condition gate).
+ *
+ * Exported solely for consumer-path tests. Not moved to a shared library
+ * (page-local seam per directive).
+ */
+export interface McePaymentBreakdownLike {
+  unpaidRows: any[];
+  paidRows: any[];
+  universe: { boActiveNonCurrentEde?: any[] };
+}
+
+export function buildMceCandidateSetForServiceMonth(args: {
+  breakdown: McePaymentBreakdownLike;
+  selectedBatchRecords: any[];
+  viewedServiceMonth: string | null | undefined;
+  scope: 'Coverall' | 'Vix' | 'All';
+}): any[] {
+  const { breakdown, selectedBatchRecords, viewedServiceMonth, scope } = args;
+  if (!viewedServiceMonth) return breakdown.unpaidRows;
+
+  const isDueEligibleRecord = buildIsDueEligibleRecord({
+    aorScope: 'official',
+    payEntity: scope,
+  });
+
+  const recordsByMemberKey = new Map<string, any[]>();
+  for (const r of selectedBatchRecords) {
+    const k = r?.member_key;
+    if (!k) continue;
+    const arr = recordsByMemberKey.get(k);
+    if (arr) arr.push(r);
+    else recordsByMemberKey.set(k, [r]);
+  }
+  const scopedRecordsFor = (mk: string): any[] =>
+    (recordsByMemberKey.get(mk) ?? []).filter(isDueEligibleRecord);
+
+  const mceScopeForPay = scope;
+
+  // Section 2: promote drift-misclassified paid rows.
+  const promotedFromPaid = breakdown.paidRows.filter((r: any) => {
+    const recs = scopedRecordsFor(r.member_key);
+    const ev = paidForServiceMonth(recs, viewedServiceMonth, { targetPayEntity: mceScopeForPay });
+    return !ev.paid;
+  });
+
+  // Section 3: apply three exclusion rules.
+  const initialCandidates = [...breakdown.unpaidRows, ...promotedFromPaid];
+  const filteredCandidates = initialCandidates.filter((r: any) => {
+    const recs = scopedRecordsFor(r.member_key);
+    const firstEligible = computeFirstEligibleMonth(recs);
+    if (firstEligible && firstEligible > viewedServiceMonth) return false;
+    const ev = paidForServiceMonth(recs, viewedServiceMonth, { targetPayEntity: mceScopeForPay });
+    if (ev.paid) return false;
+    try {
+      const state = classifyMemberForMonth(recs, viewedServiceMonth);
+      if (state === 'manual_review') return false;
+    } catch {
+      // Keep candidate on unexpected classifier failure.
+    }
+    return true;
+  });
+
+  // Narrow boActiveNonCurrentEde inclusion — all four conditions (scoped).
+  const monthBoundsForMce = getStatementMonthBounds(viewedServiceMonth);
+  const boActiveNonCurrentEdeCandidates =
+    (breakdown.universe.boActiveNonCurrentEde ?? []).filter((r: any) => {
+      const recs = scopedRecordsFor(r.member_key);
+      const boRows = recs.filter((x) => x?.source_type === 'BACK_OFFICE');
+      const boActive = boRows.some((br) =>
+        isActiveBackOfficeRecord(br, monthBoundsForMce.start, monthBoundsForMce.end),
+      );
+      if (!boActive) return false;
+      if (r.eligible_for_commission !== 'Yes') return false;
+      const firstEligible = computeFirstEligibleMonth(recs);
+      if (firstEligible && firstEligible > viewedServiceMonth) return false;
+      const ev = paidForServiceMonth(recs, viewedServiceMonth, {
+        targetPayEntity: mceScopeForPay,
+      });
+      if (ev.paid) return false;
+      return true;
+    });
+
+  return [...filteredCandidates, ...boActiveNonCurrentEdeCandidates];
+}
+
 export default function MissingCommissionExportPage() {
   const {
     batches, currentBatchId, setCurrentBatchId, reconciled, resolverIndex,
