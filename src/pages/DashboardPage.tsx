@@ -658,10 +658,21 @@ export default function DashboardPage() {
   // Stable key built via pickStableKey() (issuer_sub_id → exchange_sub_id →
   // policy#) — same priority order as the weak-match override write path,
   // so the lookup matches across rebuilds.
+  // Phase 2: derive adjustedFiltered preserving the existing pay-entity scope
+  // while applying the runtime BO overlay + exclusion set. We iterate this
+  // (NOT raw `filtered`) so stale persisted in_back_office=true no longer
+  // short-circuits the confirmed-upgrade dedup loop.
+  const adjustedFiltered = useMemo(() => {
+    const adjustedByKey = new Map(boAdjustedReconciled.map((r: any) => [r.member_key, r]));
+    return filtered
+      .map((r: any) => adjustedByKey.get(r.member_key) ?? r)
+      .filter((r: any) => !mceExclusionMemberKeys.has(r.member_key));
+  }, [filtered, boAdjustedReconciled, mceExclusionMemberKeys]);
+
   const confirmedUpgradeMemberKeys = useMemo(() => {
     const out = new Set<string>();
     if (!weakMatchResult.confirmedKeys.size) return out;
-    for (const r of filtered) {
+    for (const r of adjustedFiltered) {
       if (r.in_back_office) continue; // already counted; nothing to upgrade
       const key = pickStableKey({
         issuer_subscriber_id: r.issuer_subscriber_id,
@@ -671,7 +682,7 @@ export default function DashboardPage() {
       if (key && weakMatchResult.confirmedKeys.has(key)) out.add(r.member_key);
     }
     return out;
-  }, [filtered, weakMatchResult.confirmedKeys]);
+  }, [adjustedFiltered, weakMatchResult.confirmedKeys]);
 
   /** Effective in_back_office: strict join OR confirmed weak-match upgrade. */
   const effInBO = useCallback(
