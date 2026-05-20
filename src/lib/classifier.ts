@@ -689,11 +689,6 @@ export function buildIsDueEligibleRecord(opts: {
   payEntity: PayEntityScope;
 }): (r: any) => boolean {
   const { aorScope, payEntity } = opts;
-  // Inline NPN_MAP via dynamic-safe require to avoid a hard import cycle
-  // in any environment that statically prunes `constants`. constants.ts is
-  // a pure module so a top-level import is safe.
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { NPN_MAP } = require('./constants') as typeof import('./constants');
   return (r: any): boolean => {
     const isCommission = r?.source_type === 'COMMISSION';
     if (aorScope === 'official' && !isCommission) {
