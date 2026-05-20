@@ -125,12 +125,11 @@ describe('boActiveNonCurrentEde four-condition gate (MCE consumer logic)', () =>
         source_type: 'BACK_OFFICE',
         agent_npn: '21055210',
         agent_name: 'Jason Fine',
-        broker_effective_date: '2026-03-15',
-        effective_date: '2026-03-01',
+        effective_date: '2026-05-01', // PED = 2026-05 — well after viewed Jan
       },
     ];
     const fe = computeFirstEligibleMonth(recs as any);
-    expect(fe).toBe('2026-04');
+    expect(fe).toBe('2026-05');
     expect(fe! > '2026-01').toBe(true);
   });
 
