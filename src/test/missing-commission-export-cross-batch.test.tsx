@@ -238,7 +238,9 @@ describe('Bundle 13c — MissingCommissionExportPage wiring guards', () => {
 
   it('handleRunReport awaits the overlay via waitForOverlayIdle before partitioning', () => {
     expect(page).toMatch(/await\s+waitForOverlayIdle\(/);
-    expect(page).toMatch(/partitionUnpaidRowsByOverlay\(\s*breakdown\.unpaidRows/);
+    // MCE Inclusion-Rule Fixes: candidate set is now `combinedCandidates`
+    // (unpaidRows + promoted + boActiveNonCurrentEde narrow inclusion).
+    expect(page).toMatch(/partitionUnpaidRowsByOverlay\(\s*combinedCandidates/);
   });
 
   it('C7: on overlay error/loading-after-wait, falls back to EMPTY_CLEARING_OVERLAY_MAP + toast uses OVERLAY_LOAD_ERROR_MESSAGE', () => {
@@ -253,8 +255,10 @@ describe('Bundle 13c — MissingCommissionExportPage wiring guards', () => {
     expect(toastBlock).not.toMatch(/variant:\s*['"]destructive['"]/);
   });
 
-  it('missingMembers = partition.regular.map (NOT [...regular, ...needsReview])', () => {
-    expect(page).toMatch(/missingMembers\s*=\s*partition\.regular\.map/);
+  it('missingMembers = partition.regular filtered (D2 second sub-signal) then mapped', () => {
+    // MCE Inclusion-Rule Fixes D2 second sub-signal: filter out overlay
+    // mark_needs_review items before mapping to underlying rows.
+    expect(page).toMatch(/missingMembers\s*=\s*partition\.regular[\s\S]{0,200}\.filter\([\s\S]{0,120}adjustment\.kind\s*!==\s*'mark_needs_review'[\s\S]{0,120}\.map\(/);
     expect(page).not.toMatch(/\[\s*\.\.\.partition\.regular\s*,\s*\.\.\.partition\.needsReview/);
   });
 

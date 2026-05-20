@@ -14,6 +14,7 @@ import { isCoverallAORByName, isCoverallAORByNPN } from './agents';
 import { canonicalCarrier } from './carrierCanonical';
 import { isActiveBackOfficeRecord } from './canonical/isActiveBackOfficeRecord';
 import { getStatementMonthBounds } from './canonical/statementMonthBounds';
+import { NPN_MAP } from './constants';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Types
@@ -246,15 +247,45 @@ function latestEdeNetPremium(records: NormalizedRecord[]): number {
   return max;
 }
 
-/** Sum of commission attributed to this specific service month. */
-function paidForMonth(records: NormalizedRecord[], month: MonthKey): number {
-  let total = 0;
+/**
+ * Service-month payment evaluation (EXPORTED — shared by classifier and MCE).
+ *
+ * Returns whether at least one commission row attributes a positive paid
+ * amount (`> 0.0001`) to `serviceMonth`, the sum of those amounts, and the
+ * distinct pay_entities of contributing rows.
+ *
+ * `targetPayEntity`:
+ *   - 'Coverall' | 'Vix' → only commission rows whose `pay_entity` matches.
+ *   - 'All' | null | undefined → any pay_entity counts (matches the legacy
+ *     private `paidForMonth` default).
+ */
+export function paidForServiceMonth(
+  records: NormalizedRecord[],
+  serviceMonth: MonthKey,
+  options?: { targetPayEntity?: 'Coverall' | 'Vix' | 'All' | null },
+): { paid: boolean; amount: number; payEntities: string[] } {
+  const target = options?.targetPayEntity ?? null;
+  const matchPe = target && target !== 'All';
+  let amount = 0;
+  const payEntities = new Set<string>();
   for (const r of records) {
     if (r.source_type !== 'COMMISSION') continue;
+    if (matchPe) {
+      const pe = String((r as any).pay_entity ?? '').trim();
+      if (pe !== target) continue;
+    }
     const { months, perMonth } = commissionServiceMonths(r);
-    if (months.includes(month)) total += perMonth;
+    if (!months.includes(serviceMonth)) continue;
+    amount += perMonth;
+    const pe = String((r as any).pay_entity ?? '').trim();
+    if (pe) payEntities.add(pe);
   }
-  return total;
+  return { paid: amount > 0.0001, amount, payEntities: Array.from(payEntities) };
+}
+
+/** Sum of commission attributed to this specific service month (legacy). */
+function paidForMonth(records: NormalizedRecord[], month: MonthKey): number {
+  return paidForServiceMonth(records, month).amount;
 }
 
 /** Any EDE record in this member's set that covers the given month. */
@@ -613,4 +644,76 @@ export function computeFunnelForMonth(
   }
 
   return funnel;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Cross-surface helpers (shared by classifier + MCE + Member Timeline page)
+// ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * Thin one-month classifier wrapper. Returns the existing cell
+ * {@link ClassificationState} for the single viewed `month`. No new states
+ * introduced — callers derive any rollup from existing `not_expected_*`
+ * states at the consumption site.
+ *
+ * Builds a minimal ClassifierContext from `records` so the caller doesn't
+ * have to. Pass `boSnapshotDates` if available (otherwise ripeness defers
+ * to commission-statement presence per `isMonthRipe` rules).
+ */
+export function classifyMemberForMonth(
+  records: NormalizedRecord[],
+  month: MonthKey,
+  options?: { boSnapshotDates?: string[] },
+): ClassificationState {
+  const ctx = buildClassifierContext(records, [month], options?.boSnapshotDates ?? []);
+  const member = classifyMember(records, ctx);
+  return member.cells[month]?.state ?? 'manual_review';
+}
+
+export type AorScope = 'official' | 'all';
+export type PayEntityScope = 'Coverall' | 'Vix' | 'All';
+
+/**
+ * Build the per-record "does this record belong to the viewed AOR /
+ * pay-entity scope?" predicate. Extracted from MemberTimelinePage so the
+ * MCE consumer can apply the SAME scope semantics the classifier uses for
+ * Member Timeline cells.
+ *
+ * COMMISSION records skip the AOR check (they are scoped by upload slot,
+ * not writing-agent identity) and pay-entity match strictly on `pay_entity`.
+ * EDE/BO records honor AOR scope via `isCoverallAORByName` and pay-entity
+ * via the NPN_MAP expected_pay_entity (with 'Coverall_or_Vix' permissive).
+ */
+export function buildIsDueEligibleRecord(opts: {
+  aorScope: AorScope;
+  payEntity: PayEntityScope;
+}): (r: any) => boolean {
+  const { aorScope, payEntity } = opts;
+  return (r: any): boolean => {
+    const isCommission = r?.source_type === 'COMMISSION';
+    if (aorScope === 'official' && !isCommission) {
+      const aorMatch =
+        isCoverallAORByName(r?.aor_bucket) ||
+        isCoverallAORByName(r?.raw_json?.['currentPolicyAOR'] as string | undefined) ||
+        isCoverallAORByName(
+          (r?.raw_json?.['Broker Name'] as string | undefined) ??
+          (r?.raw_json?.['broker_name'] as string | undefined),
+        );
+      if (!aorMatch) return false;
+    }
+    if (payEntity !== 'All') {
+      if (isCommission) {
+        const recPayEntity = String(r?.pay_entity || '').trim();
+        if (recPayEntity !== payEntity) return false;
+      } else {
+        const npn = String(r?.agent_npn || '').trim();
+        const info = (NPN_MAP as any)[npn];
+        if (!info) return false;
+        if (info.expectedPayEntity !== payEntity && info.expectedPayEntity !== 'Coverall_or_Vix') {
+          return false;
+        }
+      }
+    }
+    return true;
+  };
 }
