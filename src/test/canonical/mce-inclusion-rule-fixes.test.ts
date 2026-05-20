@@ -222,7 +222,18 @@ const classifierVerdictByMember = new Map<string, string>();
 const firstEligibleByMember = new Map<string, string | null>();
 const paidEvidenceByMember = new Map<string, { paid: boolean; amount: number; payEntities: string[] }>();
 
-beforeEach(() => {
+// Synchronous handle to the real factory for use inside mock implementations
+// and within tests that want to assert real predicate behavior.
+let realBuildIsDueEligibleRecord: any;
+async function ensureRealFactory() {
+  if (!realBuildIsDueEligibleRecord) {
+    const actual = (await vi.importActual('@/lib/classifier')) as any;
+    realBuildIsDueEligibleRecord = actual.buildIsDueEligibleRecord;
+  }
+}
+
+beforeEach(async () => {
+  await ensureRealFactory();
   classifierVerdictByMember.clear();
   firstEligibleByMember.clear();
   paidEvidenceByMember.clear();
@@ -247,32 +258,11 @@ beforeEach(() => {
     }
     return { paid: false, amount: 0, payEntities: [] } as any;
   });
-  // Default buildIsDueEligibleRecord uses the real implementation.
-  vi.mocked(buildIsDueEligibleRecord).mockImplementation(
-    (opts: any) => {
-      const actual = vi.importActual('@/lib/classifier') as any;
-      // Use the real factory via a synchronously cached version:
-      return realBuildIsDueEligibleRecord(opts);
-    },
+  vi.mocked(buildIsDueEligibleRecord).mockImplementation((opts: any) =>
+    realBuildIsDueEligibleRecord(opts),
   );
 });
 
-// Synchronous handle to the real factory for use inside mock implementations.
-let realBuildIsDueEligibleRecord: any;
-{
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const actual = await import('@/lib/classifier').then((m) => m);
-  // The mocked module is what we imported above; pull the real one by
-  // re-importing through vi.importActual at module-evaluation time.
-}
-
-// We cannot top-level-await reliably across all test runners — do it lazily.
-async function ensureRealFactory() {
-  if (!realBuildIsDueEligibleRecord) {
-    const actual = (await vi.importActual('@/lib/classifier')) as any;
-    realBuildIsDueEligibleRecord = actual.buildIsDueEligibleRecord;
-  }
-}
 
 function makeBoRow(over: Record<string, any> = {}): any {
   return {
