@@ -508,7 +508,13 @@ describe('MissingCommissionExportPage — Phase 1.5 expected-payment alignment',
     expect(tbody).toHaveTextContent('EDE Only');
   });
 
-  it('paid rows (in_commission=true) are excluded from export', async () => {
+  it('paid rows (in_commission=true) without service-month commission evidence are PROMOTED back into export (Priority 2 drift fix)', async () => {
+    // MCE Inclusion-Rule Fixes — Priority 2 service-month drift: a row the
+    // breakdown marked paid but where service-month evidence (from loaded
+    // normalized records) does not show a payment for the viewed month gets
+    // promoted back into the MCE candidate set. The stub here provides NO
+    // commission records, so the paid row's `in_commission=true` flag is
+    // member-level but unsupported for the viewed service month — promoted.
     const unpaid = { ...makeMissingMember('m-unpaid'), _bucket: 'matched' };
     const paid = { ...makeMissingMember('m-paid'), in_commission: true, _bucket: 'matched' };
     mockGetBreakdown.mockReturnValue(buildBreakdownStub([unpaid, paid]));
@@ -518,9 +524,9 @@ describe('MissingCommissionExportPage — Phase 1.5 expected-payment alignment',
     fireEvent.click(screen.getByTestId('run-report'));
     await waitFor(() => expect(screen.getByTestId('results-table')).toBeInTheDocument());
 
-    expect(screen.getByTestId('report-count')).toHaveTextContent(/1 member/);
+    expect(screen.getByTestId('report-count')).toHaveTextContent(/2 members/);
     expect(screen.getByTestId('results-table')).toHaveTextContent('iss-m-unpaid');
-    expect(screen.getByTestId('results-table')).not.toHaveTextContent('iss-m-paid');
+    expect(screen.getByTestId('results-table')).toHaveTextContent('iss-m-paid');
   });
 
   it('BO Active: Non-current EDE diagnostic rows are excluded (not in universe.rows / unpaidRows)', async () => {
