@@ -644,3 +644,80 @@ export function computeFunnelForMonth(
 
   return funnel;
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Cross-surface helpers (shared by classifier + MCE + Member Timeline page)
+// ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * Thin one-month classifier wrapper. Returns the existing cell
+ * {@link ClassificationState} for the single viewed `month`. No new states
+ * introduced — callers derive any rollup from existing `not_expected_*`
+ * states at the consumption site.
+ *
+ * Builds a minimal ClassifierContext from `records` so the caller doesn't
+ * have to. Pass `boSnapshotDates` if available (otherwise ripeness defers
+ * to commission-statement presence per `isMonthRipe` rules).
+ */
+export function classifyMemberForMonth(
+  records: NormalizedRecord[],
+  month: MonthKey,
+  options?: { boSnapshotDates?: string[] },
+): ClassificationState {
+  const ctx = buildClassifierContext(records, [month], options?.boSnapshotDates ?? []);
+  const member = classifyMember(records, ctx);
+  return member.cells[month]?.state ?? 'manual_review';
+}
+
+export type AorScope = 'official' | 'all';
+export type PayEntityScope = 'Coverall' | 'Vix' | 'All';
+
+/**
+ * Build the per-record "does this record belong to the viewed AOR /
+ * pay-entity scope?" predicate. Extracted from MemberTimelinePage so the
+ * MCE consumer can apply the SAME scope semantics the classifier uses for
+ * Member Timeline cells.
+ *
+ * COMMISSION records skip the AOR check (they are scoped by upload slot,
+ * not writing-agent identity) and pay-entity match strictly on `pay_entity`.
+ * EDE/BO records honor AOR scope via `isCoverallAORByName` and pay-entity
+ * via the NPN_MAP expected_pay_entity (with 'Coverall_or_Vix' permissive).
+ */
+export function buildIsDueEligibleRecord(opts: {
+  aorScope: AorScope;
+  payEntity: PayEntityScope;
+}): (r: any) => boolean {
+  const { aorScope, payEntity } = opts;
+  // Inline NPN_MAP via dynamic-safe require to avoid a hard import cycle
+  // in any environment that statically prunes `constants`. constants.ts is
+  // a pure module so a top-level import is safe.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { NPN_MAP } = require('./constants') as typeof import('./constants');
+  return (r: any): boolean => {
+    const isCommission = r?.source_type === 'COMMISSION';
+    if (aorScope === 'official' && !isCommission) {
+      const aorMatch =
+        isCoverallAORByName(r?.aor_bucket) ||
+        isCoverallAORByName(r?.raw_json?.['currentPolicyAOR'] as string | undefined) ||
+        isCoverallAORByName(
+          (r?.raw_json?.['Broker Name'] as string | undefined) ??
+          (r?.raw_json?.['broker_name'] as string | undefined),
+        );
+      if (!aorMatch) return false;
+    }
+    if (payEntity !== 'All') {
+      if (isCommission) {
+        const recPayEntity = String(r?.pay_entity || '').trim();
+        if (recPayEntity !== payEntity) return false;
+      } else {
+        const npn = String(r?.agent_npn || '').trim();
+        const info = (NPN_MAP as any)[npn];
+        if (!info) return false;
+        if (info.expectedPayEntity !== payEntity && info.expectedPayEntity !== 'Coverall_or_Vix') {
+          return false;
+        }
+      }
+    }
+    return true;
+  };
+}
