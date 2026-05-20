@@ -18,7 +18,7 @@ import { exportToCSV } from '@/lib/csvParser';
 import { NPN_MAP } from '@/lib/constants';
 import { isCoverallAORByName } from '@/lib/agents';
 import { statementMonthKey, currentMonthKey, addMonths } from '@/lib/dateRange';
-import { classifyMember, buildClassifierContext } from '@/lib/classifier';
+import { classifyMember, buildClassifierContext, buildIsDueEligibleRecord } from '@/lib/classifier';
 import { buildPaidDollarsAudit } from '@/lib/paidDollarsAudit';
 import { PaidDollarsAuditPanel } from '@/components/PaidDollarsAuditPanel';
 import { CellAttributionPopover } from '@/components/CellAttributionPopover';
