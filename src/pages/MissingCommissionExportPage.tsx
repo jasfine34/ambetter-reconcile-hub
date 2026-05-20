@@ -902,97 +902,20 @@ export default function MissingCommissionExportPage() {
       }
 
       // ============================================================
-      // MCE Inclusion-Rule Fixes — service-month-correct candidate set.
-      // Applied BEFORE partitionUnpaidRowsByOverlay so the overlay
-      // partition sees the corrected candidate set.
-      //
-      //   Priority 2 (service-month drift): promote breakdown.paidRows
-      //     where service-month evidence proves no payment for ranBatchMonth.
-      //   Priority 1: drop members whose first-eligible-month > viewed.
-      //   Priority 3: drop members already paid for viewed month (defense-
-      //     in-depth after promotion gate).
-      //   D2 first sub-signal: drop members the one-month classifier
-      //     wrapper marks `manual_review` for viewed month.
-      //   Narrow Priority 2 inclusion: boActiveNonCurrentEde rows passing
-      //     ALL FOUR conditions (active BO, eligible=Yes, not future-
-      //     first-eligible, no service-month payment).
-      //
-      // Helpers (paidForServiceMonth / classifyMemberForMonth /
-      // computeFirstEligibleMonth / buildIsDueEligibleRecord) are imported
-      // from src/lib/classifier. NO modification to getExpectedPaymentBreakdown
-      // body or getExpectedPaymentUniverse body (Phase 2 carve-out).
+      // MCE Inclusion-Rule Fixes (REPAIR) — page-local helper drives
+      // candidate-set construction with the SCOPED record set (filtered by
+      // buildIsDueEligibleRecord({ aorScope: 'official', payEntity: f.scope })).
+      // Every rule (computeFirstEligibleMonth / classifyMemberForMonth /
+      // paidForServiceMonth / boActiveNonCurrentEde four-condition gate)
+      // evaluates against scopedRecords, NOT unscoped selectedBatchRecords.
       // ============================================================
       const viewedServiceMonth = ranBatchMonth;
-      const recordsByMemberKey = new Map<string, any[]>();
-      for (const r of selectedBatchRecords) {
-        const k = r?.member_key;
-        if (!k) continue;
-        const arr = recordsByMemberKey.get(k);
-        if (arr) arr.push(r); else recordsByMemberKey.set(k, [r]);
-      }
-      const memberRecordsForMember = (mk: string): any[] => recordsByMemberKey.get(mk) ?? [];
-      const mceScopeForPay: 'Coverall' | 'Vix' | 'All' = f.scope;
-
-      // Apply rules only when we have a viewed service month — otherwise
-      // skip the candidate-builder layer and preserve prior behavior.
-      let combinedCandidates: any[];
-      if (viewedServiceMonth) {
-        // Section 2: promote drift-misclassified paid rows.
-        const promotedFromPaid = breakdown.paidRows.filter((r: any) => {
-          const recs = memberRecordsForMember(r.member_key);
-          const ev = paidForServiceMonth(recs, viewedServiceMonth, { targetPayEntity: mceScopeForPay });
-          return !ev.paid;
-        });
-
-        // Section 3: apply three exclusion rules.
-        const initialCandidates = [...breakdown.unpaidRows, ...promotedFromPaid];
-        const filteredCandidates = initialCandidates.filter((r: any) => {
-          const recs = memberRecordsForMember(r.member_key);
-          // Rule 1: first-eligible-future-month exclusion.
-          const firstEligible = computeFirstEligibleMonth(recs);
-          if (firstEligible && firstEligible > viewedServiceMonth) return false;
-          // Rule 3: service-month-specific paid exclusion (defense-in-depth).
-          const ev = paidForServiceMonth(recs, viewedServiceMonth, { targetPayEntity: mceScopeForPay });
-          if (ev.paid) return false;
-          // Rule D2 first sub-signal: classifier manual_review.
-          try {
-            const state = classifyMemberForMonth(recs, viewedServiceMonth);
-            if (state === 'manual_review') return false;
-          } catch {
-            // If the classifier wrapper throws for unexpected data shape,
-            // do not silently exclude — fall through to keep the candidate.
-          }
-          return true;
-        });
-
-        // Narrow boActiveNonCurrentEde inclusion — all four conditions.
-        const monthBoundsForMce = getStatementMonthBounds(viewedServiceMonth);
-        const boActiveNonCurrentEdeCandidates =
-          (breakdown.universe.boActiveNonCurrentEde ?? []).filter((r: any) => {
-            const recs = memberRecordsForMember(r.member_key);
-            // Condition 1: active BO via canonical helper (any matching BO row).
-            const boRows = recs.filter((x) => x?.source_type === 'BACK_OFFICE');
-            const boActive = boRows.some((br) =>
-              isActiveBackOfficeRecord(br, monthBoundsForMce.start, monthBoundsForMce.end),
-            );
-            if (!boActive) return false;
-            // Condition 2: eligible_for_commission === 'Yes' on the reconciled row.
-            if (r.eligible_for_commission !== 'Yes') return false;
-            // Condition 3: not first-eligible-future.
-            const firstEligible = computeFirstEligibleMonth(recs);
-            if (firstEligible && firstEligible > viewedServiceMonth) return false;
-            // Condition 4: no service-month payment.
-            const ev = paidForServiceMonth(recs, viewedServiceMonth, {
-              targetPayEntity: mceScopeForPay,
-            });
-            if (ev.paid) return false;
-            return true;
-          });
-
-        combinedCandidates = [...filteredCandidates, ...boActiveNonCurrentEdeCandidates];
-      } else {
-        combinedCandidates = breakdown.unpaidRows;
-      }
+      const combinedCandidates = buildMceCandidateSetForServiceMonth({
+        breakdown,
+        selectedBatchRecords,
+        viewedServiceMonth,
+        scope: f.scope,
+      });
 
       const partition = partitionUnpaidRowsByOverlay(combinedCandidates, overlayForRun);
       adjustedByRow = new Map<any, AdjustedRow>();
