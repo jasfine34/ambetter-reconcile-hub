@@ -51,6 +51,13 @@ import { getExpectedPaymentBreakdown, isZeroNetPremium } from '@/lib/canonical/m
 import { classifySourceTypeForRow } from '@/lib/canonical/sourceTypeForRow';
 import { getCoveredMonths } from '@/lib/dateRange';
 import {
+  paidForServiceMonth,
+  classifyMemberForMonth,
+  buildIsDueEligibleRecord,
+  computeFirstEligibleMonth,
+} from '@/lib/classifier';
+import { isActiveBackOfficeRecord } from '@/lib/canonical/isActiveBackOfficeRecord';
+import {
   findWeakMatches,
   loadWeakMatchOverrides,
   applyOverrides,
