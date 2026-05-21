@@ -80,6 +80,13 @@ export interface ClassifierContext {
    * can ask "do we have a BO snapshot dated ≥ M+1?" for premium-paid gating.
    */
   boSnapshotDates: string[];
+  /**
+   * MT Stage 2 — OPTIONAL map of batch_id -> statement_month YYYY-MM.
+   * Absent ⇒ classifyCell() uses legacy member-level latestEdeNetPremium
+   * (preserves non-MT consumer behavior). Present (even empty) ⇒ classifyCell
+   * routes to per-service-month netPremiumForServiceMonth helper.
+   */
+  batchMonthByBatchId?: Map<string, string>;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
