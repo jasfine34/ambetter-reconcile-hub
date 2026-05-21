@@ -718,17 +718,23 @@ export default function MemberTimelinePage() {
             const counts = {
               all: dueRows.length,
               unpaid: dueRows.filter(r => r.months_unpaid > 0).length,
+              unpaidPlusNet: dueRows.filter(r => r.hasUnpaidPlusNet).length,
+              unpaidZeroNet: dueRows.filter(r => r.hasUnpaidZeroNet).length,
               partial: dueRows.filter(r => r.months_paid > 0 && r.months_unpaid > 0).length,
               paid: dueRows.filter(r => r.months_paid === r.months_due).length,
               pending: dueRows.filter(r => isPending(r)).length,
               review: dueRows.filter(r => r.needs_manual_review).length,
             };
-            return (['all', 'unpaid', 'partial', 'paid', 'pending', 'review'] as const).map(f => {
+            return (['all', 'unpaid', 'unpaid-plus-net', 'unpaid-zero-net', 'partial', 'paid', 'pending', 'review'] as const).map(f => {
               const tip =
                 f === 'all'
                   ? 'All members with at least one due month in the selected range.'
                   : f === 'unpaid'
                   ? 'Members with at least one due month classified as unpaid — commission expected and not received.'
+                  : f === 'unpaid-plus-net'
+                  ? 'Members with ≥1 unpaid cell backed by positive service-month EDE net premium evidence.'
+                  : f === 'unpaid-zero-net'
+                  ? 'Members with ≥1 unpaid cell where the service-month EDE net premium is zero, null, or no EDE row exists for that month.'
                   : f === 'partial'
                   ? 'Members paid for some due months but unpaid in others. Excludes pending (not-yet-ripe) months.'
                   : f === 'paid'
@@ -741,6 +747,10 @@ export default function MemberTimelinePage() {
                   ? `All (${counts.all})`
                   : f === 'unpaid'
                   ? `Has unpaid (${counts.unpaid})`
+                  : f === 'unpaid-plus-net'
+                  ? `unpaid - + Net (${counts.unpaidPlusNet})`
+                  : f === 'unpaid-zero-net'
+                  ? `unpaid - 0 Net (${counts.unpaidZeroNet})`
                   : f === 'partial'
                   ? `Partially paid (${counts.partial})`
                   : f === 'paid'
