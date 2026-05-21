@@ -120,8 +120,8 @@ describe('netPremiumForServiceMonth (Component 2 helper)', () => {
 describe('classifyMember gated behavior (Component 2 paths)', () => {
   // Julia-shaped synthetic: member-level max $104.48 but March service-month EDE = 0
   const juliaShaped = [
-    edeRow({ batch_id: 'b-jan', net_premium: 104.48, effective_date: '2026-01-01', raw_json: { lastEDESync: '2026-01-15', policyStatus: 'Effectuated', issuer: 'Ambetter', currentPolicyAOR: 'Coverall' } }),
-    edeRow({ batch_id: 'b-mar', net_premium: 0, effective_date: '2026-01-01', raw_json: { lastEDESync: '2026-03-15', policyStatus: 'Effectuated', issuer: 'Ambetter', currentPolicyAOR: 'Coverall' } }),
+    edeRow({ batch_id: 'b-jan', net_premium: 104.48, effective_date: '2026-01-01', raw_json: { lastEDESync: '2026-01-15', policyStatus: 'Effectuated', issuer: 'Ambetter', currentPolicyAOR: 'Jason Fine' } }),
+    edeRow({ batch_id: 'b-mar', net_premium: 0, effective_date: '2026-01-01', raw_json: { lastEDESync: '2026-03-15', policyStatus: 'Effectuated', issuer: 'Ambetter', currentPolicyAOR: 'Jason Fine' } }),
   ];
   // Add a commission statement to make March ripe.
   const ripenessCommission = {
@@ -157,7 +157,7 @@ describe('classifyMember gated behavior (Component 2 paths)', () => {
 
   it('New path — Robert pattern (no Feb EDE row) classifies as unpaid (null premium), not manual_review', () => {
     const records = [
-      edeRow({ batch_id: 'b-jan', net_premium: 48.23, effective_date: '2026-01-01', policy_term_date: '2026-02-01', raw_json: { lastEDESync: '2026-01-15', policyStatus: 'Effectuated', issuer: 'Ambetter', currentPolicyAOR: 'Coverall' } }),
+      edeRow({ batch_id: 'b-jan', net_premium: 48.23, effective_date: '2026-01-01', policy_term_date: '2026-02-01', raw_json: { lastEDESync: '2026-01-15', policyStatus: 'Effectuated', issuer: 'Ambetter', currentPolicyAOR: 'Jason Fine' } }),
     ];
     const map = new Map([['b-jan', '2026-01']]);
     const context = buildClassifierContext(records as any, ['2026-02'], [], { batchMonthByBatchId: map });
