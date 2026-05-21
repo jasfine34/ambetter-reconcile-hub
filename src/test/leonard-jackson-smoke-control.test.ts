@@ -92,12 +92,19 @@ describe('Leonard Jackson April 2026 Ambetter Coverall — opt-in smoke control'
       uniqueKeys: adjUnique.length,
     };
 
-    // Identity assertion: Leonard present in raw EDE under Jason Fine; in
-    // reconciled under non-Coverall AOR.
+    // Identity assertion: Leonard present in raw EDE under Jason Fine (matched
+    // by the production identity tuple, NOT by the reconciled-side normalized
+    // member_key); in reconciled under non-Coverall AOR.
     const rawLeonard = rawFilteredEde.uniqueMembers.find(
-      (m: any) => m.member_key === 'sub:3437828',
+      (m) =>
+        m.applicant_name === 'Leonard Jackson' &&
+        m.current_policy_aor === 'Jason Fine (21055210)' &&
+        m.policy_number === '214039840' &&
+        m.issuer_subscriber_id === 'U96069319' &&
+        m.exchange_subscriber_id === '0002964539',
     );
     expect(rawLeonard).toBeTruthy();
+    expect(rawLeonard?.current_policy_aor).toContain('Jason Fine');
     const reconciledLeonard = (reconciled ?? []).find(
       (r: any) => r.member_key === 'sub:3437828',
     );
@@ -105,6 +112,7 @@ describe('Leonard Jackson April 2026 Ambetter Coverall — opt-in smoke control'
     expect(String(reconciledLeonard?.current_policy_aor ?? '')).not.toMatch(
       /Jason Fine/i,
     );
+
 
     // Dashboard deviation assertion (enforced).
     const foundInBO = getFoundInBackOffice(
