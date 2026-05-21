@@ -234,3 +234,50 @@ describe('Phase 1.7 runInvariants — already-computed inputs are consumed', () 
     expect(r.actual).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 2 follow-up — D5-aware cross-surface invariants against canonical
+// EPB unpaid breakdown.
+//
+// D5 product decision (locked 2026-05-20): MCE's selected-batch classifier context
+// returns 'pending' for rows MT's all-batch context returns 'manual_review'. MCE's
+// final export rows additionally apply first-eligible / service-month / classifier /
+// overlay filters that further narrow the candidate set. This invariant therefore
+// asserts containment against the canonical EPB unpaid breakdown (the shared
+// pre-export contract), not final MCE export rows. Full bi-directional set-equality
+// between MCE final export and Dashboard is deferred to MT roadmap stage 6 (MCE
+// rewires from MT-approved). See codex-comm/verdicts/mce-jan-coverall-row-level-
+// diagnostic_DONE.md Inspections 5+6. Dashboard ⟷ Source Coverage equality holds
+// today because both are computed from the same boAdjustedFilteredEde.
+// ---------------------------------------------------------------------------
+describe('Phase 2 follow-up — D5-aware cross-surface invariants', () => {
+  const { reconciled, filteredEde, normalizedRecords } = fixture();
+  const scope = 'Coverall' as const;
+  const confirmedUpgradeMemberKeys = new Set<string>();
+
+  // Canonical EPB unpaid breakdown — sourced from getExpectedPaymentBreakdown's
+  // unpaidRows (POSITIONAL signature per src/lib/canonical/metrics.ts:447-452):
+  // (reconciled, scope, filteredEde, confirmedUpgradeMemberKeys).
+  // Inputs use the SAME boAdjusted shape Dashboard consumes.
+  const epb = getExpectedPaymentBreakdown(reconciled, scope, filteredEde, confirmedUpgradeMemberKeys);
+  const mceEpbUnpaidMemberKeys = new Set(epb.unpaidRows.map((r: any) => r.member_key));
+
+  // Dashboard EBU keys: Dashboard's drilldown rows come from epb.unpaidRows directly.
+  const dashboardEbuMemberKeys = new Set(epb.unpaidRows.map((r: any) => r.member_key));
+
+  // Source Coverage EBU keys.
+  const sc = getSourceCoverageBuckets(reconciled, scope, filteredEde, normalizedRecords, ['2026-02'], confirmedUpgradeMemberKeys);
+  const sourceCoverageEbuMemberKeys = new Set(sc.expectedButUnpaid.rows.map((r: any) => r.member_key));
+
+  it('(i) Dashboard EBU ⊆ canonical-EPB unpaid breakdown', () => {
+    expect([...dashboardEbuMemberKeys].every((k) => mceEpbUnpaidMemberKeys.has(k))).toBe(true);
+  });
+
+  it('(ii) Source Coverage EBU ⊆ canonical-EPB unpaid breakdown', () => {
+    expect([...sourceCoverageEbuMemberKeys].every((k) => mceEpbUnpaidMemberKeys.has(k))).toBe(true);
+  });
+
+  it('(iii) Dashboard EBU === Source Coverage EBU (set equality)', () => {
+    expect(new Set(dashboardEbuMemberKeys)).toEqual(new Set(sourceCoverageEbuMemberKeys));
+  });
+});

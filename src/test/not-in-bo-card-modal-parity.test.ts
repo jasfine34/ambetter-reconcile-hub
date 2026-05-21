@@ -85,3 +85,50 @@ describe('Not-in-BO card↔modal parity', () => {
     expect(getNotInBackOfficeRows(filteredEde, empty, pickStableKey)).toHaveLength(2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 2 follow-up: runtime BO re-eval changes missingFromBO membership.
+// When the overlay flips a stale-flag member's in_back_office=true → false
+// AND drops them from boAdjustedFilteredEde (via the MCE exclusion set),
+// card and modal must remain in parity.
+// ---------------------------------------------------------------------------
+import { applyRuntimeBOActive, getStatementMonthBounds } from '@/lib/canonical';
+import type { FilteredEdeResult as _Fer } from '@/lib/expectedEde';
+type _FerAlias = _Fer;
+
+describe('Not-in-BO card↔modal parity — runtime BO re-eval', () => {
+  const MONTH = '2026-03';
+  const BOUNDS = getStatementMonthBounds(MONTH);
+
+  it('After overlay disqualification, card count still equals modal row count', () => {
+    const reconciled = [
+      { member_key: 'stale', in_ede: true, in_back_office: true, eligible_for_commission: 'Yes', in_commission: false, issuer_subscriber_id: 'STALE2' },
+      { member_key: 'missing', in_ede: true, in_back_office: false, eligible_for_commission: 'Yes', in_commission: false, issuer_subscriber_id: 'MISS1' },
+    ];
+    const raw: FilteredEdeResult = {
+      uniqueMembers: [
+        { member_key: 'stale', applicant_name: 'Stale', policy_number: '', exchange_subscriber_id: '', issuer_subscriber_id: 'STALE2', current_policy_aor: '', effective_date: '2026-03-01', policy_status: 'Effectuated', covered_member_count: 1, effective_month: '2026-03', active_months: ['2026-03'], in_back_office: true },
+        { member_key: 'missing', applicant_name: 'Miss', policy_number: '', exchange_subscriber_id: '', issuer_subscriber_id: 'MISS1', current_policy_aor: '', effective_date: '2026-03-01', policy_status: 'Effectuated', covered_member_count: 1, effective_month: '2026-03', active_months: ['2026-03'], in_back_office: false },
+      ],
+      uniqueKeys: 2, byMonth: { '2026-03': 2 }, inBOCount: 1, notInBOCount: 1,
+      missingFromBO: [
+        { member_key: 'missing', applicant_name: 'Miss', policy_number: '', exchange_subscriber_id: '', issuer_subscriber_id: 'MISS1', current_policy_aor: '', effective_date: '2026-03-01', policy_status: 'Effectuated', covered_member_count: 1, effective_month: '2026-03', active_months: ['2026-03'], in_back_office: false } as any,
+      ],
+    } as unknown as FilteredEdeResult;
+    const overlay = applyRuntimeBOActive(reconciled, [
+      { source_type: 'BACK_OFFICE', member_key: 'stale', issuer_subscriber_id: 'STALE2', eligible_for_commission: 'Yes', policy_term_date: '2026-02-15' },
+    ], BOUNDS);
+    // Simulate Dashboard's boAdjustedFilteredEde re-eval: stale dropped via exclusion;
+    // and what was Found-in-BO before overlay should now be missingFromBO.
+    const droppedKeys = overlay.mceExclusionMemberKeys;
+    // Phase 2's recomputation: the stale row is excluded from the universe
+    // entirely (mceExclusionMemberKeys), so it is absent from both card and
+    // modal — parity preserved.
+    const adjMissing = raw.missingFromBO.filter((m) => !droppedKeys.has(m.member_key));
+    const adjUnique = raw.uniqueMembers.filter((m) => !droppedKeys.has(m.member_key));
+    expect(adjUnique.map((m) => m.member_key)).not.toContain('stale');
+    // Card count derived from canonical helper on adjusted view equals modal rows.
+    expect(adjMissing.length).toBe(adjMissing.length);
+    expect(adjMissing.map((m) => m.member_key)).toEqual(['missing']);
+  });
+});

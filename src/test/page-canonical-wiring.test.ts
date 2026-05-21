@@ -485,3 +485,41 @@ describe('Phase 1.7 static guard — no raw r.in_ede predicate in consumer pages
   });
 });
 
+
+// ---------------------------------------------------------------------------
+// Phase 2 follow-up — Dashboard wiring against stale persisted in_back_office.
+// When a member has in_back_office=true persisted but the matching BO record
+// is inactive/ineligible, the Dashboard tile values must reflect the
+// override (via boAdjustedReconciled + boAdjustedFilteredEde), not the
+// stale persisted flag.
+// ---------------------------------------------------------------------------
+import { applyRuntimeBOActive, getStatementMonthBounds } from '@/lib/canonical';
+
+describe('page wiring — Dashboard override-aware tile values for stale in_back_office', () => {
+  const BOUNDS = getStatementMonthBounds('2026-03');
+
+  it('Found-in-BO tile reflects override, not persisted flag', () => {
+    const reconciled = [
+      { member_key: 'stale', is_in_expected_ede_universe: true, in_ede: true, in_back_office: true, eligible_for_commission: 'Yes', in_commission: false, current_policy_aor: 'Jason Fine (21055210)', agent_npn: '21055210', issuer_subscriber_id: 'SX1' },
+    ];
+    const filteredEde: FilteredEdeResult = {
+      uniqueMembers: [{
+        member_key: 'stale', applicant_name: 'Stale', policy_number: '', exchange_subscriber_id: '', issuer_subscriber_id: 'SX1',
+        current_policy_aor: '', effective_date: '2026-03-01', policy_status: 'Effectuated',
+        covered_member_count: 1, effective_month: '2026-03', active_months: ['2026-03'], in_back_office: true,
+      }],
+      uniqueKeys: 1, byMonth: { '2026-03': 1 }, inBOCount: 1, notInBOCount: 0, missingFromBO: [],
+    };
+    const overlay = applyRuntimeBOActive(reconciled, [
+      { source_type: 'BACK_OFFICE', member_key: 'stale', issuer_subscriber_id: 'SX1', eligible_for_commission: 'No', policy_term_date: '2026-01-15' },
+    ], BOUNDS);
+    const boAdjustedReconciled = overlay.adjustedReconciled.filter((r: any) => !overlay.mceExclusionMemberKeys.has(r.member_key));
+    const adjFiltered: FilteredEdeResult = {
+      ...filteredEde,
+      uniqueMembers: filteredEde.uniqueMembers.filter((m) => !overlay.mceExclusionMemberKeys.has(m.member_key)),
+      uniqueKeys: 0,
+    };
+    // Override-aware: stale dropped → Found = 0 (not 1 as the persisted flag implies).
+    expect(getFoundInBackOffice(boAdjustedReconciled, 'Coverall', adjFiltered, new Set())).toBe(0);
+  });
+});

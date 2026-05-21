@@ -1,8 +1,10 @@
 /**
  * #129 — Weak-match queue fixes:
- *  (1) Apply isActiveBackOfficeRecord(rec, periodStart) when indexing BO
- *      candidates so terminated/inactive BO rows do NOT surface as weak
- *      matches (mirrors strict reconcile's active-BO semantics).
+ *  (1) Apply isActiveBackOfficeRecord(rec, statementMonthStart, statementMonthEnd)
+ *      when indexing BO candidates so terminated/inactive BO rows do NOT
+ *      surface as weak matches (mirrors strict reconcile's active-BO
+ *      semantics; month bounds are derived from periodStart via
+ *      getStatementMonthBounds).
  *  (2) Suppress the policy_number signal for Ambetter (where BO
  *      `policy_number` is structurally redundant with `issuer_subscriber_id`
  *      and would otherwise score a guaranteed false mismatch). Keep the

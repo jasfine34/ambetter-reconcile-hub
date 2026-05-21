@@ -406,3 +406,26 @@ describe('Bundle 13c — classifyOverlay → partition kind mapping', () => {
     expect(adj.kind).toBe(kind);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 2 follow-up — Dashboard cross-batch partition consumes runtime
+// BO-adjusted unpaid rows. Rows feeding partitionUnpaidRowsByOverlay come
+// from boAdjustedFilteredEde-derived flow (not raw filteredEde).
+// ---------------------------------------------------------------------------
+describe('Phase 2 follow-up — cross-batch partition consumes adjusted rows', () => {
+  const page = readFileSync(
+    resolve(__dirname, '../pages/DashboardPage.tsx'),
+    'utf8',
+  );
+
+  it('partitionUnpaidRowsByOverlay invocation sources from epb.unpaidRows derived from boAdjustedReconciled', () => {
+    // epb is built from boAdjustedReconciled + boAdjustedFilteredEde.
+    expect(page).toMatch(/getExpectedPaymentBreakdown\(\s*boAdjustedReconciled,\s*scopeForCanonical,\s*boAdjustedFilteredEde/);
+    // partition call uses epb.unpaidRows.
+    expect(page).toMatch(/partitionUnpaidRowsByOverlay\(/);
+  });
+
+  it('partition does NOT take raw filteredEde / rawFilteredEde as the unpaid source', () => {
+    expect(page).not.toMatch(/partitionUnpaidRowsByOverlay\([^)]*rawFilteredEde/);
+  });
+});
