@@ -60,7 +60,7 @@ function edeRow(overrides: Partial<NormalizedRecord> & Record<string, any>): any
     months_paid: null,
     writing_agent_carrier_id: '',
     member_key: 'issub:test',
-    raw_json: { policyStatus: 'Effectuated', issuer: 'Ambetter', currentPolicyAOR: 'Coverall' },
+    raw_json: { policyStatus: 'Effectuated', issuer: 'Ambetter', currentPolicyAOR: 'Jason Fine' },
     ...overrides,
   };
 }
