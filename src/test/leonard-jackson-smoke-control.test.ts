@@ -57,13 +57,13 @@ describe('Leonard Jackson April 2026 Ambetter Coverall — opt-in smoke control'
     const { data: reconciled, error: rcErr } = await supabase
       .from('reconciled_members')
       .select('*')
-      .eq('upload_batch_id', batch.id);
+      .eq('batch_id', batch.id);
     if (rcErr) throw rcErr;
 
     const { data: normalizedRecords, error: nrErr } = await supabase
       .from('normalized_records')
       .select('*')
-      .eq('upload_batch_id', batch.id);
+      .eq('batch_id', batch.id);
     if (nrErr) throw nrErr;
 
     const monthBounds = getStatementMonthBounds('2026-04');
