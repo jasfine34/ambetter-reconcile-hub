@@ -117,7 +117,7 @@ export default function MemberTimelinePage() {
   const [records, setRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'all' | 'unpaid' | 'paid' | 'partial' | 'pending' | 'review'>('all');
+  const [filter, setFilter] = useState<'all' | 'unpaid' | 'unpaid-plus-net' | 'unpaid-zero-net' | 'paid' | 'partial' | 'pending' | 'review'>('all');
   const [page, setPage] = useState(0);
   const [debugOpen, setDebugOpen] = useState(false);
 
