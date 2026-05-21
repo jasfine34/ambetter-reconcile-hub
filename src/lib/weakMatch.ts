@@ -124,10 +124,12 @@ function normName(name: string | undefined | null): string {
  * @param normalizedRecords  raw normalized_records for the batch
  * @param opts.periodStart  Start of the reconcile period (e.g. batch's
  *   statement_month). When provided, BO rows that fail
- *   `isActiveBackOfficeRecord(rec, periodStart)` (terminated / past
- *   policy_term_date / etc.) are excluded as candidates so the weak-match
- *   queue mirrors the strict reconcile's active-BO semantics (#129).
- *   When omitted, all BO rows are eligible (legacy behavior).
+ *   `isActiveBackOfficeRecord(rec, statementMonthStart, statementMonthEnd)`
+ *   (terminated / past policy_term_date / paid-through-covered / ineligible)
+ *   are excluded as candidates so the weak-match queue mirrors strict
+ *   reconcile's active-BO semantics (#129). Month bounds are derived from
+ *   periodStart via getStatementMonthBounds. When omitted (explicit null),
+ *   all BO rows are eligible (legacy behavior).
  *
  * Returns one candidate per EE member (the best BO candidate by signal count).
  * Members already in `in_back_office` are excluded.
