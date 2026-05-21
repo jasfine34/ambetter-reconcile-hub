@@ -507,29 +507,40 @@ function classifyCell(
   }
 
   // From here, we're ripe and no commission was received.
-  const netPremium = latestEdeNetPremium(records);
+  // MT Stage 2 gate: when ClassifierContext carries batchMonthByBatchId,
+  // use service-month-grain premium. Otherwise fall back to legacy
+  // member-level max (preserves non-MT consumer behavior).
+  const hasBatchMonthContext = context.batchMonthByBatchId !== undefined;
+  const batchMonthByBatchId = context.batchMonthByBatchId ?? new Map<string, string>();
+  const netPremium: number | null = hasBatchMonthContext
+    ? netPremiumForServiceMonth(records, month, { batchMonthByBatchId })
+    : latestEdeNetPremium(records);
   const paidThrough = latestBoPaidThrough(records);
-  const monthEnd = monthKeyToFirstOfMonth(addMonths(month, 1)); // exclusive
   const paidThroughCoversMonth = paidThrough && paidThrough >= month;
   const paidThroughShowsUnpaid = paidThrough && paidThrough < month;
+  const noPositiveServiceMonthPremium = hasBatchMonthContext
+    ? netPremium === null || netPremium === 0
+    : netPremium === 0;
 
   // Rule 3 (eligible cells — Unpaid disputable): premium paid or zero-premium plan
-  if (netPremium === 0 || paidThroughCoversMonth) {
+  if (noPositiveServiceMonthPremium || paidThroughCoversMonth) {
     return {
       ...base,
       state: 'unpaid',
       reason: netPremium === 0
         ? 'Zero net premium plan with no commission received — dispute candidate.'
-        : `BO shows paid-through ${paidThrough} but no commission received.`,
+        : netPremium === null
+        ? 'No positive service-month EDE premium evidence and no commission received — dispute candidate.'
+        : `BO shows paid-through ${paidThrough || 'none'} but no commission received.`,
     };
   }
 
   // Rule 4 (non-disputable): premium unambiguously unpaid
-  if (netPremium > 0 && paidThroughShowsUnpaid) {
+  if (netPremium !== null && netPremium > 0 && paidThroughShowsUnpaid) {
     return {
       ...base,
       state: 'not_expected_premium_unpaid',
-      reason: `Net premium $${netPremium.toFixed(2)} due but BO paid-through ${paidThrough} < ${month} start.`,
+      reason: `Net premium $${netPremium.toFixed(2)} due but BO paid-through ${paidThrough || 'none'} < ${month} start.`,
     };
   }
 
@@ -537,7 +548,9 @@ function classifyCell(
   return {
     ...base,
     state: 'manual_review',
-    reason: `No commission, net premium $${netPremium.toFixed(2)}, paid-through "${paidThrough || 'none'}" — signals insufficient.`,
+    reason: netPremium === null
+      ? `No service-month EDE premium evidence, paid-through "${paidThrough || 'none'}" — signals insufficient.`
+      : `No commission, net premium $${netPremium.toFixed(2)}, paid-through "${paidThrough || 'none'}" — signals insufficient.`,
   };
 }
 
