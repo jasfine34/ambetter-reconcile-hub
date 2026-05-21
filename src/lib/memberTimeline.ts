@@ -17,6 +17,14 @@ export interface MonthCell {
   state?: ClassificationState;
   /** Classifier's human-readable explanation, surfaced in the cell tooltip. */
   state_reason?: string;
+  /**
+   * MT Stage 2 — unpaid-cell net premium bucket. Only meaningful when
+   * state === 'unpaid'. '+Net' = positive service-month premium evidence.
+   * '0Net' = zero/null/no-row evidence (collapsed per chip semantics).
+   * null otherwise. Stamped in MemberTimelinePage after the classifier +
+   * no-current-source override, not derived in buildMemberTimeline().
+   */
+  netBucket?: '+Net' | '0Net' | null;
 }
 
 export interface MemberTimelineRow {
