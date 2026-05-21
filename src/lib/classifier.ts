@@ -630,6 +630,7 @@ export function buildClassifierContext(
   records: NormalizedRecord[],
   months: MonthKey[],
   boSnapshotDates: string[] = [],
+  options?: { batchMonthByBatchId?: Map<string, string> },
 ): ClassifierContext {
   const commissionStatementMonths = new Set<MonthKey>();
   for (const r of records) {
@@ -638,7 +639,12 @@ export function buildClassifierContext(
       commissionStatementMonths.add(m);
     }
   }
-  return { months, commissionStatementMonths, boSnapshotDates };
+  return {
+    months,
+    commissionStatementMonths,
+    boSnapshotDates,
+    batchMonthByBatchId: options?.batchMonthByBatchId,
+  };
 }
 
 // ──────────────────────────────────────────────────────────────────────────
