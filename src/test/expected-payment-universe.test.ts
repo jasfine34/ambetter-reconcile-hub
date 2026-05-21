@@ -341,3 +341,58 @@ describe('Phase 1.7: boIneligible fall-through bucket (additive)', () => {
     for (const r of u.rows) expect(classified.has(r)).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 2 follow-up: Dashboard-shaped runtime overlay fixture for the
+// EDE-only leak class. Stale persisted BO disqualified by helper criteria
+// MUST NOT leak into Expected But Unpaid via the EDE-only branch after
+// the overlay flips in_back_office=false + drops the member from
+// boAdjustedFilteredEde via the MCE exclusion set.
+// ---------------------------------------------------------------------------
+import { applyRuntimeBOActive, getStatementMonthBounds } from '@/lib/canonical';
+
+describe('Phase 2 follow-up — EDE-only leak class blocked under runtime overlay', () => {
+  const MONTH = '2026-02';
+  const BOUNDS = getStatementMonthBounds(MONTH);
+
+  function leakFixture(boRow: Record<string, any>) {
+    const reconciled: any[] = [
+      { member_key: 'leak', in_ede: true, in_back_office: true, eligible_for_commission: 'Yes', in_commission: false, current_policy_aor: 'Jason Fine (21055210)', agent_npn: '21055210', issuer_subscriber_id: 'LK1' },
+    ];
+    const filteredEde: FilteredEdeResult = {
+      uniqueMembers: [{
+        member_key: 'leak', applicant_name: 'leak', policy_number: '', exchange_subscriber_id: '', issuer_subscriber_id: 'LK1',
+        current_policy_aor: '', effective_date: '2026-02-01', policy_status: 'Effectuated',
+        covered_member_count: 1, effective_month: MONTH, active_months: [MONTH], in_back_office: true,
+      }],
+      uniqueKeys: 1, byMonth: { [MONTH]: 1 }, inBOCount: 1, notInBOCount: 0, missingFromBO: [],
+    };
+    const normalizedBo = [
+      { source_type: 'BACK_OFFICE', member_key: 'leak', issuer_subscriber_id: 'LK1', ...boRow },
+    ];
+    const overlay = applyRuntimeBOActive(reconciled, normalizedBo, BOUNDS);
+    const boAdjustedReconciled = overlay.adjustedReconciled.filter((r: any) => !overlay.mceExclusionMemberKeys.has(r.member_key));
+    const adjFilteredEde: FilteredEdeResult = {
+      ...filteredEde,
+      uniqueMembers: filteredEde.uniqueMembers.filter((m) => !overlay.mceExclusionMemberKeys.has(m.member_key)),
+      uniqueKeys: 0,
+    };
+    return { boAdjustedReconciled, adjFilteredEde, overlay };
+  }
+
+  for (const [label, boRow] of [
+    ['policy_term_date<start', { eligible_for_commission: 'Yes', policy_term_date: '2026-01-15' }],
+    ['paid_through_date covers end', { eligible_for_commission: 'Yes', policy_term_date: '2026-12-31', paid_through_date: '2026-02-28' }],
+    ['eligible_for_commission=No', { eligible_for_commission: 'No', policy_term_date: '2026-12-31' }],
+  ] as const) {
+    it(`stale BO (${label}) does NOT leak into Expected But Unpaid via EDE-only branch`, () => {
+      const { boAdjustedReconciled, adjFilteredEde, overlay } = leakFixture(boRow as any);
+      expect(overlay.mceExclusionMemberKeys.has('leak')).toBe(true);
+      const u = getExpectedPaymentUniverse(boAdjustedReconciled, 'Coverall', adjFilteredEde, new Set());
+      expect(u.edeOnly.map((r: any) => r.member_key)).not.toContain('leak');
+      expect(u.boOnly.map((r: any) => r.member_key)).not.toContain('leak');
+      const epb = getExpectedPaymentBreakdown(boAdjustedReconciled, 'Coverall', adjFilteredEde, new Set());
+      expect(epb.unpaidRows.map((r: any) => r.member_key)).not.toContain('leak');
+    });
+  }
+});
