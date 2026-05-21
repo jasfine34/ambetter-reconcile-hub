@@ -28,7 +28,7 @@
  * magnitude too.
  */
 import { describe, it, expect } from 'vitest';
-import { supabase } from '@/integrations/supabase/client';
+import { getBatches, getNormalizedRecords, getReconciledMembers } from '@/lib/persistence';
 import { computeFilteredEde } from '@/lib/expectedEde';
 import {
   applyRuntimeBOActive,
@@ -44,27 +44,18 @@ const smokeIt = process.env.RUN_SMOKE_CONTROLS === '1' ? it : it.skip;
 
 describe('Leonard Jackson April 2026 Ambetter Coverall — opt-in smoke control', () => {
   smokeIt('sub:3437828 — known EDE→reconciled AOR scope mismatch (deviation magnitude = 1)', async () => {
-    // Locate the April 2026 Ambetter batch via production loader path.
-    const { data: batches, error: batchErr } = await supabase
-      .from('upload_batches')
-      .select('id, statement_month, carrier')
-      .eq('statement_month', '2026-04-01')
-      .eq('carrier', 'Ambetter');
-    if (batchErr) throw batchErr;
-    expect(batches && batches.length).toBeGreaterThan(0);
-    const batch = batches![0];
+    // Locate the April 2026 Ambetter batch via production loaders.
+    const batches = await getBatches();
+    const aprilAmbetterBatch = batches.find(
+      (b: any) =>
+        String(b.carrier ?? '') === 'Ambetter' &&
+        String(b.statement_month ?? '').substring(0, 7) === '2026-04',
+    );
+    expect(aprilAmbetterBatch).toBeTruthy();
 
-    const { data: reconciled, error: rcErr } = await supabase
-      .from('reconciled_members')
-      .select('*')
-      .eq('batch_id', batch.id);
-    if (rcErr) throw rcErr;
+    const reconciled = await getReconciledMembers(aprilAmbetterBatch!.id);
+    const normalizedRecords = await getNormalizedRecords(aprilAmbetterBatch!.id);
 
-    const { data: normalizedRecords, error: nrErr } = await supabase
-      .from('normalized_records')
-      .select('*')
-      .eq('batch_id', batch.id);
-    if (nrErr) throw nrErr;
 
     const monthBounds = getStatementMonthBounds('2026-04');
     const boNormalized = (normalizedRecords ?? []).filter(
@@ -101,12 +92,19 @@ describe('Leonard Jackson April 2026 Ambetter Coverall — opt-in smoke control'
       uniqueKeys: adjUnique.length,
     };
 
-    // Identity assertion: Leonard present in raw EDE under Jason Fine; in
-    // reconciled under non-Coverall AOR.
+    // Identity assertion: Leonard present in raw EDE under Jason Fine (matched
+    // by the production identity tuple, NOT by the reconciled-side normalized
+    // member_key); in reconciled under non-Coverall AOR.
     const rawLeonard = rawFilteredEde.uniqueMembers.find(
-      (m: any) => m.member_key === 'sub:3437828',
+      (m) =>
+        m.applicant_name === 'Leonard Jackson' &&
+        m.current_policy_aor === 'Jason Fine (21055210)' &&
+        m.policy_number === '214039840' &&
+        m.issuer_subscriber_id === 'U96069319' &&
+        m.exchange_subscriber_id === '0002964539',
     );
     expect(rawLeonard).toBeTruthy();
+    expect(rawLeonard?.current_policy_aor).toContain('Jason Fine');
     const reconciledLeonard = (reconciled ?? []).find(
       (r: any) => r.member_key === 'sub:3437828',
     );
@@ -114,6 +112,7 @@ describe('Leonard Jackson April 2026 Ambetter Coverall — opt-in smoke control'
     expect(String(reconciledLeonard?.current_policy_aor ?? '')).not.toMatch(
       /Jason Fine/i,
     );
+
 
     // Dashboard deviation assertion (enforced).
     const foundInBO = getFoundInBackOffice(
