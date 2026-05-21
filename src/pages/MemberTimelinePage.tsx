@@ -254,6 +254,18 @@ export default function MemberTimelinePage() {
     [aorScope, payEntity],
   );
 
+  // MT Stage 2 — batch_id → statement_month YYYY-MM, plumbed into the
+  // classifier context so per-service-month net premium selection can prefer
+  // the EDE snapshot that matches the service month.
+  const batchMonthByBatchId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const b of batches ?? []) {
+      if (!b?.id || !b?.statement_month) continue;
+      map.set(String(b.id), String(b.statement_month).substring(0, 7));
+    }
+    return map;
+  }, [batches]);
+
   const filteredRecords = useMemo(() => {
     let out = records;
     if (carrier !== 'all') out = out.filter(r => carrierFamily(r.carrier || '') === carrier);
