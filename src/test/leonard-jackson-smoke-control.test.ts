@@ -30,13 +30,20 @@
 import { describe, it, expect } from 'vitest';
 import { getBatches, getNormalizedRecords, getReconciledMembers } from '@/lib/persistence';
 import { computeFilteredEde } from '@/lib/expectedEde';
+import { loadResolverIndex } from '@/lib/resolvedIdentities';
 import {
-  applyRuntimeBOActive,
+  loadWeakMatchOverrides,
+  findWeakMatches,
+  applyOverrides,
+  pickStableKey,
+} from '@/lib/weakMatch';
+import { getCoveredMonths } from '@/lib/dateRange';
+import { getStatementMonthBounds } from '@/lib/canonical/statementMonthBounds';
+import { applyRuntimeBOActive } from '@/lib/canonical/applyRuntimeBOActive';
+import {
   getFoundInBackOffice,
-  getNotInBackOffice,
-  getStatementMonthBounds,
-} from '@/lib/canonical';
-import { pickStableKey } from '@/lib/weakMatch';
+  getNotInBackOfficeRows,
+} from '@/lib/canonical/metrics';
 
 // Directive-standard smoke gating pattern. Default `npm test` skips this
 // test entirely via the it.skip fallback when RUN_SMOKE_CONTROLS is not '1'.
@@ -44,10 +51,10 @@ const smokeIt = process.env.RUN_SMOKE_CONTROLS === '1' ? it : it.skip;
 
 describe('Leonard Jackson April 2026 Ambetter Coverall — opt-in smoke control', () => {
   smokeIt('sub:3437828 — known EDE→reconciled AOR scope mismatch (deviation magnitude = 1)', async () => {
-    // Locate the April 2026 Ambetter batch via production loaders.
-    // NOTE: getBatches() orders by created_at DESC. Using .find(...) would
-    // return the NEWEST matching batch, but the live-grid probe resolves to
-    // the OLDEST via map-overwrite-on-iterate. Use the same shape here.
+    // 1. Locate April 2026 Ambetter through the same month-map shape as the live-grid probe.
+    //    NOTE: getBatches() orders by created_at DESC. Using .find(...) would return the
+    //    NEWEST matching batch, but the live-grid probe resolves to the OLDEST via
+    //    map-overwrite-on-iterate. Use the same shape here.
     const batches = await getBatches();
     const batchByMonth = new Map<string, any>();
     for (const b of batches) {
@@ -59,51 +66,64 @@ describe('Leonard Jackson April 2026 Ambetter Coverall — opt-in smoke control'
     const aprilAmbetterBatch = batchByMonth.get('2026-04');
     expect(aprilAmbetterBatch).toBeTruthy();
 
+    // 2. Load resolver + weak-match overrides (mirroring live-grid probe).
+    const resolverIndex = await loadResolverIndex(true);
+    const weakOverrides = await loadWeakMatchOverrides().catch(
+      () => new Map<string, any>(),
+    );
 
-    const reconciled = await getReconciledMembers(aprilAmbetterBatch!.id);
+    // 3. Load batch-scoped normalized + reconciled records.
     const normalizedRecords = await getNormalizedRecords(aprilAmbetterBatch!.id);
+    const reconciled = await getReconciledMembers(aprilAmbetterBatch!.id);
 
-
-    const monthBounds = getStatementMonthBounds('2026-04');
+    // 4. Compute covered months + service-month bounds for runtime overlay.
+    const coveredMonths = getCoveredMonths(aprilAmbetterBatch!.statement_month);
+    const viewedServiceMonth = String(aprilAmbetterBatch!.statement_month).substring(0, 7);
+    const monthBounds = getStatementMonthBounds(viewedServiceMonth);
     const boNormalized = (normalizedRecords ?? []).filter(
       (r: any) => r.source_type === 'BACK_OFFICE',
     );
+
+    // 5. Apply runtime BO-active overlay + build exclusion-filtered reconciled.
     const overlay = applyRuntimeBOActive(reconciled ?? [], boNormalized, monthBounds);
     const boAdjustedReconciled = overlay.adjustedReconciled.filter(
       (r: any) => !overlay.mceExclusionMemberKeys.has(r.member_key),
     );
-    const rawFilteredEde = computeFilteredEde(
-      normalizedRecords ?? [],
-      reconciled ?? [],
-      'Coverall',
-      ['2026-04'],
-      null as any,
-    );
-    const adjFilteredEdeRaw = computeFilteredEde(
+
+    // 6. Compute resolver-backed filtered EDE universe (the critical resolver call).
+    const boAdjustedRaw = computeFilteredEde(
       normalizedRecords ?? [],
       overlay.adjustedReconciled,
       'Coverall',
-      ['2026-04'],
-      null as any,
+      coveredMonths,
+      resolverIndex,
     );
-    const adjUnique = adjFilteredEdeRaw.uniqueMembers.filter(
+
+    // 7. Rebuild the BO-adjusted, exclusion-filtered EDE result (the critical adjusted-vs-raw fix).
+    const adjUnique = boAdjustedRaw.uniqueMembers.filter(
       (m: any) => !overlay.mceExclusionMemberKeys.has(m.member_key),
     );
-    const adjMissing = adjFilteredEdeRaw.missingFromBO.filter(
+    const adjMissing = boAdjustedRaw.missingFromBO.filter(
       (m: any) => !overlay.mceExclusionMemberKeys.has(m.member_key),
     );
+    const adjByMonth: Record<string, number> = {};
+    for (const m of adjUnique) {
+      const month = (m as any).effective_month;
+      if (month) adjByMonth[month] = (adjByMonth[month] ?? 0) + 1;
+    }
     const boAdjustedFilteredEde = {
-      ...adjFilteredEdeRaw,
+      ...boAdjustedRaw,
       uniqueMembers: adjUnique,
       missingFromBO: adjMissing,
       uniqueKeys: adjUnique.length,
+      inBOCount: adjUnique.filter((m: any) => m.in_back_office).length,
+      notInBOCount: adjMissing.length,
+      byMonth: adjByMonth,
     };
 
-    // Identity assertion: Leonard present in raw EDE under Jason Fine (matched
-    // by the production identity tuple, NOT by the reconciled-side normalized
-    // member_key); in reconciled under non-Coverall AOR.
-    const rawLeonard = rawFilteredEde.uniqueMembers.find(
-      (m) =>
+    // 8. Raw Leonard five-field tuple identity assertion (preserved from v3).
+    const rawLeonard = boAdjustedFilteredEde.uniqueMembers.find(
+      (m: any) =>
         m.applicant_name === 'Leonard Jackson' &&
         m.current_policy_aor === 'Jason Fine (21055210)' &&
         m.policy_number === '214039840' &&
@@ -112,6 +132,8 @@ describe('Leonard Jackson April 2026 Ambetter Coverall — opt-in smoke control'
     );
     expect(rawLeonard).toBeTruthy();
     expect(rawLeonard?.current_policy_aor).toContain('Jason Fine');
+
+    // 9. Reconciled-side assertion (preserved from v3).
     const reconciledLeonard = (reconciled ?? []).find(
       (r: any) => r.member_key === 'sub:3437828',
     );
@@ -120,20 +142,66 @@ describe('Leonard Jackson April 2026 Ambetter Coverall — opt-in smoke control'
       /Jason Fine/i,
     );
 
+    // 10. Weak-match candidate scan (mirroring probe).
+    const candidates = findWeakMatches(
+      boAdjustedFilteredEde.uniqueMembers,
+      normalizedRecords ?? [],
+      { periodStart: aprilAmbetterBatch!.statement_month },
+    );
+    const { confirmedKeys } = applyOverrides(candidates, weakOverrides);
 
-    // Dashboard deviation assertion (enforced).
+    // 11. Confirmed-upgrade derivation — Finding A scoped version (NOT loose loop over
+    //     boAdjustedReconciled). Start from Coverall-scoped reconciled rows, map to
+    //     overlay.adjustedReconciled by member_key, filter out overlay.mceExclusionMemberKeys,
+    //     then convert confirmed stable keys to member keys. April Coverall currently has zero
+    //     confirmed weak-match upgrades, so confirmedUpgradeMemberKeys stays empty, but the
+    //     scoped derivation is preserved so the smoke mirrors probe shape under all conditions.
+    const confirmedUpgradeMemberKeys = new Set<string>();
+    if (confirmedKeys.size && boAdjustedReconciled.length) {
+      const inScope = (reconciled ?? [])
+        .filter(
+          (r: any) =>
+            r.expected_pay_entity === 'Coverall' ||
+            r.expected_pay_entity === 'Coverall_or_Vix' ||
+            r.actual_pay_entity === 'Coverall',
+        )
+        .map(
+          (r: any) =>
+            overlay.adjustedReconciled.find((a: any) => a.member_key === r.member_key) ?? r,
+        )
+        .filter((r: any) => !overlay.mceExclusionMemberKeys.has(r.member_key));
+
+      for (const r of inScope) {
+        if (r.in_back_office) continue;
+        const key = pickStableKey({
+          issuer_subscriber_id: r.issuer_subscriber_id,
+          exchange_subscriber_id: r.exchange_subscriber_id,
+          policy_number: r.policy_number,
+        });
+        if (key && confirmedKeys.has(key)) confirmedUpgradeMemberKeys.add(r.member_key);
+      }
+    }
+
+    // 12. Canonical helpers (the live-grid probe's final variable sources).
     const foundInBO = getFoundInBackOffice(
       boAdjustedReconciled,
       'Coverall',
       boAdjustedFilteredEde,
-      new Set(),
+      confirmedUpgradeMemberKeys,
     );
-    const notInBO = getNotInBackOffice(
+    const notInBO = getNotInBackOfficeRows(
       boAdjustedFilteredEde,
-      new Set(),
+      confirmedKeys,
       pickStableKey,
-    );
-    const expectedEnrollments = rawFilteredEde.uniqueKeys;
+    ).length;
+    const expectedEnrollments = boAdjustedFilteredEde.uniqueKeys;
+
+    // 13. Positive diagnostic assertions (complement the deviation check).
+    expect(foundInBO).toBe(131);
+    expect(notInBO).toBe(42);
+    expect(expectedEnrollments).toBe(174);
+
+    // 14. Deviation assertion (preserved shape from v3, now passing).
     expect(Math.abs((foundInBO + notInBO) - expectedEnrollments)).toBe(1);
   }, 30000);
 
