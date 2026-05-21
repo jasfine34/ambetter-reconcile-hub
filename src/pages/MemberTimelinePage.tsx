@@ -310,7 +310,7 @@ export default function MemberTimelinePage() {
     // Practical consequence: if you've uploaded the Feb 21 statement (pays
     // January service), Jan cells evaluate fully and Feb cells show as
     // "pending" until the March 21 statement is uploaded into its batch.
-    const context = buildClassifierContext(classifierRecords as any, monthList, []);
+    const context = buildClassifierContext(classifierRecords as any, monthList, [], { batchMonthByBatchId });
 
     return allRows.map(row => {
       const recs = byMember.get(row.member_key) ?? [];
@@ -328,11 +328,20 @@ export default function MemberTimelinePage() {
         const c = classification.cells[m];
         const existing = newCells[m];
         if (!c || !existing) continue;
-        newCells[m] = applyNoSourceInvariantToMonthCell({
+        const stamped = applyNoSourceInvariantToMonthCell({
           ...existing,
           state: c.state,
           state_reason: c.reason,
         });
+        // MT Stage 2 — stamp netBucket AFTER classifier + no-source override.
+        // Only unpaid cells carry a bucket; positive service-month premium →
+        // '+Net'; zero / null / no-row → '0Net' (collapsed).
+        let netBucket: '+Net' | '0Net' | null = null;
+        if (stamped.state === 'unpaid') {
+          const np = netPremiumForServiceMonth(recs as any, m, { batchMonthByBatchId });
+          netBucket = np === null ? '0Net' : np > 0 ? '+Net' : '0Net';
+        }
+        newCells[m] = { ...stamped, netBucket };
         // Count states. Only eligible cells contribute to due/paid/unpaid.
         switch (newCells[m].state) {
           case 'paid':
@@ -356,6 +365,9 @@ export default function MemberTimelinePage() {
             break;
         }
       }
+      const finalCells = Object.values(newCells);
+      const hasUnpaidPlusNet = finalCells.some(c => c.state === 'unpaid' && c.netBucket === '+Net');
+      const hasUnpaidZeroNet = finalCells.some(c => c.state === 'unpaid' && c.netBucket === '0Net');
       return {
         ...row,
         cells: newCells,
@@ -364,9 +376,11 @@ export default function MemberTimelinePage() {
         months_paid,
         months_unpaid,
         months_due,
+        hasUnpaidPlusNet,
+        hasUnpaidZeroNet,
       } as MemberTimelineRow;
     });
-  }, [allRows, filteredRecords, monthList, isDueEligibleRecord]);
+  }, [allRows, filteredRecords, monthList, isDueEligibleRecord, batchMonthByBatchId]);
 
   const filteredRows = useMemo(() => {
     // Base set: only members with at least one due month in the selected range.
