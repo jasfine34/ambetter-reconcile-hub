@@ -255,6 +255,82 @@ function latestEdeNetPremium(records: NormalizedRecord[]): number {
 }
 
 /**
+ * MT Stage 2 — service-month-grain net premium selector.
+ *
+ * Returns the net premium that applies to `serviceMonth` for the given member
+ * records, using batch-month preference + active-coverage fallback.
+ *
+ * Internal bucket parsing on the selected row:
+ *   - net_premium > 0 numeric → return that number
+ *   - net_premium null / undefined / blank / non-numeric / 0 / negative → 0
+ *   - no candidate row exists → null
+ *
+ * Selection:
+ *   1. Candidate filter: source_type === 'EDE', effective_date.month ≤ serviceMonth,
+ *      and (no policy_term_date OR serviceMonth < policy_term_date.month).
+ *   2. Batch-month preference: prefer candidates whose batch_id maps via
+ *      batchMonthByBatchId to a statement_month equal to serviceMonth.
+ *   3. Tiebreaker: newest raw_json.lastEDESync, then newest created_at, then id.
+ *   4. Fallback: if Step 2 yields no match, tiebreak against Step 1 set.
+ *
+ * Tolerates empty `batchMonthByBatchId` map (skips Step 2 implicitly).
+ * EXPORTED for direct synthetic-test verification. Not consumed by canonical
+ * helpers — MT-cell-grain only.
+ */
+export function netPremiumForServiceMonth(
+  records: NormalizedRecord[],
+  serviceMonth: string,
+  options: { batchMonthByBatchId: Map<string, string> },
+): number | null {
+  const { batchMonthByBatchId } = options;
+  const candidates: NormalizedRecord[] = [];
+  for (const r of records) {
+    if (r.source_type !== 'EDE') continue;
+    const effMonth = dateToMonthKey(r.effective_date);
+    if (!effMonth || effMonth > serviceMonth) continue;
+    if (r.policy_term_date) {
+      const termMonth = dateToMonthKey(r.policy_term_date);
+      // term_date is exclusive — active strictly before term month
+      if (termMonth && serviceMonth >= termMonth) continue;
+    }
+    candidates.push(r);
+  }
+  if (candidates.length === 0) return null;
+
+  // Step 2 — batch-month preference
+  let pool = candidates;
+  if (batchMonthByBatchId.size > 0) {
+    const preferred = candidates.filter(r => {
+      const bid = (r as any).batch_id;
+      if (!bid) return false;
+      const sm = batchMonthByBatchId.get(String(bid));
+      return sm === serviceMonth;
+    });
+    if (preferred.length > 0) pool = preferred;
+  }
+
+  // Step 3 — tiebreaker
+  const sortKey = (r: NormalizedRecord): [string, string, string] => {
+    const sync = String(r.raw_json?.['lastEDESync'] ?? '');
+    const created = String((r as any).created_at ?? '');
+    const id = String((r as any).id ?? '');
+    return [sync, created, id];
+  };
+  pool.sort((a, b) => {
+    const [as, ac, ai] = sortKey(a);
+    const [bs, bc, bi] = sortKey(b);
+    if (bs !== as) return bs > as ? 1 : -1;
+    if (bc !== ac) return bc > ac ? 1 : -1;
+    if (bi !== ai) return bi > ai ? 1 : -1;
+    return 0;
+  });
+  const selected = pool[0];
+  const raw = selected.net_premium;
+  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return raw;
+  return 0;
+}
+
+/**
  * Service-month payment evaluation (EXPORTED — shared by classifier and MCE).
  *
  * Returns whether at least one commission row attributes a positive paid
