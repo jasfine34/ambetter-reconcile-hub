@@ -389,6 +389,8 @@ export default function MemberTimelinePage() {
     const isPending = (r: MemberTimelineRow): boolean =>
       Object.values(r.cells).some(c => c.state === 'pending');
     if (filter === 'unpaid') rows = rows.filter(r => r.months_unpaid > 0);
+    else if (filter === 'unpaid-plus-net') rows = rows.filter(r => r.hasUnpaidPlusNet);
+    else if (filter === 'unpaid-zero-net') rows = rows.filter(r => r.hasUnpaidZeroNet);
     else if (filter === 'paid') {
       // Fully paid = every due month is paid (not just "no unpaid"). Members
       // with pending cells don't qualify — they're waiting, not resolved.
