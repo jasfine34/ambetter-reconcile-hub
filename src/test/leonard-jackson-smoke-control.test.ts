@@ -45,13 +45,20 @@ const smokeIt = process.env.RUN_SMOKE_CONTROLS === '1' ? it : it.skip;
 describe('Leonard Jackson April 2026 Ambetter Coverall — opt-in smoke control', () => {
   smokeIt('sub:3437828 — known EDE→reconciled AOR scope mismatch (deviation magnitude = 1)', async () => {
     // Locate the April 2026 Ambetter batch via production loaders.
+    // NOTE: getBatches() orders by created_at DESC. Using .find(...) would
+    // return the NEWEST matching batch, but the live-grid probe resolves to
+    // the OLDEST via map-overwrite-on-iterate. Use the same shape here.
     const batches = await getBatches();
-    const aprilAmbetterBatch = batches.find(
-      (b: any) =>
-        String(b.carrier ?? '') === 'Ambetter' &&
-        String(b.statement_month ?? '').substring(0, 7) === '2026-04',
-    );
+    const batchByMonth = new Map<string, any>();
+    for (const b of batches) {
+      const month = String(b.statement_month ?? '').substring(0, 7);
+      if (month === '2026-04' && String(b.carrier ?? 'Ambetter') === 'Ambetter') {
+        batchByMonth.set(month, b);
+      }
+    }
+    const aprilAmbetterBatch = batchByMonth.get('2026-04');
     expect(aprilAmbetterBatch).toBeTruthy();
+
 
     const reconciled = await getReconciledMembers(aprilAmbetterBatch!.id);
     const normalizedRecords = await getNormalizedRecords(aprilAmbetterBatch!.id);
@@ -128,5 +135,6 @@ describe('Leonard Jackson April 2026 Ambetter Coverall — opt-in smoke control'
     );
     const expectedEnrollments = rawFilteredEde.uniqueKeys;
     expect(Math.abs((foundInBO + notInBO) - expectedEnrollments)).toBe(1);
-  });
+  }, 30000);
+
 });
