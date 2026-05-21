@@ -93,7 +93,8 @@ describe('Not-in-BO card↔modal parity', () => {
 // card and modal must remain in parity.
 // ---------------------------------------------------------------------------
 import { applyRuntimeBOActive, getStatementMonthBounds } from '@/lib/canonical';
-import type { FilteredEdeResult } from '@/lib/expectedEde';
+import type { FilteredEdeResult as _Fer } from '@/lib/expectedEde';
+type _FerAlias = _Fer;
 
 describe('Not-in-BO card↔modal parity — runtime BO re-eval', () => {
   const MONTH = '2026-03';
