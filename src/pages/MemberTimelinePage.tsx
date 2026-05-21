@@ -18,7 +18,7 @@ import { exportToCSV } from '@/lib/csvParser';
 import { NPN_MAP } from '@/lib/constants';
 import { isCoverallAORByName } from '@/lib/agents';
 import { statementMonthKey, currentMonthKey, addMonths } from '@/lib/dateRange';
-import { classifyMember, buildClassifierContext, buildIsDueEligibleRecord } from '@/lib/classifier';
+import { classifyMember, buildClassifierContext, buildIsDueEligibleRecord, netPremiumForServiceMonth } from '@/lib/classifier';
 import { buildPaidDollarsAudit } from '@/lib/paidDollarsAudit';
 import { PaidDollarsAuditPanel } from '@/components/PaidDollarsAuditPanel';
 import { CellAttributionPopover } from '@/components/CellAttributionPopover';
@@ -117,7 +117,7 @@ export default function MemberTimelinePage() {
   const [records, setRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'all' | 'unpaid' | 'paid' | 'partial' | 'pending' | 'review'>('all');
+  const [filter, setFilter] = useState<'all' | 'unpaid' | 'unpaid-plus-net' | 'unpaid-zero-net' | 'paid' | 'partial' | 'pending' | 'review'>('all');
   const [page, setPage] = useState(0);
   const [debugOpen, setDebugOpen] = useState(false);
 
@@ -254,6 +254,18 @@ export default function MemberTimelinePage() {
     [aorScope, payEntity],
   );
 
+  // MT Stage 2 — batch_id → statement_month YYYY-MM, plumbed into the
+  // classifier context so per-service-month net premium selection can prefer
+  // the EDE snapshot that matches the service month.
+  const batchMonthByBatchId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const b of batches ?? []) {
+      if (!b?.id || !b?.statement_month) continue;
+      map.set(String(b.id), String(b.statement_month).substring(0, 7));
+    }
+    return map;
+  }, [batches]);
+
   const filteredRecords = useMemo(() => {
     let out = records;
     if (carrier !== 'all') out = out.filter(r => carrierFamily(r.carrier || '') === carrier);
@@ -298,7 +310,7 @@ export default function MemberTimelinePage() {
     // Practical consequence: if you've uploaded the Feb 21 statement (pays
     // January service), Jan cells evaluate fully and Feb cells show as
     // "pending" until the March 21 statement is uploaded into its batch.
-    const context = buildClassifierContext(classifierRecords as any, monthList, []);
+    const context = buildClassifierContext(classifierRecords as any, monthList, [], { batchMonthByBatchId });
 
     return allRows.map(row => {
       const recs = byMember.get(row.member_key) ?? [];
@@ -316,11 +328,20 @@ export default function MemberTimelinePage() {
         const c = classification.cells[m];
         const existing = newCells[m];
         if (!c || !existing) continue;
-        newCells[m] = applyNoSourceInvariantToMonthCell({
+        const stamped = applyNoSourceInvariantToMonthCell({
           ...existing,
           state: c.state,
           state_reason: c.reason,
         });
+        // MT Stage 2 — stamp netBucket AFTER classifier + no-source override.
+        // Only unpaid cells carry a bucket; positive service-month premium →
+        // '+Net'; zero / null / no-row → '0Net' (collapsed).
+        let netBucket: '+Net' | '0Net' | null = null;
+        if (stamped.state === 'unpaid') {
+          const np = netPremiumForServiceMonth(recs as any, m, { batchMonthByBatchId });
+          netBucket = np === null ? '0Net' : np > 0 ? '+Net' : '0Net';
+        }
+        newCells[m] = { ...stamped, netBucket };
         // Count states. Only eligible cells contribute to due/paid/unpaid.
         switch (newCells[m].state) {
           case 'paid':
@@ -344,6 +365,9 @@ export default function MemberTimelinePage() {
             break;
         }
       }
+      const finalCells = Object.values(newCells);
+      const hasUnpaidPlusNet = finalCells.some(c => c.state === 'unpaid' && c.netBucket === '+Net');
+      const hasUnpaidZeroNet = finalCells.some(c => c.state === 'unpaid' && c.netBucket === '0Net');
       return {
         ...row,
         cells: newCells,
@@ -352,9 +376,11 @@ export default function MemberTimelinePage() {
         months_paid,
         months_unpaid,
         months_due,
+        hasUnpaidPlusNet,
+        hasUnpaidZeroNet,
       } as MemberTimelineRow;
     });
-  }, [allRows, filteredRecords, monthList, isDueEligibleRecord]);
+  }, [allRows, filteredRecords, monthList, isDueEligibleRecord, batchMonthByBatchId]);
 
   const filteredRows = useMemo(() => {
     // Base set: only members with at least one due month in the selected range.
@@ -363,6 +389,8 @@ export default function MemberTimelinePage() {
     const isPending = (r: MemberTimelineRow): boolean =>
       Object.values(r.cells).some(c => c.state === 'pending');
     if (filter === 'unpaid') rows = rows.filter(r => r.months_unpaid > 0);
+    else if (filter === 'unpaid-plus-net') rows = rows.filter(r => r.hasUnpaidPlusNet);
+    else if (filter === 'unpaid-zero-net') rows = rows.filter(r => r.hasUnpaidZeroNet);
     else if (filter === 'paid') {
       // Fully paid = every due month is paid (not just "no unpaid"). Members
       // with pending cells don't qualify — they're waiting, not resolved.
@@ -690,17 +718,23 @@ export default function MemberTimelinePage() {
             const counts = {
               all: dueRows.length,
               unpaid: dueRows.filter(r => r.months_unpaid > 0).length,
+              unpaidPlusNet: dueRows.filter(r => r.hasUnpaidPlusNet).length,
+              unpaidZeroNet: dueRows.filter(r => r.hasUnpaidZeroNet).length,
               partial: dueRows.filter(r => r.months_paid > 0 && r.months_unpaid > 0).length,
               paid: dueRows.filter(r => r.months_paid === r.months_due).length,
               pending: dueRows.filter(r => isPending(r)).length,
               review: dueRows.filter(r => r.needs_manual_review).length,
             };
-            return (['all', 'unpaid', 'partial', 'paid', 'pending', 'review'] as const).map(f => {
+            return (['all', 'unpaid', 'unpaid-plus-net', 'unpaid-zero-net', 'partial', 'paid', 'pending', 'review'] as const).map(f => {
               const tip =
                 f === 'all'
                   ? 'All members with at least one due month in the selected range.'
                   : f === 'unpaid'
                   ? 'Members with at least one due month classified as unpaid — commission expected and not received.'
+                  : f === 'unpaid-plus-net'
+                  ? 'Members with ≥1 unpaid cell backed by positive service-month EDE net premium evidence.'
+                  : f === 'unpaid-zero-net'
+                  ? 'Members with ≥1 unpaid cell where the service-month EDE net premium is zero, null, or no EDE row exists for that month.'
                   : f === 'partial'
                   ? 'Members paid for some due months but unpaid in others. Excludes pending (not-yet-ripe) months.'
                   : f === 'paid'
@@ -713,6 +747,10 @@ export default function MemberTimelinePage() {
                   ? `All (${counts.all})`
                   : f === 'unpaid'
                   ? `Has unpaid (${counts.unpaid})`
+                  : f === 'unpaid-plus-net'
+                  ? `unpaid - + Net (${counts.unpaidPlusNet})`
+                  : f === 'unpaid-zero-net'
+                  ? `unpaid - 0 Net (${counts.unpaidZeroNet})`
                   : f === 'partial'
                   ? `Partially paid (${counts.partial})`
                   : f === 'paid'

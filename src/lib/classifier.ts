@@ -80,6 +80,13 @@ export interface ClassifierContext {
    * can ask "do we have a BO snapshot dated ≥ M+1?" for premium-paid gating.
    */
   boSnapshotDates: string[];
+  /**
+   * MT Stage 2 — OPTIONAL map of batch_id -> statement_month YYYY-MM.
+   * Absent ⇒ classifyCell() uses legacy member-level latestEdeNetPremium
+   * (preserves non-MT consumer behavior). Present (even empty) ⇒ classifyCell
+   * routes to per-service-month netPremiumForServiceMonth helper.
+   */
+  batchMonthByBatchId?: Map<string, string>;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -245,6 +252,82 @@ function latestEdeNetPremium(records: NormalizedRecord[]): number {
     if (r.net_premium != null && r.net_premium > max) max = r.net_premium;
   }
   return max;
+}
+
+/**
+ * MT Stage 2 — service-month-grain net premium selector.
+ *
+ * Returns the net premium that applies to `serviceMonth` for the given member
+ * records, using batch-month preference + active-coverage fallback.
+ *
+ * Internal bucket parsing on the selected row:
+ *   - net_premium > 0 numeric → return that number
+ *   - net_premium null / undefined / blank / non-numeric / 0 / negative → 0
+ *   - no candidate row exists → null
+ *
+ * Selection:
+ *   1. Candidate filter: source_type === 'EDE', effective_date.month ≤ serviceMonth,
+ *      and (no policy_term_date OR serviceMonth < policy_term_date.month).
+ *   2. Batch-month preference: prefer candidates whose batch_id maps via
+ *      batchMonthByBatchId to a statement_month equal to serviceMonth.
+ *   3. Tiebreaker: newest raw_json.lastEDESync, then newest created_at, then id.
+ *   4. Fallback: if Step 2 yields no match, tiebreak against Step 1 set.
+ *
+ * Tolerates empty `batchMonthByBatchId` map (skips Step 2 implicitly).
+ * EXPORTED for direct synthetic-test verification. Not consumed by canonical
+ * helpers — MT-cell-grain only.
+ */
+export function netPremiumForServiceMonth(
+  records: NormalizedRecord[],
+  serviceMonth: string,
+  options: { batchMonthByBatchId: Map<string, string> },
+): number | null {
+  const { batchMonthByBatchId } = options;
+  const candidates: NormalizedRecord[] = [];
+  for (const r of records) {
+    if (r.source_type !== 'EDE') continue;
+    const effMonth = dateToMonthKey(r.effective_date);
+    if (!effMonth || effMonth > serviceMonth) continue;
+    if (r.policy_term_date) {
+      const termMonth = dateToMonthKey(r.policy_term_date);
+      // term_date is exclusive — active strictly before term month
+      if (termMonth && serviceMonth >= termMonth) continue;
+    }
+    candidates.push(r);
+  }
+  if (candidates.length === 0) return null;
+
+  // Step 2 — batch-month preference
+  let pool = candidates;
+  if (batchMonthByBatchId.size > 0) {
+    const preferred = candidates.filter(r => {
+      const bid = (r as any).batch_id;
+      if (!bid) return false;
+      const sm = batchMonthByBatchId.get(String(bid));
+      return sm === serviceMonth;
+    });
+    if (preferred.length > 0) pool = preferred;
+  }
+
+  // Step 3 — tiebreaker
+  const sortKey = (r: NormalizedRecord): [string, string, string] => {
+    const sync = String(r.raw_json?.['lastEDESync'] ?? '');
+    const created = String((r as any).created_at ?? '');
+    const id = String((r as any).id ?? '');
+    return [sync, created, id];
+  };
+  pool.sort((a, b) => {
+    const [as, ac, ai] = sortKey(a);
+    const [bs, bc, bi] = sortKey(b);
+    if (bs !== as) return bs > as ? 1 : -1;
+    if (bc !== ac) return bc > ac ? 1 : -1;
+    if (bi !== ai) return bi > ai ? 1 : -1;
+    return 0;
+  });
+  const selected = pool[0];
+  const raw = selected.net_premium;
+  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return raw;
+  return 0;
 }
 
 /**
@@ -424,29 +507,40 @@ function classifyCell(
   }
 
   // From here, we're ripe and no commission was received.
-  const netPremium = latestEdeNetPremium(records);
+  // MT Stage 2 gate: when ClassifierContext carries batchMonthByBatchId,
+  // use service-month-grain premium. Otherwise fall back to legacy
+  // member-level max (preserves non-MT consumer behavior).
+  const hasBatchMonthContext = context.batchMonthByBatchId !== undefined;
+  const batchMonthByBatchId = context.batchMonthByBatchId ?? new Map<string, string>();
+  const netPremium: number | null = hasBatchMonthContext
+    ? netPremiumForServiceMonth(records, month, { batchMonthByBatchId })
+    : latestEdeNetPremium(records);
   const paidThrough = latestBoPaidThrough(records);
-  const monthEnd = monthKeyToFirstOfMonth(addMonths(month, 1)); // exclusive
   const paidThroughCoversMonth = paidThrough && paidThrough >= month;
   const paidThroughShowsUnpaid = paidThrough && paidThrough < month;
+  const noPositiveServiceMonthPremium = hasBatchMonthContext
+    ? netPremium === null || netPremium === 0
+    : netPremium === 0;
 
   // Rule 3 (eligible cells — Unpaid disputable): premium paid or zero-premium plan
-  if (netPremium === 0 || paidThroughCoversMonth) {
+  if (noPositiveServiceMonthPremium || paidThroughCoversMonth) {
     return {
       ...base,
       state: 'unpaid',
       reason: netPremium === 0
         ? 'Zero net premium plan with no commission received — dispute candidate.'
-        : `BO shows paid-through ${paidThrough} but no commission received.`,
+        : netPremium === null
+        ? 'No positive service-month EDE premium evidence and no commission received — dispute candidate.'
+        : `BO shows paid-through ${paidThrough || 'none'} but no commission received.`,
     };
   }
 
   // Rule 4 (non-disputable): premium unambiguously unpaid
-  if (netPremium > 0 && paidThroughShowsUnpaid) {
+  if (netPremium !== null && netPremium > 0 && paidThroughShowsUnpaid) {
     return {
       ...base,
       state: 'not_expected_premium_unpaid',
-      reason: `Net premium $${netPremium.toFixed(2)} due but BO paid-through ${paidThrough} < ${month} start.`,
+      reason: `Net premium $${netPremium.toFixed(2)} due but BO paid-through ${paidThrough || 'none'} < ${month} start.`,
     };
   }
 
@@ -454,7 +548,9 @@ function classifyCell(
   return {
     ...base,
     state: 'manual_review',
-    reason: `No commission, net premium $${netPremium.toFixed(2)}, paid-through "${paidThrough || 'none'}" — signals insufficient.`,
+    reason: netPremium === null
+      ? `No service-month EDE premium evidence, paid-through "${paidThrough || 'none'}" — signals insufficient.`
+      : `No commission, net premium $${netPremium.toFixed(2)}, paid-through "${paidThrough || 'none'}" — signals insufficient.`,
   };
 }
 
@@ -534,6 +630,7 @@ export function buildClassifierContext(
   records: NormalizedRecord[],
   months: MonthKey[],
   boSnapshotDates: string[] = [],
+  options?: { batchMonthByBatchId?: Map<string, string> },
 ): ClassifierContext {
   const commissionStatementMonths = new Set<MonthKey>();
   for (const r of records) {
@@ -542,7 +639,12 @@ export function buildClassifierContext(
       commissionStatementMonths.add(m);
     }
   }
-  return { months, commissionStatementMonths, boSnapshotDates };
+  return {
+    months,
+    commissionStatementMonths,
+    boSnapshotDates,
+    batchMonthByBatchId: options?.batchMonthByBatchId,
+  };
 }
 
 // ──────────────────────────────────────────────────────────────────────────

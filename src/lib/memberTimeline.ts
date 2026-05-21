@@ -17,6 +17,14 @@ export interface MonthCell {
   state?: ClassificationState;
   /** Classifier's human-readable explanation, surfaced in the cell tooltip. */
   state_reason?: string;
+  /**
+   * MT Stage 2 — unpaid-cell net premium bucket. Only meaningful when
+   * state === 'unpaid'. '+Net' = positive service-month premium evidence.
+   * '0Net' = zero/null/no-row evidence (collapsed per chip semantics).
+   * null otherwise. Stamped in MemberTimelinePage after the classifier +
+   * no-current-source override, not derived in buildMemberTimeline().
+   */
+  netBucket?: '+Net' | '0Net' | null;
 }
 
 export interface MemberTimelineRow {
@@ -39,6 +47,10 @@ export interface MemberTimelineRow {
   rollup?: RollupStatus;
   /** True if any cell in range is state = manual_review. */
   needs_manual_review?: boolean;
+  /** MT Stage 2 — member has ≥1 unpaid cell with positive service-month premium evidence. */
+  hasUnpaidPlusNet?: boolean;
+  /** MT Stage 2 — member has ≥1 unpaid cell with zero/null/no-row premium evidence. */
+  hasUnpaidZeroNet?: boolean;
 }
 
 const QUALIFIED_EDE_RAW_STATUSES = new Set([
