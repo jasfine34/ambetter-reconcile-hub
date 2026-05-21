@@ -47,6 +47,10 @@ export interface MemberTimelineRow {
   rollup?: RollupStatus;
   /** True if any cell in range is state = manual_review. */
   needs_manual_review?: boolean;
+  /** MT Stage 2 — member has ≥1 unpaid cell with positive service-month premium evidence. */
+  hasUnpaidPlusNet?: boolean;
+  /** MT Stage 2 — member has ≥1 unpaid cell with zero/null/no-row premium evidence. */
+  hasUnpaidZeroNet?: boolean;
 }
 
 const QUALIFIED_EDE_RAW_STATUSES = new Set([
