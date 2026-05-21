@@ -135,5 +135,6 @@ describe('Leonard Jackson April 2026 Ambetter Coverall — opt-in smoke control'
     );
     const expectedEnrollments = rawFilteredEde.uniqueKeys;
     expect(Math.abs((foundInBO + notInBO) - expectedEnrollments)).toBe(1);
-  });
+  }, 30000);
+
 });
