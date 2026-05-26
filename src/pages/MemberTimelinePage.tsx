@@ -993,6 +993,14 @@ export default function MemberTimelinePage() {
                                   <div>Commission: {c.in_commission ? `${c.payment_count} payment(s)` : 'no'}</div>
                                   <div>Paid: ${c.paid_amount.toFixed(2)}</div>
                                   <div>Due: {c.due ? 'yes' : 'no'}</div>
+                                  {c.carrier_recognition && (
+                                    <div className="mt-1 text-amber-700 dark:text-amber-500">
+                                      Carrier recognized via BO; picked EDE shows non-scope AOR
+                                      {typeof c.carrier_recognition_premium === 'number'
+                                        ? ` (premium $${c.carrier_recognition_premium.toFixed(2)})`
+                                        : ''}.
+                                    </div>
+                                  )}
                                 </TooltipContent>
                               </Tooltip>
                             )}
