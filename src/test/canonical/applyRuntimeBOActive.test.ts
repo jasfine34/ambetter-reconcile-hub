@@ -85,15 +85,16 @@ describe('applyRuntimeBOActive', () => {
     expect(result.mceExclusionMemberKeys.has('m:1')).toBe(true);
   });
 
-  it('paid-through-covered BO record → false + excluded', () => {
+  it('paid-through-covered BO record → ACTIVE (v5 Fix 1: paid_through no longer disqualifies)', () => {
     const result = applyRuntimeBOActive(
       [reconMember({ member_key: 'm:1', issuer_subscriber_id: 'ISS1' })],
-      [boRec({ issuer_subscriber_id: 'ISS1', paid_through_date: '2026-04-30' })],
+      [boRec({ issuer_subscriber_id: 'ISS1', paid_through_date: '2026-04-30', policy_term_date: '2027-12-31' })],
       BOUNDS_APR,
     );
-    expect(result.adjustedReconciled[0].in_back_office).toBe(false);
-    expect(result.mceExclusionMemberKeys.has('m:1')).toBe(true);
+    expect(result.adjustedReconciled[0].in_back_office).toBe(true);
+    expect(result.mceExclusionMemberKeys.has('m:1')).toBe(false);
   });
+
 
   it('multi-record OR — one active + one terminated → active, NOT excluded', () => {
     const result = applyRuntimeBOActive(
