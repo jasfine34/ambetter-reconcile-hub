@@ -19,6 +19,8 @@ import { NPN_MAP } from '@/lib/constants';
 import { isCoverallAORByName } from '@/lib/agents';
 import { statementMonthKey, currentMonthKey, addMonths } from '@/lib/dateRange';
 import { classifyMember, buildClassifierContext, buildIsDueEligibleRecord, netPremiumForServiceMonth } from '@/lib/classifier';
+import { buildMonthPickerMapForMember } from '@/lib/canonical/edeMonthPicker';
+import type { NormalizedRecord } from '@/lib/normalize';
 import { buildPaidDollarsAudit } from '@/lib/paidDollarsAudit';
 import { PaidDollarsAuditPanel } from '@/components/PaidDollarsAuditPanel';
 import { CellAttributionPopover } from '@/components/CellAttributionPopover';
