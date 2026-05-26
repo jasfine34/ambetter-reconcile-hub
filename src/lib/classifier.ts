@@ -295,62 +295,104 @@ function latestEdeNetPremium(records: NormalizedRecord[]): number {
 export function netPremiumForServiceMonth(
   records: NormalizedRecord[],
   serviceMonth: string,
-  options: { batchMonthByBatchId: Map<string, string> },
+  options: {
+    batchMonthByBatchId: Map<string, string>;
+    pickerEdeByMonth?: Map<string, NormalizedRecord | null>;
+  },
 ): number | null {
-  const { batchMonthByBatchId } = options;
-  const candidates: NormalizedRecord[] = [];
-  for (const r of records) {
-    if (r.source_type !== 'EDE') continue;
-    // Fix 6 — qualified-status filter so cancelled/terminated/non-Ambetter
-    // rows can never seed a premium candidate.
-    if (!isEDEQualified(r)) continue;
-    const effMonth = dateToMonthKey(r.effective_date);
-    if (!effMonth || effMonth > serviceMonth) continue;
-    if (r.policy_term_date) {
-      // Fix 6 — day-aware term-boundary via canonical helper.
-      const lastActive = lastActiveMonthForTermDate(r.policy_term_date);
-      if (lastActive && serviceMonth > lastActive) continue;
-    }
-    candidates.push(r);
-  }
-  if (candidates.length === 0) {
-    // Fix 3 / R-PAY-011 — BO fallback. When no qualified, active-date EDE
-    // premium candidate exists for the service month (SBE-state shape or
-    // stale/cancelled-only EDE), fall back to the active BO row's
-    // member_responsibility. The BO must pass the canonical predicate for
-    // the service month; off-scope BO is already filtered by the caller's
-    // record set. Returns the numeric MR (drives netBucket downstream);
-    // returns 0 when no MR present on the active BO row; returns null when
-    // no active BO row exists.
-    const firstOfMonth = monthKeyToFirstOfMonth(serviceMonth);
-    const { start: smStart, end: smEnd } = getStatementMonthBounds(firstOfMonth);
-    let activeBoFound = false;
-    let bestMR: number | null = null;
-    for (const r of records) {
-      if (r.source_type !== 'BACK_OFFICE') continue;
-      if (!isActiveBackOfficeRecord(r, smStart, smEnd)) continue;
-      activeBoFound = true;
-      const mr = r.member_responsibility;
-      if (typeof mr === 'number' && Number.isFinite(mr)) {
-        if (bestMR === null || mr > bestMR) bestMR = mr;
+  const { batchMonthByBatchId, pickerEdeByMonth } = options;
+
+  // Slice D — picker-aware fast path. When a picker map is provided we limit
+  // EDE consideration to the picker's record for this month. Picker → null
+  // means "no operative EDE for this month" → skip EDE entirely and let the
+  // BO fallback path run. Picker → record means "this is the operative EDE"
+  // → use it iff it's in the scoped `records` set AND has positive premium.
+  let edeReturned: number | null = null;
+  let edeHandled = false;
+  if (pickerEdeByMonth) {
+    edeHandled = true;
+    const picked = pickerEdeByMonth.get(serviceMonth) ?? null;
+    if (picked) {
+      const pickedId = String((picked as any).id ?? '');
+      const inScope = records.some(r => {
+        if (r.source_type !== 'EDE') return false;
+        const rid = String((r as any).id ?? '');
+        return pickedId && rid ? pickedId === rid : r === picked;
+      });
+      if (inScope) {
+        const raw = picked.net_premium;
+        if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return raw;
+        edeReturned = 0;
       }
     }
-    if (!activeBoFound) return null;
-    return bestMR ?? 0;
   }
 
-
-  // Step 2 — batch-month preference
-  let pool = candidates;
-  if (batchMonthByBatchId.size > 0) {
-    const preferred = candidates.filter(r => {
-      const bid = (r as any).batch_id;
-      if (!bid) return false;
-      const sm = batchMonthByBatchId.get(String(bid));
-      return sm === serviceMonth;
-    });
-    if (preferred.length > 0) pool = preferred;
+  if (!edeHandled) {
+    const candidates: NormalizedRecord[] = [];
+    for (const r of records) {
+      if (r.source_type !== 'EDE') continue;
+      if (!isEDEQualified(r)) continue;
+      const effMonth = dateToMonthKey(r.effective_date);
+      if (!effMonth || effMonth > serviceMonth) continue;
+      if (r.policy_term_date) {
+        const lastActive = lastActiveMonthForTermDate(r.policy_term_date);
+        if (lastActive && serviceMonth > lastActive) continue;
+      }
+      candidates.push(r);
+    }
+    if (candidates.length > 0) {
+      let pool = candidates;
+      if (batchMonthByBatchId.size > 0) {
+        const preferred = candidates.filter(r => {
+          const bid = (r as any).batch_id;
+          if (!bid) return false;
+          const sm = batchMonthByBatchId.get(String(bid));
+          return sm === serviceMonth;
+        });
+        if (preferred.length > 0) pool = preferred;
+      }
+      const sortKey = (r: NormalizedRecord): [string, string, string] => {
+        const sync = String(r.raw_json?.['lastEDESync'] ?? '');
+        const created = String((r as any).created_at ?? '');
+        const id = String((r as any).id ?? '');
+        return [sync, created, id];
+      };
+      pool.sort((a, b) => {
+        const [as, ac, ai] = sortKey(a);
+        const [bs, bc, bi] = sortKey(b);
+        if (bs !== as) return bs > as ? 1 : -1;
+        if (bc !== ac) return bc > ac ? 1 : -1;
+        if (bi !== ai) return bi > ai ? 1 : -1;
+        return 0;
+      });
+      const selected = pool[0];
+      const raw = selected.net_premium;
+      if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return raw;
+      return 0;
+    }
   }
+
+  // BO fallback (R-PAY-011) — fires when EDE path produced nothing or the
+  // picker returned null. Picker-with-record-but-zero-premium short-circuits
+  // to its zero value rather than falling through to BO.
+  if (edeReturned !== null) return edeReturned;
+
+  const firstOfMonth = monthKeyToFirstOfMonth(serviceMonth);
+  const { start: smStart, end: smEnd } = getStatementMonthBounds(firstOfMonth);
+  let activeBoFound = false;
+  let bestMR: number | null = null;
+  for (const r of records) {
+    if (r.source_type !== 'BACK_OFFICE') continue;
+    if (!isActiveBackOfficeRecord(r, smStart, smEnd)) continue;
+    activeBoFound = true;
+    const mr = r.member_responsibility;
+    if (typeof mr === 'number' && Number.isFinite(mr)) {
+      if (bestMR === null || mr > bestMR) bestMR = mr;
+    }
+  }
+  if (!activeBoFound) return null;
+  return bestMR ?? 0;
+}
 
   // Step 3 — tiebreaker
   const sortKey = (r: NormalizedRecord): [string, string, string] => {
