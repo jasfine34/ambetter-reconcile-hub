@@ -321,9 +321,10 @@ describe('3.1 — six named canaries absent from final MCE breakdown', () => {
 // ===========================================================================
 
 describe('3.2 — EDE-only leak regression (no eligibility gate on EDE-Only branch)', () => {
+  // v5 Fix 1 — paid_through removed as disqualifier; only term + eligibility
+  // remain as leak classes here.
   const disqualifiers: Array<{ label: string; bo: Partial<SynthOpts> }> = [
     { label: 'terminated (policy_term_date < statementMonthStart)', bo: { boPolicyTermDate: '2026-03-15' } },
-    { label: 'paid-through-covered (paid_through_date >= statementMonthEnd)', bo: { boPaidThroughDate: '2026-04-30' } },
     { label: "eligible_for_commission='No'",                                 bo: { boEligible: 'No' } },
   ];
 
@@ -335,7 +336,7 @@ describe('3.2 — EDE-only leak regression (no eligibility gate on EDE-Only bran
         issuerSubscriberId: 'U-LEAK-1',
         policyNumber: 'POL-LEAK',
         effectiveDate: '2026-01-01',
-        stalePersistedInBO: false, // EDE-only: not flagged BO-active persisted
+        stalePersistedInBO: false,
         ...d.bo,
       };
       const { allRowKeys } = runMcePipeline({
@@ -348,6 +349,7 @@ describe('3.2 — EDE-only leak regression (no eligibility gate on EDE-Only bran
     });
   }
 });
+
 
 // ===========================================================================
 // 3.3 — Runtime re-evaluation overrides stale persisted in_back_office=true
