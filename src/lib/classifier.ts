@@ -903,16 +903,38 @@ export function buildIsDueEligibleRecord(opts: {
   const { aorScope, payEntity } = opts;
   return (r: any): boolean => {
     const isCommission = r?.source_type === 'COMMISSION';
+    const isBackOffice = r?.source_type === 'BACK_OFFICE';
+    const isEde = r?.source_type === 'EDE';
+
+    // ─── Official scope check (BO + EDE only; commission scoped by pay_entity) ───
     if (aorScope === 'official' && !isCommission) {
-      const aorMatch =
-        isCoverallAORByName(r?.aor_bucket) ||
-        isCoverallAORByName(r?.raw_json?.['currentPolicyAOR'] as string | undefined) ||
-        isCoverallAORByName(
+      let aorMatch = false;
+      if (isEde) {
+        // EDE arm — picked currentPolicyAOR must match scope. aor_bucket is
+        // NOT a valid scope signal (R-AOR-008): it carries the original
+        // writing-agent locked at enrollment and can diverge from
+        // currentPolicyAOR after an AOR switch.
+        aorMatch = isCoverallAORByName(
+          r?.raw_json?.['currentPolicyAOR'] as string | undefined,
+        );
+      } else if (isBackOffice) {
+        // BO arm — broker name match AND agent_npn in NPN_MAP. NPN-map gate
+        // is required REGARDLESS of payEntity (v5 Finding 2). Active-BO
+        // check is NOT performed here — it's enforced per-cell.
+        const brokerNameMatches = isCoverallAORByName(
           (r?.raw_json?.['Broker Name'] as string | undefined) ??
           (r?.raw_json?.['broker_name'] as string | undefined),
         );
+        if (brokerNameMatches) {
+          const npn = String(r?.agent_npn || '').trim();
+          const info = (NPN_MAP as any)[npn];
+          aorMatch = !!info;
+        }
+      }
       if (!aorMatch) return false;
     }
+
+    // ─── Pay-entity scope check ───
     if (payEntity !== 'All') {
       if (isCommission) {
         const recPayEntity = String(r?.pay_entity || '').trim();
