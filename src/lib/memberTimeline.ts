@@ -254,20 +254,11 @@ export function buildMemberTimeline(
         // isEDEQualified.
         const start = ymOf(r.effective_date);
         if (!start) continue;
-        let end: string | null = null;
-        if (r.policy_term_date) {
-          const termYM = ymOf(r.policy_term_date);
-          // Same exclusivity convention as BO: term date is exclusive,
-          // active through the prior month.
-          if (termYM) end = addMonths(termYM, -1);
-        }
+        // Fix 6 — day-aware term-boundary via canonical helper.
+        const end = r.policy_term_date ? lastActiveMonthForTermDate(r.policy_term_date) : null;
         const edeQualified = isEDEQualified(r);
         // FOLLOWUP FIX: gate in_ede with the same predicates as `due` so the
-        // E badge respects AOR scope + qualifying status. An EDE row from a
-        // non-Coverall AOR (under Coverall scope) or a Cancelled row should
-        // not light up the E badge — the renderer reads c.in_ede directly,
-        // so all four "no E" conditions (cancelled/terminated, AOR moved,
-        // non-qualifying status, dropped from EDE) collapse to this one gate.
+        // E badge respects AOR scope + qualifying status.
         if (!eligibleForDue || !edeQualified) continue;
         for (const m of monthList) {
           if (m < start) continue;
@@ -281,9 +272,20 @@ export function buildMemberTimeline(
         for (const m of monthList) {
           if (m < start) continue;
           if (end && m > end) continue;
+          // Fix 7 (per Codex v3 C2 Option A + v4 C1) — gate per-month
+          // stamping on canonical predicate AND scope. R-SRC-004 requires
+          // IN-SCOPE active source support; off-scope active BO must NOT
+          // stamp source flags. Range alone misses broker_term,
+          // eligibility, and BED-future disqualifiers — those live only
+          // in isActiveBackOfficeRecord.
+          const firstOfMonth = monthKeyToFirstOfMonth(m);
+          const { start: smStart, end: smEnd } = getStatementMonthBounds(firstOfMonth);
+          if (!isActiveBackOfficeRecord(r, smStart, smEnd)) continue;
+          if (!eligibleForDue) continue;
           cells[m].in_back_office = true;
-          if (eligibleForDue) cells[m].due = true;
+          cells[m].due = true;
         }
+
       } else if (r.source_type === 'COMMISSION') {
         // Honor the eligibility predicate for commissions too. Without this
         // gate, a Vix commission row would still pump $ into a member's cells
