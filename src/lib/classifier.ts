@@ -292,16 +292,44 @@ export function netPremiumForServiceMonth(
   const candidates: NormalizedRecord[] = [];
   for (const r of records) {
     if (r.source_type !== 'EDE') continue;
+    // Fix 6 — qualified-status filter so cancelled/terminated/non-Ambetter
+    // rows can never seed a premium candidate.
+    if (!isEDEQualified(r)) continue;
     const effMonth = dateToMonthKey(r.effective_date);
     if (!effMonth || effMonth > serviceMonth) continue;
     if (r.policy_term_date) {
-      const termMonth = dateToMonthKey(r.policy_term_date);
-      // term_date is exclusive — active strictly before term month
-      if (termMonth && serviceMonth >= termMonth) continue;
+      // Fix 6 — day-aware term-boundary via canonical helper.
+      const lastActive = lastActiveMonthForTermDate(r.policy_term_date);
+      if (lastActive && serviceMonth > lastActive) continue;
     }
     candidates.push(r);
   }
-  if (candidates.length === 0) return null;
+  if (candidates.length === 0) {
+    // Fix 3 / R-PAY-011 — BO fallback. When no qualified, active-date EDE
+    // premium candidate exists for the service month (SBE-state shape or
+    // stale/cancelled-only EDE), fall back to the active BO row's
+    // member_responsibility. The BO must pass the canonical predicate for
+    // the service month; off-scope BO is already filtered by the caller's
+    // record set. Returns the numeric MR (drives netBucket downstream);
+    // returns 0 when no MR present on the active BO row; returns null when
+    // no active BO row exists.
+    const firstOfMonth = monthKeyToFirstOfMonth(serviceMonth);
+    const { start: smStart, end: smEnd } = getStatementMonthBounds(firstOfMonth);
+    let activeBoFound = false;
+    let bestMR: number | null = null;
+    for (const r of records) {
+      if (r.source_type !== 'BACK_OFFICE') continue;
+      if (!isActiveBackOfficeRecord(r, smStart, smEnd)) continue;
+      activeBoFound = true;
+      const mr = r.member_responsibility;
+      if (typeof mr === 'number' && Number.isFinite(mr)) {
+        if (bestMR === null || mr > bestMR) bestMR = mr;
+      }
+    }
+    if (!activeBoFound) return null;
+    return bestMR ?? 0;
+  }
+
 
   // Step 2 — batch-month preference
   let pool = candidates;
