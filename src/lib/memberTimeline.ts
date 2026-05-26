@@ -6,6 +6,10 @@ import { lastActiveMonthForTermDate } from './canonical/termBoundary';
 import { isActiveBackOfficeRecord } from './canonical/isActiveBackOfficeRecord';
 import { getStatementMonthBounds } from './canonical/statementMonthBounds';
 import { monthKeyToFirstOfMonth } from './dateRange';
+import { pickEdeForServiceMonth } from './canonical/edeMonthPicker';
+import { NPN_MAP } from './constants';
+import { isCoverallAORByName } from './agents';
+
 
 
 export interface MonthCell {
@@ -31,6 +35,18 @@ export interface MonthCell {
    * no-current-source override, not derived in buildMemberTimeline().
    */
   netBucket?: '+Net' | '0Net' | null;
+  /**
+   * Slice C (R-AUDIT-010 Layer 1) — true when this cell is in scope via the
+   * BO broker arm (Coverall broker name + mapped NPN + active BO) BUT the
+   * picked EDE for this service month has a non-scope currentPolicyAOR.
+   */
+  carrier_recognition?: boolean;
+  /**
+   * Slice C — preserved EDE net premium for the carrier-recognition cell,
+   * stamped at assembly BEFORE the scope filter excludes the non-scope EDE.
+   * Drives netBucket='+Net' when > 0 (Option A).
+   */
+  carrier_recognition_premium?: number;
 }
 
 export interface MemberTimelineRow {
@@ -185,10 +201,76 @@ function emptyCell(month: string): MonthCell {
  */
 export type DueRecordPredicate = (r: NormalizedRecord) => boolean;
 
+type PayEntityScopeMT = 'Coverall' | 'Vix' | 'All';
+
+/**
+ * Slice C — detect a carrier-recognition cell. Active BO row satisfies
+ * R-AOR-008 BO arm under the selected pay-entity scope, but the picked EDE
+ * for the service month has a non-scope `currentPolicyAOR`. Returns the
+ * preserved EDE net premium so the page can stamp Option A netBucket.
+ */
+function detectCarrierRecognition(
+  rawMemberRecs: NormalizedRecord[],
+  serviceMonth: string,
+  smStart: string,
+  smEnd: string,
+  payEntity: PayEntityScopeMT,
+  pickerForMember?: Map<string, NormalizedRecord | null>,
+): { isCarrierRecognized: boolean; recognizedPremium: number | undefined } {
+  const boScope = rawMemberRecs.find(r => {
+    if (r.source_type !== 'BACK_OFFICE') return false;
+    const brokerNameMatches = isCoverallAORByName(
+      (r?.raw_json?.['Broker Name'] as string | undefined) ??
+      (r?.raw_json?.['broker_name'] as string | undefined),
+    );
+    if (!brokerNameMatches) return false;
+    const npn = String(r?.agent_npn || '').trim();
+    const info = (NPN_MAP as any)[npn];
+    if (!info) return false;
+    if (payEntity !== 'All') {
+      if (info.expectedPayEntity !== payEntity && info.expectedPayEntity !== 'Coverall_or_Vix') {
+        return false;
+      }
+    }
+    return isActiveBackOfficeRecord(r, smStart, smEnd);
+  });
+  if (!boScope) return { isCarrierRecognized: false, recognizedPremium: undefined };
+
+  let picked: NormalizedRecord | null = null;
+  if (pickerForMember) {
+    picked = pickerForMember.get(serviceMonth) ?? null;
+  } else {
+    const qualifiedEdes = rawMemberRecs.filter(
+      r => r.source_type === 'EDE' && isEDEQualified(r),
+    );
+    picked = pickEdeForServiceMonth(qualifiedEdes, serviceMonth);
+  }
+  if (!picked) return { isCarrierRecognized: false, recognizedPremium: undefined };
+
+  const pickedAor = picked.raw_json?.['currentPolicyAOR'] as string | undefined;
+  if (isCoverallAORByName(pickedAor)) {
+    return { isCarrierRecognized: false, recognizedPremium: undefined };
+  }
+  return {
+    isCarrierRecognized: true,
+    recognizedPremium: typeof picked.net_premium === 'number' ? picked.net_premium : undefined,
+  };
+}
+
 export function buildMemberTimeline(
   records: NormalizedRecord[],
   monthList: string[],
-  isDueEligibleRecord?: DueRecordPredicate
+  isDueEligibleRecord?: DueRecordPredicate,
+  options?: {
+    /** Pre-AOR-filter per-member raw record sets — required for CR detection. */
+    rawRecordsByMemberKey?: Map<string, NormalizedRecord[]>;
+    /** Pre-built per-member month-aware picker maps — gates EDE stamping. */
+    pickerMapsByMemberKey?: Map<string, Map<string, NormalizedRecord | null>>;
+    /** When 'official', CR stamping runs. */
+    selectedAorScope?: 'official' | 'all';
+    /** Pay-entity scope for CR detection. */
+    payEntity?: PayEntityScopeMT;
+  },
 ): MemberTimelineRow[] {
   const monthSet = new Set(monthList);
   const byMember = new Map<string, NormalizedRecord[]>();
@@ -198,6 +280,7 @@ export function buildMemberTimeline(
     if (!arr) { arr = []; byMember.set(key, arr); }
     arr.push(r);
   }
+
 
   // Class-A FFM ID fallback index: built from the full records pool so a
   // member whose same-key recs carry no `ffmAppId` can still surface one
@@ -243,26 +326,30 @@ export function buildMemberTimeline(
     for (const r of recs) {
       const eligibleForDue = isDueEligibleRecord ? isDueEligibleRecord(r) : true;
       if (r.source_type === 'EDE') {
-        // AUDIT FIX (2026-04): An Effectuated EDE record represents an ongoing
-        // enrollment, not a single-month event. Previously we only marked
-        // in_ede / due for the effective_date month, which caused widespread
-        // false "missing from EDE" flags on Feb/Mar cells for members who
-        // appeared in every monthly EDE batch. Now we span [effective_date,
-        // expiration_date or open] to mirror backOfficeActiveRange. Multiple
-        // EDE records for the same member naturally union via the per-cell
-        // boolean. Cancelled rows are still excluded from `due` via
-        // isEDEQualified.
         const start = ymOf(r.effective_date);
         if (!start) continue;
-        // Fix 6 — day-aware term-boundary via canonical helper.
         const end = r.policy_term_date ? lastActiveMonthForTermDate(r.policy_term_date) : null;
         const edeQualified = isEDEQualified(r);
-        // FOLLOWUP FIX: gate in_ede with the same predicates as `due` so the
-        // E badge respects AOR scope + qualifying status.
         if (!eligibleForDue || !edeQualified) continue;
+        // Slice D — month-aware picker gate. When the page provides a
+        // picker map, only stamp in_ede for cells where THIS record IS the
+        // operative picker for the month. Without a picker map, retain
+        // legacy spanning (back-compat for non-page callers and tests).
+        const pickerForMember = options?.pickerMapsByMemberKey?.get(key);
+        const rId = String((r as any).id ?? '');
         for (const m of monthList) {
           if (m < start) continue;
           if (end && m > end) continue;
+          if (pickerForMember) {
+            const picked = pickerForMember.get(m);
+            if (!picked) continue;
+            const pickedId = String((picked as any).id ?? '');
+            if (pickedId && rId) {
+              if (pickedId !== rId) continue;
+            } else if (picked !== r) {
+              continue;
+            }
+          }
           cells[m].in_ede = true;
           cells[m].due = true;
         }
@@ -301,6 +388,28 @@ export function buildMemberTimeline(
         }
       }
     }
+
+    // Slice C — carrier-recognition stamping pass. Uses the raw per-member
+    // source universe (pre-AOR-filter) so the picked EDE can be a non-scope
+    // row hidden from the classifier's record set.
+    if (options?.selectedAorScope === 'official' && options?.rawRecordsByMemberKey) {
+      const rawRecs = options.rawRecordsByMemberKey.get(key) ?? recs;
+      const pickerForMember = options.pickerMapsByMemberKey?.get(key);
+      for (const m of monthList) {
+        const firstOfMonth = monthKeyToFirstOfMonth(m);
+        const { start: smStart, end: smEnd } = getStatementMonthBounds(firstOfMonth);
+        const { isCarrierRecognized, recognizedPremium } = detectCarrierRecognition(
+          rawRecs, m, smStart, smEnd, options?.payEntity ?? 'All', pickerForMember,
+        );
+        if (isCarrierRecognized) {
+          cells[m].carrier_recognition = true;
+          if (recognizedPremium != null) {
+            cells[m].carrier_recognition_premium = recognizedPremium;
+          }
+        }
+      }
+    }
+
 
     // Totals
     for (const m of monthList) {

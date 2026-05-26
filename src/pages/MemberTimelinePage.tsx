@@ -19,6 +19,8 @@ import { NPN_MAP } from '@/lib/constants';
 import { isCoverallAORByName } from '@/lib/agents';
 import { statementMonthKey, currentMonthKey, addMonths } from '@/lib/dateRange';
 import { classifyMember, buildClassifierContext, buildIsDueEligibleRecord, netPremiumForServiceMonth } from '@/lib/classifier';
+import { buildMonthPickerMapForMember } from '@/lib/canonical/edeMonthPicker';
+import type { NormalizedRecord } from '@/lib/normalize';
 import { buildPaidDollarsAudit } from '@/lib/paidDollarsAudit';
 import { PaidDollarsAuditPanel } from '@/components/PaidDollarsAuditPanel';
 import { CellAttributionPopover } from '@/components/CellAttributionPopover';
@@ -273,9 +275,39 @@ export default function MemberTimelinePage() {
     return out;
   }, [records, carrier, aorBuckets]);
 
+  // Slice C — pre-AOR-filter per-member raw record sets. Carrier-only filter
+  // so CR detection can see a non-scope EDE hidden by the aorBuckets filter.
+  const rawRecordsByMemberKey = useMemo(() => {
+    const filteredByCarrier = carrier !== 'all'
+      ? records.filter(r => carrierFamily(r.carrier || '') === carrier)
+      : records;
+    const map = new Map<string, NormalizedRecord[]>();
+    for (const r of filteredByCarrier) {
+      const key = r.member_key || r.applicant_name || 'unknown';
+      let arr = map.get(key);
+      if (!arr) { arr = []; map.set(key, arr); }
+      arr.push(r as NormalizedRecord);
+    }
+    return map;
+  }, [records, carrier]);
+
+  // Slice D — pre-built per-member month-aware EDE picker maps.
+  const pickerMapsByMemberKey = useMemo(() => {
+    const map = new Map<string, Map<string, NormalizedRecord | null>>();
+    for (const [memberKey, rawRecs] of rawRecordsByMemberKey) {
+      map.set(memberKey, buildMonthPickerMapForMember(rawRecs, monthList));
+    }
+    return map;
+  }, [rawRecordsByMemberKey, monthList]);
+
   const allRows = useMemo(
-    () => buildMemberTimeline(filteredRecords as any, monthList, isDueEligibleRecord),
-    [filteredRecords, monthList, isDueEligibleRecord]
+    () => buildMemberTimeline(filteredRecords as any, monthList, isDueEligibleRecord, {
+      rawRecordsByMemberKey,
+      pickerMapsByMemberKey,
+      selectedAorScope: aorScope === 'official' ? 'official' : 'all',
+      payEntity,
+    }),
+    [filteredRecords, monthList, isDueEligibleRecord, rawRecordsByMemberKey, pickerMapsByMemberKey, aorScope, payEntity]
   );
 
   // Phase 2c — enrich each row's cells with the classifier's per-cell state
@@ -284,15 +316,8 @@ export default function MemberTimelinePage() {
   const classifiedRows = useMemo(() => {
     if (allRows.length === 0 || monthList.length === 0) return allRows;
 
-    // Apply the same per-record pay-entity / AOR scope filter that
-    // buildMemberTimeline uses for cell-level paid_amount, so the classifier
-    // sees the SAME commission rows the cell displays. Without this, an
-    // off-scope commission (e.g. a Vix $4.50 row when viewing Coverall) would
-    // trigger Rule 1 (Paid) in the classifier even though the cell shows $0.00,
-    // producing green "paid" cells with no dollars.
     const classifierRecords = filteredRecords.filter(isDueEligibleRecord);
 
-    // Group records by member_key (same key buildMemberTimeline used)
     const byMember = new Map<string, any[]>();
     for (const r of classifierRecords) {
       const key = r.member_key || r.applicant_name || 'unknown';
@@ -301,25 +326,15 @@ export default function MemberTimelinePage() {
       arr.push(r);
     }
 
-    // Build a context. boSnapshotDates is empty — snapshot dates aren't
-    // plumbed onto records yet (they live on the bo_snapshots table). When
-    // empty, the classifier falls back to commission-statement-only ripeness,
-    // which matches the operational question the user actually asks: "has
-    // the statement that would pay for this service month arrived?"
-    //
-    // Practical consequence: if you've uploaded the Feb 21 statement (pays
-    // January service), Jan cells evaluate fully and Feb cells show as
-    // "pending" until the March 21 statement is uploaded into its batch.
-    const context = buildClassifierContext(classifierRecords as any, monthList, [], { batchMonthByBatchId });
+    const baseContext = buildClassifierContext(classifierRecords as any, monthList, [], { batchMonthByBatchId });
 
     return allRows.map(row => {
       const recs = byMember.get(row.member_key) ?? [];
       if (recs.length === 0) return row;
+      const pickerForMember = pickerMapsByMemberKey.get(row.member_key);
+      const context = { ...baseContext, pickerEdeByMonth: pickerForMember };
       const classification = classifyMember(recs as any, context);
       const newCells = { ...row.cells };
-      // Recompute per-member counters based on the classifier state so filter
-      // pills reflect the same truth the cells display. Legacy `due` flag only
-      // said "active this month"; classifier says paid/unpaid/pending/review.
       let months_paid = 0;
       let months_unpaid = 0;
       let months_pending = 0;
@@ -333,16 +348,23 @@ export default function MemberTimelinePage() {
           state: c.state,
           state_reason: c.reason,
         });
-        // MT Stage 2 — stamp netBucket AFTER classifier + no-source override.
-        // Only unpaid cells carry a bucket; positive service-month premium →
-        // '+Net'; zero / null / no-row → '0Net' (collapsed).
         let netBucket: '+Net' | '0Net' | null = null;
         if (stamped.state === 'unpaid') {
-          const np = netPremiumForServiceMonth(recs as any, m, { batchMonthByBatchId });
+          const np = netPremiumForServiceMonth(recs as any, m, {
+            batchMonthByBatchId,
+            pickerEdeByMonth: pickerForMember,
+          });
           netBucket = np === null ? '0Net' : np > 0 ? '+Net' : '0Net';
         }
+        // Slice C Option A — CR premium > 0 forces +Net even when the
+        // classifier's scoped view sees 0/null. Applied to LOCAL netBucket
+        // BEFORE the assignment so { ...stamped, netBucket } picks it up.
+        if (stamped.state === 'unpaid'
+            && (stamped.carrier_recognition_premium ?? 0) > 0
+            && netBucket !== '+Net') {
+          netBucket = '+Net';
+        }
         newCells[m] = { ...stamped, netBucket };
-        // Count states. Only eligible cells contribute to due/paid/unpaid.
         switch (newCells[m].state) {
           case 'paid':
             months_paid++;
@@ -357,11 +379,9 @@ export default function MemberTimelinePage() {
             months_due++;
             break;
           case 'manual_review':
-            // Counts as due but doesn't resolve to paid or unpaid
             months_due++;
             break;
           default:
-            // not_expected_* — not due, skip
             break;
         }
       }
@@ -380,7 +400,7 @@ export default function MemberTimelinePage() {
         hasUnpaidZeroNet,
       } as MemberTimelineRow;
     });
-  }, [allRows, filteredRecords, monthList, isDueEligibleRecord, batchMonthByBatchId]);
+  }, [allRows, filteredRecords, monthList, isDueEligibleRecord, batchMonthByBatchId, pickerMapsByMemberKey]);
 
   const filteredRows = useMemo(() => {
     // Base set: only members with at least one due month in the selected range.
@@ -829,8 +849,16 @@ export default function MemberTimelinePage() {
                   ) : pageRows.map(row => (
                     <tr key={row.member_key} className="border-t hover:bg-muted/30">
                       <td className="px-3 py-2 sticky left-0 bg-card z-10">
-                        <div className="font-medium text-foreground truncate max-w-[180px]" title={row.applicant_name}>
-                          {row.applicant_name || '—'}
+                        <div className="font-medium text-foreground truncate max-w-[180px] flex items-center gap-1" title={row.applicant_name}>
+                          <span className="truncate">{row.applicant_name || '—'}</span>
+                          {(() => {
+                            const crCount = Object.values(row.cells).filter(c => c.carrier_recognition).length;
+                            return crCount > 0 ? (
+                              <span className="text-[9px] px-1 rounded border border-amber-500/60 text-amber-700 dark:text-amber-500 font-mono">
+                                CR×{crCount}
+                              </span>
+                            ) : null;
+                          })()}
                         </div>
                         <div className="text-[10px] text-muted-foreground truncate max-w-[180px]">
                           {row.aor_bucket || '—'}
@@ -927,6 +955,14 @@ export default function MemberTimelinePage() {
                               {c.in_ede && <Badge variant="secondary" className="h-4 px-1 text-[9px] font-mono">E</Badge>}
                               {c.in_back_office && <Badge variant="secondary" className="h-4 px-1 text-[9px] font-mono">B</Badge>}
                               {c.in_commission && <Badge variant="secondary" className="h-4 px-1 text-[9px] font-mono">C</Badge>}
+                              {c.carrier_recognition && (
+                                <Badge
+                                  variant="outline"
+                                  className="h-4 px-1 text-[9px] font-mono border-amber-500/60 text-amber-700 dark:text-amber-500"
+                                >
+                                  CR
+                                </Badge>
+                              )}
                               {!hasAny && <span className="text-muted-foreground/50 text-[10px]">—</span>}
                             </div>
                             <div className="text-[10px] font-medium text-foreground leading-tight">
@@ -965,6 +1001,14 @@ export default function MemberTimelinePage() {
                                   <div>Commission: {c.in_commission ? `${c.payment_count} payment(s)` : 'no'}</div>
                                   <div>Paid: ${c.paid_amount.toFixed(2)}</div>
                                   <div>Due: {c.due ? 'yes' : 'no'}</div>
+                                  {c.carrier_recognition && (
+                                    <div className="mt-1 text-amber-700 dark:text-amber-500">
+                                      Carrier recognized via BO; picked EDE shows non-scope AOR
+                                      {typeof c.carrier_recognition_premium === 'number'
+                                        ? ` (premium $${c.carrier_recognition_premium.toFixed(2)})`
+                                        : ''}.
+                                    </div>
+                                  )}
                                 </TooltipContent>
                               </Tooltip>
                             )}

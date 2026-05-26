@@ -282,6 +282,9 @@ function makeBoRow(over: Record<string, any> = {}): any {
     broker_term_date: null,
     agent_npn: COVERALL_NPN,
     aor_bucket: 'Jason Fine',
+    // Slice A (v8) — BO scope arm requires broker name match. Default to
+    // Jason Fine so existing fixtures continue to be in-scope.
+    raw_json: { 'Broker Name': 'Jason Fine' },
     ...over,
   };
 }
@@ -489,7 +492,7 @@ describe('REPAIR consumer-path — buildIsDueEligibleRecord is invoked + scopes 
     // Under scope='Coverall', the Vix row must be filtered out before rule eval.
     const memberKey = 'mem-scope';
     const coverallBo = makeBoRow({ member_key: memberKey, agent_npn: COVERALL_NPN });
-    const vixBo = makeBoRow({ member_key: memberKey, agent_npn: VIX_NPN, aor_bucket: 'Other Agent' });
+    const vixBo = makeBoRow({ member_key: memberKey, agent_npn: VIX_NPN, aor_bucket: 'Other Agent', raw_json: { 'Broker Name': 'Other Agent' } });
 
     // Capture the records arg classifyMemberForMonth receives.
     let observedRecordsForClassifier: any[] | undefined;
@@ -523,6 +526,6 @@ describe('REPAIR consumer-path — buildIsDueEligibleRecord is invoked + scopes 
     await ensureRealFactory();
     const pred = realBuildIsDueEligibleRecord({ aorScope: 'official', payEntity: 'Coverall' });
     expect(pred(makeBoRow({ agent_npn: COVERALL_NPN }))).toBe(true);
-    expect(pred(makeBoRow({ agent_npn: VIX_NPN, aor_bucket: 'Other Agent' }))).toBe(false);
+    expect(pred(makeBoRow({ agent_npn: VIX_NPN, aor_bucket: 'Other Agent', raw_json: { 'Broker Name': 'Other Agent' } }))).toBe(false);
   });
 });
