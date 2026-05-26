@@ -441,8 +441,37 @@ function paidForMonth(records: NormalizedRecord[], month: MonthKey): number {
  * Any qualified, active-date EDE record in this member's set that covers the
  * given month. Fix 6 — uses canonical isEDEQualified + day-aware term-
  * boundary. Cancelled/terminated/non-Ambetter rows no longer light in_ede.
+ *
+ * Slice D — when `context.pickerEdeByMonth` is provided, EDE consideration
+ * is restricted to the picker's record for that month. Picker → null means
+ * "no operative EDE for this month" → returns false (no fall-through to
+ * unrestricted scan).
  */
-function hasEdeForMonth(records: NormalizedRecord[], month: MonthKey): boolean {
+export function hasEdeForMonth(
+  records: NormalizedRecord[],
+  month: MonthKey,
+  context?: ClassifierContext,
+): boolean {
+  const picker = context?.pickerEdeByMonth;
+  if (picker) {
+    const picked = picker.get(month) ?? null;
+    if (!picked) return false;
+    const pickedId = String((picked as any).id ?? '');
+    return records.some(r => {
+      if (r.source_type !== 'EDE') return false;
+      if (!isEDEQualified(r)) return false;
+      const rid = String((r as any).id ?? '');
+      const identityMatch = pickedId && rid ? pickedId === rid : r === picked;
+      if (!identityMatch) return false;
+      const eff = dateToMonthKey(r.effective_date);
+      if (!eff || eff > month) return false;
+      if (r.policy_term_date) {
+        const lastActive = lastActiveMonthForTermDate(r.policy_term_date);
+        if (lastActive && month > lastActive) return false;
+      }
+      return true;
+    });
+  }
   return records.some(r => {
     if (r.source_type !== 'EDE') return false;
     if (!isEDEQualified(r)) return false;
