@@ -849,8 +849,16 @@ export default function MemberTimelinePage() {
                   ) : pageRows.map(row => (
                     <tr key={row.member_key} className="border-t hover:bg-muted/30">
                       <td className="px-3 py-2 sticky left-0 bg-card z-10">
-                        <div className="font-medium text-foreground truncate max-w-[180px]" title={row.applicant_name}>
-                          {row.applicant_name || '—'}
+                        <div className="font-medium text-foreground truncate max-w-[180px] flex items-center gap-1" title={row.applicant_name}>
+                          <span className="truncate">{row.applicant_name || '—'}</span>
+                          {(() => {
+                            const crCount = Object.values(row.cells).filter(c => c.carrier_recognition).length;
+                            return crCount > 0 ? (
+                              <span className="text-[9px] px-1 rounded border border-amber-500/60 text-amber-700 dark:text-amber-500 font-mono">
+                                CR×{crCount}
+                              </span>
+                            ) : null;
+                          })()}
                         </div>
                         <div className="text-[10px] text-muted-foreground truncate max-w-[180px]">
                           {row.aor_bucket || '—'}
