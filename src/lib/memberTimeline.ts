@@ -201,10 +201,76 @@ function emptyCell(month: string): MonthCell {
  */
 export type DueRecordPredicate = (r: NormalizedRecord) => boolean;
 
+type PayEntityScopeMT = 'Coverall' | 'Vix' | 'All';
+
+/**
+ * Slice C — detect a carrier-recognition cell. Active BO row satisfies
+ * R-AOR-008 BO arm under the selected pay-entity scope, but the picked EDE
+ * for the service month has a non-scope `currentPolicyAOR`. Returns the
+ * preserved EDE net premium so the page can stamp Option A netBucket.
+ */
+function detectCarrierRecognition(
+  rawMemberRecs: NormalizedRecord[],
+  serviceMonth: string,
+  smStart: string,
+  smEnd: string,
+  payEntity: PayEntityScopeMT,
+  pickerForMember?: Map<string, NormalizedRecord | null>,
+): { isCarrierRecognized: boolean; recognizedPremium: number | undefined } {
+  const boScope = rawMemberRecs.find(r => {
+    if (r.source_type !== 'BACK_OFFICE') return false;
+    const brokerNameMatches = isCoverallAORByName(
+      (r?.raw_json?.['Broker Name'] as string | undefined) ??
+      (r?.raw_json?.['broker_name'] as string | undefined),
+    );
+    if (!brokerNameMatches) return false;
+    const npn = String(r?.agent_npn || '').trim();
+    const info = (NPN_MAP as any)[npn];
+    if (!info) return false;
+    if (payEntity !== 'All') {
+      if (info.expectedPayEntity !== payEntity && info.expectedPayEntity !== 'Coverall_or_Vix') {
+        return false;
+      }
+    }
+    return isActiveBackOfficeRecord(r, smStart, smEnd);
+  });
+  if (!boScope) return { isCarrierRecognized: false, recognizedPremium: undefined };
+
+  let picked: NormalizedRecord | null = null;
+  if (pickerForMember) {
+    picked = pickerForMember.get(serviceMonth) ?? null;
+  } else {
+    const qualifiedEdes = rawMemberRecs.filter(
+      r => r.source_type === 'EDE' && isEDEQualified(r),
+    );
+    picked = pickEdeForServiceMonth(qualifiedEdes, serviceMonth);
+  }
+  if (!picked) return { isCarrierRecognized: false, recognizedPremium: undefined };
+
+  const pickedAor = picked.raw_json?.['currentPolicyAOR'] as string | undefined;
+  if (isCoverallAORByName(pickedAor)) {
+    return { isCarrierRecognized: false, recognizedPremium: undefined };
+  }
+  return {
+    isCarrierRecognized: true,
+    recognizedPremium: typeof picked.net_premium === 'number' ? picked.net_premium : undefined,
+  };
+}
+
 export function buildMemberTimeline(
   records: NormalizedRecord[],
   monthList: string[],
-  isDueEligibleRecord?: DueRecordPredicate
+  isDueEligibleRecord?: DueRecordPredicate,
+  options?: {
+    /** Pre-AOR-filter per-member raw record sets — required for CR detection. */
+    rawRecordsByMemberKey?: Map<string, NormalizedRecord[]>;
+    /** Pre-built per-member month-aware picker maps — gates EDE stamping. */
+    pickerMapsByMemberKey?: Map<string, Map<string, NormalizedRecord | null>>;
+    /** When 'official', CR stamping runs. */
+    selectedAorScope?: 'official' | 'all';
+    /** Pay-entity scope for CR detection. */
+    payEntity?: PayEntityScopeMT;
+  },
 ): MemberTimelineRow[] {
   const monthSet = new Set(monthList);
   const byMember = new Map<string, NormalizedRecord[]>();
@@ -214,6 +280,7 @@ export function buildMemberTimeline(
     if (!arr) { arr = []; byMember.set(key, arr); }
     arr.push(r);
   }
+
 
   // Class-A FFM ID fallback index: built from the full records pool so a
   // member whose same-key recs carry no `ffmAppId` can still surface one
