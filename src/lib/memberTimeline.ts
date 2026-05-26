@@ -35,6 +35,18 @@ export interface MonthCell {
    * no-current-source override, not derived in buildMemberTimeline().
    */
   netBucket?: '+Net' | '0Net' | null;
+  /**
+   * Slice C (R-AUDIT-010 Layer 1) — true when this cell is in scope via the
+   * BO broker arm (Coverall broker name + mapped NPN + active BO) BUT the
+   * picked EDE for this service month has a non-scope currentPolicyAOR.
+   */
+  carrier_recognition?: boolean;
+  /**
+   * Slice C — preserved EDE net premium for the carrier-recognition cell,
+   * stamped at assembly BEFORE the scope filter excludes the non-scope EDE.
+   * Drives netBucket='+Net' when > 0 (Option A).
+   */
+  carrier_recognition_premium?: number;
 }
 
 export interface MemberTimelineRow {
