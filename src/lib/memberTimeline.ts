@@ -108,24 +108,27 @@ function addMonths(ym: string, n: number): string {
 
 /**
  * For a Back Office record, return the inclusive [startYM, endYM] active range.
- * - start = effective_date month (or first of universe if missing)
- * - end   = policy_term_date month - 1, OR paid_through_date month, OR open
- *   We use policy_term_date as exclusive (a term date of 2/1 means active through Jan).
+ *
+ * - start = max(effective_date month, broker_effective_date month).
+ *   Fix 5: BED-aware. Before BED the broker isn't tied to the policy, so
+ *   the BO row should NOT support pre-BED months.
+ * - end   = lastActiveMonthForTermDate(policy_term_date) — day-aware per
+ *   R-INELIG-001 (Fix 2). Term on day 1 → previous month; term on day 2+ →
+ *   term month itself.
+ *
+ * Fix 1 / R-INELIG-002: paid_through_date is NOT used as a range bound.
+ * paid_through is the MEMBER's premium-paid-through date, not a commission
+ * disqualifier.
  */
 function backOfficeActiveRange(r: NormalizedRecord): { start: string | null; end: string | null } {
-  const start = ymOf(r.effective_date);
-  let end: string | null = null;
-  if (r.policy_term_date) {
-    const termYM = ymOf(r.policy_term_date);
-    if (termYM) {
-      // Term date is exclusive — active through prior month
-      end = addMonths(termYM, -1);
-    }
-  } else if (r.paid_through_date) {
-    end = ymOf(r.paid_through_date);
-  }
+  const pedYM = ymOf(r.effective_date);
+  const bedYM = ymOf(r.broker_effective_date);
+  let start = pedYM;
+  if (bedYM && (!start || bedYM > start)) start = bedYM;
+  const end = r.policy_term_date ? lastActiveMonthForTermDate(r.policy_term_date) : null;
   return { start, end };
 }
+
 
 /**
  * Distribute a commission row's gross amount across the months it covers.
