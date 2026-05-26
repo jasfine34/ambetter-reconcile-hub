@@ -113,11 +113,14 @@ runTestA('terminated (policy_term_date < statementMonthStart)', {
   policy_term_date: '2026-01-15', // before Feb start
   paid_through_date: '2025-01-01',
 });
-runTestA('paid-through-covered (paid_through_date >= statementMonthEnd)', {
+// v5 Fix 1 — paid_through removed from disqualifier. Replaced original
+// paid-through-covered case with a broker_effective_date future case (Fix 5).
+runTestA('broker_effective_date future (Fix 5)', {
   eligible_for_commission: 'Yes',
   policy_term_date: '2026-12-31',
-  paid_through_date: '2026-02-28', // covers Feb end
+  broker_effective_date: '2026-06-15',
 });
+
 runTestA('ineligible (eligible_for_commission=No)', {
   eligible_for_commission: 'No',
   policy_term_date: '2026-12-31',

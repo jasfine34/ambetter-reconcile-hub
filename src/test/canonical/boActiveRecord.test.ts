@@ -80,9 +80,10 @@ describe('canonical/isActiveBackOfficeRecord', () => {
     ).toBe(true);
   });
 
-  it('paid_through_date is INDEPENDENT (Phase 1) — past paid_through alone does not exclude', () => {
-    // Phase 1: paid_through is "paid through this date" → past value means
-    // behind on payments → active. Old combined-fallback semantic removed.
+  it('paid_through_date is REMOVED as a disqualifier (v5 Fix 1 / R-INELIG-002)', () => {
+    // paid_through is the MEMBER's premium-paid-through date, not a
+    // commission disqualifier. Past, present, or future paid_through must
+    // not affect activity.
     expect(
       isActiveBackOfficeRecord(
         {
@@ -96,6 +97,7 @@ describe('canonical/isActiveBackOfficeRecord', () => {
       ),
     ).toBe(true);
   });
+
 
   it('passes through non-BACK_OFFICE records as active', () => {
     expect(

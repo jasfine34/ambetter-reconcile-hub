@@ -114,7 +114,7 @@ describe('classifier — Ineligible-BO Phase 1 semantics', () => {
     }
   });
 
-  it('paid_through covers the month — NOT active in Phase 1 helper (exclusion)', () => {
+  it('paid_through covers the month — ACTIVE in v5 (Fix 1: paid_through removed as disqualifier)', () => {
     const month: MonthKey = '2026-05';
     const records = [
       bo('Paid-Through Member', {
@@ -123,8 +123,9 @@ describe('classifier — Ineligible-BO Phase 1 semantics', () => {
       }),
     ];
     const out = classifyMember(records, ripeContext([month]));
-    expect(out.cells[month].in_back_office).toBe(false);
+    expect(out.cells[month].in_back_office).toBe(true);
   });
+
 
   it('paid_through BEFORE month end — active (behind on payments)', () => {
     const month: MonthKey = '2026-05';

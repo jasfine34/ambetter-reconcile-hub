@@ -1,6 +1,12 @@
 import type { NormalizedRecord } from './normalize';
 import type { ClassificationState, RollupStatus } from './classifier';
 import { pickCurrentPolicyAor, collectFfmAppIds, buildEdeFfmFallbackIndex } from './aorPicker';
+import { isEDEQualified } from './canonical/edeQualified';
+import { lastActiveMonthForTermDate } from './canonical/termBoundary';
+import { isActiveBackOfficeRecord } from './canonical/isActiveBackOfficeRecord';
+import { getStatementMonthBounds } from './canonical/statementMonthBounds';
+import { monthKeyToFirstOfMonth } from './dateRange';
+
 
 export interface MonthCell {
   month: string;                   // 'YYYY-MM'
@@ -53,11 +59,9 @@ export interface MemberTimelineRow {
   hasUnpaidZeroNet?: boolean;
 }
 
-const QUALIFIED_EDE_RAW_STATUSES = new Set([
-  'effectuated',
-  'pendingeffectuation',
-  'pendingtermination',
-]);
+// (Local QUALIFIED_EDE_RAW_STATUSES removed — replaced by canonical
+// isEDEQualified from src/lib/canonical/edeQualified.ts per Fix 6.)
+
 
 /** Generate inclusive list of YYYY-MM strings between start and end. */
 export function buildMonthList(startYM: string, endYM: string): string[] {
@@ -98,43 +102,33 @@ function addMonths(ym: string, n: number): string {
   return `${ny}-${String(nm).padStart(2, '0')}`;
 }
 
-function rawStatusKey(r: NormalizedRecord): string {
-  const raw = (r.raw_json?.['policyStatus'] ?? r.status ?? '') as string;
-  return String(raw).toLowerCase().replace(/\s+/g, '');
-}
-function rawIssuerKey(r: NormalizedRecord): string {
-  const raw = (r.raw_json?.['issuer'] ?? r.carrier ?? '') as string;
-  return String(raw).toLowerCase();
-}
+// (Local rawStatusKey / rawIssuerKey / isEDEQualified removed — replaced
+// by canonical isEDEQualified per Fix 6.)
 
-/** True if this EDE row is "qualified" — used to mark a member as due. */
-function isEDEQualified(r: NormalizedRecord): boolean {
-  if (r.source_type !== 'EDE') return false;
-  if (!QUALIFIED_EDE_RAW_STATUSES.has(rawStatusKey(r))) return false;
-  if (!rawIssuerKey(r).includes('ambetter')) return false;
-  return true;
-}
 
 /**
  * For a Back Office record, return the inclusive [startYM, endYM] active range.
- * - start = effective_date month (or first of universe if missing)
- * - end   = policy_term_date month - 1, OR paid_through_date month, OR open
- *   We use policy_term_date as exclusive (a term date of 2/1 means active through Jan).
+ *
+ * - start = max(effective_date month, broker_effective_date month).
+ *   Fix 5: BED-aware. Before BED the broker isn't tied to the policy, so
+ *   the BO row should NOT support pre-BED months.
+ * - end   = lastActiveMonthForTermDate(policy_term_date) — day-aware per
+ *   R-INELIG-001 (Fix 2). Term on day 1 → previous month; term on day 2+ →
+ *   term month itself.
+ *
+ * Fix 1 / R-INELIG-002: paid_through_date is NOT used as a range bound.
+ * paid_through is the MEMBER's premium-paid-through date, not a commission
+ * disqualifier.
  */
 function backOfficeActiveRange(r: NormalizedRecord): { start: string | null; end: string | null } {
-  const start = ymOf(r.effective_date);
-  let end: string | null = null;
-  if (r.policy_term_date) {
-    const termYM = ymOf(r.policy_term_date);
-    if (termYM) {
-      // Term date is exclusive — active through prior month
-      end = addMonths(termYM, -1);
-    }
-  } else if (r.paid_through_date) {
-    end = ymOf(r.paid_through_date);
-  }
+  const pedYM = ymOf(r.effective_date);
+  const bedYM = ymOf(r.broker_effective_date);
+  let start = pedYM;
+  if (bedYM && (!start || bedYM > start)) start = bedYM;
+  const end = r.policy_term_date ? lastActiveMonthForTermDate(r.policy_term_date) : null;
   return { start, end };
 }
+
 
 /**
  * Distribute a commission row's gross amount across the months it covers.
@@ -260,20 +254,11 @@ export function buildMemberTimeline(
         // isEDEQualified.
         const start = ymOf(r.effective_date);
         if (!start) continue;
-        let end: string | null = null;
-        if (r.policy_term_date) {
-          const termYM = ymOf(r.policy_term_date);
-          // Same exclusivity convention as BO: term date is exclusive,
-          // active through the prior month.
-          if (termYM) end = addMonths(termYM, -1);
-        }
+        // Fix 6 — day-aware term-boundary via canonical helper.
+        const end = r.policy_term_date ? lastActiveMonthForTermDate(r.policy_term_date) : null;
         const edeQualified = isEDEQualified(r);
         // FOLLOWUP FIX: gate in_ede with the same predicates as `due` so the
-        // E badge respects AOR scope + qualifying status. An EDE row from a
-        // non-Coverall AOR (under Coverall scope) or a Cancelled row should
-        // not light up the E badge — the renderer reads c.in_ede directly,
-        // so all four "no E" conditions (cancelled/terminated, AOR moved,
-        // non-qualifying status, dropped from EDE) collapse to this one gate.
+        // E badge respects AOR scope + qualifying status.
         if (!eligibleForDue || !edeQualified) continue;
         for (const m of monthList) {
           if (m < start) continue;
@@ -287,9 +272,20 @@ export function buildMemberTimeline(
         for (const m of monthList) {
           if (m < start) continue;
           if (end && m > end) continue;
+          // Fix 7 (per Codex v3 C2 Option A + v4 C1) — gate per-month
+          // stamping on canonical predicate AND scope. R-SRC-004 requires
+          // IN-SCOPE active source support; off-scope active BO must NOT
+          // stamp source flags. Range alone misses broker_term,
+          // eligibility, and BED-future disqualifiers — those live only
+          // in isActiveBackOfficeRecord.
+          const firstOfMonth = monthKeyToFirstOfMonth(m);
+          const { start: smStart, end: smEnd } = getStatementMonthBounds(firstOfMonth);
+          if (!isActiveBackOfficeRecord(r, smStart, smEnd)) continue;
+          if (!eligibleForDue) continue;
           cells[m].in_back_office = true;
-          if (eligibleForDue) cells[m].due = true;
+          cells[m].due = true;
         }
+
       } else if (r.source_type === 'COMMISSION') {
         // Honor the eligibility predicate for commissions too. Without this
         // gate, a Vix commission row would still pump $ into a member's cells

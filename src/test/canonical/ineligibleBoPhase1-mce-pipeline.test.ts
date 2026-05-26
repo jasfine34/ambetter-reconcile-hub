@@ -321,9 +321,10 @@ describe('3.1 — six named canaries absent from final MCE breakdown', () => {
 // ===========================================================================
 
 describe('3.2 — EDE-only leak regression (no eligibility gate on EDE-Only branch)', () => {
+  // v5 Fix 1 — paid_through removed as disqualifier; only term + eligibility
+  // remain as leak classes here.
   const disqualifiers: Array<{ label: string; bo: Partial<SynthOpts> }> = [
     { label: 'terminated (policy_term_date < statementMonthStart)', bo: { boPolicyTermDate: '2026-03-15' } },
-    { label: 'paid-through-covered (paid_through_date >= statementMonthEnd)', bo: { boPaidThroughDate: '2026-04-30' } },
     { label: "eligible_for_commission='No'",                                 bo: { boEligible: 'No' } },
   ];
 
@@ -335,7 +336,7 @@ describe('3.2 — EDE-only leak regression (no eligibility gate on EDE-Only bran
         issuerSubscriberId: 'U-LEAK-1',
         policyNumber: 'POL-LEAK',
         effectiveDate: '2026-01-01',
-        stalePersistedInBO: false, // EDE-only: not flagged BO-active persisted
+        stalePersistedInBO: false,
         ...d.bo,
       };
       const { allRowKeys } = runMcePipeline({
@@ -348,6 +349,7 @@ describe('3.2 — EDE-only leak regression (no eligibility gate on EDE-Only bran
     });
   }
 });
+
 
 // ===========================================================================
 // 3.3 — Runtime re-evaluation overrides stale persisted in_back_office=true
@@ -424,7 +426,10 @@ describe('3.5 — reconcile producer-side mixed BO records', () => {
       eligible_for_commission: 'Yes',
     });
     const recC = make('PaidThru', 'UC1', {
+      // v5 Fix 1 — paid_through no longer disqualifies; this record should
+      // now be ACTIVE.
       paid_through_date: '2026-04-30',
+      policy_term_date: '2027-12-31',
       eligible_for_commission: 'Yes',
     });
     const recD = make('Ineligible', 'UD1', {
@@ -436,7 +441,8 @@ describe('3.5 — reconcile producer-side mixed BO records', () => {
     const byKey = new Map(members.map((m) => [m.member_key, m]));
     expect(byKey.get('issub:ua1')?.in_back_office).toBe(true);
     expect(byKey.get('issub:ub1')?.in_back_office).toBe(false);
-    expect(byKey.get('issub:uc1')?.in_back_office).toBe(false);
+    expect(byKey.get('issub:uc1')?.in_back_office).toBe(true);
     expect(byKey.get('issub:ud1')?.in_back_office).toBe(false);
   });
 });
+

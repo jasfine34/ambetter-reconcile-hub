@@ -47,19 +47,19 @@ describe('Phase 1 — isActiveBackOfficeRecord edge cases', () => {
     ).toBe(true);
   });
 
-  it('paid_through_date === statementMonthEnd → false (last-day-inclusive)', () => {
+  it('paid_through_date === statementMonthEnd → true (v5 prerequisite Fix 1: paid_through removed as disqualifier)', () => {
     expect(
       isActiveBackOfficeRecord({ ...base, paid_through_date: END }, START, END),
-    ).toBe(false);
+    ).toBe(true);
   });
 
-  it('paid_through_date > statementMonthEnd → false', () => {
+  it('paid_through_date > statementMonthEnd → true (v5 prerequisite Fix 1: paid_through removed)', () => {
     expect(
       isActiveBackOfficeRecord({ ...base, paid_through_date: '2026-06-30' }, START, END),
-    ).toBe(false);
+    ).toBe(true);
   });
 
-  it('paid_through_date < statementMonthEnd → true (genuinely unpaid)', () => {
+  it('paid_through_date < statementMonthEnd → true (genuinely unpaid — unchanged)', () => {
     expect(
       isActiveBackOfficeRecord({ ...base, paid_through_date: '2026-03-31' }, START, END),
     ).toBe(true);
@@ -87,9 +87,41 @@ describe('Phase 1 — isActiveBackOfficeRecord edge cases', () => {
     ).toBe(true);
   });
 
-  it('Phase 2 strict signature: both bounds required (TS-enforced — assert behavior with explicit end)', () => {
+  it('Phase 2 strict signature: both bounds required + paid_through no longer disqualifies', () => {
     expect(
       isActiveBackOfficeRecord({ ...base, paid_through_date: '2026-04-30' }, START, END),
+    ).toBe(true);
+  });
+
+  // ── Fix 5 — broker_effective_date disqualifier ─────────────────────────
+  it('Fix 5: broker_effective_date > statementMonthEnd → false (broker not yet effective)', () => {
+    expect(
+      isActiveBackOfficeRecord(
+        { ...base, policy_term_date: '2027-12-31', broker_effective_date: '2026-05-15' },
+        START,
+        END,
+      ),
     ).toBe(false);
   });
+
+  it('Fix 5: broker_effective_date <= statementMonthEnd → true', () => {
+    expect(
+      isActiveBackOfficeRecord(
+        { ...base, policy_term_date: '2027-12-31', broker_effective_date: '2026-04-15' },
+        START,
+        END,
+      ),
+    ).toBe(true);
+  });
+
+  it('Fix 5: broker_effective_date 9999-* sentinel ignored', () => {
+    expect(
+      isActiveBackOfficeRecord(
+        { ...base, policy_term_date: '2027-12-31', broker_effective_date: '9999-12-31' },
+        START,
+        END,
+      ),
+    ).toBe(true);
+  });
 });
+
