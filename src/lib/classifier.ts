@@ -90,6 +90,15 @@ export interface ClassifierContext {
    * routes to per-service-month netPremiumForServiceMonth helper.
    */
   batchMonthByBatchId?: Map<string, string>;
+  /**
+   * MT Stage 2.1 Slice D — OPTIONAL per-member month-aware EDE picker map.
+   * When set, the picker's record for the month is the sole EDE candidate
+   * considered by `hasEdeForMonth` and `netPremiumForServiceMonth`. When
+   * `pickerEdeByMonth.get(month)` is null, EDE evaluation is skipped
+   * entirely (BO fallback for premium; false from hasEdeForMonth). Built
+   * per-member by the page and threaded via context spread.
+   */
+  pickerEdeByMonth?: Map<MonthKey, NormalizedRecord | null>;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
