@@ -526,6 +526,6 @@ describe('REPAIR consumer-path — buildIsDueEligibleRecord is invoked + scopes 
     await ensureRealFactory();
     const pred = realBuildIsDueEligibleRecord({ aorScope: 'official', payEntity: 'Coverall' });
     expect(pred(makeBoRow({ agent_npn: COVERALL_NPN }))).toBe(true);
-    expect(pred(makeBoRow({ agent_npn: VIX_NPN, aor_bucket: 'Other Agent' }))).toBe(false);
+    expect(pred(makeBoRow({ agent_npn: VIX_NPN, aor_bucket: 'Other Agent', raw_json: { 'Broker Name': 'Other Agent' } }))).toBe(false);
   });
 });
