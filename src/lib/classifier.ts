@@ -14,7 +14,10 @@ import { isCoverallAORByName, isCoverallAORByNPN } from './agents';
 import { canonicalCarrier } from './carrierCanonical';
 import { isActiveBackOfficeRecord } from './canonical/isActiveBackOfficeRecord';
 import { getStatementMonthBounds } from './canonical/statementMonthBounds';
+import { isEDEQualified } from './canonical/edeQualified';
+import { lastActiveMonthForTermDate } from './canonical/termBoundary';
 import { NPN_MAP } from './constants';
+
 
 // ──────────────────────────────────────────────────────────────────────────
 // Types
@@ -183,9 +186,12 @@ export function computeFirstEligibleMonth(records: NormalizedRecord[]): MonthKey
 
     // New enrollment — broker was on the policy by the effective date
     if (bedKey <= pedKey) return pedKey;
-    // Override — became broker mid-flight; eligible starts the month AFTER
-    return addMonths(bedKey, 1);
+    // NPN override — became broker mid-flight. Per Jason 2026-05-26 +
+    // data-dictionary.md:42, first-eligible = BED's month itself (not the
+    // month after). Fix 4.
+    return bedKey;
   }
+
 
   // Tier B — no broker_effective_date available. Fall back to the earliest
   // policy effective date across our BO rows. Good enough for carriers that
