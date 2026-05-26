@@ -623,7 +623,7 @@ function classifyCell(
   const hasBatchMonthContext = context.batchMonthByBatchId !== undefined;
   const batchMonthByBatchId = context.batchMonthByBatchId ?? new Map<string, string>();
   const netPremium: number | null = hasBatchMonthContext
-    ? netPremiumForServiceMonth(records, month, { batchMonthByBatchId })
+    ? netPremiumForServiceMonth(records, month, { batchMonthByBatchId, pickerEdeByMonth: context.pickerEdeByMonth })
     : latestEdeNetPremium(records);
   const paidThrough = latestBoPaidThrough(records);
   const paidThroughCoversMonth = paidThrough && paidThrough >= month;
