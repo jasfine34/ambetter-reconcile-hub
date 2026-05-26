@@ -389,6 +389,28 @@ export function buildMemberTimeline(
       }
     }
 
+    // Slice C — carrier-recognition stamping pass. Uses the raw per-member
+    // source universe (pre-AOR-filter) so the picked EDE can be a non-scope
+    // row hidden from the classifier's record set.
+    if (options?.selectedAorScope === 'official' && options?.rawRecordsByMemberKey) {
+      const rawRecs = options.rawRecordsByMemberKey.get(key) ?? recs;
+      const pickerForMember = options.pickerMapsByMemberKey?.get(key);
+      for (const m of monthList) {
+        const firstOfMonth = monthKeyToFirstOfMonth(m);
+        const { start: smStart, end: smEnd } = getStatementMonthBounds(firstOfMonth);
+        const { isCarrierRecognized, recognizedPremium } = detectCarrierRecognition(
+          rawRecs, m, smStart, smEnd, options?.payEntity ?? 'All', pickerForMember,
+        );
+        if (isCarrierRecognized) {
+          cells[m].carrier_recognition = true;
+          if (recognizedPremium != null) {
+            cells[m].carrier_recognition_premium = recognizedPremium;
+          }
+        }
+      }
+    }
+
+
     // Totals
     for (const m of monthList) {
       const c = cells[m];
