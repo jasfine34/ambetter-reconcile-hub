@@ -282,6 +282,9 @@ function makeBoRow(over: Record<string, any> = {}): any {
     broker_term_date: null,
     agent_npn: COVERALL_NPN,
     aor_bucket: 'Jason Fine',
+    // Slice A (v8) — BO scope arm requires broker name match. Default to
+    // Jason Fine so existing fixtures continue to be in-scope.
+    raw_json: { 'Broker Name': 'Jason Fine' },
     ...over,
   };
 }
