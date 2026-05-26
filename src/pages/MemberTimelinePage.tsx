@@ -947,6 +947,14 @@ export default function MemberTimelinePage() {
                               {c.in_ede && <Badge variant="secondary" className="h-4 px-1 text-[9px] font-mono">E</Badge>}
                               {c.in_back_office && <Badge variant="secondary" className="h-4 px-1 text-[9px] font-mono">B</Badge>}
                               {c.in_commission && <Badge variant="secondary" className="h-4 px-1 text-[9px] font-mono">C</Badge>}
+                              {c.carrier_recognition && (
+                                <Badge
+                                  variant="outline"
+                                  className="h-4 px-1 text-[9px] font-mono border-amber-500/60 text-amber-700 dark:text-amber-500"
+                                >
+                                  CR
+                                </Badge>
+                              )}
                               {!hasAny && <span className="text-muted-foreground/50 text-[10px]">—</span>}
                             </div>
                             <div className="text-[10px] font-medium text-foreground leading-tight">
