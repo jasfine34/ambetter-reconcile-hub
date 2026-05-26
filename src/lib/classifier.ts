@@ -547,7 +547,7 @@ function classifyCell(
   firstEligible: MonthKey | null,
   context: ClassifierContext,
 ): CellClassification {
-  const in_ede = hasEdeForMonth(records, month);
+  const in_ede = hasEdeForMonth(records, month, context);
   const in_back_office = hasActiveBoForMonth(records, month);
   const in_commission = hasCommissionForMonth(records, month);
   const paid_amount = paidForMonth(records, month);
