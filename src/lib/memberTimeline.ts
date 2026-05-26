@@ -1,6 +1,12 @@
 import type { NormalizedRecord } from './normalize';
 import type { ClassificationState, RollupStatus } from './classifier';
 import { pickCurrentPolicyAor, collectFfmAppIds, buildEdeFfmFallbackIndex } from './aorPicker';
+import { isEDEQualified } from './canonical/edeQualified';
+import { lastActiveMonthForTermDate } from './canonical/termBoundary';
+import { isActiveBackOfficeRecord } from './canonical/isActiveBackOfficeRecord';
+import { getStatementMonthBounds } from './canonical/statementMonthBounds';
+import { monthKeyToFirstOfMonth } from './dateRange';
+
 
 export interface MonthCell {
   month: string;                   // 'YYYY-MM'
@@ -53,11 +59,9 @@ export interface MemberTimelineRow {
   hasUnpaidZeroNet?: boolean;
 }
 
-const QUALIFIED_EDE_RAW_STATUSES = new Set([
-  'effectuated',
-  'pendingeffectuation',
-  'pendingtermination',
-]);
+// (Local QUALIFIED_EDE_RAW_STATUSES removed — replaced by canonical
+// isEDEQualified from src/lib/canonical/edeQualified.ts per Fix 6.)
+
 
 /** Generate inclusive list of YYYY-MM strings between start and end. */
 export function buildMonthList(startYM: string, endYM: string): string[] {
@@ -98,22 +102,9 @@ function addMonths(ym: string, n: number): string {
   return `${ny}-${String(nm).padStart(2, '0')}`;
 }
 
-function rawStatusKey(r: NormalizedRecord): string {
-  const raw = (r.raw_json?.['policyStatus'] ?? r.status ?? '') as string;
-  return String(raw).toLowerCase().replace(/\s+/g, '');
-}
-function rawIssuerKey(r: NormalizedRecord): string {
-  const raw = (r.raw_json?.['issuer'] ?? r.carrier ?? '') as string;
-  return String(raw).toLowerCase();
-}
+// (Local rawStatusKey / rawIssuerKey / isEDEQualified removed — replaced
+// by canonical isEDEQualified per Fix 6.)
 
-/** True if this EDE row is "qualified" — used to mark a member as due. */
-function isEDEQualified(r: NormalizedRecord): boolean {
-  if (r.source_type !== 'EDE') return false;
-  if (!QUALIFIED_EDE_RAW_STATUSES.has(rawStatusKey(r))) return false;
-  if (!rawIssuerKey(r).includes('ambetter')) return false;
-  return true;
-}
 
 /**
  * For a Back Office record, return the inclusive [startYM, endYM] active range.
