@@ -326,26 +326,30 @@ export function buildMemberTimeline(
     for (const r of recs) {
       const eligibleForDue = isDueEligibleRecord ? isDueEligibleRecord(r) : true;
       if (r.source_type === 'EDE') {
-        // AUDIT FIX (2026-04): An Effectuated EDE record represents an ongoing
-        // enrollment, not a single-month event. Previously we only marked
-        // in_ede / due for the effective_date month, which caused widespread
-        // false "missing from EDE" flags on Feb/Mar cells for members who
-        // appeared in every monthly EDE batch. Now we span [effective_date,
-        // expiration_date or open] to mirror backOfficeActiveRange. Multiple
-        // EDE records for the same member naturally union via the per-cell
-        // boolean. Cancelled rows are still excluded from `due` via
-        // isEDEQualified.
         const start = ymOf(r.effective_date);
         if (!start) continue;
-        // Fix 6 — day-aware term-boundary via canonical helper.
         const end = r.policy_term_date ? lastActiveMonthForTermDate(r.policy_term_date) : null;
         const edeQualified = isEDEQualified(r);
-        // FOLLOWUP FIX: gate in_ede with the same predicates as `due` so the
-        // E badge respects AOR scope + qualifying status.
         if (!eligibleForDue || !edeQualified) continue;
+        // Slice D — month-aware picker gate. When the page provides a
+        // picker map, only stamp in_ede for cells where THIS record IS the
+        // operative picker for the month. Without a picker map, retain
+        // legacy spanning (back-compat for non-page callers and tests).
+        const pickerForMember = options?.pickerMapsByMemberKey?.get(key);
+        const rId = String((r as any).id ?? '');
         for (const m of monthList) {
           if (m < start) continue;
           if (end && m > end) continue;
+          if (pickerForMember) {
+            const picked = pickerForMember.get(m);
+            if (!picked) continue;
+            const pickedId = String((picked as any).id ?? '');
+            if (pickedId && rId) {
+              if (pickedId !== rId) continue;
+            } else if (picked !== r) {
+              continue;
+            }
+          }
           cells[m].in_ede = true;
           cells[m].due = true;
         }
