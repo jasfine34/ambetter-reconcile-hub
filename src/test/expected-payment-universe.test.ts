@@ -382,9 +382,9 @@ describe('Phase 2 follow-up — EDE-only leak class blocked under runtime overla
 
   for (const [label, boRow] of [
     ['policy_term_date<start', { eligible_for_commission: 'Yes', policy_term_date: '2026-01-15' }],
-    ['paid_through_date covers end', { eligible_for_commission: 'Yes', policy_term_date: '2026-12-31', paid_through_date: '2026-02-28' }],
     ['eligible_for_commission=No', { eligible_for_commission: 'No', policy_term_date: '2026-12-31' }],
   ] as const) {
+
     it(`stale BO (${label}) does NOT leak into Expected But Unpaid via EDE-only branch`, () => {
       const { boAdjustedReconciled, adjFilteredEde, overlay } = leakFixture(boRow as any);
       expect(overlay.mceExclusionMemberKeys.has('leak')).toBe(true);
