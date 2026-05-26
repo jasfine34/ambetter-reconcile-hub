@@ -405,10 +405,25 @@ function paidForMonth(records: NormalizedRecord[], month: MonthKey): number {
   return paidForServiceMonth(records, month).amount;
 }
 
-/** Any EDE record in this member's set that covers the given month. */
+/**
+ * Any qualified, active-date EDE record in this member's set that covers the
+ * given month. Fix 6 — uses canonical isEDEQualified + day-aware term-
+ * boundary. Cancelled/terminated/non-Ambetter rows no longer light in_ede.
+ */
 function hasEdeForMonth(records: NormalizedRecord[], month: MonthKey): boolean {
-  return records.some(r => r.source_type === 'EDE' && dateToMonthKey(r.effective_date) <= month);
+  return records.some(r => {
+    if (r.source_type !== 'EDE') return false;
+    if (!isEDEQualified(r)) return false;
+    const eff = dateToMonthKey(r.effective_date);
+    if (!eff || eff > month) return false;
+    if (r.policy_term_date) {
+      const lastActive = lastActiveMonthForTermDate(r.policy_term_date);
+      if (lastActive && month > lastActive) return false;
+    }
+    return true;
+  });
 }
+
 
 /**
  * Any BO record active during the given month — effective_date ≤ month-start
