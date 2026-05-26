@@ -394,26 +394,7 @@ export function netPremiumForServiceMonth(
   return bestMR ?? 0;
 }
 
-  // Step 3 — tiebreaker
-  const sortKey = (r: NormalizedRecord): [string, string, string] => {
-    const sync = String(r.raw_json?.['lastEDESync'] ?? '');
-    const created = String((r as any).created_at ?? '');
-    const id = String((r as any).id ?? '');
-    return [sync, created, id];
-  };
-  pool.sort((a, b) => {
-    const [as, ac, ai] = sortKey(a);
-    const [bs, bc, bi] = sortKey(b);
-    if (bs !== as) return bs > as ? 1 : -1;
-    if (bc !== ac) return bc > ac ? 1 : -1;
-    if (bi !== ai) return bi > ai ? 1 : -1;
-    return 0;
-  });
-  const selected = pool[0];
-  const raw = selected.net_premium;
-  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return raw;
-  return 0;
-}
+
 
 /**
  * Service-month payment evaluation (EXPORTED — shared by classifier and MCE).
