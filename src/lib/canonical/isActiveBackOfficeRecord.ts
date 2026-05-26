@@ -1,25 +1,28 @@
 /**
  * Canonical "is this BO record active during the statement month?" predicate.
  *
- * Phase 2 — strict signature. Both `statementMonthStart` and
- * `statementMonthEnd` are REQUIRED ISO YYYY-MM-DD strings. The Phase 1
- * backward-compat overload (`Date | string`, optional end) was removed —
- * callers MUST pass real bounds. Use `getStatementMonthBounds(monthStr)`
- * at the call site if you only have a YYYY-MM string.
+ * Phase 1 + v5-prerequisite — strict signature. Both `statementMonthStart`
+ * and `statementMonthEnd` are REQUIRED ISO YYYY-MM-DD strings. Use
+ * `getStatementMonthBounds(monthStr)` at the call site if you only have a
+ * YYYY-MM string.
  *
  * Three INDEPENDENT disqualification conditions (any returns false):
  *
- *   1. eligible_for_commission — 14-variant token normalization (Phase 1).
+ *   1. eligible_for_commission — 14-variant token normalization.
  *   2. policy_term_date — set and <= statementMonthStart → terminated.
- *   3. paid_through_date — set and >= statementMonthEnd → already paid through
- *      the statement month (last-day-inclusive).
+ *      (R-INELIG-001 day-of-month: term `2026-02-01` <= `2026-02-01` start
+ *      → February inactive, matching "term on day 1 = not active for that
+ *      month". Term `2026-01-31` <= `2026-02-01` start → February inactive.
+ *      Term `2026-04-15` not <= `2026-04-01` start → April active.)
+ *   3. broker_effective_date — set and > statementMonthEnd → broker not yet
+ *      effective for this service month (Fix 5 / data-dictionary.md:42).
  *
- * Plus the existing broker_term check (with 9999-* sentinel) is preserved
- * as the "active window" guard.
+ * Plus the existing broker_term check (with 9999-* sentinel) is preserved.
  *
- * Single source of truth shared by reconcile, classifier, weakMatch,
- * metrics, dashboard (Phase 2+ surfaces). Carrier-agnostic — column mapping
- * happens upstream in adapters.
+ * REMOVED in v5 prerequisite (Fix 1): `paid_through_date` disqualifier.
+ * Per R-INELIG-002, paid_through is the MEMBER's premium-paid-through date,
+ * NOT a commission disqualifier. A paid-up member is the NORMAL chase-
+ * eligible state.
  *
  * Non-BACK_OFFICE records pass through as active (true) so callers can
  * apply this predicate to mixed record streams without pre-filtering.
@@ -31,6 +34,7 @@ export interface ActiveBoCandidate {
   policy_term_date?: string | null;
   paid_through_date?: string | null;
   broker_term_date?: string | null;
+  broker_effective_date?: string | null;
   eligible_for_commission?: string | boolean | number | null;
 }
 
@@ -49,9 +53,7 @@ export function isActiveBackOfficeRecord(
   const startIso = statementMonthStart;
   const endIso = statementMonthEnd;
 
-  // (1) Eligibility flag — Phase 1: normalize all ineligible variants
-  // (case-insensitive 'no'/'n'/'false', numeric 0, string '0', boolean false).
-  // null/undefined treated as "not explicitly ineligible" → pass.
+  // (1) Eligibility flag.
   const eligValue = record.eligible_for_commission;
   if (eligValue !== null && eligValue !== undefined) {
     const normalized =
@@ -67,17 +69,20 @@ export function isActiveBackOfficeRecord(
     if (ineligibleTokens.has(normalized)) return false;
   }
 
-  // (2) Policy term date — independent (no fallback to paid_through_date).
+  // (2) Policy term date — independent.
   const policyTerm = record.policy_term_date || '';
   if (policyTerm && !isSentinel(policyTerm) && policyTerm <= startIso) return false;
 
-  // (3) Paid Through Date — independent, last-day-inclusive.
-  const paidThrough = record.paid_through_date || '';
-  if (paidThrough && !isSentinel(paidThrough) && paidThrough >= endIso) return false;
+  // (3) Broker effective date — Fix 5. If broker isn't yet effective by the
+  // end of the service month, this row does not support that month.
+  const brokerEff = record.broker_effective_date || '';
+  if (brokerEff && !isSentinel(brokerEff) && brokerEff > endIso) return false;
 
   // Broker term date (preserved active-window guard).
   const brokerTerm = record.broker_term_date || '';
   if (brokerTerm && !isSentinel(brokerTerm) && brokerTerm <= startIso) return false;
+
+  // NOTE: paid_through_date intentionally NOT checked here — see R-INELIG-002.
 
   return true;
 }
