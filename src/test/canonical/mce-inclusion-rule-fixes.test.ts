@@ -492,7 +492,7 @@ describe('REPAIR consumer-path — buildIsDueEligibleRecord is invoked + scopes 
     // Under scope='Coverall', the Vix row must be filtered out before rule eval.
     const memberKey = 'mem-scope';
     const coverallBo = makeBoRow({ member_key: memberKey, agent_npn: COVERALL_NPN });
-    const vixBo = makeBoRow({ member_key: memberKey, agent_npn: VIX_NPN, aor_bucket: 'Other Agent' });
+    const vixBo = makeBoRow({ member_key: memberKey, agent_npn: VIX_NPN, aor_bucket: 'Other Agent', raw_json: { 'Broker Name': 'Other Agent' } });
 
     // Capture the records arg classifyMemberForMonth receives.
     let observedRecordsForClassifier: any[] | undefined;
