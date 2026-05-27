@@ -104,7 +104,7 @@ describe('getNormalizedRecordsByMemberKeys — query shape', () => {
   });
 
   it('paginates with gt(id, lastId) on subsequent pages within a chunk', async () => {
-    allRows = Array.from({ length: 1200 }, (_, i) => ({
+    allRows = Array.from({ length: 600 }, (_, i) => ({
       id: `id-${String(i + 1).padStart(6, '0')}`,
       member_key: 'mk-1',
       staging_status: 'active',
@@ -112,10 +112,10 @@ describe('getNormalizedRecordsByMemberKeys — query shape', () => {
       raw_json: {},
     }));
     await getNormalizedRecordsByMemberKeys(['mk-1']);
-    // 1200 / 500 = 3 pages
+    // 600 / 200 = 3 pages (NORMALIZED_PAGE_SIZE = 200)
     expect(queryLog.length).toBe(3);
     expect(queryLog[0].gtId).toBeNull();
-    expect(queryLog[1].gtId).toBe('id-000500');
-    expect(queryLog[2].gtId).toBe('id-001000');
+    expect(queryLog[1].gtId).toBe('id-000200');
+    expect(queryLog[2].gtId).toBe('id-000400');
   });
 });
