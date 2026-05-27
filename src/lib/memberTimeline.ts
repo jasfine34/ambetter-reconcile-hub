@@ -47,6 +47,12 @@ export interface MonthCell {
    * Drives netBucket='+Net' when > 0 (Option A).
    */
   carrier_recognition_premium?: number;
+  /**
+   * R-PAY-012 — populated only when state === 'reversed'. Stamped by
+   * MemberTimelinePage when copying classifier output into the page's cell map.
+   */
+  reversal_evidence?: ReversalEvidence;
+
 }
 
 export interface MemberTimelineRow {
