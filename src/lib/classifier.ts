@@ -658,6 +658,31 @@ function classifyCell(
     return { ...base, state: 'paid', reason: `Commission of $${paid_amount.toFixed(2)} received for this service month.` };
   }
 
+  // Rule 1b (R-PAY-012) — paid-then-reversed (Dannielle-exact shape).
+  // If paid_amount is at or near zero AND the contributing commission rows
+  // contain at least one matched (positive, negative) reversal pair on the
+  // same paid_to_date with the same months_paid and equal-and-opposite raw
+  // amounts, classify as 'reversed' — operationally distinct from 'unpaid'.
+  if (Math.abs(paid_amount) < 0.0001) {
+    const reversalCheck = hasReversalPairForMonth(
+      records,
+      month,
+      context.batchMonthByBatchId,
+    );
+    if (reversalCheck.matched && reversalCheck.evidence) {
+      const ev = reversalCheck.evidence;
+      const reason =
+        `Paid $${ev.amount.toFixed(2)} ` +
+        `(TXN ${ev.positiveTransactionId ?? 'n/a'}, ` +
+        `cycle ${ev.positiveStatementMonth ?? 'n/a'}); ` +
+        `reversed (TXN ${ev.negativeTransactionId ?? 'n/a'}, ` +
+        `cycle ${ev.negativeStatementMonth ?? 'n/a'})`;
+      return { ...base, state: 'reversed', reason, reversal_evidence: ev };
+    }
+  }
+
+
+
   // Rule 3 (non-eligible): not ours at all
   if (!memberBelongsToUs(records)) {
     return { ...base, state: 'not_expected_not_ours', reason: 'Member never tied to one of our NPNs.' };
