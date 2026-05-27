@@ -115,8 +115,9 @@ describe('getAllNormalizedRecordsForMemberTimeline — query shape', () => {
   it('preserves active predicate and keyset pagination', async () => {
     allRows = Array.from({ length: 600 }, (_, i) => makeRow(i + 1));
     await getAllNormalizedRecordsForMemberTimeline();
-    // 3 pages of 200 (NORMALIZED_PAGE_SIZE = 200)
-    expect(queryLog.length).toBe(3);
+    // 3 full pages of 200 + 1 empty sentinel page (NORMALIZED_PAGE_SIZE = 200).
+    // Exact-multiple totals require one extra empty fetch to terminate the loop.
+    expect(queryLog.length).toBe(4);
     for (const q of queryLog) {
       expect(q.filters['eq:staging_status']).toBe('active');
       expect(q.filters['is:superseded_at']).toBeNull();
@@ -126,6 +127,7 @@ describe('getAllNormalizedRecordsForMemberTimeline — query shape', () => {
     expect(queryLog[0].gtId).toBeNull();
     expect(queryLog[1].gtId).toBe('id-000200');
     expect(queryLog[2].gtId).toBe('id-000400');
+    expect(queryLog[3].gtId).toBe('id-000600');
   });
 
   it('reconstructs row.raw_json with the original key names downstream helpers expect', async () => {
