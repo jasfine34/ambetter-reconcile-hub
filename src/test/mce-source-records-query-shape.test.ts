@@ -83,7 +83,7 @@ describe('getNormalizedRecordsByMemberKeys — query shape', () => {
     expect(q.filters['is:superseded_at']).toBeNull();
     expect(q.inCol).toBe('member_key');
     expect(q.order).toEqual({ col: 'id', asc: true });
-    expect(q.limit).toBe(500);
+    expect(q.limit).toBe(200);
     queryLog.forEach(p => expect(p.rangeCalled).toBe(false));
   });
 
