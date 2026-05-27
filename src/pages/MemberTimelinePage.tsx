@@ -1030,7 +1030,29 @@ export default function MemberTimelinePage() {
                                         : ''}.
                                     </div>
                                   )}
+                                  {c.state === 'reversed' && c.reversal_evidence && (
+                                    <div className="mt-1 text-orange-700 dark:text-orange-400 space-y-0.5">
+                                      <div>
+                                        Paid: ${c.reversal_evidence.amount.toFixed(2)}{' '}
+                                        (TXN {c.reversal_evidence.positiveTransactionId ?? 'n/a'}, cycle {
+                                          c.reversal_evidence.positiveStatementMonth
+                                            ? formatMonthLabel(c.reversal_evidence.positiveStatementMonth)
+                                            : 'n/a'
+                                        })
+                                      </div>
+                                      <div>
+                                        Reversed: ${c.reversal_evidence.amount.toFixed(2)}{' '}
+                                        (TXN {c.reversal_evidence.negativeTransactionId ?? 'n/a'}, cycle {
+                                          c.reversal_evidence.negativeStatementMonth
+                                            ? formatMonthLabel(c.reversal_evidence.negativeStatementMonth)
+                                            : 'n/a'
+                                        })
+                                      </div>
+                                      <div>Paid-to-date: {c.reversal_evidence.paidToDate}</div>
+                                    </div>
+                                  )}
                                 </TooltipContent>
+
                               </Tooltip>
                             )}
                           </td>
