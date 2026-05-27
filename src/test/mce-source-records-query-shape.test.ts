@@ -112,10 +112,13 @@ describe('getNormalizedRecordsByMemberKeys — query shape', () => {
       raw_json: {},
     }));
     await getNormalizedRecordsByMemberKeys(['mk-1']);
-    // 600 / 200 = 3 pages (NORMALIZED_PAGE_SIZE = 200)
-    expect(queryLog.length).toBe(3);
+    // 600 / 200 = 3 full pages + 1 empty sentinel page (NORMALIZED_PAGE_SIZE = 200).
+    // The loop continues while a page returns exactly PAGE_SIZE rows, so an
+    // exact-multiple total requires one extra empty fetch to terminate.
+    expect(queryLog.length).toBe(4);
     expect(queryLog[0].gtId).toBeNull();
     expect(queryLog[1].gtId).toBe('id-000200');
     expect(queryLog[2].gtId).toBe('id-000400');
+    expect(queryLog[3].gtId).toBe('id-000600');
   });
 });
