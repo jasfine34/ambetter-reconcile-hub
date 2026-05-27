@@ -146,11 +146,14 @@ describe('getAllNormalizedRecordsForMemberTimeline — query shape', () => {
       'Months Paid': '3',
       'Broker Name': 'Broker 1',
       broker_name: 'broker_1',
+      'Transaction ID': 'TXN-1',
     });
     // The aliased fields are stripped (no leakage).
     expect(row.raw_ffm_app_id).toBeUndefined();
     expect(row.raw_months_paid).toBeUndefined();
     expect(row.raw_broker_name_title).toBeUndefined();
+    expect(row.raw_transaction_id).toBeUndefined();
+
   });
 
   it('omits missing raw keys cleanly (null projected values do not show up as keys)', async () => {
