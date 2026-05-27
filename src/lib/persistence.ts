@@ -430,12 +430,13 @@ export async function insertStagedNormalizedRecords(
  * Page size for normalized_records reads.
  *
  * Reduced 1000 → 500 (#116) as a defensive margin against PG statement
- * timeouts (57014). The Feb 2026 Ambetter batch reproducibly timed out on
- * `select=*` reads at page size 1000 in the 4000–5999 offset band; 500 keeps
- * each page comfortably under the API timeout while keeping round-trip count
- * reasonable.
+ * timeouts (57014). Further reduced 500 → 200 after Feb 2026 (7,293 rows
+ * with heavy raw_json) still hit 57014 at page size 500 on the first page
+ * of Re-run Reconciliation. Root cause is `select('*')` pulling raw_json;
+ * longer-term fix is to project typed columns the way Member Timeline does.
+ * This is the smallest unblock.
  */
-const NORMALIZED_PAGE_SIZE = 500;
+const NORMALIZED_PAGE_SIZE = 200;
 
 /**
  * Returns all CURRENT (non-superseded) normalized records for a batch.
