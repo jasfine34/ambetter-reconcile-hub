@@ -1,3 +1,4 @@
+// build trigger: 2026-05-27 page-size deploy unblock
 import { supabase } from '@/integrations/supabase/client';
 import type { NormalizedRecord } from './normalize';
 import type { ReconciledMember } from './reconcile';
