@@ -26,6 +26,7 @@ import { NPN_MAP } from './constants';
 export type ClassificationState =
   | 'paid'
   | 'unpaid'
+  | 'reversed'            // R-PAY-012 — paid then clawed back same paid_to_date (Dannielle-exact shape)
   | 'not_expected_premium_unpaid'
   | 'not_expected_pre_eligibility'
   | 'not_expected_cancelled'
@@ -40,6 +41,28 @@ export type RollupStatus =
   | 'all_not_expected'
   | 'has_pending';
 
+/**
+ * R-PAY-012 — structured evidence for a reversed cell. Carries identifiers
+ * for both contributing commission rows so the UI tooltip, CSV export, and
+ * any future review bucket can read structured fields instead of parsing
+ * `state_reason` strings. Statement-month fields are stored as raw 'YYYY-MM';
+ * the UI formats for display via the existing `formatMonthLabel`.
+ */
+export interface ReversalEvidence {
+  /** Positive commission row's transaction ID (from raw_json['Transaction ID']). */
+  positiveTransactionId: string | null;
+  /** Negative commission row's transaction ID. */
+  negativeTransactionId: string | null;
+  /** Positive row's statement month ('YYYY-MM') resolved via batchMonthByBatchId. */
+  positiveStatementMonth: string | null;
+  /** Negative row's statement month ('YYYY-MM'). Drives the cell label. */
+  negativeStatementMonth: string | null;
+  /** Absolute matched amount (positive value); both rows had ±this amount. */
+  amount: number;
+  /** Shared paid_to_date ('YYYY-MM-DD'). */
+  paidToDate: string;
+}
+
 export interface CellClassification {
   month: MonthKey;
   state: ClassificationState;
@@ -51,7 +74,10 @@ export interface CellClassification {
   in_ede: boolean;
   in_back_office: boolean;
   in_commission: boolean;
+  /** R-PAY-012 — populated only when state === 'reversed'. */
+  reversal_evidence?: ReversalEvidence;
 }
+
 
 export interface MemberClassification {
   member_key: string;
