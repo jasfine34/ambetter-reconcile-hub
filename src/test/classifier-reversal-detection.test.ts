@@ -71,12 +71,12 @@ describe('hasReversalPairForMonth', () => {
   });
 
   it('excludes staged rows', () => {
-    const records = [
-      comm({ commission_amount: 48 }),
-      comm({ commission_amount: -48, staging_status: 'staged' as any }),
-    ];
+    const staged = comm({ commission_amount: -48 });
+    (staged as any).staging_status = 'staged';
+    const records = [comm({ commission_amount: 48 }), staged];
     expect(hasReversalPairForMonth(records, SM, batchMonths).matched).toBe(false);
   });
+
 
   it('multi-positive / multi-negative → any valid pair triggers', () => {
     const records = [
