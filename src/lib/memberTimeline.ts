@@ -1,5 +1,5 @@
 import type { NormalizedRecord } from './normalize';
-import type { ClassificationState, RollupStatus } from './classifier';
+import type { ClassificationState, ReversalEvidence, RollupStatus } from './classifier';
 import { pickCurrentPolicyAor, collectFfmAppIds, buildEdeFfmFallbackIndex } from './aorPicker';
 import { isEDEQualified } from './canonical/edeQualified';
 import { lastActiveMonthForTermDate } from './canonical/termBoundary';
