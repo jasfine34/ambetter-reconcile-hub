@@ -924,6 +924,20 @@ export default function MemberTimelinePage() {
                             cellCls = 'bg-destructive/15 border border-destructive/30';
                             inlineLabel = <span className="text-destructive">unpaid</span>;
                             break;
+                          case 'reversed': {
+                            cellCls = 'bg-orange-200/30 border border-orange-400/40 dark:bg-orange-500/15';
+                            const ev = c.reversal_evidence;
+                            const monthLabel = ev?.negativeStatementMonth
+                              ? formatMonthLabel(ev.negativeStatementMonth)
+                              : null;
+                            inlineLabel = (
+                              <span className="text-orange-700 dark:text-orange-400">
+                                {monthLabel ? `Reversed ${monthLabel}` : 'Reversed'}
+                              </span>
+                            );
+                            break;
+                          }
+
                           case 'pending':
                             cellCls = 'bg-amber-200/30 border border-amber-400/40 dark:bg-amber-500/15';
                             inlineLabel = <span className="text-amber-700 dark:text-amber-500">pending</span>;
