@@ -113,19 +113,19 @@ describe('getAllNormalizedRecordsForMemberTimeline — query shape', () => {
   });
 
   it('preserves active predicate and keyset pagination', async () => {
-    allRows = Array.from({ length: 1200 }, (_, i) => makeRow(i + 1));
+    allRows = Array.from({ length: 600 }, (_, i) => makeRow(i + 1));
     await getAllNormalizedRecordsForMemberTimeline();
-    // 3 pages of 500
+    // 3 pages of 200 (NORMALIZED_PAGE_SIZE = 200)
     expect(queryLog.length).toBe(3);
     for (const q of queryLog) {
       expect(q.filters['eq:staging_status']).toBe('active');
       expect(q.filters['is:superseded_at']).toBeNull();
-      expect(q.limit).toBe(500);
+      expect(q.limit).toBe(200);
       expect(q.filters).not.toHaveProperty('eq:batch_id');
     }
     expect(queryLog[0].gtId).toBeNull();
-    expect(queryLog[1].gtId).toBe('id-000500');
-    expect(queryLog[2].gtId).toBe('id-001000');
+    expect(queryLog[1].gtId).toBe('id-000200');
+    expect(queryLog[2].gtId).toBe('id-000400');
   });
 
   it('reconstructs row.raw_json with the original key names downstream helpers expect', async () => {

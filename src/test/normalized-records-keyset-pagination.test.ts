@@ -96,7 +96,7 @@ beforeEach(() => {
 
 describe('getNormalizedRecords — keyset pagination (#116)', () => {
   it('returns all rows in order, no duplicates, no misses across pages', async () => {
-    // 7,293 ≈ Feb 2026 batch size. With page size 500 → 15 pages.
+    // 7,293 ≈ Feb 2026 batch size. With page size 200 (NORMALIZED_PAGE_SIZE) → 37 pages.
     const total = 7293;
     allRows = Array.from({ length: total }, (_, i) => makeRow(i + 1));
 
@@ -115,26 +115,26 @@ describe('getNormalizedRecords — keyset pagination (#116)', () => {
   });
 
   it('handles total == exact multiple of page size without hanging or losing the trailing page', async () => {
-    // 1500 = exactly 3 pages of 500. Tricky case: page 3 returns 500 rows
+    // 600 = exactly 3 pages of 200. Tricky case: page 3 returns 200 rows
     // (full page), page 4 must return 0 to terminate.
-    allRows = Array.from({ length: 1500 }, (_, i) => makeRow(i + 1));
+    allRows = Array.from({ length: 600 }, (_, i) => makeRow(i + 1));
     const result = await getNormalizedRecords('batch-A');
-    expect(result).toHaveLength(1500);
+    expect(result).toHaveLength(600);
   });
 
-  it('uses keyset pagination (gt(id, lastId)) on every page after the first, with limit 500', async () => {
-    allRows = Array.from({ length: 1200 }, (_, i) => makeRow(i + 1));
+  it('uses keyset pagination (gt(id, lastId)) on every page after the first, with limit 200', async () => {
+    allRows = Array.from({ length: 500 }, (_, i) => makeRow(i + 1));
     await getNormalizedRecords('batch-A');
 
-    // 1200 rows / 500 per page = 3 pages: [500, 500, 200]. After 200 < 500 we stop.
+    // 500 rows / 200 per page = 3 pages: [200, 200, 100]. After 100 < 200 we stop.
     expect(queryLog.length).toBe(3);
-    // Every page requests limit 500 (NOT range/offset).
-    queryLog.forEach(q => expect(q.limit).toBe(500));
+    // Every page requests limit 200 (NOT range/offset).
+    queryLog.forEach(q => expect(q.limit).toBe(200));
     // Page 1: no gt filter (lastId === null).
     expect(queryLog[0].gtId).toBeNull();
     // Page 2 & 3: gt filter set to last id of previous page.
-    expect(queryLog[1].gtId).toBe('id-000500');
-    expect(queryLog[2].gtId).toBe('id-001000');
+    expect(queryLog[1].gtId).toBe('id-000200');
+    expect(queryLog[2].gtId).toBe('id-000400');
   });
 
   it('preserves raw_json on every returned row (reconcile depends on it)', async () => {
