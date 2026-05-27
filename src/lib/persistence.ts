@@ -411,8 +411,16 @@ export async function insertStagedNormalizedRecords(
   // RPC that may INSERT into normalized_records. The lint rule
   // `no-direct-normalized-insert` allows this file/function and forbids the
   // pattern everywhere else.
-  for (let i = 0; i < rows.length; i += 500) {
-    const chunk = rows.slice(i, i + 500);
+  //
+  // Chunk size 100 (reduced from 500, 2026-05-26): the raw_json JSONB column
+  // makes per-row payloads heavy. Feb 2026 Ambetter reproducibly hit Postgres
+  // statement_timeout (57014) on 500-row chunks even with the retry-until-done
+  // workaround, because a single chunk crossed the timeout threshold and no
+  // number of retries could push past it. 100-row chunks keep each INSERT
+  // comfortably under the timeout with acceptable round-trip count.
+  const REBUILD_INSERT_CHUNK_SIZE = 100;
+  for (let i = 0; i < rows.length; i += REBUILD_INSERT_CHUNK_SIZE) {
+    const chunk = rows.slice(i, i + REBUILD_INSERT_CHUNK_SIZE);
     const { error } = await (supabase as any).from('normalized_records').insert(chunk);
     if (error) throw error;
   }
