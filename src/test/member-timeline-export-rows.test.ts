@@ -109,6 +109,12 @@ describe('buildMemberTimelineExportRows', () => {
     expect(buildMemberTimelineExportRows([r], ['2026-01'])[0]['2026-01_status']).toBe('UNPAID');
   });
 
+  it('exports REVERSED for reversed state (not UNPAID)', () => {
+    const r = row({ cells: { '2026-01': cell('2026-01', { due: true, in_commission: true, state: 'reversed' as any }) } });
+    expect(buildMemberTimelineExportRows([r], ['2026-01'])[0]['2026-01_status']).toBe('REVERSED');
+  });
+
+
   it('preserves all prior keys and per-month columns', () => {
     const monthList = ['2026-01', '2026-02'];
     const r = row({
