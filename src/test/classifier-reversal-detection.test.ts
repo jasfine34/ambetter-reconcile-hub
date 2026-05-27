@@ -19,8 +19,10 @@ function comm(overrides: Partial<NormalizedRecord> & { txn?: string; batch?: str
     months_paid: 1,
     batch_id: batch ?? 'batch-feb',
     raw_json: txn ? { 'Transaction ID': txn } : {},
+    ...rest,
   } as any;
 }
+
 
 const SM = '2026-01';
 const batchMonths = new Map<string, string>([
