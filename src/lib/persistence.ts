@@ -543,7 +543,7 @@ const MEMBER_TIMELINE_TYPED_COLUMNS = [
   'created_at','staging_status','superseded_at',
 ].join(',');
 
-// Stable aliases for the 8 raw_json subkeys Member Timeline depends on.
+// Stable aliases for the raw_json subkeys Member Timeline depends on.
 // PostgREST supports `alias:column->>key` and double-quoted keys for those
 // with spaces. These aliases are required by tests so we never regress to
 // default `?column?` names.
@@ -556,6 +556,8 @@ const MEMBER_TIMELINE_RAW_JSON_PROJECTION = [
   'raw_months_paid:raw_json->>"Months Paid"',
   'raw_broker_name_title:raw_json->>"Broker Name"',
   'raw_broker_name:raw_json->>broker_name',
+  // R-PAY-012 (Dannielle) — Transaction ID needed for reversed-state evidence.
+  'raw_transaction_id:raw_json->>"Transaction ID"',
 ].join(',');
 
 export const MEMBER_TIMELINE_ALL_BATCH_COLUMNS =
@@ -571,6 +573,8 @@ function reconstructRawJson(row: any): any {
   if (row.raw_months_paid != null) raw['Months Paid'] = row.raw_months_paid;
   if (row.raw_broker_name_title != null) raw['Broker Name'] = row.raw_broker_name_title;
   if (row.raw_broker_name != null) raw.broker_name = row.raw_broker_name;
+  // R-PAY-012 (Dannielle) — Transaction ID for reversed-state evidence.
+  if (row.raw_transaction_id != null) raw['Transaction ID'] = row.raw_transaction_id;
   const cleaned = { ...row, raw_json: raw };
   delete cleaned.raw_ffm_app_id;
   delete cleaned.raw_current_policy_aor;
@@ -580,8 +584,10 @@ function reconstructRawJson(row: any): any {
   delete cleaned.raw_months_paid;
   delete cleaned.raw_broker_name_title;
   delete cleaned.raw_broker_name;
+  delete cleaned.raw_transaction_id;
   return cleaned;
 }
+
 
 export async function getAllNormalizedRecordsForMemberTimeline() {
   const allData: any[] = [];
