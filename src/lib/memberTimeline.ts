@@ -481,6 +481,8 @@ export function exportStatusForMonthCell(c: MonthCell): string {
   switch (c.state) {
     case 'paid': return 'PAID';
     case 'unpaid': return 'UNPAID';
+    case 'reversed': return 'REVERSED';  // R-PAY-012 — must be distinct from UNPAID
+
     case 'pending': return 'PENDING';
     case 'manual_review': return 'REVIEW';
     case 'not_expected_premium_unpaid':
