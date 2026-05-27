@@ -1,5 +1,5 @@
 import type { NormalizedRecord } from './normalize';
-import type { ClassificationState, RollupStatus } from './classifier';
+import type { ClassificationState, ReversalEvidence, RollupStatus } from './classifier';
 import { pickCurrentPolicyAor, collectFfmAppIds, buildEdeFfmFallbackIndex } from './aorPicker';
 import { isEDEQualified } from './canonical/edeQualified';
 import { lastActiveMonthForTermDate } from './canonical/termBoundary';
@@ -47,6 +47,12 @@ export interface MonthCell {
    * Drives netBucket='+Net' when > 0 (Option A).
    */
   carrier_recognition_premium?: number;
+  /**
+   * R-PAY-012 — populated only when state === 'reversed'. Stamped by
+   * MemberTimelinePage when copying classifier output into the page's cell map.
+   */
+  reversal_evidence?: ReversalEvidence;
+
 }
 
 export interface MemberTimelineRow {
@@ -475,6 +481,8 @@ export function exportStatusForMonthCell(c: MonthCell): string {
   switch (c.state) {
     case 'paid': return 'PAID';
     case 'unpaid': return 'UNPAID';
+    case 'reversed': return 'REVERSED';  // R-PAY-012 — must be distinct from UNPAID
+
     case 'pending': return 'PENDING';
     case 'manual_review': return 'REVIEW';
     case 'not_expected_premium_unpaid':

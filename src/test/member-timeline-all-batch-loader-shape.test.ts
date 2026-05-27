@@ -79,9 +79,11 @@ function makeRow(n: number, overrides: Partial<ProjectedRow> = {}): ProjectedRow
     raw_months_paid: '3',
     raw_broker_name_title: `Broker ${n}`,
     raw_broker_name: `broker_${n}`,
+    raw_transaction_id: `TXN-${n}`,
     ...overrides,
   };
 }
+
 
 beforeEach(() => { allRows = []; queryLog = []; });
 
@@ -96,7 +98,7 @@ describe('getAllNormalizedRecordsForMemberTimeline — query shape', () => {
     }
   });
 
-  it('projects the 8 raw_json subkeys via stable aliases (no ?column? defaults)', async () => {
+  it('projects the 9 raw_json subkeys via stable aliases (no ?column? defaults)', async () => {
     allRows = [makeRow(1)];
     await getAllNormalizedRecordsForMemberTimeline();
     const cols = MEMBER_TIMELINE_ALL_BATCH_COLUMNS;
@@ -108,9 +110,11 @@ describe('getAllNormalizedRecordsForMemberTimeline — query shape', () => {
     expect(cols).toContain('raw_months_paid:raw_json->>"Months Paid"');
     expect(cols).toContain('raw_broker_name_title:raw_json->>"Broker Name"');
     expect(cols).toContain('raw_broker_name:raw_json->>broker_name');
+    expect(cols).toContain('raw_transaction_id:raw_json->>"Transaction ID"');
     // The select string used at runtime must match the exported constant.
     expect(queryLog[0].selectCols).toBe(cols);
   });
+
 
   it('preserves active predicate and keyset pagination', async () => {
     allRows = Array.from({ length: 600 }, (_, i) => makeRow(i + 1));
@@ -142,11 +146,14 @@ describe('getAllNormalizedRecordsForMemberTimeline — query shape', () => {
       'Months Paid': '3',
       'Broker Name': 'Broker 1',
       broker_name: 'broker_1',
+      'Transaction ID': 'TXN-1',
     });
     // The aliased fields are stripped (no leakage).
     expect(row.raw_ffm_app_id).toBeUndefined();
     expect(row.raw_months_paid).toBeUndefined();
     expect(row.raw_broker_name_title).toBeUndefined();
+    expect(row.raw_transaction_id).toBeUndefined();
+
   });
 
   it('omits missing raw keys cleanly (null projected values do not show up as keys)', async () => {

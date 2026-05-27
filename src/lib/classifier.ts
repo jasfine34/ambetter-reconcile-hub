@@ -26,6 +26,7 @@ import { NPN_MAP } from './constants';
 export type ClassificationState =
   | 'paid'
   | 'unpaid'
+  | 'reversed'            // R-PAY-012 — paid then clawed back same paid_to_date (Dannielle-exact shape)
   | 'not_expected_premium_unpaid'
   | 'not_expected_pre_eligibility'
   | 'not_expected_cancelled'
@@ -40,6 +41,28 @@ export type RollupStatus =
   | 'all_not_expected'
   | 'has_pending';
 
+/**
+ * R-PAY-012 — structured evidence for a reversed cell. Carries identifiers
+ * for both contributing commission rows so the UI tooltip, CSV export, and
+ * any future review bucket can read structured fields instead of parsing
+ * `state_reason` strings. Statement-month fields are stored as raw 'YYYY-MM';
+ * the UI formats for display via the existing `formatMonthLabel`.
+ */
+export interface ReversalEvidence {
+  /** Positive commission row's transaction ID (from raw_json['Transaction ID']). */
+  positiveTransactionId: string | null;
+  /** Negative commission row's transaction ID. */
+  negativeTransactionId: string | null;
+  /** Positive row's statement month ('YYYY-MM') resolved via batchMonthByBatchId. */
+  positiveStatementMonth: string | null;
+  /** Negative row's statement month ('YYYY-MM'). Drives the cell label. */
+  negativeStatementMonth: string | null;
+  /** Absolute matched amount (positive value); both rows had ±this amount. */
+  amount: number;
+  /** Shared paid_to_date ('YYYY-MM-DD'). */
+  paidToDate: string;
+}
+
 export interface CellClassification {
   month: MonthKey;
   state: ClassificationState;
@@ -51,7 +74,10 @@ export interface CellClassification {
   in_ede: boolean;
   in_back_office: boolean;
   in_commission: boolean;
+  /** R-PAY-012 — populated only when state === 'reversed'. */
+  reversal_evidence?: ReversalEvidence;
 }
+
 
 export interface MemberClassification {
   member_key: string;
@@ -438,6 +464,75 @@ function paidForMonth(records: NormalizedRecord[], month: MonthKey): number {
 }
 
 /**
+ * R-PAY-012 — Dannielle-exact-shape paid-then-reversed detection.
+ *
+ * Returns a match descriptor when `records` contains at least one matched
+ * (positive, negative) COMMISSION row pair such that:
+ *   1. Both rows have staging_status === 'active'.
+ *   2. Both rows include serviceMonth in commissionServiceMonths(row).months.
+ *   3. Both rows have the same paid_to_date (both non-null).
+ *   4. Both rows have the same months_paid (covered-month set is identical).
+ *   5. Their raw commission_amount values sum to within $0.01 (equal-and-opposite).
+ *
+ * EXPORTED so unit tests can assert against it directly. Public API.
+ */
+export function hasReversalPairForMonth(
+  records: NormalizedRecord[],
+  serviceMonth: MonthKey,
+  batchMonthByBatchId?: Map<string, MonthKey>,
+): { matched: boolean; evidence: ReversalEvidence | null } {
+  const TOLERANCE = 0.01;
+  type Candidate = { row: NormalizedRecord; amount: number; paidTo: string; monthsPaid: number };
+  const candidates: Candidate[] = [];
+  for (const r of records) {
+    if (r.source_type !== 'COMMISSION') continue;
+    if ((r as any).staging_status !== 'active') continue;
+    const amt = r.commission_amount;
+    if (amt == null || !Number.isFinite(amt)) continue;
+    const { months } = commissionServiceMonths(r);
+    if (!months.includes(serviceMonth)) continue;
+    const paidTo = r.paid_to_date;
+    if (!paidTo) continue;
+    const monthsPaid = (r as any).months_paid ?? 1;
+    candidates.push({ row: r, amount: amt, paidTo, monthsPaid });
+  }
+  if (candidates.length < 2) return { matched: false, evidence: null };
+
+  const positives = candidates.filter(c => c.amount > TOLERANCE);
+  const negatives = candidates.filter(c => c.amount < -TOLERANCE);
+  if (positives.length === 0 || negatives.length === 0) return { matched: false, evidence: null };
+
+  for (const pos of positives) {
+    for (const neg of negatives) {
+      if (pos.paidTo !== neg.paidTo) continue;
+      if (pos.monthsPaid !== neg.monthsPaid) continue;
+      if (Math.abs(pos.amount + neg.amount) > TOLERANCE) continue;
+      const posBatchId = (pos.row as any).batch_id;
+      const negBatchId = (neg.row as any).batch_id;
+      const posTxn = String((pos.row.raw_json as any)?.['Transaction ID'] ?? '') || null;
+      const negTxn = String((neg.row.raw_json as any)?.['Transaction ID'] ?? '') || null;
+      const evidence: ReversalEvidence = {
+        positiveTransactionId: posTxn,
+        negativeTransactionId: negTxn,
+        positiveStatementMonth:
+          posBatchId && batchMonthByBatchId
+            ? batchMonthByBatchId.get(String(posBatchId)) ?? null
+            : null,
+        negativeStatementMonth:
+          negBatchId && batchMonthByBatchId
+            ? batchMonthByBatchId.get(String(negBatchId)) ?? null
+            : null,
+        amount: Math.abs(pos.amount),
+        paidToDate: pos.paidTo,
+      };
+      return { matched: true, evidence };
+    }
+  }
+  return { matched: false, evidence: null };
+}
+
+
+/**
  * Any qualified, active-date EDE record in this member's set that covers the
  * given month. Fix 6 — uses canonical isEDEQualified + day-aware term-
  * boundary. Cancelled/terminated/non-Ambetter rows no longer light in_ede.
@@ -562,6 +657,31 @@ function classifyCell(
   if (paid_amount > 0.0001) {
     return { ...base, state: 'paid', reason: `Commission of $${paid_amount.toFixed(2)} received for this service month.` };
   }
+
+  // Rule 1b (R-PAY-012) — paid-then-reversed (Dannielle-exact shape).
+  // If paid_amount is at or near zero AND the contributing commission rows
+  // contain at least one matched (positive, negative) reversal pair on the
+  // same paid_to_date with the same months_paid and equal-and-opposite raw
+  // amounts, classify as 'reversed' — operationally distinct from 'unpaid'.
+  if (Math.abs(paid_amount) < 0.0001) {
+    const reversalCheck = hasReversalPairForMonth(
+      records,
+      month,
+      context.batchMonthByBatchId,
+    );
+    if (reversalCheck.matched && reversalCheck.evidence) {
+      const ev = reversalCheck.evidence;
+      const reason =
+        `Paid $${ev.amount.toFixed(2)} ` +
+        `(TXN ${ev.positiveTransactionId ?? 'n/a'}, ` +
+        `cycle ${ev.positiveStatementMonth ?? 'n/a'}); ` +
+        `reversed (TXN ${ev.negativeTransactionId ?? 'n/a'}, ` +
+        `cycle ${ev.negativeStatementMonth ?? 'n/a'})`;
+      return { ...base, state: 'reversed', reason, reversal_evidence: ev };
+    }
+  }
+
+
 
   // Rule 3 (non-eligible): not ours at all
   if (!memberBelongsToUs(records)) {

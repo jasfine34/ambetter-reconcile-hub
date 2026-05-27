@@ -347,6 +347,7 @@ export default function MemberTimelinePage() {
           ...existing,
           state: c.state,
           state_reason: c.reason,
+          reversal_evidence: c.reversal_evidence,
         });
         let netBucket: '+Net' | '0Net' | null = null;
         if (stamped.state === 'unpaid') {
@@ -364,6 +365,7 @@ export default function MemberTimelinePage() {
             && netBucket !== '+Net') {
           netBucket = '+Net';
         }
+        // R-PAY-012 — reversed cells deliberately do not carry a netBucket.
         newCells[m] = { ...stamped, netBucket };
         switch (newCells[m].state) {
           case 'paid':
@@ -381,9 +383,14 @@ export default function MemberTimelinePage() {
           case 'manual_review':
             months_due++;
             break;
+          case 'reversed':
+            // R-PAY-012 — real activity, increment months_due only.
+            months_due++;
+            break;
           default:
             break;
         }
+
       }
       const finalCells = Object.values(newCells);
       const hasUnpaidPlusNet = finalCells.some(c => c.state === 'unpaid' && c.netBucket === '+Net');
@@ -917,6 +924,20 @@ export default function MemberTimelinePage() {
                             cellCls = 'bg-destructive/15 border border-destructive/30';
                             inlineLabel = <span className="text-destructive">unpaid</span>;
                             break;
+                          case 'reversed': {
+                            cellCls = 'bg-orange-200/30 border border-orange-400/40 dark:bg-orange-500/15';
+                            const ev = c.reversal_evidence;
+                            const monthLabel = ev?.negativeStatementMonth
+                              ? formatMonthLabel(ev.negativeStatementMonth)
+                              : null;
+                            inlineLabel = (
+                              <span className="text-orange-700 dark:text-orange-400">
+                                {monthLabel ? `Reversed ${monthLabel}` : 'Reversed'}
+                              </span>
+                            );
+                            break;
+                          }
+
                           case 'pending':
                             cellCls = 'bg-amber-200/30 border border-amber-400/40 dark:bg-amber-500/15';
                             inlineLabel = <span className="text-amber-700 dark:text-amber-500">pending</span>;
@@ -1009,7 +1030,29 @@ export default function MemberTimelinePage() {
                                         : ''}.
                                     </div>
                                   )}
+                                  {c.state === 'reversed' && c.reversal_evidence && (
+                                    <div className="mt-1 text-orange-700 dark:text-orange-400 space-y-0.5">
+                                      <div>
+                                        Paid: ${c.reversal_evidence.amount.toFixed(2)}{' '}
+                                        (TXN {c.reversal_evidence.positiveTransactionId ?? 'n/a'}, cycle {
+                                          c.reversal_evidence.positiveStatementMonth
+                                            ? formatMonthLabel(c.reversal_evidence.positiveStatementMonth)
+                                            : 'n/a'
+                                        })
+                                      </div>
+                                      <div>
+                                        Reversed: ${c.reversal_evidence.amount.toFixed(2)}{' '}
+                                        (TXN {c.reversal_evidence.negativeTransactionId ?? 'n/a'}, cycle {
+                                          c.reversal_evidence.negativeStatementMonth
+                                            ? formatMonthLabel(c.reversal_evidence.negativeStatementMonth)
+                                            : 'n/a'
+                                        })
+                                      </div>
+                                      <div>Paid-to-date: {c.reversal_evidence.paidToDate}</div>
+                                    </div>
+                                  )}
                                 </TooltipContent>
+
                               </Tooltip>
                             )}
                           </td>
