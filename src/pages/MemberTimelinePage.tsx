@@ -347,6 +347,7 @@ export default function MemberTimelinePage() {
           ...existing,
           state: c.state,
           state_reason: c.reason,
+          reversal_evidence: c.reversal_evidence,
         });
         let netBucket: '+Net' | '0Net' | null = null;
         if (stamped.state === 'unpaid') {
@@ -364,6 +365,7 @@ export default function MemberTimelinePage() {
             && netBucket !== '+Net') {
           netBucket = '+Net';
         }
+        // R-PAY-012 — reversed cells deliberately do not carry a netBucket.
         newCells[m] = { ...stamped, netBucket };
         switch (newCells[m].state) {
           case 'paid':
@@ -381,9 +383,14 @@ export default function MemberTimelinePage() {
           case 'manual_review':
             months_due++;
             break;
+          case 'reversed':
+            // R-PAY-012 — real activity, increment months_due only.
+            months_due++;
+            break;
           default:
             break;
         }
+
       }
       const finalCells = Object.values(newCells);
       const hasUnpaidPlusNet = finalCells.some(c => c.state === 'unpaid' && c.netBucket === '+Net');
