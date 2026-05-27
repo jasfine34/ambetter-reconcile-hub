@@ -79,9 +79,11 @@ function makeRow(n: number, overrides: Partial<ProjectedRow> = {}): ProjectedRow
     raw_months_paid: '3',
     raw_broker_name_title: `Broker ${n}`,
     raw_broker_name: `broker_${n}`,
+    raw_transaction_id: `TXN-${n}`,
     ...overrides,
   };
 }
+
 
 beforeEach(() => { allRows = []; queryLog = []; });
 
