@@ -258,9 +258,8 @@ describe('Named Canary Ledger v1 — MT certification (live data)', () => {
     }
 
     if (failures.length > 0) {
-      const preview = failures.slice(0, 5).join('\n  ');
       throw new Error(
-        `Named Canary Ledger v1 — ${failures.length} canary assertion(s) failed.\n  ${preview}${failures.length > 5 ? `\n  ...and ${failures.length - 5} more` : ''}`,
+        `Named Canary Ledger v1 — ${failures.length} canary assertion(s) failed.\n  ${failures.join('\n  ')}`,
       );
     }
   }, 120000);
