@@ -24,6 +24,7 @@ import type { NormalizedRecord } from '@/lib/normalize';
 import { buildPaidDollarsAudit } from '@/lib/paidDollarsAudit';
 import { PaidDollarsAuditPanel } from '@/components/PaidDollarsAuditPanel';
 import { CellAttributionPopover } from '@/components/CellAttributionPopover';
+import { CellLineagePanel, useCellLineagePanel } from '@/components/CellLineagePanel';
 import { ResolvedBadge } from '@/components/ResolvedBadge';
 import { lookupResolved } from '@/lib/resolvedIdentities';
 import { useBatchDataVersion, useAllBatchesDataVersion } from '@/hooks/useBatchDataVersion';
@@ -313,26 +314,33 @@ export default function MemberTimelinePage() {
   // Phase 2c — enrich each row's cells with the classifier's per-cell state
   // and compute the member-level rollup. Runs once per render of filteredRecords
   // and monthList; relatively cheap since the classifier is pure TS.
+  // Lifted from classifiedRows memo so Stage 2 lineage panel can reuse the
+  // exact same baseContext (Source-to-Screen binding contract).
+  const classifierEligibleRecords = useMemo(
+    () => filteredRecords.filter(isDueEligibleRecord),
+    [filteredRecords, isDueEligibleRecord],
+  );
+  const baseClassifierContext = useMemo(
+    () => buildClassifierContext(classifierEligibleRecords as any, monthList, [], { batchMonthByBatchId }),
+    [classifierEligibleRecords, monthList, batchMonthByBatchId],
+  );
+
   const classifiedRows = useMemo(() => {
     if (allRows.length === 0 || monthList.length === 0) return allRows;
 
-    const classifierRecords = filteredRecords.filter(isDueEligibleRecord);
-
     const byMember = new Map<string, any[]>();
-    for (const r of classifierRecords) {
+    for (const r of classifierEligibleRecords) {
       const key = r.member_key || r.applicant_name || 'unknown';
       let arr = byMember.get(key);
       if (!arr) { arr = []; byMember.set(key, arr); }
       arr.push(r);
     }
 
-    const baseContext = buildClassifierContext(classifierRecords as any, monthList, [], { batchMonthByBatchId });
-
     return allRows.map(row => {
       const recs = byMember.get(row.member_key) ?? [];
       if (recs.length === 0) return row;
       const pickerForMember = pickerMapsByMemberKey.get(row.member_key);
-      const context = { ...baseContext, pickerEdeByMonth: pickerForMember };
+      const context = { ...baseClassifierContext, pickerEdeByMonth: pickerForMember };
       const classification = classifyMember(recs as any, context);
       const newCells = { ...row.cells };
       let months_paid = 0;
@@ -407,7 +415,14 @@ export default function MemberTimelinePage() {
         hasUnpaidZeroNet,
       } as MemberTimelineRow;
     });
-  }, [allRows, filteredRecords, monthList, isDueEligibleRecord, batchMonthByBatchId, pickerMapsByMemberKey]);
+  }, [allRows, monthList, classifierEligibleRecords, baseClassifierContext, batchMonthByBatchId, pickerMapsByMemberKey]);
+
+  // Stage 2 — Source-to-Screen lineage panel wiring.
+  const lineage = useCellLineagePanel({
+    filteredRecords: filteredRecords as any,
+    baseClassifierContext,
+    pickerMapsByMemberKey,
+  });
 
   const filteredRows = useMemo(() => {
     // Base set: only members with at least one due month in the selected range.
@@ -967,10 +982,18 @@ export default function MemberTimelinePage() {
                         }
 
                         const cellInner = (
-                          <div
-                            className={`rounded-md px-2 py-1.5 ${cellCls} ${
-                              debugOpen && audit ? 'cursor-pointer hover:ring-2 hover:ring-primary/40' : 'cursor-default'
-                            }`}
+                          <button
+                            type="button"
+                            data-testid="mt-cell"
+                            data-member-key={row.member_key}
+                            data-month={m}
+                            onClick={() => lineage.openPanel({
+                              memberKey: row.member_key,
+                              monthKey: m,
+                              scope: payEntity,
+                              monthCell: c,
+                            })}
+                            className={`w-full text-left rounded-md px-2 py-1.5 cursor-pointer hover:ring-2 hover:ring-primary/40 ${cellCls}`}
                           >
                             <div className="flex justify-center gap-0.5 mb-0.5">
                               {c.in_ede && <Badge variant="secondary" className="h-4 px-1 text-[9px] font-mono">E</Badge>}
@@ -989,7 +1012,7 @@ export default function MemberTimelinePage() {
                             <div className="text-[10px] font-medium text-foreground leading-tight">
                               {inlineLabel}
                             </div>
-                          </div>
+                          </button>
                         );
 
                         return (
@@ -1126,6 +1149,8 @@ export default function MemberTimelinePage() {
             timelineTotalPaid={unsearchedTotalPaid}
           />
         )}
+
+        <CellLineagePanel {...lineage.panelProps} />
       </div>
     </TooltipProvider>
   );
