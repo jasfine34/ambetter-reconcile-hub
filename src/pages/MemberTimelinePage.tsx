@@ -415,7 +415,14 @@ export default function MemberTimelinePage() {
         hasUnpaidZeroNet,
       } as MemberTimelineRow;
     });
-  }, [allRows, filteredRecords, monthList, isDueEligibleRecord, batchMonthByBatchId, pickerMapsByMemberKey]);
+  }, [allRows, monthList, classifierEligibleRecords, baseClassifierContext, batchMonthByBatchId, pickerMapsByMemberKey]);
+
+  // Stage 2 — Source-to-Screen lineage panel wiring.
+  const lineage = useCellLineagePanel({
+    filteredRecords: filteredRecords as any,
+    baseClassifierContext,
+    pickerMapsByMemberKey,
+  });
 
   const filteredRows = useMemo(() => {
     // Base set: only members with at least one due month in the selected range.
