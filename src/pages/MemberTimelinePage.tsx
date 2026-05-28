@@ -314,26 +314,33 @@ export default function MemberTimelinePage() {
   // Phase 2c — enrich each row's cells with the classifier's per-cell state
   // and compute the member-level rollup. Runs once per render of filteredRecords
   // and monthList; relatively cheap since the classifier is pure TS.
+  // Lifted from classifiedRows memo so Stage 2 lineage panel can reuse the
+  // exact same baseContext (Source-to-Screen binding contract).
+  const classifierEligibleRecords = useMemo(
+    () => filteredRecords.filter(isDueEligibleRecord),
+    [filteredRecords, isDueEligibleRecord],
+  );
+  const baseClassifierContext = useMemo(
+    () => buildClassifierContext(classifierEligibleRecords as any, monthList, [], { batchMonthByBatchId }),
+    [classifierEligibleRecords, monthList, batchMonthByBatchId],
+  );
+
   const classifiedRows = useMemo(() => {
     if (allRows.length === 0 || monthList.length === 0) return allRows;
 
-    const classifierRecords = filteredRecords.filter(isDueEligibleRecord);
-
     const byMember = new Map<string, any[]>();
-    for (const r of classifierRecords) {
+    for (const r of classifierEligibleRecords) {
       const key = r.member_key || r.applicant_name || 'unknown';
       let arr = byMember.get(key);
       if (!arr) { arr = []; byMember.set(key, arr); }
       arr.push(r);
     }
 
-    const baseContext = buildClassifierContext(classifierRecords as any, monthList, [], { batchMonthByBatchId });
-
     return allRows.map(row => {
       const recs = byMember.get(row.member_key) ?? [];
       if (recs.length === 0) return row;
       const pickerForMember = pickerMapsByMemberKey.get(row.member_key);
-      const context = { ...baseContext, pickerEdeByMonth: pickerForMember };
+      const context = { ...baseClassifierContext, pickerEdeByMonth: pickerForMember };
       const classification = classifyMember(recs as any, context);
       const newCells = { ...row.cells };
       let months_paid = 0;
