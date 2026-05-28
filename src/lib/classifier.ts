@@ -17,6 +17,7 @@ import { getStatementMonthBounds } from './canonical/statementMonthBounds';
 import { isEDEQualified } from './canonical/edeQualified';
 import { lastActiveMonthForTermDate } from './canonical/termBoundary';
 import { NPN_MAP } from './constants';
+import type { TraceContext } from './explainCellTypes';
 
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -649,16 +650,19 @@ export function isMonthRipe(month: MonthKey, context: ClassifierContext): boolea
 // Per-cell classifier
 // ──────────────────────────────────────────────────────────────────────────
 
-function classifyCell(
+export function classifyCell(
   records: NormalizedRecord[],
   month: MonthKey,
   firstEligible: MonthKey | null,
   context: ClassifierContext,
+  trace?: TraceContext,
 ): CellClassification {
   const in_ede = hasEdeForMonth(records, month, context);
   const in_back_office = hasActiveBoForMonth(records, month);
   const in_commission = hasCommissionForMonth(records, month);
   const paid_amount = paidForMonth(records, month);
+
+  trace?.recordHelper('sourceFlags', { in_ede, in_back_office, in_commission, paid_amount });
 
   const base = { month, paid_amount, in_ede, in_back_office, in_commission };
 
@@ -668,7 +672,9 @@ function classifyCell(
   // but the statement itself proves the service month was paid and should stay
   // visible in the timeline.
   if (paid_amount > 0.0001) {
-    return { ...base, state: 'paid', reason: `Commission of $${paid_amount.toFixed(2)} received for this service month.` };
+    const reason = `Commission of $${paid_amount.toFixed(2)} received for this service month.`;
+    trace?.recordFiringRule('Rule 1: paid', reason);
+    return { ...base, state: 'paid', reason };
   }
 
   // Rule 1b (R-PAY-012) — paid-then-reversed (Dannielle-exact shape).
@@ -682,6 +688,7 @@ function classifyCell(
       month,
       context.batchMonthByBatchId,
     );
+    trace?.recordHelper('hasReversalPairForMonth', reversalCheck);
     if (reversalCheck.matched && reversalCheck.evidence) {
       const ev = reversalCheck.evidence;
       const reason =
@@ -690,6 +697,7 @@ function classifyCell(
         `cycle ${ev.positiveStatementMonth ?? 'n/a'}); ` +
         `reversed (TXN ${ev.negativeTransactionId ?? 'n/a'}, ` +
         `cycle ${ev.negativeStatementMonth ?? 'n/a'})`;
+      trace?.recordFiringRule('Rule 1b (R-PAY-012) reversed', reason);
       return { ...base, state: 'reversed', reason, reversal_evidence: ev };
     }
   }
@@ -697,23 +705,35 @@ function classifyCell(
 
 
   // Rule 3 (non-eligible): not ours at all
-  if (!memberBelongsToUs(records)) {
-    return { ...base, state: 'not_expected_not_ours', reason: 'Member never tied to one of our NPNs.' };
+  const belongs = memberBelongsToUs(records);
+  trace?.recordHelper('memberBelongsToUs', belongs);
+  trace?.recordGuard('member-not-ours', '!memberBelongsToUs(records)', { belongs }, !belongs);
+  if (!belongs) {
+    const reason = 'Member never tied to one of our NPNs.';
+    trace?.recordFiringRule('not_expected_not_ours', reason);
+    return { ...base, state: 'not_expected_not_ours', reason };
   }
 
   // Rule 3 (non-eligible): before first-eligible month
-  if (firstEligible && month < firstEligible) {
+  const preEligible = !!(firstEligible && month < firstEligible);
+  trace?.recordGuard('pre-eligibility', 'month < firstEligible', { month, firstEligible }, preEligible);
+  if (preEligible) {
+    const reason = `Member first becomes commission-eligible in ${firstEligible}.`;
+    trace?.recordFiringRule('not_expected_pre_eligibility', reason);
     return {
       ...base,
       state: 'not_expected_pre_eligibility',
-      reason: `Member first becomes commission-eligible in ${firstEligible}.`,
+      reason,
     };
   }
+  trace?.recordGuard('firstEligible-null', 'firstEligible === null', { firstEligible }, !firstEligible);
   if (!firstEligible) {
+    const reason = 'Could not establish a first-eligible month for this member.';
+    trace?.recordFiringRule('not_expected_not_ours (no firstEligible)', reason);
     return {
       ...base,
       state: 'not_expected_not_ours',
-      reason: 'Could not establish a first-eligible month for this member.',
+      reason,
     };
   }
 
@@ -724,28 +744,49 @@ function classifyCell(
     .filter(Boolean);
   const firstOfMonth = monthKeyToFirstOfMonth(month);
   const brokerTerminated = activeTermBy.length > 0 && activeTermBy.every(t => t <= firstOfMonth);
+  trace?.recordGuard(
+    'broker-terminated',
+    'all BO broker_term_date <= firstOfMonth',
+    { activeTermBy, firstOfMonth },
+    brokerTerminated,
+  );
   if (brokerTerminated) {
-    return { ...base, state: 'not_expected_cancelled', reason: 'Broker term date is in the past as of this month.' };
+    const reason = 'Broker term date is in the past as of this month.';
+    trace?.recordFiringRule('not_expected_cancelled (broker terminated)', reason);
+    return { ...base, state: 'not_expected_cancelled', reason };
   }
 
   // Stale-source guard: member was historically ours (passed not_ours / pre-eligibility
   // / firstEligible / brokerTerminated checks), but NO current source supports this
   // month. Without this guard, stale historical BO evidence would let the cell fall
   // through to pending/unpaid/manual_review even though the source badges are empty.
-  if (paid_amount === 0 && !in_ede && !in_back_office && !in_commission) {
+  const staleSource = paid_amount === 0 && !in_ede && !in_back_office && !in_commission;
+  trace?.recordGuard(
+    'stale-source',
+    'paid_amount===0 && !in_ede && !in_back_office && !in_commission',
+    { paid_amount, in_ede, in_back_office, in_commission },
+    staleSource,
+  );
+  if (staleSource) {
+    const reason = 'No current EDE, canonically-active Back Office, or commission source supports this month.';
+    trace?.recordFiringRule('not_expected_cancelled (stale source)', reason);
     return {
       ...base,
       state: 'not_expected_cancelled',
-      reason: 'No current EDE, canonically-active Back Office, or commission source supports this month.',
+      reason,
     };
   }
 
   // Rule 2: Pending (not ripe)
-  if (!isMonthRipe(month, context)) {
+  const ripe = isMonthRipe(month, context);
+  trace?.recordGuard('not-ripe', '!isMonthRipe(month)', { month, ripe }, !ripe);
+  if (!ripe) {
+    const reason = 'Not ripe: commission statement or next-month BO snapshot not yet uploaded.';
+    trace?.recordFiringRule('Rule 2: pending', reason);
     return {
       ...base,
       state: 'pending',
-      reason: 'Not ripe: commission statement or next-month BO snapshot not yet uploaded.',
+      reason,
     };
   }
 
@@ -758,7 +799,9 @@ function classifyCell(
   const netPremium: number | null = hasBatchMonthContext
     ? netPremiumForServiceMonth(records, month, { batchMonthByBatchId, pickerEdeByMonth: context.pickerEdeByMonth })
     : latestEdeNetPremium(records);
+  trace?.recordHelper('netPremium', netPremium, hasBatchMonthContext ? 'netPremiumForServiceMonth' : 'latestEdeNetPremium');
   const paidThrough = latestBoPaidThrough(records);
+  trace?.recordHelper('latestBoPaidThrough', paidThrough);
   const paidThroughCoversMonth = paidThrough && paidThrough >= month;
   const paidThroughShowsUnpaid = paidThrough && paidThrough < month;
   const noPositiveServiceMonthPremium = hasBatchMonthContext
@@ -767,33 +810,39 @@ function classifyCell(
 
   // Rule 3 (eligible cells — Unpaid disputable): premium paid or zero-premium plan
   if (noPositiveServiceMonthPremium || paidThroughCoversMonth) {
+    const reason = netPremium === 0
+      ? 'Zero net premium plan with no commission received — dispute candidate.'
+      : netPremium === null
+      ? 'No positive service-month EDE premium evidence and no commission received — dispute candidate.'
+      : `BO shows paid-through ${paidThrough || 'none'} but no commission received.`;
+    trace?.recordFiringRule('Rule 3: unpaid', reason);
     return {
       ...base,
       state: 'unpaid',
-      reason: netPremium === 0
-        ? 'Zero net premium plan with no commission received — dispute candidate.'
-        : netPremium === null
-        ? 'No positive service-month EDE premium evidence and no commission received — dispute candidate.'
-        : `BO shows paid-through ${paidThrough || 'none'} but no commission received.`,
+      reason,
     };
   }
 
   // Rule 4 (non-disputable): premium unambiguously unpaid
   if (netPremium !== null && netPremium > 0 && paidThroughShowsUnpaid) {
+    const reason = `Net premium $${netPremium.toFixed(2)} due but BO paid-through ${paidThrough || 'none'} < ${month} start.`;
+    trace?.recordFiringRule('Rule 4: not_expected_premium_unpaid', reason);
     return {
       ...base,
       state: 'not_expected_premium_unpaid',
-      reason: `Net premium $${netPremium.toFixed(2)} due but BO paid-through ${paidThrough || 'none'} < ${month} start.`,
+      reason,
     };
   }
 
   // Rule 5: signals inconclusive — hand off to human
+  const reason = netPremium === null
+    ? `No service-month EDE premium evidence, paid-through "${paidThrough || 'none'}" — signals insufficient.`
+    : `No commission, net premium $${netPremium.toFixed(2)}, paid-through "${paidThrough || 'none'}" — signals insufficient.`;
+  trace?.recordFiringRule('Rule 5: manual_review', reason);
   return {
     ...base,
     state: 'manual_review',
-    reason: netPremium === null
-      ? `No service-month EDE premium evidence, paid-through "${paidThrough || 'none'}" — signals insufficient.`
-      : `No commission, net premium $${netPremium.toFixed(2)}, paid-through "${paidThrough || 'none'}" — signals insufficient.`,
+    reason,
   };
 }
 
