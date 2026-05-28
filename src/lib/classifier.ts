@@ -17,6 +17,7 @@ import { getStatementMonthBounds } from './canonical/statementMonthBounds';
 import { isEDEQualified } from './canonical/edeQualified';
 import { lastActiveMonthForTermDate } from './canonical/termBoundary';
 import { NPN_MAP } from './constants';
+import type { TraceContext } from './explainCellTypes';
 
 
 // ──────────────────────────────────────────────────────────────────────────
