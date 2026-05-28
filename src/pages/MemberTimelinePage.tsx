@@ -24,6 +24,7 @@ import type { NormalizedRecord } from '@/lib/normalize';
 import { buildPaidDollarsAudit } from '@/lib/paidDollarsAudit';
 import { PaidDollarsAuditPanel } from '@/components/PaidDollarsAuditPanel';
 import { CellAttributionPopover } from '@/components/CellAttributionPopover';
+import { CellLineagePanel, useCellLineagePanel } from '@/components/CellLineagePanel';
 import { ResolvedBadge } from '@/components/ResolvedBadge';
 import { lookupResolved } from '@/lib/resolvedIdentities';
 import { useBatchDataVersion, useAllBatchesDataVersion } from '@/hooks/useBatchDataVersion';
