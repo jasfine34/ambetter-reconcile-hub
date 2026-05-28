@@ -982,10 +982,18 @@ export default function MemberTimelinePage() {
                         }
 
                         const cellInner = (
-                          <div
-                            className={`rounded-md px-2 py-1.5 ${cellCls} ${
-                              debugOpen && audit ? 'cursor-pointer hover:ring-2 hover:ring-primary/40' : 'cursor-default'
-                            }`}
+                          <button
+                            type="button"
+                            data-testid="mt-cell"
+                            data-member-key={row.member_key}
+                            data-month={m}
+                            onClick={() => lineage.openPanel({
+                              memberKey: row.member_key,
+                              monthKey: m,
+                              scope: payEntity,
+                              monthCell: c,
+                            })}
+                            className={`w-full text-left rounded-md px-2 py-1.5 cursor-pointer hover:ring-2 hover:ring-primary/40 ${cellCls}`}
                           >
                             <div className="flex justify-center gap-0.5 mb-0.5">
                               {c.in_ede && <Badge variant="secondary" className="h-4 px-1 text-[9px] font-mono">E</Badge>}
@@ -1004,7 +1012,7 @@ export default function MemberTimelinePage() {
                             <div className="text-[10px] font-medium text-foreground leading-tight">
                               {inlineLabel}
                             </div>
-                          </div>
+                          </button>
                         );
 
                         return (
