@@ -1149,6 +1149,8 @@ export default function MemberTimelinePage() {
             timelineTotalPaid={unsearchedTotalPaid}
           />
         )}
+
+        <CellLineagePanel {...lineage.panelProps} />
       </div>
     </TooltipProvider>
   );
