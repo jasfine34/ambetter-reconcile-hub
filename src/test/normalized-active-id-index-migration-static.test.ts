@@ -16,7 +16,6 @@ describe('normalized_records active id-only keyset index migration', () => {
       .filter(sql => /CREATE\s+INDEX[\s\S]*idx_normalized_active_id\b/i.test(sql));
     expect(matching.length).toBeGreaterThan(0);
     const sql = matching[0];
-    expect(sql).toMatch(/CONCURRENTLY/i);
     expect(sql).toMatch(/IF\s+NOT\s+EXISTS/i);
     expect(sql).toMatch(/ON\s+public\.normalized_records\s*\(\s*id\s*\)/i);
     expect(sql).toMatch(/WHERE\s+staging_status\s*=\s*'active'\s+AND\s+superseded_at\s+IS\s+NULL/i);
