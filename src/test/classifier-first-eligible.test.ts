@@ -32,3 +32,18 @@ describe('computeFirstEligibleMonth — Fix 4 BED override returns BED month', (
     expect(computeFirstEligibleMonth([r] as any)).toBe('2027-01');
   });
 });
+
+describe('computeFirstEligibleMonth — Tier A returns earliest across all matching BO rows', () => {
+  it('multiple BO rows with different (BED,PED) months → returns earliest implied first-eligible regardless of input order', () => {
+    const laterRow = bo({ effective_date: '2026-03-01', broker_effective_date: '2026-03-01' });
+    const earlierRow = bo({ effective_date: '2026-01-01', broker_effective_date: '2026-01-01' });
+    expect(computeFirstEligibleMonth([laterRow, earlierRow] as any)).toBe('2026-01');
+    expect(computeFirstEligibleMonth([earlierRow, laterRow] as any)).toBe('2026-01');
+  });
+
+  it('mix of new enrollment + NPN override rows → returns earliest implied across both shapes', () => {
+    const override = bo({ effective_date: '2026-01-01', broker_effective_date: '2026-05-15' }); // → 2026-05
+    const newEnroll = bo({ effective_date: '2026-02-01', broker_effective_date: '2026-01-15' }); // → 2026-02
+    expect(computeFirstEligibleMonth([override, newEnroll] as any)).toBe('2026-02');
+  });
+});

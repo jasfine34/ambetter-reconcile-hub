@@ -210,8 +210,12 @@ export function commissionServiceMonths(r: NormalizedRecord): { months: MonthKey
  * Returns null if the member was never eligible under our AORs.
  */
 export function computeFirstEligibleMonth(records: NormalizedRecord[]): MonthKey | null {
-  // Tier A — look for a BO row with both broker_effective_date and
-  // policy_effective_date, where the record belongs to us.
+  // Tier A — look across ALL BO rows that belong to us with both BED and PED;
+  // return the EARLIEST first-eligible month implied by any qualifying row.
+  // Previously this returned the first encountered; under cross-batch scope
+  // that picks an arbitrary row depending on iteration order. The semantically
+  // correct answer is the earliest, consistent with Tier B below.
+  let earliestTierAMonth: MonthKey | null = null;
   for (const r of records) {
     if (r.source_type !== 'BACK_OFFICE') continue;
     if (!isBoRecordOurs(r)) continue;
@@ -219,13 +223,22 @@ export function computeFirstEligibleMonth(records: NormalizedRecord[]): MonthKey
     const pedKey = dateToMonthKey(r.effective_date);
     if (!bedKey || !pedKey) continue;
 
-    // New enrollment — broker was on the policy by the effective date
-    if (bedKey <= pedKey) return pedKey;
-    // NPN override — became broker mid-flight. Per Jason 2026-05-26 +
-    // data-dictionary.md:42, first-eligible = BED's month itself (not the
-    // month after). Fix 4.
-    return bedKey;
+    let candidateMonth: MonthKey;
+    if (bedKey <= pedKey) {
+      // New enrollment — broker was on the policy by the effective date
+      candidateMonth = pedKey;
+    } else {
+      // NPN override — became broker mid-flight. Per Jason 2026-05-26 +
+      // data-dictionary.md:42, first-eligible = BED's month itself (not the
+      // month after). Fix 4.
+      candidateMonth = bedKey;
+    }
+
+    if (!earliestTierAMonth || candidateMonth < earliestTierAMonth) {
+      earliestTierAMonth = candidateMonth;
+    }
   }
+  if (earliestTierAMonth) return earliestTierAMonth;
 
 
   // Tier B — no broker_effective_date available. Fall back to the earliest
