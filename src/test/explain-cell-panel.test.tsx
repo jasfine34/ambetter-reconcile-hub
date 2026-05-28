@@ -13,10 +13,8 @@
  *  9) Display override divergence
  */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Routes, Route, Link } from 'react-router-dom';
-import { useState } from 'react';
 import {
   CellLineagePanel,
   useCellLineagePanel,
