@@ -536,7 +536,7 @@ const MEMBER_TIMELINE_TYPED_COLUMNS = [
   'policy_number','exchange_subscriber_id','exchange_policy_id',
   'issuer_policy_id','issuer_subscriber_id',
   'agent_name','agent_npn','aor_bucket','pay_entity',
-  'status','effective_date','premium','net_premium','commission_amount',
+  'status','effective_date','premium','net_premium','member_responsibility','commission_amount',
   'eligible_for_commission','policy_term_date','paid_through_date',
   'broker_effective_date','broker_term_date','on_off_exchange','auto_renewal',
   'ede_policy_origin_type','ede_bucket','policy_modified_date',
