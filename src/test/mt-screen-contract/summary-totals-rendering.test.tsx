@@ -29,6 +29,7 @@ describe('Test 11 — Summary totals (top of page)', () => {
       makeRow({
         member_key: 'A', applicant_name: 'SUM AAA', cells: {
           [M1]: blankCell(M1, { state: 'paid', due: true, paid_amount: 100, in_commission: true }),
+          [M2]: blankCell(M2),
         },
       }),
       makeRow({
