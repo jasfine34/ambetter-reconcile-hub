@@ -41,7 +41,10 @@ describe('Test 9 — Total $ column', () => {
     setMockRows([
       makeRow({
         applicant_name: 'HDR MEMBER',
-        cells: { [M1]: blankCell(M1, { state: 'paid', due: true, paid_amount: 1, in_commission: true }) },
+        cells: {
+          [M1]: blankCell(M1, { state: 'paid', due: true, paid_amount: 1, in_commission: true }),
+          [M2]: blankCell(M2),
+        },
       }),
     ], MONTHS);
     await renderMTPage();
@@ -55,6 +58,7 @@ describe('Test 9 — Total $ column', () => {
         applicant_name: 'BIG MEMBER',
         cells: {
           [M1]: blankCell(M1, { state: 'paid', due: true, paid_amount: 1234.56, in_commission: true }),
+          [M2]: blankCell(M2),
         },
       }),
     ], MONTHS);
