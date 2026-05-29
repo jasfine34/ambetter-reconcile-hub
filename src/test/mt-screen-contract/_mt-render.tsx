@@ -96,7 +96,7 @@ export function applyMTMocks(vi: any) {
       uploadedFiles: [],
       counts: { uploadedFiles: 0, normalizedRecords: 0, reconciledMembers: 0 },
       debugStats: null,
-      resolverIndex: null,
+      resolverIndex: _resolverIndex,
       refreshBatches: async () => {},
       refreshReconciled: async () => {},
       refreshFiles: async () => {},
