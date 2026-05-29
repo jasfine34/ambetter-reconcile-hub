@@ -2,9 +2,9 @@
  * Test 7 — Member AOR text fallback order.
  *
  * Enforces docs/mt-screen-contract.md "Member AOR text" line:
- *   Displays `current_policy_aor || aor_bucket || '-'`.
+ *   Displays `current_policy_aor || aor_bucket || '—'` (U+2014 EM DASH).
  *
- * The literal '-' fallback comes from the spec verbatim.
+ * Spec amended in Batch C triage to match production rendering (em dash).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
@@ -52,7 +52,7 @@ describe('Test 7 — Member AOR text fallback order', () => {
     expect(screen.getAllByText('BECKY SHUTA').length).toBeGreaterThan(0);
   });
 
-  it("falls back to '-' when neither is present (spec literal)", async () => {
+  it("falls back to '—' em dash when neither is present (spec literal U+2014)", async () => {
     setMockRows([
       makeRow({
         applicant_name: 'AOR DASH MEMBER',
@@ -63,7 +63,7 @@ describe('Test 7 — Member AOR text fallback order', () => {
     ], MONTHS);
     await renderMTPage();
     await waitFor(() => expect(screen.getByText('AOR DASH MEMBER')).toBeInTheDocument());
-    // Spec verbatim: '-' (U+002D HYPHEN-MINUS).
-    expect(screen.getAllByText('-').length).toBeGreaterThan(0);
+    // Spec verbatim (post Batch B triage): '—' (U+2014 EM DASH).
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
   });
 });
