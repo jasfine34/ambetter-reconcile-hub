@@ -26,18 +26,21 @@ describe('Test 10 — Filter chip counts (all 8 chips)', () => {
       makeRow({
         member_key: 'A', applicant_name: 'AAA FULLPAID', cells: {
           [M1]: blankCell(M1, { state: 'paid', due: true, paid_amount: 10, in_commission: true }),
+          [M2]: blankCell(M2),
         },
       }),
       // B: Unpaid +Net
       makeRow({
         member_key: 'B', applicant_name: 'BBB UNPAID PLUS', cells: {
           [M1]: blankCell(M1, { state: 'unpaid', due: true, netBucket: '+Net', in_ede: true }),
+          [M2]: blankCell(M2),
         },
       }),
       // C: Unpaid 0Net
       makeRow({
         member_key: 'C', applicant_name: 'CCC UNPAID ZERO', cells: {
           [M1]: blankCell(M1, { state: 'unpaid', due: true, netBucket: '0Net', in_ede: true }),
+          [M2]: blankCell(M2),
         },
       }),
       // D: Partial (paid M1, unpaid +Net M2)
@@ -51,12 +54,14 @@ describe('Test 10 — Filter chip counts (all 8 chips)', () => {
       makeRow({
         member_key: 'E', applicant_name: 'EEE PENDING', cells: {
           [M1]: blankCell(M1, { state: 'pending', due: true, in_ede: true }),
+          [M2]: blankCell(M2),
         },
       }),
       // F: Manual review
       makeRow({
         member_key: 'F', applicant_name: 'FFF REVIEW', cells: {
           [M1]: blankCell(M1, { state: 'manual_review', due: true, in_ede: true }),
+          [M2]: blankCell(M2),
         },
       }),
     ], MONTHS);
