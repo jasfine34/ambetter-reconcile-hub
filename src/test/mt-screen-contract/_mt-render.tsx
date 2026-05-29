@@ -126,7 +126,7 @@ export function applyMTMocks(vi: any) {
   }));
 
   vi.mock('@/lib/resolvedIdentities', () => ({
-    lookupResolved: () => null,
+    lookupResolved: (...args: any[]) => _lookupResolvedFn(...args),
     loadResolverIndex: async () => null,
   }));
 
