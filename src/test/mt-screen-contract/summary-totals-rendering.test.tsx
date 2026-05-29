@@ -56,19 +56,19 @@ describe('Test 11 — Summary totals (top of page)', () => {
     expect(screen.getAllByText('$150.00').length).toBeGreaterThan(0);
   });
 
-  it('renders Members with unpaid count (spec label verbatim)', async () => {
+  it('renders Members w/ gaps: count (spec label verbatim)', async () => {
     setMockRows(fixtureRows(), MONTHS);
     await renderMTPage();
     await waitFor(() => expect(screen.getByText('SUM AAA')).toBeInTheDocument());
-    // Members with unpaid: B, C = 2
-    expect(screen.getByText(/Members with unpaid/i)).toBeInTheDocument();
+    // Members w/ gaps: B, C = 2
+    expect(screen.getByText(/Members w\/ gaps:/i)).toBeInTheDocument();
   });
 
-  it('renders Total unpaid months count (spec label verbatim)', async () => {
+  it('renders Unpaid month-events: count (spec label verbatim)', async () => {
     setMockRows(fixtureRows(), MONTHS);
     await renderMTPage();
     await waitFor(() => expect(screen.getByText('SUM AAA')).toBeInTheDocument());
     // months_unpaid sum: B=1 + C=2 = 3
-    expect(screen.getByText(/Total unpaid months/i)).toBeInTheDocument();
+    expect(screen.getByText(/Unpaid month-events:/i)).toBeInTheDocument();
   });
 });
