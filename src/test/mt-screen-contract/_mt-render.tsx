@@ -66,10 +66,20 @@ export interface MTRenderOpts {
 
 let _currentRows: MemberTimelineRow[] = [];
 let _currentMonthList: string[] = ['2026-01'];
+let _resolverIndex: any = null;
+let _lookupResolvedFn: (...args: any[]) => any = () => null;
 
 export function setMockRows(rows: MemberTimelineRow[], monthList?: string[]) {
   _currentRows = rows;
   if (monthList) _currentMonthList = monthList;
+}
+
+export function setMockResolverIndex(idx: any) { _resolverIndex = idx; }
+export function setMockLookupResolved(fn: (...args: any[]) => any) { _lookupResolvedFn = fn; }
+export function resetMTMockState() {
+  _currentRows = [];
+  _resolverIndex = null;
+  _lookupResolvedFn = () => null;
 }
 
 export function getMockRows() { return _currentRows; }
