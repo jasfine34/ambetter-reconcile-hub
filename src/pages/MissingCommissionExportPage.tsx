@@ -1060,7 +1060,45 @@ export default function MissingCommissionExportPage() {
         rateRows = [];
       }
       if (!isLatest()) return;
-      const evidenceMap = buildSourceEvidenceMap(missingMembers);
+      // MCE export contract AC-2 — build resolver-ready evidence from
+      // normalized BO/EDE records (NOT reconciled-row fields, which lack
+      // state / member_count). Reuses the canonical resolver-record
+      // adapters + state/member-count resolvers so we get the same proven
+      // inputs the cross-batch sweep uses.
+      const batchMonthByIdRecord: Record<string, string> = {};
+      for (const [bid, bm] of batchMonthByBatchIdSnap) batchMonthByIdRecord[bid] = bm;
+      const targetServiceMonths = ranBatchMonth ? [ranBatchMonth] : [];
+      const syntheticEvidenceRows = missingMembers.map((m: any) => {
+        const memberRecs = profileRecordsByMemberKey.get(m.member_key) ?? [];
+        const stateRecords = buildPolicyStateRecords({
+          normalizedRecords: memberRecs as any,
+          batchMonthById: batchMonthByIdRecord,
+        });
+        const countRecords = buildPolicyMemberCountRecords({
+          normalizedRecords: memberRecs as any,
+          batchMonthById: batchMonthByIdRecord,
+        });
+        const stateRes = ranBatchMonth
+          ? resolvePolicyStateForCompGrid({
+              records: stateRecords,
+              targetBatchMonth: ranBatchMonth,
+              targetServiceMonths,
+            })
+          : { state: null };
+        const countRes = ranBatchMonth
+          ? resolvePolicyMemberCountForCompGrid({
+              records: countRecords,
+              targetBatchMonth: ranBatchMonth,
+              targetServiceMonths,
+            })
+          : { memberCount: null };
+        return {
+          ...m,
+          state: stateRes.state ?? (m as any).state ?? null,
+          member_count: countRes.memberCount ?? (m as any).member_count ?? null,
+        };
+      });
+      const evidenceMap = buildSourceEvidenceMap(syntheticEvidenceRows);
       const estMissingResolver = createEstMissingResolver({
         rateRows,
         batchMonth: ranBatchMonth,
