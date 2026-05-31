@@ -287,12 +287,11 @@ describe('buildMesserCsv + buildMesserCsvFilename', () => {
     const parsed = Papa.parse(csv, { header: true });
     const headers = parsed.meta.fields ?? [];
 
-    // Exact Messer order
+    // Exact Messer order — 12 locked columns (MCE export contract AC-1).
     expect(headers).toEqual([
       'Carrier Name', 'NPN', 'Writing Agent Carrier ID', 'Writing Agent Name',
       'Policy Effective Date', 'Policy #', 'Member First Name', 'Member Last Name',
       'DOB', 'SSN', 'Member ID', 'Address (Street, City, State, Zip)',
-      'Estimated Missing Commission', 'Est_Missing_Status',
     ]);
     // SSN present but blank (v1)
     const data = parsed.data as Record<string, string>[];
@@ -402,9 +401,11 @@ describe('non-blank guards: Address / FFM ID / Policy Effective Date', () => {
     expect(eff).toBe('2026-02-01');
   });
 
-  it('Policy Effective Date: falls back to BO when no EDE row exists', () => {
+  it('Policy Effective Date: falls back to BO typed effective_date when no EDE row exists', () => {
+    // MCE contract AC-3: BO typed effective_date is preferred over both raw
+    // and broker_effective_date. broker_effective_date is last-ditch only.
     const records = [
-      bo({ batch_id: 'b-feb', broker_effective_date: '2026-02-15' as any, raw_json: { 'Policy Effective Date': '2/15/2026' } }),
+      bo({ batch_id: 'b-feb', effective_date: '2026-02-15' as any, broker_effective_date: '2026-03-15' as any, raw_json: { 'Policy Effective Date': '2/15/2026' } }),
     ];
     const eff = resolvePolicyEffectiveDate({ records, reconciledEffectiveDate: null });
     expect(eff).toBe('2026-02-15');

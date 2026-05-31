@@ -84,12 +84,19 @@ import {
   type EstMissingStatus,
 } from '@/lib/canonical/estMissingResolver';
 import { buildSourceEvidenceMap } from '@/lib/canonical/estMissingEvidenceAdapter';
+import {
+  buildPolicyStateRecords,
+  buildPolicyMemberCountRecords,
+} from '@/lib/sweep/resolverRecordAdapters';
+import { resolvePolicyStateForCompGrid } from '@/lib/canonical/policyState';
+import { resolvePolicyMemberCountForCompGrid } from '@/lib/canonical/policyMemberCount';
 
 
 type PremiumBucket = 'all' | 'zero_premium' | 'has_premium';
 
 interface ExportRow {
-  // Messer columns (downloaded)
+  // Vendor Messer CSV columns (12 locked — R-MCE-002). These are the ONLY
+  // fields written by buildMesserCsv to the downloaded carrier-facing CSV.
   carrierName: string;
   npn: string;
   writingAgentCarrierId: string;
@@ -102,9 +109,11 @@ interface ExportRow {
   ssn: string; // blank v1
   memberId: string;
   address: string;
-  /** Bundle 13e — resolved est-missing dollars; blank in CSV when not RESOLVED/REMAINDER. */
+  // Preview / backing fields — NOT in the vendor CSV (R-MCE-001 / R-MCE-002).
+  /** Bundle 13e — resolved est-missing dollars; preview-only. */
   estimatedMissingCommission: number | null;
-  /** Bundle 13e — adjacent status column. */
+  /** Bundle 13e — backing status that drives the preview dollar cell's
+   *  Needs review / TBD text. Not a standalone preview column. */
   estMissingStatus: EstMissingStatus | null;
   // Internal preview-only columns
   _memberKey: string;
@@ -129,6 +138,9 @@ interface ExportRow {
   _clearingNeedsReview: boolean;
 }
 
+// MCE export contract (docs/mce-export-contract.md) — vendor Messer CSV is
+// locked at exactly 12 columns. Do NOT add the estimated-missing-commission
+// dollar or status here; both remain preview/backing fields only.
 const MESSER_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
   { key: 'carrierName', label: 'Carrier Name' },
   { key: 'npn', label: 'NPN' },
@@ -142,8 +154,6 @@ const MESSER_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
   { key: 'ssn', label: 'SSN' },
   { key: 'memberId', label: 'Member ID' },
   { key: 'address', label: 'Address (Street, City, State, Zip)' },
-  { key: 'estimatedMissingCommission', label: 'Estimated Missing Commission' },
-  { key: 'estMissingStatus', label: 'Est_Missing_Status' },
 ];
 
 const INTERNAL_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
@@ -207,12 +217,19 @@ export function resolveMemberId(opts: {
 }
 
 /**
- * Row-context Policy Effective Date (NOT enrichment-walk).
- * Pulls from EDE `effective_date` (typed) → EDE `raw_json.effectiveDate`
- * → BO `broker_effective_date` → BO `Policy Effective Date` raw → reconciled
- * `effective_date`. First non-blank wins. EDE is preferred because it carries
- * the authoritative policy effective date as filed on the marketplace; BO
- * dates can lag for retro-enrolled policies.
+ * Row-context Policy Effective Date (NOT enrichment-walk). MCE export
+ * contract AC-3 (docs/mce-export-contract.md): never return a broker
+ * effective date ahead of an actual policy effective date.
+ *
+ * Precedence (first non-blank wins):
+ *   1. EDE typed `effective_date` (authoritative filed date)
+ *   2. EDE `raw_json.effectiveDate`
+ *   3. BO typed `effective_date` (ISO-normalized Policy Effective Date —
+ *      preferred over raw and over broker_effective_date)
+ *   4. BO `raw_json['Policy Effective Date']` (raw carrier-formatted fallback)
+ *   5. reconciled `effective_date`
+ *   6. BO `broker_effective_date` — last-ditch ONLY, never ahead of any
+ *      actual policy effective date above.
  */
 export function resolvePolicyEffectiveDate(opts: {
   records: any[];
@@ -229,7 +246,7 @@ export function resolvePolicyEffectiveDate(opts: {
     }
   }
   for (const r of recs) {
-    if (r.source_type === 'BACK_OFFICE' && r.broker_effective_date) return String(r.broker_effective_date);
+    if (r.source_type === 'BACK_OFFICE' && r.effective_date) return String(r.effective_date);
   }
   for (const r of recs) {
     if (r.source_type === 'BACK_OFFICE') {
@@ -238,6 +255,9 @@ export function resolvePolicyEffectiveDate(opts: {
     }
   }
   if (opts.reconciledEffectiveDate) return String(opts.reconciledEffectiveDate);
+  for (const r of recs) {
+    if (r.source_type === 'BACK_OFFICE' && r.broker_effective_date) return String(r.broker_effective_date);
+  }
   return '';
 }
 
@@ -462,21 +482,16 @@ export function serializeErrorMessage(err: unknown): string {
   return s === '[object Object]' ? 'Unknown error' : s;
 }
 
-/** Convert ExportRow[] → CSV with EXACTLY the Messer column order (no internals). */
+/** Convert ExportRow[] → CSV with EXACTLY the 12 locked Messer columns
+ *  (R-MCE-002). Preview/backing fields like estimatedMissingCommission and
+ *  estMissingStatus are intentionally excluded — see docs/mce-export-contract.md.
+ */
 export function buildMesserCsv(rows: ExportRow[]): string {
   const data = rows.map((r) => {
     const obj: Record<string, string> = {};
     for (const col of MESSER_COLUMNS) {
       const v = r[col.key];
-      let raw: string;
-      if (col.key === 'estimatedMissingCommission') {
-        // Bundle 13e — numeric-or-blank. No $18 fallback, no "TBD" string.
-        raw = typeof v === 'number' && Number.isFinite(v) ? v.toFixed(2) : '';
-      } else if (col.key === 'estMissingStatus') {
-        raw = v == null ? '' : String(v);
-      } else {
-        raw = v == null ? '' : String(v);
-      }
+      const raw = v == null ? '' : String(v);
       // #109: strip leading Excel text-format apostrophe ONLY for the
       // Writing Agent Carrier ID column, ONLY at the export boundary.
       obj[col.label] = col.key === 'writingAgentCarrierId' ? stripExcelTextMarker(raw) : raw;
@@ -1045,7 +1060,45 @@ export default function MissingCommissionExportPage() {
         rateRows = [];
       }
       if (!isLatest()) return;
-      const evidenceMap = buildSourceEvidenceMap(missingMembers);
+      // MCE export contract AC-2 — build resolver-ready evidence from
+      // normalized BO/EDE records (NOT reconciled-row fields, which lack
+      // state / member_count). Reuses the canonical resolver-record
+      // adapters + state/member-count resolvers so we get the same proven
+      // inputs the cross-batch sweep uses.
+      const batchMonthByIdRecord: Record<string, string> = {};
+      for (const [bid, bm] of batchMonthByBatchIdSnap) batchMonthByIdRecord[bid] = bm;
+      const targetServiceMonths = ranBatchMonth ? [ranBatchMonth] : [];
+      const syntheticEvidenceRows = missingMembers.map((m: any) => {
+        const memberRecs = profileRecordsByMemberKey.get(m.member_key) ?? [];
+        const stateRecords = buildPolicyStateRecords({
+          normalizedRecords: memberRecs as any,
+          batchMonthById: batchMonthByIdRecord,
+        });
+        const countRecords = buildPolicyMemberCountRecords({
+          normalizedRecords: memberRecs as any,
+          batchMonthById: batchMonthByIdRecord,
+        });
+        const stateRes = ranBatchMonth
+          ? resolvePolicyStateForCompGrid({
+              records: stateRecords,
+              targetBatchMonth: ranBatchMonth,
+              targetServiceMonths,
+            })
+          : { state: null };
+        const countRes = ranBatchMonth
+          ? resolvePolicyMemberCountForCompGrid({
+              records: countRecords,
+              targetBatchMonth: ranBatchMonth,
+              targetServiceMonths,
+            })
+          : { memberCount: null };
+        return {
+          ...m,
+          state: stateRes.state ?? (m as any).state ?? null,
+          member_count: countRes.memberCount ?? (m as any).member_count ?? null,
+        };
+      });
+      const evidenceMap = buildSourceEvidenceMap(syntheticEvidenceRows);
       const estMissingResolver = createEstMissingResolver({
         rateRows,
         batchMonth: ranBatchMonth,
