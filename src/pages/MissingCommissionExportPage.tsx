@@ -84,6 +84,12 @@ import {
   type EstMissingStatus,
 } from '@/lib/canonical/estMissingResolver';
 import { buildSourceEvidenceMap } from '@/lib/canonical/estMissingEvidenceAdapter';
+import {
+  buildPolicyStateRecords,
+  buildPolicyMemberCountRecords,
+} from '@/lib/sweep/resolverRecordAdapters';
+import { resolvePolicyStateForCompGrid } from '@/lib/canonical/policyState';
+import { resolvePolicyMemberCountForCompGrid } from '@/lib/canonical/policyMemberCount';
 
 
 type PremiumBucket = 'all' | 'zero_premium' | 'has_premium';
