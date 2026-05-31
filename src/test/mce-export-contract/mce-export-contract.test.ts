@@ -145,7 +145,11 @@ describe('MCE contract §7.3 — full-evidence dollar resolves to RESOLVED', () 
       scope: 'Coverall',
       sourceEvidenceByMemberKey: evidenceMap,
     });
-    const res = resolver.resolve({ row: { member_key: 'mk-full-evidence' } });
+    // Override carrier to canonical lowercase form (rate rows use carrier_key).
+    const res = resolver.resolve({
+      row: { member_key: 'mk-full-evidence' },
+      inputEvidence: { ...ev, carrier: 'ambetter' },
+    });
     expect(res.status).toBe('RESOLVED');
     expect(res.amount).not.toBeNull();
     expect(res.amount).toBeGreaterThan(0);
