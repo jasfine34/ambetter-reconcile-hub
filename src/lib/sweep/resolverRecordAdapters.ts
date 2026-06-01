@@ -112,6 +112,7 @@ function parseMemberCountFromRow(row: NormalizedRecordShape): number | null {
     r.coveredMemberCount,
     r.CoveredMemberCount,
     r.covered_member_count,
+    r['Number of Members'],   // BO raw — authoritative member count (no typed column); BO-first per resolver
     (row as any).member_count,
   ];
   for (const v of candidates) {
