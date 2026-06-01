@@ -194,4 +194,60 @@ describe('buildPolicyMemberCountRecords', () => {
     });
     expect(out).toHaveLength(0);
   });
+
+  it('parses BO raw "Number of Members" (numeric)', () => {
+    const out = buildPolicyMemberCountRecords({
+      normalizedRecords: [row({ source_type: 'BACK_OFFICE', raw_json: { 'Number of Members': 1 }, effective_date: '2026-02-15' })],
+      batchMonthById,
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0].memberCount).toBe(1);
+    expect(out[0].source).toBe('bo');
+  });
+
+  it('parses BO raw "Number of Members" (string)', () => {
+    const out = buildPolicyMemberCountRecords({
+      normalizedRecords: [row({ source_type: 'BACK_OFFICE', raw_json: { 'Number of Members': '2' }, effective_date: '2026-02-15' })],
+      batchMonthById,
+    });
+    expect(out[0].memberCount).toBe(2);
+    expect(out[0].source).toBe('bo');
+  });
+});
+
+describe('resolvePolicyMemberCountForCompGrid — BO-first authority across separate records', () => {
+  it('BO Number of Members wins over EDE coveredMemberCount when on separate records', async () => {
+    const { resolvePolicyMemberCountForCompGrid } = await import('@/lib/canonical/policyMemberCount');
+    const records = buildPolicyMemberCountRecords({
+      normalizedRecords: [
+        row({ id: 'bo1', source_type: 'BACK_OFFICE', raw_json: { 'Number of Members': 2 }, effective_date: '2026-03-15' }),
+        row({ id: 'ede1', source_type: 'EDE', raw_json: { coveredMemberCount: 1 }, effective_date: '2026-03-15' }),
+      ],
+      batchMonthById: { B1: '2026-04' },
+    });
+    const r = resolvePolicyMemberCountForCompGrid({
+      records,
+      targetBatchMonth: '2026-04',
+      targetServiceMonths: ['2026-03'],
+    });
+    expect(r).toMatchObject({ status: 'resolved', memberCount: 2, source: 'bo' });
+  });
+
+  it('conflicting BO Number of Members across records → manual_review', async () => {
+    const { resolvePolicyMemberCountForCompGrid } = await import('@/lib/canonical/policyMemberCount');
+    const records = buildPolicyMemberCountRecords({
+      normalizedRecords: [
+        row({ id: 'bo1', source_type: 'BACK_OFFICE', raw_json: { 'Number of Members': 2 }, effective_date: '2026-03-15' }),
+        row({ id: 'bo2', source_type: 'BACK_OFFICE', raw_json: { 'Number of Members': 3 }, effective_date: '2026-03-15' }),
+      ],
+      batchMonthById: { B1: '2026-04' },
+    });
+    const r = resolvePolicyMemberCountForCompGrid({
+      records,
+      targetBatchMonth: '2026-04',
+      targetServiceMonths: ['2026-03'],
+    });
+    expect(r.status).toBe('manual_review');
+    expect(r.conflicts).toEqual(expect.arrayContaining([2, 3]));
+  });
 });
