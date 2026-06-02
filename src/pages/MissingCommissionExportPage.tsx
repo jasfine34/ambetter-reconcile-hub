@@ -3,10 +3,10 @@
  *
  * Read-only enrichment + export workflow:
  *   1. Pulls reconciled members for the active batch (or any selected month).
- *   2. Identifies the canonical Expected But Unpaid cohort: the
- *      Matched + BO Only + EDE Only unpaid rows returned by
- *      `getExpectedPaymentBreakdown(...).unpaidRows`. This matches the
- *      Dashboard "Expected But Unpaid" card exactly.
+ *   2. Identifies the canonical Expected But Unpaid cohort via the
+ *      MT-approved selector (`buildMtApprovedMceCandidates`) over the
+ *      all-batch projection cache. This is the same inclusion the Member
+ *      Timeline screen shows as "unpaid" cells under official-AOR scope.
  *   3. For each unpaid member, builds a {@link MemberProfile} live from
  *      ALL normalized records across ALL batches — so a Jan record's blank
  *      Address 1 picks up the value from a Mar BO row.
@@ -49,27 +49,13 @@ import {
 } from '@/lib/canonical/scope';
 import { extractNpnFromAorString } from '@/lib/agents';
 import { NPN_MAP, EBU_BATCH_SCOPE_DISCLAIMER } from '@/lib/constants';
-import { computeFilteredEde, type FilteredEdeResult } from '@/lib/expectedEde';
-import { getStatementMonthBounds } from '@/lib/canonical/statementMonthBounds';
-import { applyRuntimeBOActive } from '@/lib/canonical/applyRuntimeBOActive';
-import { getExpectedPaymentBreakdown, isZeroNetPremium } from '@/lib/canonical/metrics';
-// classifySourceTypeForRow — formerly applied here; MCE production rows now
-// carry `_mtSourceType` directly from the MT-approved selector (Phase B 4a).
+import { isZeroNetPremium } from '@/lib/canonical/metrics';
+// Phase B Item 4b — the old MCE inclusion stack has been deleted from this
+// page. MCE production inclusion = MT-approved selector
+// (`buildMtApprovedMceCandidates`) over the all-batch projection cache. The
+// expected-payment helper in metrics.ts is retained for Dashboard / Agent
+// Summary / Unpaid Recovery, which are unchanged.
 import { getCoveredMonths } from '@/lib/dateRange';
-import {
-  paidForServiceMonth,
-  classifyMemberForMonth,
-  buildIsDueEligibleRecord,
-  computeFirstEligibleMonth,
-} from '@/lib/classifier';
-import { isActiveBackOfficeRecord } from '@/lib/canonical/isActiveBackOfficeRecord';
-import {
-  findWeakMatches,
-  loadWeakMatchOverrides,
-  applyOverrides,
-  pickStableKey,
-  type WeakMatchOverride,
-} from '@/lib/weakMatch';
 import { useCrossBatchOverlay } from '@/hooks/useCrossBatchOverlay';
 import {
   EMPTY_CLEARING_OVERLAY_MAP,
@@ -550,110 +536,11 @@ type OverlayRunState = {
   error: Error | null;
 };
 
-/**
- * MCE Inclusion-Rule Fixes — REPAIR turn page-local helper.
- *
- * DEMOTED (Phase B Item 4a wiring slice v2): This helper is NO LONGER on the
- * MCE production click path. MCE production inclusion now flows through the
- * MT-approved selector + cache (`buildMtApprovedMceCandidates` over
- * `getMtAllBatchProjection`) so the export agrees with the Member Timeline
- * "unpaid" cells under official-AOR scope.
- *
- * Retained as an exported symbol for:
- *   1. legacy consumer-path tests (`src/test/canonical/mce-inclusion-rule-
- *      fixes.test.ts`) that pin the old rule semantics in a non-production
- *      role, and
- *   2. a future Codex post-sync read-only delta script that compares the
- *      old vs MT-approved candidate counts before the 4b removal pass.
- *
- * Do NOT re-introduce calls to this from runReport(): the production row
- * source is `buildMtApprovedMceCandidates`. Item 4b will delete this helper.
- *
- * Builds the MCE candidate set for a viewed service month with the
- * SCOPED record set (output of `memberRecords.filter(isDueEligibleRecord)`)
- * driving every rule evaluation (computeFirstEligibleMonth /
- * classifyMemberForMonth / paidForServiceMonth / boActiveNonCurrentEde
- * four-condition gate).
- */
-export interface McePaymentBreakdownLike {
-  unpaidRows: any[];
-  paidRows: any[];
-  universe: { boActiveNonCurrentEde?: any[] };
-}
-
-export function buildMceCandidateSetForServiceMonth(args: {
-  breakdown: McePaymentBreakdownLike;
-  selectedBatchRecords: any[];
-  viewedServiceMonth: string | null | undefined;
-  scope: 'Coverall' | 'Vix' | 'All';
-}): any[] {
-  const { breakdown, selectedBatchRecords, viewedServiceMonth, scope } = args;
-  if (!viewedServiceMonth) return breakdown.unpaidRows;
-
-  const isDueEligibleRecord = buildIsDueEligibleRecord({
-    aorScope: 'official',
-    payEntity: scope,
-  });
-
-  const recordsByMemberKey = new Map<string, any[]>();
-  for (const r of selectedBatchRecords) {
-    const k = r?.member_key;
-    if (!k) continue;
-    const arr = recordsByMemberKey.get(k);
-    if (arr) arr.push(r);
-    else recordsByMemberKey.set(k, [r]);
-  }
-  const scopedRecordsFor = (mk: string): any[] =>
-    (recordsByMemberKey.get(mk) ?? []).filter(isDueEligibleRecord);
-
-  const mceScopeForPay = scope;
-
-  // Section 2: promote drift-misclassified paid rows.
-  const promotedFromPaid = breakdown.paidRows.filter((r: any) => {
-    const recs = scopedRecordsFor(r.member_key);
-    const ev = paidForServiceMonth(recs, viewedServiceMonth, { targetPayEntity: mceScopeForPay });
-    return !ev.paid;
-  });
-
-  // Section 3: apply three exclusion rules.
-  const initialCandidates = [...breakdown.unpaidRows, ...promotedFromPaid];
-  const filteredCandidates = initialCandidates.filter((r: any) => {
-    const recs = scopedRecordsFor(r.member_key);
-    const firstEligible = computeFirstEligibleMonth(recs);
-    if (firstEligible && firstEligible > viewedServiceMonth) return false;
-    const ev = paidForServiceMonth(recs, viewedServiceMonth, { targetPayEntity: mceScopeForPay });
-    if (ev.paid) return false;
-    try {
-      const state = classifyMemberForMonth(recs, viewedServiceMonth);
-      if (state === 'manual_review') return false;
-    } catch {
-      // Keep candidate on unexpected classifier failure.
-    }
-    return true;
-  });
-
-  // Narrow boActiveNonCurrentEde inclusion — all four conditions (scoped).
-  const monthBoundsForMce = getStatementMonthBounds(viewedServiceMonth);
-  const boActiveNonCurrentEdeCandidates =
-    (breakdown.universe.boActiveNonCurrentEde ?? []).filter((r: any) => {
-      const recs = scopedRecordsFor(r.member_key);
-      const boRows = recs.filter((x) => x?.source_type === 'BACK_OFFICE');
-      const boActive = boRows.some((br) =>
-        isActiveBackOfficeRecord(br, monthBoundsForMce.start, monthBoundsForMce.end),
-      );
-      if (!boActive) return false;
-      if (r.eligible_for_commission !== 'Yes') return false;
-      const firstEligible = computeFirstEligibleMonth(recs);
-      if (firstEligible && firstEligible > viewedServiceMonth) return false;
-      const ev = paidForServiceMonth(recs, viewedServiceMonth, {
-        targetPayEntity: mceScopeForPay,
-      });
-      if (ev.paid) return false;
-      return true;
-    });
-
-  return [...filteredCandidates, ...boActiveNonCurrentEdeCandidates];
-}
+// Phase B Item 4b — inclusion = MT-approved selector (see
+// `buildMtApprovedMceCandidates` / `getMtAllBatchProjection`). The old
+// page-local candidate builder and its supporting demoted stack were deleted
+// here; the agreement invariant in
+// `src/test/mce-rewire-item4b-agreement-invariant.test.ts` is the drift lock.
 
 export default function MissingCommissionExportPage() {
   const {
@@ -873,14 +760,11 @@ export default function MissingCommissionExportPage() {
     }
     if (!isLatest()) return;
 
-    // ---- Phase B Item 4a — MT-approved production inclusion (the swap) ----
+    // ---- Phase B Item 4a/4b — MT-approved production inclusion ----
     // Production rows come from `buildMtApprovedMceCandidates` over the
-    // all-batch projection, NOT from `getExpectedPaymentBreakdown` +
-    // `buildMceCandidateSetForServiceMonth`. The whole old inclusion stack
-    // (applyRuntimeBOActive / computeFilteredEde / findWeakMatches /
-    // applyOverrides / getExpectedPaymentBreakdown / old candidate builder)
-    // is OFF the production click path. Dashboard / Agent Summary / Unpaid
-    // Recovery still consume `getExpectedPaymentBreakdown` on their own paths.
+    // all-batch projection. The old MCE-only inclusion stack was deleted in
+    // 4b; Dashboard / Agent Summary / Unpaid Recovery still consume the
+    // expected-payment helper from metrics.ts on their own paths.
     let missingMembers: any[];
     let adjustedByRow: Map<any, AdjustedRow> = new Map();
     try {
