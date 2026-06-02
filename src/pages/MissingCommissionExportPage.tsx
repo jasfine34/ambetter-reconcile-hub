@@ -552,14 +552,27 @@ type OverlayRunState = {
 /**
  * MCE Inclusion-Rule Fixes — REPAIR turn page-local helper.
  *
+ * DEMOTED (Phase B Item 4a wiring slice v2): This helper is NO LONGER on the
+ * MCE production click path. MCE production inclusion now flows through the
+ * MT-approved selector + cache (`buildMtApprovedMceCandidates` over
+ * `getMtAllBatchProjection`) so the export agrees with the Member Timeline
+ * "unpaid" cells under official-AOR scope.
+ *
+ * Retained as an exported symbol for:
+ *   1. legacy consumer-path tests (`src/test/canonical/mce-inclusion-rule-
+ *      fixes.test.ts`) that pin the old rule semantics in a non-production
+ *      role, and
+ *   2. a future Codex post-sync read-only delta script that compares the
+ *      old vs MT-approved candidate counts before the 4b removal pass.
+ *
+ * Do NOT re-introduce calls to this from runReport(): the production row
+ * source is `buildMtApprovedMceCandidates`. Item 4b will delete this helper.
+ *
  * Builds the MCE candidate set for a viewed service month with the
  * SCOPED record set (output of `memberRecords.filter(isDueEligibleRecord)`)
  * driving every rule evaluation (computeFirstEligibleMonth /
  * classifyMemberForMonth / paidForServiceMonth / boActiveNonCurrentEde
  * four-condition gate).
- *
- * Exported solely for consumer-path tests. Not moved to a shared library
- * (page-local seam per directive).
  */
 export interface McePaymentBreakdownLike {
   unpaidRows: any[];
