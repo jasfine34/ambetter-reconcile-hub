@@ -30,10 +30,12 @@ import {
 } from '@/lib/classifier';
 import { isActiveBackOfficeRecord } from '@/lib/canonical/isActiveBackOfficeRecord';
 import { getStatementMonthBounds } from '@/lib/canonical/statementMonthBounds';
-import {
-  buildMceCandidateSetForServiceMonth,
-  type McePaymentBreakdownLike,
-} from '@/pages/MissingCommissionExportPage';
+// Phase B Item 4b — `buildMceCandidateSetForServiceMonth` /
+// `McePaymentBreakdownLike` were deleted from MissingCommissionExportPage.
+// The REPAIR consumer-path tests that used to live below have been removed
+// because the production inclusion stack they exercised is gone. The
+// agreement invariant in `src/test/mce-rewire-item4b-agreement-invariant.
+// test.ts` is now the gate that pins MCE behavior.
 import {
   partitionUnpaidRowsByOverlay,
   buildClearingOverlayMap,
