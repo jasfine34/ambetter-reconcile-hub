@@ -371,6 +371,7 @@ export async function loadResolverIndex(force = false): Promise<ResolverIndex> {
     byFfmApp: new Map(),
     byExchangeSub: new Map(),
     totalRows: all.length,
+    fingerprint: 'empty',
   };
   for (const r of all) {
     const enriched: ResolvedIdentityRow = {
@@ -380,10 +381,50 @@ export async function loadResolverIndex(force = false): Promise<ResolverIndex> {
     if (enriched.match_key_type === 'ffmAppId') idx.byFfmApp.set(enriched.match_key_value, enriched);
     else if (enriched.match_key_type === 'exchangeSubscriberId') idx.byExchangeSub.set(enriched.match_key_value, enriched);
   }
+  idx.fingerprint = resolverIndexFingerprint(idx);
   _cachedIndex = idx;
   _cacheLoadedAt = Date.now();
   return idx;
 }
+
+/**
+ * Deterministic content fingerprint over a resolver index. Used as a cache
+ * invalidation token by read-side caches (e.g. the MT-approved MCE selector)
+ * so a sidecar mutation that does NOT change `totalRows` still triggers
+ * recompute. Pure: sorts match-key entries to keep the output stable.
+ */
+export function resolverIndexFingerprint(idx: ResolverIndex): string {
+  if (!idx || idx.totalRows === 0) return 'empty';
+  const parts: string[] = [`n=${idx.totalRows}`];
+  let latest = '';
+  const projected: string[] = [];
+  const push = (label: string, m: Map<string, ResolvedIdentityRow>) => {
+    const keys = Array.from(m.keys()).sort();
+    for (const k of keys) {
+      const r = m.get(k)!;
+      if (r.resolved_at && r.resolved_at > latest) latest = r.resolved_at;
+      projected.push(
+        `${label}:${k}:${r.resolved_issuer_subscriber_id ?? ''}:${r.resolved_issuer_policy_id ?? ''}:${r.resolved_exchange_policy_id ?? ''}`,
+      );
+    }
+  };
+  push('f', idx.byFfmApp);
+  push('x', idx.byExchangeSub);
+  parts.push(`t=${latest}`);
+  // Cheap stable hash over the projection (FNV-1a 32-bit).
+  let h = 0x811c9dc5;
+  for (const s of projected) {
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+    }
+    h ^= 0x7c; // record separator
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  parts.push(`h=${h.toString(16)}`);
+  return parts.join('|');
+}
+
 
 /**
  * Find the resolved_identities row that applies to a record (if any),
