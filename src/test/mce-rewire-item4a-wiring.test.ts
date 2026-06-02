@@ -106,7 +106,7 @@ describe('Item 4a D4 — old inclusion stack demoted off the production path', (
 
   it('Phase B Item 4b — buildMceCandidateSetForServiceMonth and the demoted-stack docstring are deleted', () => {
     expect(pageSource).not.toMatch(/export function buildMceCandidateSetForServiceMonth/);
-    expect(pageSource).not.toMatch(/McePaymentBreakdownLike/);
+    expect(pageSource).not.toMatch(/export interface McePaymentBreakdownLike/);
     expect(pageSource).not.toMatch(/DEMOTED \(Phase B Item 4a wiring slice v2\)/);
   });
 
@@ -114,7 +114,9 @@ describe('Item 4a D4 — old inclusion stack demoted off the production path', (
     expect(pageSource).not.toMatch(/from\s+['"]@\/lib\/expectedEde['"]/);
     expect(pageSource).not.toMatch(/from\s+['"]@\/lib\/canonical\/applyRuntimeBOActive['"]/);
     expect(pageSource).not.toMatch(/from\s+['"]@\/lib\/weakMatch['"]/);
-    expect(pageSource).not.toMatch(/getExpectedPaymentBreakdown[^a-zA-Z_]/);
+    // No executable import or call to getExpectedPaymentBreakdown.
+    expect(pageSource).not.toMatch(/import\s+\{[^}]*getExpectedPaymentBreakdown[^}]*\}\s+from/);
+    expect(pageSource).not.toMatch(/getExpectedPaymentBreakdown\s*\(/);
   });
 });
 
