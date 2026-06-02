@@ -53,7 +53,8 @@ import { computeFilteredEde, type FilteredEdeResult } from '@/lib/expectedEde';
 import { getStatementMonthBounds } from '@/lib/canonical/statementMonthBounds';
 import { applyRuntimeBOActive } from '@/lib/canonical/applyRuntimeBOActive';
 import { getExpectedPaymentBreakdown, isZeroNetPremium } from '@/lib/canonical/metrics';
-import { classifySourceTypeForRow } from '@/lib/canonical/sourceTypeForRow';
+// classifySourceTypeForRow — formerly applied here; MCE production rows now
+// carry `_mtSourceType` directly from the MT-approved selector (Phase B 4a).
 import { getCoveredMonths } from '@/lib/dateRange';
 import {
   paidForServiceMonth,
