@@ -302,13 +302,24 @@ export interface ResolverIndex {
   byExchangeSub: Map<string, ResolvedIdentityRow>;
   /** Total rows in the sidecar (info badge in UI). */
   totalRows: number;
+  /**
+   * Content fingerprint over the loaded sidecar. Computed from a
+   * deterministic projection (sorted by id) of the rows actually used by
+   * `lookupResolved` plus `resolved_at`. Designed to change whenever sidecar
+   * content changes even if `totalRows` does not (e.g. a row's resolved
+   * values change). Used by the MT-approved MCE selector cache to invalidate
+   * cleanly. See `resolverIndexFingerprint`.
+   */
+  fingerprint: string;
 }
 
 const EMPTY_INDEX: ResolverIndex = {
   byFfmApp: new Map(),
   byExchangeSub: new Map(),
   totalRows: 0,
+  fingerprint: 'empty',
 };
+
 
 let _cachedIndex: ResolverIndex | null = null;
 let _cacheLoadedAt = 0;
