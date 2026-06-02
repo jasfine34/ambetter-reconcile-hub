@@ -1229,7 +1229,7 @@ export default function MissingCommissionExportPage() {
           _estMissingStatus: estMissingStatus,
           _profile: profile,
           _hasConflict: hasConflict,
-          _sourceType: classifySourceTypeForRow(m, breakdown.universe),
+          _sourceType: (m as any)._mtSourceType ?? 'Matched',
           _clearingStatus: clearingStatus,
           _clearingNeedsReview: clearingNeedsReview,
         });
