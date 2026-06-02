@@ -153,6 +153,7 @@ function ripenessRow(): NormalizedRecord {
 describe('§A buildMtApprovedMceCandidates — state filter', () => {
   it('emits exactly one candidate when the cell state is `unpaid`', () => {
     const recs: NormalizedRecord[] = [
+      ripenessRow(),
       row({
         member_key: 'mem-unpaid',
         source_type: 'EDE',
@@ -183,6 +184,7 @@ describe('§A buildMtApprovedMceCandidates — state filter', () => {
 
   it('emits NO candidate when the cell state is `paid`', () => {
     const recs: NormalizedRecord[] = [
+      ripenessRow(),
       row({
         member_key: 'mem-paid',
         source_type: 'EDE',
@@ -217,6 +219,7 @@ describe('§A buildMtApprovedMceCandidates — state filter', () => {
 
   it('uses official-AOR predicate — Vix-NPN-only member is filtered out under scope=Coverall', () => {
     const recs: NormalizedRecord[] = [
+      ripenessRow(),
       row({
         member_key: 'mem-vix',
         source_type: 'EDE',
@@ -246,6 +249,7 @@ describe('§A buildMtApprovedMceCandidates — state filter', () => {
 
   it('payEntity=All passes through Vix-NPN candidates that are MT-unpaid', () => {
     const recs: NormalizedRecord[] = [
+      ripenessRow(),
       row({
         member_key: 'mem-vix-all',
         source_type: 'EDE',
