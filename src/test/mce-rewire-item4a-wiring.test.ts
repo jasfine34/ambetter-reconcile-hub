@@ -104,9 +104,17 @@ describe('Item 4a D4 — old inclusion stack demoted off the production path', (
     expect(runBody).not.toMatch(/loadWeakMatchOverrides\s*\(/);
   });
 
-  it('buildMceCandidateSetForServiceMonth carries an explicit DEMOTED docstring', () => {
-    expect(pageSource).toMatch(/DEMOTED \(Phase B Item 4a wiring slice v2\)/);
-    expect(pageSource).toMatch(/export function buildMceCandidateSetForServiceMonth/);
+  it('Phase B Item 4b — buildMceCandidateSetForServiceMonth and the demoted-stack docstring are deleted', () => {
+    expect(pageSource).not.toMatch(/export function buildMceCandidateSetForServiceMonth/);
+    expect(pageSource).not.toMatch(/McePaymentBreakdownLike/);
+    expect(pageSource).not.toMatch(/DEMOTED \(Phase B Item 4a wiring slice v2\)/);
+  });
+
+  it('Phase B Item 4b — the page does not import the deleted MCE-only stack symbols', () => {
+    expect(pageSource).not.toMatch(/from\s+['"]@\/lib\/expectedEde['"]/);
+    expect(pageSource).not.toMatch(/from\s+['"]@\/lib\/canonical\/applyRuntimeBOActive['"]/);
+    expect(pageSource).not.toMatch(/from\s+['"]@\/lib\/weakMatch['"]/);
+    expect(pageSource).not.toMatch(/getExpectedPaymentBreakdown[^a-zA-Z_]/);
   });
 });
 
