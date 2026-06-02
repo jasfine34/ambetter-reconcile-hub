@@ -536,10 +536,10 @@ type OverlayRunState = {
   error: Error | null;
 };
 
-// Phase B Item 4b — inclusion = MT-approved selector
-// (`buildMtApprovedMceCandidates` over `getMtAllBatchProjection`). The old
-// `buildMceCandidateSetForServiceMonth` helper and its supporting demoted
-// stack were deleted here; the agreement invariant in
+// Phase B Item 4b — inclusion = MT-approved selector (see
+// `buildMtApprovedMceCandidates` / `getMtAllBatchProjection`). The old
+// page-local candidate builder and its supporting demoted stack were deleted
+// here; the agreement invariant in
 // `src/test/mce-rewire-item4b-agreement-invariant.test.ts` is the drift lock.
 
 export default function MissingCommissionExportPage() {
