@@ -259,6 +259,9 @@ beforeEach(() => {
   mockGetEligible.mockReset();
   mockGetBreakdown.mockReset();
   mockToast.mockReset();
+  mockBuildSelector.mockReset();
+  mockSelectorRows = [];
+  mockBuildSelector.mockImplementation((..._a: any[]) => mockSelectorRows);
   ffmIdByMemberKey.clear();
   mockGetAll.mockResolvedValue([]);
   mockGetNormalized.mockResolvedValue([]);
