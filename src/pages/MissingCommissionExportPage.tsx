@@ -3,10 +3,10 @@
  *
  * Read-only enrichment + export workflow:
  *   1. Pulls reconciled members for the active batch (or any selected month).
- *   2. Identifies the canonical Expected But Unpaid cohort: the
- *      Matched + BO Only + EDE Only unpaid rows returned by
- *      `getExpectedPaymentBreakdown(...).unpaidRows`. This matches the
- *      Dashboard "Expected But Unpaid" card exactly.
+ *   2. Identifies the canonical Expected But Unpaid cohort via the
+ *      MT-approved selector (`buildMtApprovedMceCandidates`) over the
+ *      all-batch projection cache. This is the same inclusion the Member
+ *      Timeline screen shows as "unpaid" cells under official-AOR scope.
  *   3. For each unpaid member, builds a {@link MemberProfile} live from
  *      ALL normalized records across ALL batches — so a Jan record's blank
  *      Address 1 picks up the value from a Mar BO row.
