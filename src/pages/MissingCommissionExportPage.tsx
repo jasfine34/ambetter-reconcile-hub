@@ -1163,7 +1163,10 @@ export default function MissingCommissionExportPage() {
           zip: profile.zip.value,
         });
 
-        const bucket = classifyNetPremium(m);
+        // §4 — Net-premium bucket is cell-derived from the MT classifier
+        // (m._mtNetBucket). '+Net' → has_premium; '0Net' / null → zero_premium.
+        const bucket: PremiumBucket =
+          (m as any)._mtNetBucket === '+Net' ? 'has_premium' : 'zero_premium';
 
         // ---- Bundle 13e — resolver-driven est-missing + status (replaces
         // legacy $18 fallback). PARTIAL_CLEARED_REMAINDER is handled inside
