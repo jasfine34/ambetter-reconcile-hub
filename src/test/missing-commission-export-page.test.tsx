@@ -39,6 +39,27 @@ vi.mock('@/lib/persistence', () => ({
   getNormalizedRecords: (...a: any[]) => mockGetNormalized(...a),
   getNormalizedRecordsByMemberKeys: (...a: any[]) => mockGetByMemberKeys(...a),
   getCommissionRecordsByTriples: (...a: any[]) => mockGetByTriples(...a),
+  getAllNormalizedRecordsForMemberTimeline: () => Promise.resolve([]),
+}));
+
+// Phase B Item 4a wiring slice — production rows come from the MT-approved
+// selector via the all-batch projection cache. The page reads neither
+// `getExpectedPaymentBreakdown` nor `buildMceCandidateSetForServiceMonth`
+// on the production path; we mock the selector + cache so test fixtures
+// drive rows into the page via a single shared state variable.
+let mockSelectorRows: any[] = [];
+const mockBuildSelector = vi.fn((..._args: any[]) => mockSelectorRows);
+vi.mock('@/lib/canonical/mtApprovedMceSelector', () => ({
+  buildMtApprovedMceCandidates: (...a: any[]) => mockBuildSelector(...a),
+}));
+vi.mock('@/lib/canonical/mtApprovedMceCache', () => ({
+  getMtAllBatchProjection: async () => ({ records: [] }),
+  makeMtAllBatchCacheKey: () => 'test-key',
+  invalidateMtAllBatchProjectionCache: () => {},
+}));
+vi.mock('@/hooks/useBatchDataVersion', () => ({
+  useBatchDataVersion: () => null,
+  useAllBatchesDataVersion: () => null,
 }));
 
 vi.mock('@/lib/weakMatch', () => ({
