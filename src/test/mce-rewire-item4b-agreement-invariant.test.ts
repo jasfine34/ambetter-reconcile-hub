@@ -94,7 +94,11 @@ function row(o: RowOpts): NormalizedRecord {
     commission_amount: o.commission_amount ?? null,
     eligible_for_commission: o.eligible_for_commission ?? 'Yes',
     policy_term_date: o.policy_term_date ?? null,
-    paid_through_date: o.paid_through_date ?? null,
+    // BO rows default to a paid-through that covers the viewed SERVICE_MONTH
+    // so the classifier reaches Rule 3 ('unpaid') instead of falling through
+    // to Rule 5 (manual_review) on signals-insufficient.
+    paid_through_date:
+      o.paid_through_date ?? (o.source_type === 'BACK_OFFICE' ? '2026-02-28' : null),
     broker_effective_date: null,
     broker_term_date: o.broker_term_date ?? null,
     member_responsibility: null,
