@@ -166,25 +166,18 @@ describe('boActiveNonCurrentEde four-condition gate (MCE consumer logic)', () =>
   });
 });
 
-describe('Cross-surface helper reuse — classifier + MCE share paidForServiceMonth', () => {
+describe('Cross-surface helper reuse — classifier still exports paidForServiceMonth', () => {
   it('classifier exports paidForServiceMonth (single import site)', async () => {
     const mod = await import('@/lib/classifier');
     expect(typeof mod.paidForServiceMonth).toBe('function');
   });
 
-  it('MCE page imports paidForServiceMonth from classifier (not a local dup)', async () => {
-    const fs = await import('node:fs');
-    const path = await import('node:path');
-    const src = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/pages/MissingCommissionExportPage.tsx'),
-      'utf8',
-    );
-    expect(src).toMatch(/paidForServiceMonth/);
-    expect(src).toMatch(/from '@\/lib\/classifier'/);
-  });
+  // Phase B Item 4b — the MCE page no longer imports paidForServiceMonth /
+  // classifier helpers; the MT-approved selector encapsulates those reads.
+  // The old "MCE imports from classifier" guard was removed with the
+  // demoted stack.
 
   it('memberTimeline.ts intentionally retains its own service-month attribution (out of scope for this slice)', async () => {
-    // Honest scope: MT display-cell path is NOT consolidated in this slice.
     const fs = await import('node:fs');
     const path = await import('node:path');
     const src = fs.readFileSync(
