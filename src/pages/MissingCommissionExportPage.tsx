@@ -685,6 +685,13 @@ export default function MissingCommissionExportPage() {
   const [ranFilters, setRanFilters] = useState<ReportFilters | null>(null);
   const currentRunGen = useRef(0);
 
+  // ---- Phase B Item 4a wiring slice (v2) — fleet-wide data-version token --
+  // Drives the MT-approved selector cache key together with
+  // `resolverIndex.fingerprint`. A rebuild on ANY batch shifts this token so
+  // the cached all-batch projection invalidates without an F5.
+  const allBatchesDataVersion = useAllBatchesDataVersion();
+
+
   // ---- Bundle 13c — cross-batch clearing overlay --------------------------
   const {
     overlay: clearingOverlay,
