@@ -279,6 +279,7 @@ describe('§A buildMtApprovedMceCandidates — state filter', () => {
 
   it('cell-derived source-type truth table: BO-only / EDE-only / Matched', () => {
     const boOnly: NormalizedRecord[] = [
+      ripenessRow(),
       row({
         member_key: 'mem-bo-only',
         source_type: 'BACK_OFFICE',
@@ -287,6 +288,7 @@ describe('§A buildMtApprovedMceCandidates — state filter', () => {
       }),
     ];
     const edeOnly: NormalizedRecord[] = [
+      ripenessRow(),
       row({
         member_key: 'mem-ede-only',
         source_type: 'EDE',
