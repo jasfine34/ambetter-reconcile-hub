@@ -50,13 +50,11 @@ import {
 import { extractNpnFromAorString } from '@/lib/agents';
 import { NPN_MAP, EBU_BATCH_SCOPE_DISCLAIMER } from '@/lib/constants';
 import { isZeroNetPremium } from '@/lib/canonical/metrics';
-// Phase B Item 4b — the old MCE inclusion stack (computeFilteredEde,
-// applyRuntimeBOActive, getExpectedPaymentBreakdown, findWeakMatches,
-// applyOverrides, isActiveBackOfficeRecord, classifier helpers, statement
-// month bounds) has been deleted from this page. MCE production inclusion =
-// MT-approved selector (`buildMtApprovedMceCandidates`) over the all-batch
-// projection cache. `getExpectedPaymentBreakdown` is retained in metrics.ts
-// for Dashboard / Agent Summary / Unpaid Recovery, which are unchanged.
+// Phase B Item 4b — the old MCE inclusion stack has been deleted from this
+// page. MCE production inclusion = MT-approved selector
+// (`buildMtApprovedMceCandidates`) over the all-batch projection cache. The
+// expected-payment helper in metrics.ts is retained for Dashboard / Agent
+// Summary / Unpaid Recovery, which are unchanged.
 import { getCoveredMonths } from '@/lib/dateRange';
 import { useCrossBatchOverlay } from '@/hooks/useCrossBatchOverlay';
 import {
