@@ -760,14 +760,11 @@ export default function MissingCommissionExportPage() {
     }
     if (!isLatest()) return;
 
-    // ---- Phase B Item 4a — MT-approved production inclusion (the swap) ----
+    // ---- Phase B Item 4a/4b — MT-approved production inclusion ----
     // Production rows come from `buildMtApprovedMceCandidates` over the
-    // all-batch projection, NOT from `getExpectedPaymentBreakdown` +
-    // `buildMceCandidateSetForServiceMonth`. The whole old inclusion stack
-    // (applyRuntimeBOActive / computeFilteredEde / findWeakMatches /
-    // applyOverrides / getExpectedPaymentBreakdown / old candidate builder)
-    // is OFF the production click path. Dashboard / Agent Summary / Unpaid
-    // Recovery still consume `getExpectedPaymentBreakdown` on their own paths.
+    // all-batch projection. The old MCE-only inclusion stack was deleted in
+    // 4b; Dashboard / Agent Summary / Unpaid Recovery still consume the
+    // expected-payment helper from metrics.ts on their own paths.
     let missingMembers: any[];
     let adjustedByRow: Map<any, AdjustedRow> = new Map();
     try {
