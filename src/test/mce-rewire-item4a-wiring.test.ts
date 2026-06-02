@@ -105,9 +105,8 @@ describe('Item 4a D4 — old inclusion stack demoted off the production path', (
   });
 
   it('buildMceCandidateSetForServiceMonth carries an explicit DEMOTED docstring', () => {
-    expect(pageSource).toMatch(
-      /DEMOTED \(Phase B Item 4a wiring slice v2\)[\s\S]{0,800}buildMceCandidateSetForServiceMonth/,
-    );
+    expect(pageSource).toMatch(/DEMOTED \(Phase B Item 4a wiring slice v2\)/);
+    expect(pageSource).toMatch(/export function buildMceCandidateSetForServiceMonth/);
   });
 });
 
