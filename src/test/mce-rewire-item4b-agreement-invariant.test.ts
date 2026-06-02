@@ -129,6 +129,24 @@ const batchMonthByBatchId: Record<string, string> = {
   'b-mar': '2026-03',
 };
 
+/**
+ * The classifier only emits `unpaid` when the month is ripe — i.e. when at
+ * least one commission row in the fleet attributes to SERVICE_MONTH. This
+ * helper supplies a throwaway "carries the cycle" commission row (different
+ * member) so the cells under test become eligible for the unpaid verdict.
+ */
+function ripenessRow(): NormalizedRecord {
+  return row({
+    member_key: 'mem-ripeness-carrier',
+    source_type: 'COMMISSION',
+    commission_amount: 1,
+    paid_to_date: '2026-02-28',
+    months_paid: 1,
+    pay_entity: 'Coverall',
+    batch_id: 'b-mar',
+  });
+}
+
 // ---------------------------------------------------------------------------
 // §A — Selector unit tests
 // ---------------------------------------------------------------------------
