@@ -538,110 +538,11 @@ type OverlayRunState = {
   error: Error | null;
 };
 
-/**
- * MCE Inclusion-Rule Fixes — REPAIR turn page-local helper.
- *
- * DEMOTED (Phase B Item 4a wiring slice v2): This helper is NO LONGER on the
- * MCE production click path. MCE production inclusion now flows through the
- * MT-approved selector + cache (`buildMtApprovedMceCandidates` over
- * `getMtAllBatchProjection`) so the export agrees with the Member Timeline
- * "unpaid" cells under official-AOR scope.
- *
- * Retained as an exported symbol for:
- *   1. legacy consumer-path tests (`src/test/canonical/mce-inclusion-rule-
- *      fixes.test.ts`) that pin the old rule semantics in a non-production
- *      role, and
- *   2. a future Codex post-sync read-only delta script that compares the
- *      old vs MT-approved candidate counts before the 4b removal pass.
- *
- * Do NOT re-introduce calls to this from runReport(): the production row
- * source is `buildMtApprovedMceCandidates`. Item 4b will delete this helper.
- *
- * Builds the MCE candidate set for a viewed service month with the
- * SCOPED record set (output of `memberRecords.filter(isDueEligibleRecord)`)
- * driving every rule evaluation (computeFirstEligibleMonth /
- * classifyMemberForMonth / paidForServiceMonth / boActiveNonCurrentEde
- * four-condition gate).
- */
-export interface McePaymentBreakdownLike {
-  unpaidRows: any[];
-  paidRows: any[];
-  universe: { boActiveNonCurrentEde?: any[] };
-}
-
-export function buildMceCandidateSetForServiceMonth(args: {
-  breakdown: McePaymentBreakdownLike;
-  selectedBatchRecords: any[];
-  viewedServiceMonth: string | null | undefined;
-  scope: 'Coverall' | 'Vix' | 'All';
-}): any[] {
-  const { breakdown, selectedBatchRecords, viewedServiceMonth, scope } = args;
-  if (!viewedServiceMonth) return breakdown.unpaidRows;
-
-  const isDueEligibleRecord = buildIsDueEligibleRecord({
-    aorScope: 'official',
-    payEntity: scope,
-  });
-
-  const recordsByMemberKey = new Map<string, any[]>();
-  for (const r of selectedBatchRecords) {
-    const k = r?.member_key;
-    if (!k) continue;
-    const arr = recordsByMemberKey.get(k);
-    if (arr) arr.push(r);
-    else recordsByMemberKey.set(k, [r]);
-  }
-  const scopedRecordsFor = (mk: string): any[] =>
-    (recordsByMemberKey.get(mk) ?? []).filter(isDueEligibleRecord);
-
-  const mceScopeForPay = scope;
-
-  // Section 2: promote drift-misclassified paid rows.
-  const promotedFromPaid = breakdown.paidRows.filter((r: any) => {
-    const recs = scopedRecordsFor(r.member_key);
-    const ev = paidForServiceMonth(recs, viewedServiceMonth, { targetPayEntity: mceScopeForPay });
-    return !ev.paid;
-  });
-
-  // Section 3: apply three exclusion rules.
-  const initialCandidates = [...breakdown.unpaidRows, ...promotedFromPaid];
-  const filteredCandidates = initialCandidates.filter((r: any) => {
-    const recs = scopedRecordsFor(r.member_key);
-    const firstEligible = computeFirstEligibleMonth(recs);
-    if (firstEligible && firstEligible > viewedServiceMonth) return false;
-    const ev = paidForServiceMonth(recs, viewedServiceMonth, { targetPayEntity: mceScopeForPay });
-    if (ev.paid) return false;
-    try {
-      const state = classifyMemberForMonth(recs, viewedServiceMonth);
-      if (state === 'manual_review') return false;
-    } catch {
-      // Keep candidate on unexpected classifier failure.
-    }
-    return true;
-  });
-
-  // Narrow boActiveNonCurrentEde inclusion — all four conditions (scoped).
-  const monthBoundsForMce = getStatementMonthBounds(viewedServiceMonth);
-  const boActiveNonCurrentEdeCandidates =
-    (breakdown.universe.boActiveNonCurrentEde ?? []).filter((r: any) => {
-      const recs = scopedRecordsFor(r.member_key);
-      const boRows = recs.filter((x) => x?.source_type === 'BACK_OFFICE');
-      const boActive = boRows.some((br) =>
-        isActiveBackOfficeRecord(br, monthBoundsForMce.start, monthBoundsForMce.end),
-      );
-      if (!boActive) return false;
-      if (r.eligible_for_commission !== 'Yes') return false;
-      const firstEligible = computeFirstEligibleMonth(recs);
-      if (firstEligible && firstEligible > viewedServiceMonth) return false;
-      const ev = paidForServiceMonth(recs, viewedServiceMonth, {
-        targetPayEntity: mceScopeForPay,
-      });
-      if (ev.paid) return false;
-      return true;
-    });
-
-  return [...filteredCandidates, ...boActiveNonCurrentEdeCandidates];
-}
+// Phase B Item 4b — inclusion = MT-approved selector
+// (`buildMtApprovedMceCandidates` over `getMtAllBatchProjection`). The old
+// `buildMceCandidateSetForServiceMonth` helper and its supporting demoted
+// stack were deleted here; the agreement invariant in
+// `src/test/mce-rewire-item4b-agreement-invariant.test.ts` is the drift lock.
 
 export default function MissingCommissionExportPage() {
   const {
