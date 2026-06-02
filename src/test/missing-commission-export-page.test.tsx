@@ -116,6 +116,26 @@ function buildBreakdownStub(rows: any[]) {
   };
   const paidRows = rows.filter((r) => r.in_commission);
   const unpaidRows = rows.filter((r) => !r.in_commission);
+
+  // Phase B Item 4a — route fixture rows through the MT-approved selector
+  // mock as MCE-compatible candidates. _mtSourceType derived from the
+  // legacy `_bucket` hint; _mtNetBucket from the row's net_premium.
+  mockSelectorRows = unpaidRows.map((r) => {
+    const bucket: 'BO Only' | 'EDE Only' | 'Matched' =
+      r._bucket === 'boOnly' ? 'BO Only'
+      : r._bucket === 'edeOnly' ? 'EDE Only'
+      : 'Matched';
+    const np = Number(r.net_premium);
+    const netBucket: '+Net' | '0Net' = Number.isFinite(np) && np > 0 ? '+Net' : '0Net';
+    return {
+      ...r,
+      service_month: '2026-01',
+      target_service_month: '2026-01',
+      _mtNetBucket: netBucket,
+      _mtSourceType: bucket,
+    };
+  });
+
   return {
     universe, paidRows, unpaidRows,
     paidCount: paidRows.length, unpaidCount: unpaidRows.length,
