@@ -118,9 +118,12 @@ function buildBreakdownStub(rows: any[]) {
   const unpaidRows = rows.filter((r) => !r.in_commission);
 
   // Phase B Item 4a — route fixture rows through the MT-approved selector
-  // mock as MCE-compatible candidates. _mtSourceType derived from the
-  // legacy `_bucket` hint; _mtNetBucket from the row's net_premium.
-  mockSelectorRows = unpaidRows.map((r) => {
+  // mock as MCE-compatible candidates. The MT-approved selector returns
+  // unpaid cells regardless of any legacy `in_commission` flag (it derives
+  // paid/unpaid from the MT classifier directly), so we include every
+  // fixture row here — preserving the old "promoted paid" behavior on the
+  // new path without re-implementing the legacy promotion rule.
+  mockSelectorRows = rows.map((r) => {
     const bucket: 'BO Only' | 'EDE Only' | 'Matched' =
       r._bucket === 'boOnly' ? 'BO Only'
       : r._bucket === 'edeOnly' ? 'EDE Only'
