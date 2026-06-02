@@ -267,7 +267,3 @@ describe('Item 4a — item-1 contract preserved (Messer CSV = 12 locked columns)
     ]);
   });
 });
-
-// Unused-symbol guard for the page default-export import (keeps test stable
-// across file reorderings).
-void _PageType;
