@@ -465,9 +465,12 @@ describe('§C static wiring — production MCE inclusion is selector-only', () =
     'utf8',
   );
 
-  it('does not export or reference buildMceCandidateSetForServiceMonth / McePaymentBreakdownLike', () => {
-    expect(pageSource).not.toMatch(/buildMceCandidateSetForServiceMonth/);
-    expect(pageSource).not.toMatch(/McePaymentBreakdownLike/);
+  it('does not export or executably reference the deleted MCE-only builder symbols', () => {
+    // Allow comments to reference the deleted symbols by name (useful
+    // history); forbid only executable export / declaration / call sites.
+    expect(pageSource).not.toMatch(/export\s+(function|interface|type|const)\s+buildMceCandidateSetForServiceMonth/);
+    expect(pageSource).not.toMatch(/export\s+(function|interface|type|const)\s+McePaymentBreakdownLike/);
+    expect(pageSource).not.toMatch(/buildMceCandidateSetForServiceMonth\s*\(/);
   });
 
   it('does not import getExpectedPaymentBreakdown from metrics (Dashboard/Agent/UR keep it)', () => {
