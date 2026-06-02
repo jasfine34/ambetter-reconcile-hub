@@ -49,27 +49,15 @@ import {
 } from '@/lib/canonical/scope';
 import { extractNpnFromAorString } from '@/lib/agents';
 import { NPN_MAP, EBU_BATCH_SCOPE_DISCLAIMER } from '@/lib/constants';
-import { computeFilteredEde, type FilteredEdeResult } from '@/lib/expectedEde';
-import { getStatementMonthBounds } from '@/lib/canonical/statementMonthBounds';
-import { applyRuntimeBOActive } from '@/lib/canonical/applyRuntimeBOActive';
-import { getExpectedPaymentBreakdown, isZeroNetPremium } from '@/lib/canonical/metrics';
-// classifySourceTypeForRow — formerly applied here; MCE production rows now
-// carry `_mtSourceType` directly from the MT-approved selector (Phase B 4a).
+import { isZeroNetPremium } from '@/lib/canonical/metrics';
+// Phase B Item 4b — the old MCE inclusion stack (computeFilteredEde,
+// applyRuntimeBOActive, getExpectedPaymentBreakdown, findWeakMatches,
+// applyOverrides, isActiveBackOfficeRecord, classifier helpers, statement
+// month bounds) has been deleted from this page. MCE production inclusion =
+// MT-approved selector (`buildMtApprovedMceCandidates`) over the all-batch
+// projection cache. `getExpectedPaymentBreakdown` is retained in metrics.ts
+// for Dashboard / Agent Summary / Unpaid Recovery, which are unchanged.
 import { getCoveredMonths } from '@/lib/dateRange';
-import {
-  paidForServiceMonth,
-  classifyMemberForMonth,
-  buildIsDueEligibleRecord,
-  computeFirstEligibleMonth,
-} from '@/lib/classifier';
-import { isActiveBackOfficeRecord } from '@/lib/canonical/isActiveBackOfficeRecord';
-import {
-  findWeakMatches,
-  loadWeakMatchOverrides,
-  applyOverrides,
-  pickStableKey,
-  type WeakMatchOverride,
-} from '@/lib/weakMatch';
 import { useCrossBatchOverlay } from '@/hooks/useCrossBatchOverlay';
 import {
   EMPTY_CLEARING_OVERLAY_MAP,
