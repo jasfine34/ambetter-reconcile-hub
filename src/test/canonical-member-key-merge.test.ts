@@ -61,7 +61,7 @@ function makeResolverIndex(rows: Partial<ResolvedIdentityRow>[]): ResolverIndex 
     if (row.match_key_type === 'ffmAppId') byFfmApp.set(row.match_key_value, row);
     else if (row.match_key_type === 'exchangeSubscriberId') byExchangeSub.set(row.match_key_value, row);
   }
-  return { byFfmApp, byExchangeSub, totalRows: rows.length };
+  return { byFfmApp, byExchangeSub, totalRows: rows.length, fingerprint: `test:${rows.length}` };
 }
 
 describe('mergeRecordsToMemberKeys (canonical sidecar parity)', () => {
