@@ -39,6 +39,27 @@ vi.mock('@/lib/persistence', () => ({
   getNormalizedRecords: (...a: any[]) => mockGetNormalized(...a),
   getNormalizedRecordsByMemberKeys: (...a: any[]) => mockGetByMemberKeys(...a),
   getCommissionRecordsByTriples: (...a: any[]) => mockGetByTriples(...a),
+  getAllNormalizedRecordsForMemberTimeline: () => Promise.resolve([]),
+}));
+
+// Phase B Item 4a wiring slice — production rows come from the MT-approved
+// selector via the all-batch projection cache. The page reads neither
+// `getExpectedPaymentBreakdown` nor `buildMceCandidateSetForServiceMonth`
+// on the production path; we mock the selector + cache so test fixtures
+// drive rows into the page via a single shared state variable.
+let mockSelectorRows: any[] = [];
+const mockBuildSelector = vi.fn((..._args: any[]) => mockSelectorRows);
+vi.mock('@/lib/canonical/mtApprovedMceSelector', () => ({
+  buildMtApprovedMceCandidates: (...a: any[]) => mockBuildSelector(...a),
+}));
+vi.mock('@/lib/canonical/mtApprovedMceCache', () => ({
+  getMtAllBatchProjection: async () => ({ records: [] }),
+  makeMtAllBatchCacheKey: () => 'test-key',
+  invalidateMtAllBatchProjectionCache: () => {},
+}));
+vi.mock('@/hooks/useBatchDataVersion', () => ({
+  useBatchDataVersion: () => null,
+  useAllBatchesDataVersion: () => null,
 }));
 
 vi.mock('@/lib/weakMatch', () => ({
@@ -95,6 +116,29 @@ function buildBreakdownStub(rows: any[]) {
   };
   const paidRows = rows.filter((r) => r.in_commission);
   const unpaidRows = rows.filter((r) => !r.in_commission);
+
+  // Phase B Item 4a — route fixture rows through the MT-approved selector
+  // mock as MCE-compatible candidates. The MT-approved selector returns
+  // unpaid cells regardless of any legacy `in_commission` flag (it derives
+  // paid/unpaid from the MT classifier directly), so we include every
+  // fixture row here — preserving the old "promoted paid" behavior on the
+  // new path without re-implementing the legacy promotion rule.
+  mockSelectorRows = rows.map((r) => {
+    const bucket: 'BO Only' | 'EDE Only' | 'Matched' =
+      r._bucket === 'boOnly' ? 'BO Only'
+      : r._bucket === 'edeOnly' ? 'EDE Only'
+      : 'Matched';
+    const np = Number(r.net_premium);
+    const netBucket: '+Net' | '0Net' = Number.isFinite(np) && np > 0 ? '+Net' : '0Net';
+    return {
+      ...r,
+      service_month: '2026-01',
+      target_service_month: '2026-01',
+      _mtNetBucket: netBucket,
+      _mtSourceType: bucket,
+    };
+  });
+
   return {
     universe, paidRows, unpaidRows,
     paidCount: paidRows.length, unpaidCount: unpaidRows.length,
@@ -218,6 +262,9 @@ beforeEach(() => {
   mockGetEligible.mockReset();
   mockGetBreakdown.mockReset();
   mockToast.mockReset();
+  mockBuildSelector.mockReset();
+  mockSelectorRows = [];
+  mockBuildSelector.mockImplementation((..._a: any[]) => mockSelectorRows);
   ffmIdByMemberKey.clear();
   mockGetAll.mockResolvedValue([]);
   mockGetNormalized.mockResolvedValue([]);
@@ -279,7 +326,9 @@ describe('MissingCommissionExportPage — #124 explicit states', () => {
   });
 
   it('error state: shows error UI on simulated failure, never blank', async () => {
-    mockGetBreakdown.mockImplementation(() => {
+    // Phase B Item 4a: production rows now come from the MT-approved
+    // selector — simulate the failure there.
+    mockBuildSelector.mockImplementation(() => {
       throw new Error('simulated compute failure');
     });
     render(<MissingCommissionExportPage />);

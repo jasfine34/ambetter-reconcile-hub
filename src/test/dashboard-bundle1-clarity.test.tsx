@@ -189,13 +189,18 @@ describe('Bundle 1.5 — shared classifier import wiring', () => {
     expect(dashboardSource).toMatch(/classifySourceTypeForRow/);
   });
 
-  it('MissingCommissionExportPage imports classifySourceTypeForRow and removes the inline Map', () => {
+  it('MissingCommissionExportPage sources _sourceType from MT-approved selector (_mtSourceType)', () => {
+    // Phase B Item 4a wiring slice: MCE production rows now carry
+    // `_mtSourceType` directly from `buildMtApprovedMceCandidates`, so the
+    // page no longer routes the export row through `classifySourceTypeForRow`
+    // and no longer needs `breakdown.universe` at the production seam.
     const exportSource = readFileSync(
       resolve(__dirname, '../pages/MissingCommissionExportPage.tsx'),
       'utf8',
     );
-    expect(exportSource).toMatch(/classifySourceTypeForRow/);
+    expect(exportSource).toMatch(/_sourceType:\s*\(m as any\)\._mtSourceType/);
     expect(exportSource).not.toMatch(/sourceTypeByRow/);
+    expect(exportSource).not.toMatch(/_sourceType:\s*classifySourceTypeForRow\(/);
   });
 });
 

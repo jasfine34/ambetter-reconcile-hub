@@ -76,19 +76,22 @@ describe('Phase 1.7 cross-page parity — Expected But Unpaid', () => {
     expect([...breakdownKeys].sort()).toEqual(['m2', 'm4', 'm6']);
   });
 
-  it('Missing Commission export row key set === getExpectedPaymentBreakdown.unpaidRows key set', () => {
-    // MissingCommissionExportPage (Phase 1.5) feeds rows from
-    // getExpectedPaymentBreakdown(...).unpaidRows directly. This pins that
-    // the export and the Dashboard surface the same key set; if a future
-    // edit re-introduces getEligibleCohort there, this fails.
+  it('Missing Commission export row key set === getExpectedPaymentBreakdown.unpaidRows key set (LEGACY / COMPARISON)', () => {
+    // LEGACY parity baseline. Phase B Item 4a (wiring slice v2) rewired MCE
+    // production inclusion to the MT-approved selector
+    // (`buildMtApprovedMceCandidates`), so the export row source is no
+    // longer `getExpectedPaymentBreakdown(...).unpaidRows`. This test is
+    // retained as a comparison baseline against the canonical EPB unpaid
+    // breakdown for legacy diagnostics — it pins the EPB unpaid contract
+    // (still consumed by Dashboard / Agent Summary / Unpaid Recovery), NOT
+    // the live MCE export row source. Full MT/MCE agreement invariant
+    // arrives with Phase B Item 4b. See codex-comm/verdicts/mce-rewire-
+    // item4a-wiring-d3-d4-tests-v2_DONE.md for the post-sync delta.
     const { reconciled, filteredEde } = fixture();
     const epb = getExpectedPaymentBreakdown(reconciled, 'Coverall', filteredEde, new Set());
-    // Simulate the export's row collection (1:1 with epb.unpaidRows).
     const exportKeys = KEYS(epb.unpaidRows);
     expect(exportKeys).toEqual(KEYS(epb.unpaidRows));
-    // And the diagnostic is excluded.
     expect(exportKeys.has('m7')).toBe(false);
-    // And paid rows are excluded.
     expect(exportKeys.has('m1')).toBe(false);
     expect(exportKeys.has('m3')).toBe(false);
     expect(exportKeys.has('m5')).toBe(false);

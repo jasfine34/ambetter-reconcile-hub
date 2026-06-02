@@ -29,7 +29,12 @@ import {
   getNormalizedRecords,
   getNormalizedRecordsByMemberKeys,
   getCommissionRecordsByTriples,
+  getAllNormalizedRecordsForMemberTimeline,
 } from '@/lib/persistence';
+import { useAllBatchesDataVersion } from '@/hooks/useBatchDataVersion';
+import { buildMtApprovedMceCandidates } from '@/lib/canonical/mtApprovedMceSelector';
+import { getMtAllBatchProjection } from '@/lib/canonical/mtApprovedMceCache';
+import { buildMonthList } from '@/lib/memberTimeline';
 import { useToast } from '@/hooks/use-toast';
 import {
   buildMemberProfile,
@@ -48,7 +53,8 @@ import { computeFilteredEde, type FilteredEdeResult } from '@/lib/expectedEde';
 import { getStatementMonthBounds } from '@/lib/canonical/statementMonthBounds';
 import { applyRuntimeBOActive } from '@/lib/canonical/applyRuntimeBOActive';
 import { getExpectedPaymentBreakdown, isZeroNetPremium } from '@/lib/canonical/metrics';
-import { classifySourceTypeForRow } from '@/lib/canonical/sourceTypeForRow';
+// classifySourceTypeForRow — formerly applied here; MCE production rows now
+// carry `_mtSourceType` directly from the MT-approved selector (Phase B 4a).
 import { getCoveredMonths } from '@/lib/dateRange';
 import {
   paidForServiceMonth,
@@ -547,14 +553,27 @@ type OverlayRunState = {
 /**
  * MCE Inclusion-Rule Fixes — REPAIR turn page-local helper.
  *
+ * DEMOTED (Phase B Item 4a wiring slice v2): This helper is NO LONGER on the
+ * MCE production click path. MCE production inclusion now flows through the
+ * MT-approved selector + cache (`buildMtApprovedMceCandidates` over
+ * `getMtAllBatchProjection`) so the export agrees with the Member Timeline
+ * "unpaid" cells under official-AOR scope.
+ *
+ * Retained as an exported symbol for:
+ *   1. legacy consumer-path tests (`src/test/canonical/mce-inclusion-rule-
+ *      fixes.test.ts`) that pin the old rule semantics in a non-production
+ *      role, and
+ *   2. a future Codex post-sync read-only delta script that compares the
+ *      old vs MT-approved candidate counts before the 4b removal pass.
+ *
+ * Do NOT re-introduce calls to this from runReport(): the production row
+ * source is `buildMtApprovedMceCandidates`. Item 4b will delete this helper.
+ *
  * Builds the MCE candidate set for a viewed service month with the
  * SCOPED record set (output of `memberRecords.filter(isDueEligibleRecord)`)
  * driving every rule evaluation (computeFirstEligibleMonth /
  * classifyMemberForMonth / paidForServiceMonth / boActiveNonCurrentEde
  * four-condition gate).
- *
- * Exported solely for consumer-path tests. Not moved to a shared library
- * (page-local seam per directive).
  */
 export interface McePaymentBreakdownLike {
   unpaidRows: any[];
@@ -666,6 +685,13 @@ export default function MissingCommissionExportPage() {
   const [displayed, setDisplayed] = useState<ReportResult | null>(null);
   const [ranFilters, setRanFilters] = useState<ReportFilters | null>(null);
   const currentRunGen = useRef(0);
+
+  // ---- Phase B Item 4a wiring slice (v2) — fleet-wide data-version token --
+  // Drives the MT-approved selector cache key together with
+  // `resolverIndex.fingerprint`. A rebuild on ANY batch shifts this token so
+  // the cached all-batch projection invalidates without an F5.
+  const allBatchesDataVersion = useAllBatchesDataVersion();
+
 
   // ---- Bundle 13c — cross-batch clearing overlay --------------------------
   const {
@@ -786,13 +812,31 @@ export default function MissingCommissionExportPage() {
     const ranCoveredMonths = getCoveredMonths(ranBatch?.statement_month);
     const reconciledSnapshot = reconciled;
     const resolverIndexSnapshot = resolverIndex;
+    const allBatchesDataVersionSnap = allBatchesDataVersion;
     const batchMonthByBatchIdSnap = new Map<string, string>();
+    const batchMonthByBatchIdObj: Record<string, string> = {};
     for (const b of batches) {
-      batchMonthByBatchIdSnap.set(
-        b.id,
-        b.statement_month ? String(b.statement_month).substring(0, 7) : '',
-      );
+      const ym = b.statement_month ? String(b.statement_month).substring(0, 7) : '';
+      batchMonthByBatchIdSnap.set(b.id, ym);
+      batchMonthByBatchIdObj[b.id] = ym;
     }
+    // Suppress unused-var warnings; retained snapshots are read in error
+    // paths and by future debug instrumentation.
+    void reconciledSnapshot;
+    void ranCoveredMonths;
+
+    // Build the inclusive month list spanning all known batches; ensure the
+    // viewed service month is present so the classifier window covers it.
+    const batchMonths = Array.from(batchMonthByBatchIdSnap.values()).filter(Boolean).sort();
+    let monthListStart = batchMonths[0] || ranBatchMonth;
+    let monthListEnd = batchMonths[batchMonths.length - 1] || ranBatchMonth;
+    if (ranBatchMonth) {
+      if (!monthListStart || ranBatchMonth < monthListStart) monthListStart = ranBatchMonth;
+      if (!monthListEnd || ranBatchMonth > monthListEnd) monthListEnd = ranBatchMonth;
+    }
+    const monthListSnap = monthListStart && monthListEnd
+      ? buildMonthList(monthListStart, monthListEnd)
+      : [];
 
     const isLatest = () => myGen === currentRunGen.current;
     const commit = (fn: () => void) => { if (isLatest()) fn(); };
@@ -803,14 +847,22 @@ export default function MissingCommissionExportPage() {
     setReportError(null);
 
     let selectedBatchRecords: any[];
-    let weakOverrides: Map<string, WeakMatchOverride>;
+    let allBatchProjectionRecords: any[];
     try {
-      const [recs, overrides] = await Promise.all([
+      // selectedBatchRecords still drives enrichment, FFM fallback index, and
+      // the writing-agent-carrier-id lookup (item-1 preserved). The all-batch
+      // projection (memoized by `useAllBatchesDataVersion` + resolver
+      // fingerprint) drives the MT-approved selector for production inclusion.
+      const [recs, projection] = await Promise.all([
         getNormalizedRecords(f.batchId!),
-        loadWeakMatchOverrides().catch(() => new Map<string, WeakMatchOverride>()),
+        getMtAllBatchProjection({
+          allBatchesDataVersion: allBatchesDataVersionSnap,
+          resolverIndex: resolverIndexSnapshot,
+          loader: getAllNormalizedRecordsForMemberTimeline,
+        }),
       ]);
       selectedBatchRecords = recs || [];
-      weakOverrides = overrides;
+      allBatchProjectionRecords = projection.records || [];
     } catch (err) {
       if (!isLatest()) return;
       commit(() => {
@@ -821,88 +873,18 @@ export default function MissingCommissionExportPage() {
     }
     if (!isLatest()) return;
 
-    // Compute selected-batch-only EE universe.
-    let breakdown: ReturnType<typeof getExpectedPaymentBreakdown>;
+    // ---- Phase B Item 4a — MT-approved production inclusion (the swap) ----
+    // Production rows come from `buildMtApprovedMceCandidates` over the
+    // all-batch projection, NOT from `getExpectedPaymentBreakdown` +
+    // `buildMceCandidateSetForServiceMonth`. The whole old inclusion stack
+    // (applyRuntimeBOActive / computeFilteredEde / findWeakMatches /
+    // applyOverrides / getExpectedPaymentBreakdown / old candidate builder)
+    // is OFF the production click path. Dashboard / Agent Summary / Unpaid
+    // Recovery still consume `getExpectedPaymentBreakdown` on their own paths.
     let missingMembers: any[];
     let adjustedByRow: Map<any, AdjustedRow> = new Map();
     try {
-      // ---- Ineligible-BO Phase 1 — runtime BO-active re-evaluation ----
-      // Re-derive in_back_office from the canonical helper against raw BO
-      // records (don't trust persisted reconciled.in_back_office). Also
-      // compute an exclusion set to plug the EDE-Only no-eligibility-gate
-      // leak: members whose only BO evidence fails the helper are removed
-      // from the FilteredEdeResult AND from reconciled-for-breakdown.
-      const boNormalizedRecords = selectedBatchRecords.filter(
-        (n: any) => n.source_type === 'BACK_OFFICE',
-      );
-      const monthBounds = ranBatchMonth
-        ? getStatementMonthBounds(ranBatchMonth)
-        : { start: '', end: '' };
-      const { adjustedReconciled, mceExclusionMemberKeys } = ranBatchMonth
-        ? applyRuntimeBOActive(reconciledSnapshot, boNormalizedRecords, monthBounds)
-        : { adjustedReconciled: reconciledSnapshot, mceExclusionMemberKeys: new Set<string>() };
-
-      const ranFilteredEdeRaw = computeFilteredEde(
-        selectedBatchRecords,
-        adjustedReconciled,
-        f.scope,
-        ranCoveredMonths,
-        resolverIndexSnapshot,
-      );
-
-      // Filter the returned FilteredEdeResult by the exclusion set and
-      // recompute metadata. Never pre-filter computeFilteredEde's INPUT —
-      // it needs the full reconciled list to resolve pre-Union-Find keys.
-      const filteredUniqueMembers = (ranFilteredEdeRaw.uniqueMembers ?? []).filter(
-        (m: any) => !mceExclusionMemberKeys.has(m.member_key),
-      );
-      const filteredMissingFromBO = (ranFilteredEdeRaw.missingFromBO ?? []).filter(
-        (m: any) => !mceExclusionMemberKeys.has(m.member_key),
-      );
-      const byMonth: Record<string, number> = {};
-      for (const m of filteredUniqueMembers) {
-        const month = (m as any).effective_month;
-        if (!month) continue;
-        byMonth[month] = (byMonth[month] ?? 0) + 1;
-      }
-      const ranFilteredEde: FilteredEdeResult = {
-        uniqueMembers: filteredUniqueMembers,
-        uniqueKeys: filteredUniqueMembers.length,
-        byMonth,
-        inBOCount: filteredUniqueMembers.filter((m: any) => m.in_back_office).length,
-        notInBOCount: filteredMissingFromBO.length,
-        missingFromBO: filteredMissingFromBO,
-      };
-      const reconciledForBreakdown = adjustedReconciled.filter(
-        (r: any) => !mceExclusionMemberKeys.has(r.member_key),
-      );
-
-      const periodStart = ranBatch?.statement_month ?? null;
-      const candidates = findWeakMatches(ranFilteredEde.uniqueMembers, selectedBatchRecords, { periodStart });
-      const { confirmedKeys } = applyOverrides(candidates, weakOverrides);
-      const confirmedUpgradeMemberKeys = new Set<string>();
-      if (confirmedKeys.size && reconciledForBreakdown.length) {
-        const inScope = filterReconciledByScope(reconciledForBreakdown, f.scope);
-        for (const r of inScope) {
-          if (r.in_back_office) continue;
-          if (mceExclusionMemberKeys.has(r.member_key)) continue;
-          const key = pickStableKey({
-            issuer_subscriber_id: r.issuer_subscriber_id,
-            exchange_subscriber_id: r.exchange_subscriber_id,
-            policy_number: r.policy_number,
-          });
-          if (key && confirmedKeys.has(key)) confirmedUpgradeMemberKeys.add(r.member_key);
-        }
-      }
-
-      breakdown = getExpectedPaymentBreakdown(
-        reconciledForBreakdown, f.scope, ranFilteredEde, confirmedUpgradeMemberKeys,
-      );
-
-      // ---- Bundle 13c — C13 await-overlay-at-Run-Report -------------------
-      // Await any in-flight overlay load. On error (settled or new), surface
-      // the C7 warning toast + fall back to legacy (EMPTY overlay map). NEVER
-      // partition against a stale loading state without an explicit warning.
+      // C13 await-overlay-at-Run-Report — preserved.
       let overlayState = overlayStateRef.current;
       if (overlayState.loading) {
         overlayState = await waitForOverlayIdle();
@@ -916,23 +898,37 @@ export default function MissingCommissionExportPage() {
         overlayForRun = EMPTY_CLEARING_OVERLAY_MAP;
       }
 
-      // ============================================================
-      // MCE Inclusion-Rule Fixes (REPAIR) — page-local helper drives
-      // candidate-set construction with the SCOPED record set (filtered by
-      // buildIsDueEligibleRecord({ aorScope: 'official', payEntity: f.scope })).
-      // Every rule (computeFirstEligibleMonth / classifyMemberForMonth /
-      // paidForServiceMonth / boActiveNonCurrentEde four-condition gate)
-      // evaluates against scopedRecords, NOT unscoped selectedBatchRecords.
-      // ============================================================
       const viewedServiceMonth = ranBatchMonth;
-      const combinedCandidates = buildMceCandidateSetForServiceMonth({
-        breakdown,
-        selectedBatchRecords,
-        viewedServiceMonth,
-        scope: f.scope,
+      void viewedServiceMonth;
+      const combinedCandidates = ranBatchMonth
+        ? buildMtApprovedMceCandidates({
+            allBatchRecords: allBatchProjectionRecords,
+            monthList: monthListSnap,
+            serviceMonth: ranBatchMonth,
+            scope: f.scope,
+            batchMonthByBatchId: batchMonthByBatchIdObj,
+          })
+        : [];
+
+      // §4.1 — Overlay month fallback (wiring layer). The selector emits
+      // expected_ede_effective_month=null for BO-only candidates (no EDE
+      // row), which would short-circuit deriveGrainKeyForReconciledRow and
+      // silently skip overlay handling. Build a one-shot proxy row keyed by
+      // `expected_ede_effective_month ?? service_month` for overlay grain
+      // derivation ONLY; do NOT mutate the candidate (its EDE semantics
+      // must remain intact for downstream enrichment).
+      const proxyToCandidate = new Map<any, any>();
+      const overlayInputCandidates = combinedCandidates.map((c: any) => {
+        const proxy = {
+          ...c,
+          expected_ede_effective_month:
+            c.expected_ede_effective_month ?? c.service_month ?? null,
+        };
+        proxyToCandidate.set(proxy, c);
+        return proxy;
       });
 
-      const partition = partitionUnpaidRowsByOverlay(combinedCandidates, overlayForRun);
+      const partition = partitionUnpaidRowsByOverlay(overlayInputCandidates, overlayForRun);
       adjustedByRow = new Map<any, AdjustedRow>();
       for (const it of [
         ...partition.regular,
@@ -940,16 +936,16 @@ export default function MissingCommissionExportPage() {
         ...partition.removed,
         ...partition.needsReview,
       ]) {
-        adjustedByRow.set(it.row, it);
+        const candidate = proxyToCandidate.get(it.row) ?? it.row;
+        adjustedByRow.set(candidate, { ...it, row: candidate });
       }
 
-      // C6 — missingMembers excludes remove_from_unpaid + move_to_reversed_bucket.
-      // D2 second sub-signal: also exclude overlay `mark_needs_review` items
-      // from default MCE consumption (still surfaced via partition.needsReview
-      // for any future review-mode UI).
+      // C6 + D2 second sub-signal — same shape as before; map proxy rows
+      // back to the underlying selector candidates so downstream enrichment
+      // reads the unmodified expected_ede_effective_month.
       missingMembers = partition.regular
         .filter((it) => it.adjustment.kind !== 'mark_needs_review')
-        .map((it) => it.row);
+        .map((it) => proxyToCandidate.get(it.row) ?? it.row);
     } catch (err) {
       if (!isLatest()) return;
       commit(() => {
@@ -1168,7 +1164,10 @@ export default function MissingCommissionExportPage() {
           zip: profile.zip.value,
         });
 
-        const bucket = classifyNetPremium(m);
+        // §4 — Net-premium bucket is cell-derived from the MT classifier
+        // (m._mtNetBucket). '+Net' → has_premium; '0Net' / null → zero_premium.
+        const bucket: PremiumBucket =
+          (m as any)._mtNetBucket === '+Net' ? 'has_premium' : 'zero_premium';
 
         // ---- Bundle 13e — resolver-driven est-missing + status (replaces
         // legacy $18 fallback). PARTIAL_CLEARED_REMAINDER is handled inside
@@ -1231,7 +1230,7 @@ export default function MissingCommissionExportPage() {
           _estMissingStatus: estMissingStatus,
           _profile: profile,
           _hasConflict: hasConflict,
-          _sourceType: classifySourceTypeForRow(m, breakdown.universe),
+          _sourceType: (m as any)._mtSourceType ?? 'Matched',
           _clearingStatus: clearingStatus,
           _clearingNeedsReview: clearingNeedsReview,
         });

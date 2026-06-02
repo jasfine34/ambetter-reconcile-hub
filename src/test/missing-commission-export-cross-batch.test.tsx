@@ -236,9 +236,11 @@ describe('Bundle 13c — MissingCommissionExportPage wiring guards', () => {
 
   it('handleRunReport awaits the overlay via waitForOverlayIdle before partitioning', () => {
     expect(page).toMatch(/await\s+waitForOverlayIdle\(/);
-    // MCE Inclusion-Rule Fixes: candidate set is now `combinedCandidates`
-    // (unpaidRows + promoted + boActiveNonCurrentEde narrow inclusion).
-    expect(page).toMatch(/partitionUnpaidRowsByOverlay\(\s*combinedCandidates/);
+    // Phase B Item 4a wiring slice: candidate set comes from the MT-approved
+    // selector and the page passes overlay-keying proxies (with the BO-only
+    // expected_ede_effective_month → service_month fallback) into the
+    // partition helper. Source-grep matches the new wiring variable.
+    expect(page).toMatch(/partitionUnpaidRowsByOverlay\(\s*overlayInputCandidates/);
   });
 
   it('C7: on overlay error/loading-after-wait, falls back to EMPTY_CLEARING_OVERLAY_MAP + toast uses OVERLAY_LOAD_ERROR_MESSAGE', () => {
