@@ -251,7 +251,10 @@ describe('§A buildMtApprovedMceCandidates — state filter', () => {
     expect(out.find((c) => c.member_key === 'mem-vix')).toBeUndefined();
   });
 
-  it('payEntity=All passes through Vix-NPN candidates that are MT-unpaid', () => {
+  it('payEntity=All passes through a Vix-NPN candidate whose AOR is still official Coverall', () => {
+    // payEntity='All' is the official-AOR fleet across pay entities. The
+    // official-AOR check still requires a Coverall-recognized AOR/broker —
+    // here Erica Fine (Vix-eligible NPN, official Coverall broker name).
     const recs: NormalizedRecord[] = [
       ripenessRow(),
       row({
@@ -260,15 +263,16 @@ describe('§A buildMtApprovedMceCandidates — state filter', () => {
         effective_date: '2026-01-01',
         net_premium: 100,
         agent_npn: VIX_NPN,
-        aor_bucket: 'Other Agent',
-        raw_json: { currentPolicyAOR: 'Other Agent', 'Broker Name': 'Other Agent' },
+        aor_bucket: 'Erica Fine',
+        raw_json: { currentPolicyAOR: 'Erica Fine', 'Broker Name': 'Erica Fine' },
       }),
       row({
         member_key: 'mem-vix-all',
         source_type: 'BACK_OFFICE',
+        effective_date: '2026-01-01',
         agent_npn: VIX_NPN,
-        aor_bucket: 'Other Agent',
-        raw_json: { 'Broker Name': 'Other Agent' },
+        aor_bucket: 'Erica Fine',
+        raw_json: { 'Broker Name': 'Erica Fine' },
       }),
     ];
     const out = buildMtApprovedMceCandidates({
