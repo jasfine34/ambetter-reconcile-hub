@@ -162,6 +162,8 @@ describe('classifyCell — Josie supersession pattern', () => {
       batchMonthByBatchId,
       latestAuthoritativeBoOverlay: overlay,
     });
+    // Force all four months ripe so the baseline pass yields unpaid (not pending).
+    ctx.commissionStatementMonths = new Set(MONTHS);
     const firstEligible = computeFirstEligibleMonth(recs);
 
     const mar = classifyCell(recs, '2026-03', firstEligible, ctx);
