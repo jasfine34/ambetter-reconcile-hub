@@ -226,6 +226,7 @@ function detectCarrierRecognition(
   smEnd: string,
   payEntity: PayEntityScopeMT,
   pickerForMember?: Map<string, NormalizedRecord | null>,
+  latestAuthoritativeBoOverlay?: LatestAuthoritativeBoOverlay,
 ): { isCarrierRecognized: boolean; recognizedPremium: number | undefined } {
   const boScope = rawMemberRecs.find(r => {
     if (r.source_type !== 'BACK_OFFICE') return false;
@@ -242,7 +243,9 @@ function detectCarrierRecognition(
         return false;
       }
     }
-    return isActiveBackOfficeRecord(r, smStart, smEnd);
+    if (!isActiveBackOfficeRecord(r, smStart, smEnd)) return false;
+    if (isPolicyIdentityTerminatedForMonth(r, smStart, latestAuthoritativeBoOverlay)) return false;
+    return true;
   });
   if (!boScope) return { isCarrierRecognized: false, recognizedPremium: undefined };
 
