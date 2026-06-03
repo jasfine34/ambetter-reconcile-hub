@@ -137,6 +137,8 @@ describe('Named Canary Ledger v1 — MT certification (live data)', () => {
       buildIsDueEligibleRecord,
     } = await import('@/lib/classifier');
     const { getBatches } = await import('@/lib/persistence');
+    const { latestAuthoritativeBoTermDates, makeBoRecency } =
+      await import('@/lib/canonical/latestAuthoritativeBo');
 
     const resolverIndex = await loadResolverIndex(true);
     const allRecords = await getAllNormalizedRecordsForMemberTimeline();
