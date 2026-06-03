@@ -834,7 +834,8 @@ export function classifyCell(
     staleSource,
   );
   if (staleSource) {
-    const reason = 'No current EDE, canonically-active Back Office, or commission source supports this month.';
+    const reason = supersessionReason
+      ?? 'No current EDE, canonically-active Back Office, or commission source supports this month.';
     trace?.recordFiringRule('not_expected_cancelled (stale source)', reason);
     return {
       ...base,
