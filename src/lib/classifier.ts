@@ -611,18 +611,30 @@ export function hasEdeForMonth(
 
 /**
  * Any BO record active during the given month — effective_date ≤ month-start
- * AND (policy_term_date is null or > month-start).
+ * AND (policy_term_date is null or > month-start). When
+ * `context.latestAuthoritativeBoOverlay` is provided, a BO record's policy
+ * identity must ALSO not be authoritatively terminated by a later carrier
+ * file's term dates (cross-batch supersession).
  */
-function hasActiveBoForMonth(records: NormalizedRecord[], month: MonthKey): boolean {
+function hasActiveBoForMonth(
+  records: NormalizedRecord[],
+  month: MonthKey,
+  context?: ClassifierContext,
+): boolean {
   const firstOfMonth = monthKeyToFirstOfMonth(month);
   const { end } = getStatementMonthBounds(firstOfMonth);
+  const overlay = context?.latestAuthoritativeBoOverlay;
   return records.some(r => {
     if (r.source_type !== 'BACK_OFFICE') return false;
     const eff = r.effective_date || '';
     if (eff && eff > firstOfMonth) return false;
     // Delegate active-window + eligibility + term + paid_through checks.
-    return isActiveBackOfficeRecord(r, firstOfMonth, end);
+    if (!isActiveBackOfficeRecord(r, firstOfMonth, end)) return false;
+    // Cross-batch supersession: latest file's policy/broker term dates win.
+    if (isPolicyIdentityTerminatedForMonth(r, firstOfMonth, overlay)) return false;
+    return true;
   });
+}
 }
 
 /** Any commission record attributed to this month. */
