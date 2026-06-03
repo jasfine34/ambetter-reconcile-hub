@@ -354,23 +354,12 @@ describe('classifyCell — baseline-scoped two-pass supersession guard', () => {
       boRow({ id: 'bo-apr', batch_id: 'b-apr', policy_term_date: '2026-01-31', paid_through_date: null }),
       // Active EDE with positive premium
       edeRow({ id: 'ede-feb', batch_id: 'b-feb', net_premium: 200 }),
-      // A different policy commission row to make month ripe
-      {
-        id: 'comm-jan',
-        source_type: 'COMMISSION',
-        staging_status: 'active',
-        member_key: 'other',
-        policy_number: 'other',
-        carrier: 'ambetter',
-        paid_to_date: '2026-03-31',
-        commission_amount: 1,
-        months_paid: 1,
-        batch_id: 'b-mar',
-        raw_json: {},
-      } as any,
     ];
     const overlay = latestAuthoritativeBoTermDates(recs, recency);
     const ctx = buildClassifierContext(recs, MONTHS, [], { batchMonthByBatchId, latestAuthoritativeBoOverlay: overlay });
+    // Force ripeness without adding a commission record (which would
+    // pollute paidForMonth for this member).
+    ctx.commissionStatementMonths = new Set(MONTHS);
     const firstEligible = computeFirstEligibleMonth(recs);
     return { recs, ctx, firstEligible };
   }
