@@ -232,6 +232,7 @@ export function buildMtApprovedMceCandidates(
     const np = netPremiumForServiceMonth(recs as any, serviceMonth, {
       batchMonthByBatchId: batchMonthMap,
       pickerEdeByMonth: pickerForMember,
+      latestAuthoritativeBoOverlay,
     });
     const netBucket: '+Net' | '0Net' | null = np === null ? '0Net' : np > 0 ? '+Net' : '0Net';
 
