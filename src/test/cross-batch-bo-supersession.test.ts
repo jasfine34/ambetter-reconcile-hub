@@ -303,6 +303,7 @@ describe('alias-aware BO overlay — cc|X ↔ cc|sub:X bridge', () => {
     ];
     const overlay = latestAuthoritativeBoTermDates(recs, recency);
     const ctx = buildClassifierContext(recs, MONTHS, [], { batchMonthByBatchId, latestAuthoritativeBoOverlay: overlay });
+    ctx.commissionStatementMonths = new Set(MONTHS);
     const firstEligible = computeFirstEligibleMonth(recs);
     const mar = classifyCell(recs, '2026-03', firstEligible, ctx);
     const apr = classifyCell(recs, '2026-04', firstEligible, ctx);
