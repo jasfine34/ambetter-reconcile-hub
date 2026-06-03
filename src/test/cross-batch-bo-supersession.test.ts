@@ -58,7 +58,7 @@ function boRow(over: any): NormalizedRecord {
   } as any;
 }
 
-function edeRow(over: Partial<NormalizedRecord> Partial<NormalizedRecord> & { id: string } { id: string; batch_id?: string; policy_number?: string }): NormalizedRecord {
+function edeRow(over: any): NormalizedRecord {
   return {
     id: over.id,
     source_type: 'EDE',
