@@ -131,6 +131,15 @@ export interface ClassifierContext {
    * per-member by the page and threaded via context spread.
    */
   pickerEdeByMonth?: Map<MonthKey, NormalizedRecord | null>;
+  /**
+   * Cross-batch BO termination supersession overlay (per canonical policy-
+   * identity key). When present, hasActiveBoForMonth gates BO records whose
+   * policy identity is authoritatively terminated by a later carrier file;
+   * classifyCell additionally gates in_ede when every qualifying EDE
+   * record's policy identity is likewise terminated. See
+   * src/lib/canonical/latestAuthoritativeBo.ts.
+   */
+  latestAuthoritativeBoOverlay?: LatestAuthoritativeBoOverlay;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
