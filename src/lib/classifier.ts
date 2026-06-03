@@ -679,7 +679,48 @@ export function isMonthRipe(month: MonthKey, context: ClassifierContext): boolea
 // Per-cell classifier
 // ──────────────────────────────────────────────────────────────────────────
 
+/**
+ * Public classifier entry point.
+ *
+ * Two-pass baseline-scoped supersession guard (corrective fix): the BO
+ * cross-batch supersession overlay can flip baseline `unpaid` /
+ * `not_expected_premium_unpaid` cells to `not_expected_cancelled` via the
+ * existing stale-source guard. Without the two-pass approach the same flip
+ * also clobbers baseline `manual_review`, `paid`, `reversed`, `pending`,
+ * `not_expected_not_ours`, `not_expected_pre_eligibility` (the
+ * stale-source check runs BEFORE the manual_review branch).
+ *
+ * Pass 1 (baseline): classify with overlay disabled → baselineState.
+ * Pass 2 (candidate): classify with overlay enabled → candidateState.
+ * Final = candidateState IF baselineState ∈ { unpaid,
+ * not_expected_premium_unpaid }, ELSE baselineState. Allowlist; no
+ * recursion (internal helper called with a forced-undefined overlay
+ * context for the baseline pass).
+ */
 export function classifyCell(
+  records: NormalizedRecord[],
+  month: MonthKey,
+  firstEligible: MonthKey | null,
+  context: ClassifierContext,
+  trace?: TraceContext,
+): CellClassification {
+  const overlay = context.latestAuthoritativeBoOverlay;
+  if (!overlay) {
+    return classifyCellInternal(records, month, firstEligible, context, trace);
+  }
+  // Baseline pass — overlay forced undefined. No trace (kept clean).
+  const baselineCtx: ClassifierContext = { ...context, latestAuthoritativeBoOverlay: undefined };
+  const baseline = classifyCellInternal(records, month, firstEligible, baselineCtx);
+  if (baseline.state === 'unpaid' || baseline.state === 'not_expected_premium_unpaid') {
+    return classifyCellInternal(records, month, firstEligible, context, trace);
+  }
+  // Baseline outside allowlist — preserve it. Re-run with trace for
+  // observability if trace was requested.
+  if (trace) return classifyCellInternal(records, month, firstEligible, baselineCtx, trace);
+  return baseline;
+}
+
+function classifyCellInternal(
   records: NormalizedRecord[],
   month: MonthKey,
   firstEligible: MonthKey | null,
