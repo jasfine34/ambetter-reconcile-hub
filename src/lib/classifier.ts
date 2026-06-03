@@ -352,9 +352,10 @@ export function netPremiumForServiceMonth(
   options: {
     batchMonthByBatchId: Map<string, string>;
     pickerEdeByMonth?: Map<string, NormalizedRecord | null>;
+    latestAuthoritativeBoOverlay?: LatestAuthoritativeBoOverlay;
   },
 ): number | null {
-  const { batchMonthByBatchId, pickerEdeByMonth } = options;
+  const { batchMonthByBatchId, pickerEdeByMonth, latestAuthoritativeBoOverlay } = options;
 
   // Slice D — picker-aware fast path. When a picker map is provided we limit
   // EDE consideration to the picker's record for this month. Picker → null
