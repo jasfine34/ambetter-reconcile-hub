@@ -276,3 +276,137 @@ describe('classifyCell — Josie supersession pattern', () => {
     expect(apr.reason).not.toContain(SUPERSESSION_REASON_PREFIX);
   });
 });
+
+// ──────────────────────────────────────────────────────────────────────
+// Corrective fix — alias-aware bridge + baseline-scoped two-pass guard
+// ──────────────────────────────────────────────────────────────────────
+
+describe('alias-aware BO overlay — cc|X ↔ cc|sub:X bridge', () => {
+  it('aliased BO group (pn==sid==X) also indexed under cc|sub:X', () => {
+    const recs: NormalizedRecord[] = [
+      boRow({ id: 'bo-1', batch_id: 'b-apr', policy_number: 'u96466529', issuer_subscriber_id: 'u96466529', policy_term_date: '2026-01-31' }),
+    ];
+    const overlay = latestAuthoritativeBoTermDates(recs, recency);
+    expect(overlay.get('ambetter|u96466529')?.policy_term_date).toBe('2026-01-31');
+    expect(overlay.get('ambetter|sub:u96466529')?.policy_term_date).toBe('2026-01-31');
+  });
+
+  it('Josie alias-fix: EDE-only key cc|sub:X flips Mar/Apr to not_expected_cancelled', () => {
+    // BO rows alias pn==sid==X (key cc|X). EDE row has blank pn, sid=X (key cc|sub:X).
+    // Pre-fix: overlay only had cc|X → EDE gate lookup with cc|sub:X missed → cell stays unpaid.
+    const recs: NormalizedRecord[] = [
+      boRow({ id: 'bo-feb', batch_id: 'b-feb', policy_number: 'u96466529', issuer_subscriber_id: 'u96466529', policy_term_date: '2026-12-31' }),
+      boRow({ id: 'bo-apr', batch_id: 'b-apr', policy_number: 'u96466529', issuer_subscriber_id: 'u96466529', policy_term_date: '2026-01-31' }),
+      edeRow({ id: 'ede-feb', batch_id: 'b-feb', policy_number: '', issuer_subscriber_id: 'u96466529', net_premium: 200 }),
+    ];
+    const overlay = latestAuthoritativeBoTermDates(recs, recency);
+    const ctx = buildClassifierContext(recs, MONTHS, [], { batchMonthByBatchId, latestAuthoritativeBoOverlay: overlay });
+    const firstEligible = computeFirstEligibleMonth(recs);
+    const mar = classifyCell(recs, '2026-03', firstEligible, ctx);
+    const apr = classifyCell(recs, '2026-04', firstEligible, ctx);
+    expect(mar.state).toBe('not_expected_cancelled');
+    expect(apr.state).toBe('not_expected_cancelled');
+    expect(mar.reason).toContain(SUPERSESSION_REASON_PREFIX);
+  });
+
+  it('co-resident safety: subscriber X claimed by two distinct policy_numbers → no bridge', () => {
+    // Two BO groups both flag sid=X. cc|polA (terminated) + cc|polB (active).
+    // Bridge from either to cc|sub:X would be unsafe → neither bridges.
+    const recs: NormalizedRecord[] = [
+      boRow({ id: 'bo-a', batch_id: 'b-apr', policy_number: 'polA', issuer_subscriber_id: 'X', policy_term_date: '2026-01-31' }),
+      boRow({ id: 'bo-b', batch_id: 'b-apr', policy_number: 'polB', issuer_subscriber_id: 'X', policy_term_date: null }),
+    ];
+    const overlay = latestAuthoritativeBoTermDates(recs, recency);
+    expect(overlay.get('ambetter|pola')?.policy_term_date).toBe('2026-01-31');
+    expect(overlay.get('ambetter|polb')?.policy_term_date).toBeNull();
+    // No bridge → cc|sub:X must NOT carry a termination derived from polA.
+    expect(overlay.get('ambetter|sub:x')).toBeUndefined();
+  });
+
+  it('bridge does not overwrite explicit cc|sub:X BO group', () => {
+    const recs: NormalizedRecord[] = [
+      // Aliased group → would bridge to cc|sub:U999
+      boRow({ id: 'bo-alias', batch_id: 'b-feb', policy_number: 'U999', issuer_subscriber_id: 'U999', policy_term_date: '2026-01-31' }),
+      // Explicit cc|sub:U999 BO-only (blank pn) — different record set, no termination
+      boRow({ id: 'bo-sub', batch_id: 'b-apr', policy_number: '', issuer_subscriber_id: 'U999', policy_term_date: null }),
+    ];
+    const overlay = latestAuthoritativeBoTermDates(recs, recency);
+    expect(overlay.get('ambetter|sub:u999')?.policy_term_date).toBeNull();
+  });
+});
+
+describe('classifyCell — baseline-scoped two-pass supersession guard', () => {
+  function manualReviewSetup(): { recs: NormalizedRecord[]; ctx: any; firstEligible: any } {
+    // Construct a cell whose BASELINE state is manual_review:
+    // - ripe (commission for the month exists)
+    // - no commission for THIS service month
+    // - netPremium > 0
+    // - paid-through covers month (so falls past unpaid rule into manual_review)
+    // We use a different policy for the commission to keep this cell unpaid by
+    // commission; here simplest is to drive manual_review via Rule 5: netPremium > 0,
+    // paid-through = null → "signals insufficient".
+    const recs: NormalizedRecord[] = [
+      // Latest BO terminates the policy
+      boRow({ id: 'bo-feb', batch_id: 'b-feb', policy_term_date: '2026-12-31', paid_through_date: null }),
+      boRow({ id: 'bo-apr', batch_id: 'b-apr', policy_term_date: '2026-01-31', paid_through_date: null }),
+      // Active EDE with positive premium
+      edeRow({ id: 'ede-feb', batch_id: 'b-feb', net_premium: 200 }),
+      // A different policy commission row to make month ripe
+      {
+        id: 'comm-jan',
+        source_type: 'COMMISSION',
+        staging_status: 'active',
+        member_key: 'other',
+        policy_number: 'other',
+        carrier: 'ambetter',
+        paid_to_date: '2026-03-31',
+        commission_amount: 1,
+        months_paid: 1,
+        batch_id: 'b-mar',
+        raw_json: {},
+      } as any,
+    ];
+    const overlay = latestAuthoritativeBoTermDates(recs, recency);
+    const ctx = buildClassifierContext(recs, MONTHS, [], { batchMonthByBatchId, latestAuthoritativeBoOverlay: overlay });
+    const firstEligible = computeFirstEligibleMonth(recs);
+    return { recs, ctx, firstEligible };
+  }
+
+  it('baseline manual_review is PRESERVED — overlay does not flip it to not_expected_cancelled', () => {
+    const { recs, ctx, firstEligible } = manualReviewSetup();
+    // Sanity: baseline (overlay-absent) is manual_review.
+    const baselineCtx = { ...ctx, latestAuthoritativeBoOverlay: undefined };
+    const baseline = classifyCell(recs, '2026-03', firstEligible, baselineCtx);
+    expect(baseline.state).toBe('manual_review');
+    // With overlay present, two-pass guard preserves baseline.
+    const final = classifyCell(recs, '2026-03', firstEligible, ctx);
+    expect(final.state).toBe('manual_review');
+  });
+
+  it('baseline paid is preserved (overlay never cancels a paid cell)', () => {
+    const recs: NormalizedRecord[] = [
+      boRow({ id: 'bo-feb', batch_id: 'b-feb', policy_term_date: '2026-12-31' }),
+      boRow({ id: 'bo-apr', batch_id: 'b-apr', policy_term_date: '2026-01-31' }),
+      {
+        id: 'comm-mar',
+        source_type: 'COMMISSION',
+        staging_status: 'active',
+        member_key: 'm1',
+        policy_number: 'u96466529',
+        carrier: 'ambetter',
+        paid_to_date: '2026-03-31',
+        commission_amount: 24,
+        months_paid: 1,
+        agent_npn: COVERALL_NPN,
+        aor_bucket: 'coverall',
+        batch_id: 'b-mar',
+        raw_json: {},
+      } as any,
+    ];
+    const overlay = latestAuthoritativeBoTermDates(recs, recency);
+    const ctx = buildClassifierContext(recs, MONTHS, [], { batchMonthByBatchId, latestAuthoritativeBoOverlay: overlay });
+    const firstEligible = computeFirstEligibleMonth(recs);
+    const mar = classifyCell(recs, '2026-03', firstEligible, ctx);
+    expect(mar.state).toBe('paid');
+  });
+});
