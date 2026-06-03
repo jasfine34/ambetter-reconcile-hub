@@ -33,7 +33,6 @@ function cell(overrides: Partial<MonthCell>): MonthCell {
 const POISONED_STATES: ClassificationState[] = [
   'unpaid',
   'pending',
-  'manual_review',
   'not_expected_premium_unpaid',
 ];
 
