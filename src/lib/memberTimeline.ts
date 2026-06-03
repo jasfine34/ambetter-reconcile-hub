@@ -383,6 +383,8 @@ export function buildMemberTimeline(
           const firstOfMonth = monthKeyToFirstOfMonth(m);
           const { start: smStart, end: smEnd } = getStatementMonthBounds(firstOfMonth);
           if (!isActiveBackOfficeRecord(r, smStart, smEnd)) continue;
+          // Cross-batch supersession — later carrier file's term dates win.
+          if (isPolicyIdentityTerminatedForMonth(r, smStart, options?.latestAuthoritativeBoOverlay)) continue;
           if (!eligibleForDue) continue;
           cells[m].in_back_office = true;
           cells[m].due = true;
