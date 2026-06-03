@@ -434,7 +434,7 @@ export default function MemberTimelinePage() {
         hasUnpaidZeroNet,
       } as MemberTimelineRow;
     });
-  }, [allRows, monthList, classifierEligibleRecords, baseClassifierContext, batchMonthByBatchId, pickerMapsByMemberKey]);
+  }, [allRows, monthList, classifierEligibleRecords, baseClassifierContext, batchMonthByBatchId, pickerMapsByMemberKey, latestAuthoritativeBoOverlay]);
 
   // Stage 2 — Source-to-Screen lineage panel wiring.
   const lineage = useCellLineagePanel({
