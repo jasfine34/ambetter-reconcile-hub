@@ -20,6 +20,10 @@ import { isCoverallAORByName } from '@/lib/agents';
 import { statementMonthKey, currentMonthKey, addMonths } from '@/lib/dateRange';
 import { classifyMember, buildClassifierContext, buildIsDueEligibleRecord, netPremiumForServiceMonth } from '@/lib/classifier';
 import { buildMonthPickerMapForMember } from '@/lib/canonical/edeMonthPicker';
+import {
+  latestAuthoritativeBoTermDates,
+  makeBoRecency,
+} from '@/lib/canonical/latestAuthoritativeBo';
 import type { NormalizedRecord } from '@/lib/normalize';
 import { buildPaidDollarsAudit } from '@/lib/paidDollarsAudit';
 import { PaidDollarsAuditPanel } from '@/components/PaidDollarsAuditPanel';
