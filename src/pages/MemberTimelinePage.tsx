@@ -380,6 +380,7 @@ export default function MemberTimelinePage() {
           const np = netPremiumForServiceMonth(recs as any, m, {
             batchMonthByBatchId,
             pickerEdeByMonth: pickerForMember,
+            latestAuthoritativeBoOverlay,
           });
           netBucket = np === null ? '0Net' : np > 0 ? '+Net' : '0Net';
         }
