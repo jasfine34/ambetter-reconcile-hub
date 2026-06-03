@@ -635,7 +635,6 @@ function hasActiveBoForMonth(
     return true;
   });
 }
-}
 
 /** Any commission record attributed to this month. */
 function hasCommissionForMonth(records: NormalizedRecord[], month: MonthKey): boolean {
