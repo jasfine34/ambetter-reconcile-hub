@@ -297,8 +297,8 @@ describe('alias-aware BO overlay — cc|X ↔ cc|sub:X bridge', () => {
     // BO rows alias pn==sid==X (key cc|X). EDE row has blank pn, sid=X (key cc|sub:X).
     // Pre-fix: overlay only had cc|X → EDE gate lookup with cc|sub:X missed → cell stays unpaid.
     const recs: NormalizedRecord[] = [
-      boRow({ id: 'bo-feb', batch_id: 'b-feb', policy_number: 'u96466529', issuer_subscriber_id: 'u96466529', policy_term_date: '2026-12-31' }),
-      boRow({ id: 'bo-apr', batch_id: 'b-apr', policy_number: 'u96466529', issuer_subscriber_id: 'u96466529', policy_term_date: '2026-01-31' }),
+      boRow({ id: 'bo-feb', batch_id: 'b-feb', policy_number: 'u96466529', issuer_subscriber_id: 'u96466529', policy_term_date: '2026-12-31', paid_through_date: '2026-03-31' }),
+      boRow({ id: 'bo-apr', batch_id: 'b-apr', policy_number: 'u96466529', issuer_subscriber_id: 'u96466529', policy_term_date: '2026-01-31', paid_through_date: '2026-03-31' }),
       edeRow({ id: 'ede-feb', batch_id: 'b-feb', policy_number: '', issuer_subscriber_id: 'u96466529', net_premium: 200 }),
     ];
     const overlay = latestAuthoritativeBoTermDates(recs, recency);
