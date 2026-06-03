@@ -868,7 +868,11 @@ export function classifyCell(
   const hasBatchMonthContext = context.batchMonthByBatchId !== undefined;
   const batchMonthByBatchId = context.batchMonthByBatchId ?? new Map<string, string>();
   const netPremium: number | null = hasBatchMonthContext
-    ? netPremiumForServiceMonth(records, month, { batchMonthByBatchId, pickerEdeByMonth: context.pickerEdeByMonth })
+    ? netPremiumForServiceMonth(records, month, {
+        batchMonthByBatchId,
+        pickerEdeByMonth: context.pickerEdeByMonth,
+        latestAuthoritativeBoOverlay: context.latestAuthoritativeBoOverlay,
+      })
     : latestEdeNetPremium(records);
   trace?.recordHelper('netPremium', netPremium, hasBatchMonthContext ? 'netPremiumForServiceMonth' : 'latestEdeNetPremium');
   const paidThrough = latestBoPaidThrough(records);
