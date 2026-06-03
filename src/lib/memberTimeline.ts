@@ -470,12 +470,12 @@ export function formatMonthLabel(ym: string): string {
  * `due` so downstream counts and the cell tooltip both reflect the override.
  */
 export function applyNoSourceInvariantToMonthCell(cell: MonthCell): MonthCell {
-  // Preserve classifier-emitted manual_review and not_expected_pre_eligibility
-  // unchanged. The classifier's stale-source guard already cancels genuinely
-  // sourceless cells before these branches are reached, so an empty-flag
-  // manual_review here is always the overlay (e.g. BO supersession) emptying
-  // sources for a preserved state — never genuine staleness.
-  if (cell.state === 'manual_review' || cell.state === 'not_expected_pre_eligibility') {
+  // Preserve classifier-emitted manual_review unchanged. The classifier's
+  // stale-source guard already cancels genuinely sourceless cells before
+  // that branch is reached, so an empty-flag manual_review here is always
+  // the overlay (e.g. BO supersession) emptying sources for a preserved
+  // state — never genuine staleness.
+  if (cell.state === 'manual_review') {
     return cell;
   }
   if (

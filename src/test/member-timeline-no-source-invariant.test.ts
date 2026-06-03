@@ -158,11 +158,11 @@ describe('applyNoSourceInvariantToMonthCell — assembly-layer guard', () => {
     expect(exportStatusForMonthCell(out)).toBe('REVIEW');
   });
 
-  it('preserves not_expected_pre_eligibility unchanged when sources are all false', () => {
+  it('force-cancels not_expected_pre_eligibility to not_expected_cancelled when sources are all false', () => {
     const c = cell({ state: 'not_expected_pre_eligibility', due: false });
     const out = applyNoSourceInvariantToMonthCell(c);
-    expect(out).toEqual(c);
-    expect(out.state).toBe('not_expected_pre_eligibility');
+    expect(out.state).toBe('not_expected_cancelled');
+    expect(out.due).toBe(false);
   });
 
   it('Syania Edwards u73447624 Coverall Jan–Apr — manual_review preserved across all four months', () => {
