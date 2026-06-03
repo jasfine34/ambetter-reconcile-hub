@@ -16,6 +16,11 @@ import { isActiveBackOfficeRecord } from './canonical/isActiveBackOfficeRecord';
 import { getStatementMonthBounds } from './canonical/statementMonthBounds';
 import { isEDEQualified } from './canonical/edeQualified';
 import { lastActiveMonthForTermDate } from './canonical/termBoundary';
+import {
+  isPolicyIdentityTerminatedForMonth,
+  SUPERSESSION_REASON_PREFIX,
+  type LatestAuthoritativeBoOverlay,
+} from './canonical/latestAuthoritativeBo';
 import { NPN_MAP } from './constants';
 import type { TraceContext } from './explainCellTypes';
 
