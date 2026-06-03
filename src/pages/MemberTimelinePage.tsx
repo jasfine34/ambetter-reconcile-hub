@@ -273,6 +273,16 @@ export default function MemberTimelinePage() {
     return map;
   }, [batches]);
 
+  // Phase B — cross-batch BO termination supersession overlay (per canonical
+  // policy-identity key). Latest carrier file's policy_term_date /
+  // broker_term_date wins; later "extends term" reactivates. Used by the
+  // classifier (in_back_office + in_ede gates), memberTimeline (BO source
+  // stamp + CR detection), and netPremiumForServiceMonth BO fallback.
+  const latestAuthoritativeBoOverlay = useMemo(() => {
+    const recency = makeBoRecency({ batchMonthByBatchId });
+    return latestAuthoritativeBoTermDates(records as any, recency);
+  }, [records, batchMonthByBatchId]);
+
   const filteredRecords = useMemo(() => {
     let out = records;
     if (carrier !== 'all') out = out.filter(r => carrierFamily(r.carrier || '') === carrier);
