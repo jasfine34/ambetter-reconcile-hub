@@ -149,11 +149,11 @@ describe('latestAuthoritativeBoTermDates — overlay shape', () => {
 describe('classifyCell — Josie supersession pattern', () => {
   it('Mar/Apr → not_expected_cancelled when April file sets policy_term_date 2026-01-31', () => {
     const recs: NormalizedRecord[] = [
-      // Earlier BO snapshots had a far-future term
-      boRow({ id: 'bo-jan', batch_id: 'b-jan', policy_term_date: '2026-12-31' }),
-      boRow({ id: 'bo-feb', batch_id: 'b-feb', policy_term_date: '2026-12-31' }),
+      // Earlier BO snapshots had a far-future term; paid_through covers Mar
+      boRow({ id: 'bo-jan', batch_id: 'b-jan', policy_term_date: '2026-12-31', paid_through_date: '2026-03-31' }),
+      boRow({ id: 'bo-feb', batch_id: 'b-feb', policy_term_date: '2026-12-31', paid_through_date: '2026-03-31' }),
       // April carrier file corrects it to Jan-end
-      boRow({ id: 'bo-apr', batch_id: 'b-apr', policy_term_date: '2026-01-31' }),
+      boRow({ id: 'bo-apr', batch_id: 'b-apr', policy_term_date: '2026-01-31', paid_through_date: '2026-03-31' }),
       // EDE row with stale term still spans through April
       edeRow({ id: 'ede-feb', batch_id: 'b-feb', net_premium: 200 }),
     ];
