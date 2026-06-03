@@ -181,16 +181,27 @@ export function buildMtApprovedMceCandidates(
 
   const batchMonthMap = new Map<string, string>(Object.entries(batchMonthByBatchId));
 
+  // Phase B — cross-batch BO termination supersession overlay. Built from
+  // the SAME all-batch record set used to drive the classifier so MT and
+  // MCE share recency. Per-policy-identity grain.
+  const recency = makeBoRecency({ batchMonthByBatchId: batchMonthMap });
+  const latestAuthoritativeBoOverlay = latestAuthoritativeBoTermDates(
+    allBatchRecords,
+    recency,
+  );
+
   const rows = buildMemberTimeline(scopedRecords, monthList, isDueEligibleRecord, {
     rawRecordsByMemberKey,
     pickerMapsByMemberKey,
     selectedAorScope: 'official',
     payEntity: scope,
+    latestAuthoritativeBoOverlay,
   });
 
   // Classifier per member — same setup as MemberTimelinePage.
   const baseContext = buildClassifierContext(scopedRecords as any, monthList, [], {
     batchMonthByBatchId: batchMonthMap,
+    latestAuthoritativeBoOverlay,
   });
 
   const scopedByMember = new Map<string, NormalizedRecord[]>();
