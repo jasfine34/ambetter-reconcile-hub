@@ -283,6 +283,8 @@ export function buildMemberTimeline(
     selectedAorScope?: 'official' | 'all';
     /** Pay-entity scope for CR detection. */
     payEntity?: PayEntityScopeMT;
+    /** Cross-batch BO termination overlay — gates the BO source-stamp. */
+    latestAuthoritativeBoOverlay?: LatestAuthoritativeBoOverlay;
   },
 ): MemberTimelineRow[] {
   const monthSet = new Set(monthList);
