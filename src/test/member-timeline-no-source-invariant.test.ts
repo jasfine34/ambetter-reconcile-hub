@@ -33,7 +33,6 @@ function cell(overrides: Partial<MonthCell>): MonthCell {
 const POISONED_STATES: ClassificationState[] = [
   'unpaid',
   'pending',
-  'manual_review',
   'not_expected_premium_unpaid',
 ];
 
@@ -139,12 +138,40 @@ describe('applyNoSourceInvariantToMonthCell — assembly-layer guard', () => {
     expect(out.due).toBe(false);
   });
 
-  it('static invariant — for any all-false-source MonthCell, post-guard state is not UNPAID/PENDING/REVIEW', () => {
+  it('static invariant — for any all-false-source MonthCell with a poisoned state, post-guard state is not UNPAID/PENDING', () => {
     for (const state of POISONED_STATES) {
       const out = applyNoSourceInvariantToMonthCell(cell({ state, due: true }));
       expect(out.state.startsWith('not_expected')).toBe(true);
       const exp = exportStatusForMonthCell(out);
-      expect(['UNPAID', 'PENDING', 'REVIEW']).not.toContain(exp);
+      expect(['UNPAID', 'PENDING']).not.toContain(exp);
+    }
+  });
+
+  it('preserves manual_review unchanged when sources are all false (overlay-emptied)', () => {
+    const c = cell({ state: 'manual_review', due: true });
+    const out = applyNoSourceInvariantToMonthCell(c);
+    expect(out).toEqual(c);
+    expect(out.state).toBe('manual_review');
+    expect(out.due).toBe(true);
+    // An all-false-source manual_review cell MAY export REVIEW — reconciled
+    // with the new preserve-guard.
+    expect(exportStatusForMonthCell(out)).toBe('REVIEW');
+  });
+
+  it('preserves not_expected_pre_eligibility unchanged when sources are all false', () => {
+    const c = cell({ state: 'not_expected_pre_eligibility', due: false });
+    const out = applyNoSourceInvariantToMonthCell(c);
+    expect(out).toEqual(c);
+    expect(out.state).toBe('not_expected_pre_eligibility');
+  });
+
+  it('Syania Edwards u73447624 Coverall Jan–Apr — manual_review preserved across all four months', () => {
+    const months = ['2026-01', '2026-02', '2026-03', '2026-04'];
+    for (const month of months) {
+      const c = cell({ month, state: 'manual_review', due: true });
+      const out = applyNoSourceInvariantToMonthCell(c);
+      expect(out.state).toBe('manual_review');
+      expect(out.due).toBe(true);
     }
   });
 
