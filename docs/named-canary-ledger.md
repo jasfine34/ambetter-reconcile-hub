@@ -25,7 +25,7 @@ Any other value in the table is a parse error.
 
 ## Pattern slots and assertion rows
 
-15 pattern slots. 19 assertion rows (3 canaries have multiple rows for scope-disambiguation: Latronda, Thomas Mitchell, Albert Holder). Slots 2 and 15 are explicit TBD placeholders for v1 — parser skips rows with `TBD` in any cell.
+16 pattern slots. 21 table rows; 20 assertable rows (3 canaries have multiple rows for scope-disambiguation: Latronda, Thomas Mitchell, Albert Holder; canary 16 — Josie Martinez — adds an All + Coverall pair). Slot 15 is the only TBD/skipped placeholder for v1 — parser skips rows with `TBD` in any cell.
 
 | # | Canary | Pattern | Member | Policy | Scope | Jan 2026 | Feb 2026 | Mar 2026 | Apr 2026 | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|
