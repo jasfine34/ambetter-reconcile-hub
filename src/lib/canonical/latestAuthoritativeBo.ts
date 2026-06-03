@@ -54,12 +54,33 @@ export type LatestAuthoritativeBoOverlay = Map<string, LatestAuthoritativeBoTerm
 /**
  * Build the per-policy-identity supersession overlay from a flat record set.
  * Non-BO records and unresolvable-identity BO records are skipped.
+ *
+ * Alias-aware bridging (corrective fix): derivePolicyIdentityKey produces
+ * two keys for one logical policy when a BO row carries
+ * `policy_number === issuer_subscriber_id` (key = `cc|X`) while an EDE row
+ * for the same policy has a blank `policy_number` and
+ * `issuer_subscriber_id = X` (key = `cc|sub:X`). Without bridging the
+ * EDE-side gate lookup misses the BO-built overlay entry and the
+ * supersession fails to flip the cell (Josie-pattern root cause).
+ *
+ * After grouping BO records by their primary key, we additionally index
+ * each aliased group `cc|X` (where some record has `pn==sid==X`) under
+ * `cc|sub:X` — but ONLY when subscriber X resolves to a single policy
+ * (co-resident safety: if two distinct `policy_number`s both claim
+ * subscriber X, neither bridges, so one policy's termination cannot
+ * cancel another). The bridge never overwrites an explicit BO-only
+ * `cc|sub:X` group.
  */
 export function latestAuthoritativeBoTermDates(
   records: NormalizedRecord[],
   recency: BoRecency,
 ): LatestAuthoritativeBoOverlay {
-  type Entry = { rec: NormalizedRecord; key: BoRecencyKey };
+  type Entry = {
+    rec: NormalizedRecord;
+    key: BoRecencyKey;
+    sidClean: string;
+    carrierCanonical: string;
+  };
   const groups = new Map<string, Entry[]>();
   for (const r of records) {
     if (r.source_type !== 'BACK_OFFICE') continue;
@@ -71,7 +92,12 @@ export function latestAuthoritativeBoTermDates(
     if (pik.status !== 'resolved') continue;
     let g = groups.get(pik.key);
     if (!g) { g = []; groups.set(pik.key, g); }
-    g.push({ rec: r, key: recency.keyFor(r) });
+    g.push({
+      rec: r,
+      key: recency.keyFor(r),
+      sidClean: pik.lineage.issuer_subscriber_id_clean,
+      carrierCanonical: pik.lineage.carrierCanonical,
+    });
   }
   const cmp = (a: BoRecencyKey, b: BoRecencyKey) => {
     if (a.primary !== b.primary) return a.primary > b.primary ? -1 : 1;
@@ -80,35 +106,55 @@ export function latestAuthoritativeBoTermDates(
     return 0;
   };
   const out: LatestAuthoritativeBoOverlay = new Map();
-  for (const [key, entries] of groups) {
+  const primariesBySubAlias = new Map<string, Set<string>>();
+  const subAliasesByPrimary = new Map<string, Set<string>>();
+
+  for (const [primaryKey, entries] of groups) {
     entries.sort((a, b) => cmp(a.key, b.key));
     let policy_term_date: string | null = null;
     let broker_term_date: string | null = null;
     let src_policy: string | null = null;
     let src_broker: string | null = null;
-    for (const { rec } of entries) {
+    const subAliases = new Set<string>();
+    for (const e of entries) {
+      const { rec, sidClean, carrierCanonical } = e;
       if (policy_term_date === null) {
         const v = (rec.policy_term_date || '').trim();
-        if (v) {
-          policy_term_date = v;
-          src_policy = String((rec as any).id ?? '');
-        }
+        if (v) { policy_term_date = v; src_policy = String((rec as any).id ?? ''); }
       }
       if (broker_term_date === null) {
         const v = (rec.broker_term_date || '').trim();
-        if (v) {
-          broker_term_date = v;
-          src_broker = String((rec as any).id ?? '');
-        }
+        if (v) { broker_term_date = v; src_broker = String((rec as any).id ?? ''); }
       }
-      if (policy_term_date !== null && broker_term_date !== null) break;
+      if (sidClean) {
+        const subKey = `${carrierCanonical}|sub:${sidClean}`;
+        if (subKey !== primaryKey) subAliases.add(subKey);
+      }
     }
-    out.set(key, {
+    out.set(primaryKey, {
       policy_term_date,
       broker_term_date,
       source_record_id_policy: src_policy,
       source_record_id_broker: src_broker,
     });
+    subAliasesByPrimary.set(primaryKey, subAliases);
+    for (const s of subAliases) {
+      let claimants = primariesBySubAlias.get(s);
+      if (!claimants) { claimants = new Set(); primariesBySubAlias.set(s, claimants); }
+      claimants.add(primaryKey);
+    }
+  }
+
+  // Apply alias bridge with co-resident safety.
+  for (const [primaryKey, subAliases] of subAliasesByPrimary) {
+    const entry = out.get(primaryKey);
+    if (!entry) continue;
+    for (const subKey of subAliases) {
+      if (out.has(subKey)) continue; // explicit BO-only sub-group already present
+      const claimants = primariesBySubAlias.get(subKey);
+      if (!claimants || claimants.size !== 1) continue; // co-resident — unsafe to bridge
+      out.set(subKey, entry);
+    }
   }
   return out;
 }
