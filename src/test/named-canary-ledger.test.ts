@@ -202,6 +202,7 @@ describe('Named Canary Ledger v1 — MT certification (live data)', () => {
           pickerMapsByMemberKey,
           selectedAorScope: cfg.aorScope === 'official' ? 'official' : 'all',
           payEntity: cfg.payEntity,
+          latestAuthoritativeBoOverlay,
         },
       );
 
@@ -217,7 +218,7 @@ describe('Named Canary Ledger v1 — MT certification (live data)', () => {
         classifierRecords as any,
         monthList,
         [],
-        { batchMonthByBatchId },
+        { batchMonthByBatchId, latestAuthoritativeBoOverlay },
       );
 
       // Build a row lookup by policy_number (lowercased).
