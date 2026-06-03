@@ -439,6 +439,9 @@ export function netPremiumForServiceMonth(
   for (const r of records) {
     if (r.source_type !== 'BACK_OFFICE') continue;
     if (!isActiveBackOfficeRecord(r, smStart, smEnd)) continue;
+    // Cross-batch supersession: skip records whose policy identity was
+    // terminated by a later carrier file.
+    if (isPolicyIdentityTerminatedForMonth(r, smStart, latestAuthoritativeBoOverlay)) continue;
     activeBoFound = true;
     const mr = r.member_responsibility;
     if (typeof mr === 'number' && Number.isFinite(mr)) {
