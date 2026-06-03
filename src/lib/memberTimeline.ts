@@ -417,6 +417,7 @@ export function buildMemberTimeline(
         const { start: smStart, end: smEnd } = getStatementMonthBounds(firstOfMonth);
         const { isCarrierRecognized, recognizedPremium } = detectCarrierRecognition(
           rawRecs, m, smStart, smEnd, options?.payEntity ?? 'All', pickerForMember,
+          options?.latestAuthoritativeBoOverlay,
         );
         if (isCarrierRecognized) {
           cells[m].carrier_recognition = true;
