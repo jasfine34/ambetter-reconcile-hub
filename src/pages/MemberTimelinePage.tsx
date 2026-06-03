@@ -321,8 +321,9 @@ export default function MemberTimelinePage() {
       pickerMapsByMemberKey,
       selectedAorScope: aorScope === 'official' ? 'official' : 'all',
       payEntity,
+      latestAuthoritativeBoOverlay,
     }),
-    [filteredRecords, monthList, isDueEligibleRecord, rawRecordsByMemberKey, pickerMapsByMemberKey, aorScope, payEntity]
+    [filteredRecords, monthList, isDueEligibleRecord, rawRecordsByMemberKey, pickerMapsByMemberKey, aorScope, payEntity, latestAuthoritativeBoOverlay]
   );
 
   // Phase 2c — enrich each row's cells with the classifier's per-cell state
@@ -335,8 +336,11 @@ export default function MemberTimelinePage() {
     [filteredRecords, isDueEligibleRecord],
   );
   const baseClassifierContext = useMemo(
-    () => buildClassifierContext(classifierEligibleRecords as any, monthList, [], { batchMonthByBatchId }),
-    [classifierEligibleRecords, monthList, batchMonthByBatchId],
+    () => buildClassifierContext(classifierEligibleRecords as any, monthList, [], {
+      batchMonthByBatchId,
+      latestAuthoritativeBoOverlay,
+    }),
+    [classifierEligibleRecords, monthList, batchMonthByBatchId, latestAuthoritativeBoOverlay],
   );
 
   const classifiedRows = useMemo(() => {
