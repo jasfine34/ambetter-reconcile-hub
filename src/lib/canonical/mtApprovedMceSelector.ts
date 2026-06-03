@@ -37,6 +37,10 @@ import {
 } from '../classifier';
 import { buildMemberTimeline, type MemberTimelineRow } from '../memberTimeline';
 import { buildMonthPickerMapForMember } from './edeMonthPicker';
+import {
+  latestAuthoritativeBoTermDates,
+  makeBoRecency,
+} from './latestAuthoritativeBo';
 import { NPN_MAP } from '../constants';
 import { extractNpnFromAorString } from '../agents';
 
