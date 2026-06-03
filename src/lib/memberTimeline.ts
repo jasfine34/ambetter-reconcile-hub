@@ -464,12 +464,19 @@ export function applyNoSourceInvariantToMonthCell(cell: MonthCell): MonthCell {
     !cell.in_back_office &&
     !cell.in_commission
   ) {
+    const existingReason = cell.state_reason || '';
+    // Preserve classifier-emitted supersession reason verbatim so the cell
+    // tooltip can explain "later carrier file terminated this policy"
+    // instead of the generic stale-source string. Internal — vendor CSV
+    // export must not leak this reason.
+    const isSupersession = existingReason.startsWith('Superseded by later BO termination');
     return {
       ...cell,
       due: false,
       state: 'not_expected_cancelled',
-      state_reason:
-        'No current EDE, canonically-active Back Office, or commission source supports this month.',
+      state_reason: isSupersession
+        ? existingReason
+        : 'No current EDE, canonically-active Back Office, or commission source supports this month.',
     };
   }
   return cell;
