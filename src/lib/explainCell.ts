@@ -85,6 +85,7 @@ export async function explainCell(input: ExplainCellInput): Promise<CellTrace> {
     const { getAllNormalizedRecordsForMemberTimeline, getBatches } = await import('./persistence');
     const { loadResolverIndex } = await import('./resolvedIdentities');
     const { mergeRecordsToMemberKeys } = await import('./canonical/memberKeyMerge');
+    const { latestAuthoritativeBoTermDates, makeBoRecency } = await import('./canonical/latestAuthoritativeBo');
 
     const resolverIndex = await loadResolverIndex(true);
     const allRecords = await getAllNormalizedRecordsForMemberTimeline();
@@ -97,11 +98,22 @@ export async function explainCell(input: ExplainCellInput): Promise<CellTrace> {
       batchMonthByBatchId.set(String(b.id), String(b.statement_month).substring(0, 7));
     }
 
+    // Phase B — supersession overlay built off all-batch records so
+    // explainCell's trace mirrors MT/MCE classification.
+    const recency = makeBoRecency({ batchMonthByBatchId });
+    const latestAuthoritativeBoOverlay = latestAuthoritativeBoTermDates(
+      allRecords as any,
+      recency,
+    );
+
     scopedRecords = (allRecords as any[])
       .filter(r => (r.member_key || r.applicant_name) === memberKey)
       .filter(predicate);
 
-    context = buildClassifierContext(scopedRecords, [monthKey], [], { batchMonthByBatchId });
+    context = buildClassifierContext(scopedRecords, [monthKey], [], {
+      batchMonthByBatchId,
+      latestAuthoritativeBoOverlay,
+    });
   }
 
   const firstEligible = computeFirstEligibleMonth(scopedRecords);

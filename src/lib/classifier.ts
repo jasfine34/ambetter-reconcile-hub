@@ -16,6 +16,11 @@ import { isActiveBackOfficeRecord } from './canonical/isActiveBackOfficeRecord';
 import { getStatementMonthBounds } from './canonical/statementMonthBounds';
 import { isEDEQualified } from './canonical/edeQualified';
 import { lastActiveMonthForTermDate } from './canonical/termBoundary';
+import {
+  isPolicyIdentityTerminatedForMonth,
+  SUPERSESSION_REASON_PREFIX,
+  type LatestAuthoritativeBoOverlay,
+} from './canonical/latestAuthoritativeBo';
 import { NPN_MAP } from './constants';
 import type { TraceContext } from './explainCellTypes';
 
@@ -126,6 +131,15 @@ export interface ClassifierContext {
    * per-member by the page and threaded via context spread.
    */
   pickerEdeByMonth?: Map<MonthKey, NormalizedRecord | null>;
+  /**
+   * Cross-batch BO termination supersession overlay (per canonical policy-
+   * identity key). When present, hasActiveBoForMonth gates BO records whose
+   * policy identity is authoritatively terminated by a later carrier file;
+   * classifyCell additionally gates in_ede when every qualifying EDE
+   * record's policy identity is likewise terminated. See
+   * src/lib/canonical/latestAuthoritativeBo.ts.
+   */
+  latestAuthoritativeBoOverlay?: LatestAuthoritativeBoOverlay;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -338,9 +352,10 @@ export function netPremiumForServiceMonth(
   options: {
     batchMonthByBatchId: Map<string, string>;
     pickerEdeByMonth?: Map<string, NormalizedRecord | null>;
+    latestAuthoritativeBoOverlay?: LatestAuthoritativeBoOverlay;
   },
 ): number | null {
-  const { batchMonthByBatchId, pickerEdeByMonth } = options;
+  const { batchMonthByBatchId, pickerEdeByMonth, latestAuthoritativeBoOverlay } = options;
 
   // Slice D — picker-aware fast path. When a picker map is provided we limit
   // EDE consideration to the picker's record for this month. Picker → null
@@ -424,6 +439,9 @@ export function netPremiumForServiceMonth(
   for (const r of records) {
     if (r.source_type !== 'BACK_OFFICE') continue;
     if (!isActiveBackOfficeRecord(r, smStart, smEnd)) continue;
+    // Cross-batch supersession: skip records whose policy identity was
+    // terminated by a later carrier file.
+    if (isPolicyIdentityTerminatedForMonth(r, smStart, latestAuthoritativeBoOverlay)) continue;
     activeBoFound = true;
     const mr = r.member_responsibility;
     if (typeof mr === 'number' && Number.isFinite(mr)) {
@@ -597,17 +615,28 @@ export function hasEdeForMonth(
 
 /**
  * Any BO record active during the given month — effective_date ≤ month-start
- * AND (policy_term_date is null or > month-start).
+ * AND (policy_term_date is null or > month-start). When
+ * `context.latestAuthoritativeBoOverlay` is provided, a BO record's policy
+ * identity must ALSO not be authoritatively terminated by a later carrier
+ * file's term dates (cross-batch supersession).
  */
-function hasActiveBoForMonth(records: NormalizedRecord[], month: MonthKey): boolean {
+function hasActiveBoForMonth(
+  records: NormalizedRecord[],
+  month: MonthKey,
+  context?: ClassifierContext,
+): boolean {
   const firstOfMonth = monthKeyToFirstOfMonth(month);
   const { end } = getStatementMonthBounds(firstOfMonth);
+  const overlay = context?.latestAuthoritativeBoOverlay;
   return records.some(r => {
     if (r.source_type !== 'BACK_OFFICE') return false;
     const eff = r.effective_date || '';
     if (eff && eff > firstOfMonth) return false;
     // Delegate active-window + eligibility + term + paid_through checks.
-    return isActiveBackOfficeRecord(r, firstOfMonth, end);
+    if (!isActiveBackOfficeRecord(r, firstOfMonth, end)) return false;
+    // Cross-batch supersession: latest file's policy/broker term dates win.
+    if (isPolicyIdentityTerminatedForMonth(r, firstOfMonth, overlay)) return false;
+    return true;
   });
 }
 
@@ -657,12 +686,53 @@ export function classifyCell(
   context: ClassifierContext,
   trace?: TraceContext,
 ): CellClassification {
-  const in_ede = hasEdeForMonth(records, month, context);
-  const in_back_office = hasActiveBoForMonth(records, month);
+  let in_ede = hasEdeForMonth(records, month, context);
+  const in_back_office = hasActiveBoForMonth(records, month, context);
   const in_commission = hasCommissionForMonth(records, month);
   const paid_amount = paidForMonth(records, month);
 
+  // Cross-batch BO termination supersession (Phase B). If the latest carrier
+  // file authoritatively terminated the policy identity by this month, gate
+  // in_ede off — otherwise stale EDE coverage would keep the cell chaseable
+  // even after BO correction. Per-policy-identity grain so a merged member
+  // with policy A (terminated) + policy B (active) stays active via B.
+  let supersessionReason: string | null = null;
+  const overlay = context.latestAuthoritativeBoOverlay;
+  if (overlay && in_ede) {
+    const firstOfMonth = monthKeyToFirstOfMonth(month);
+    // For each EDE row that would have stamped in_ede=true, check the row's
+    // own policy identity against the overlay. If ANY surviving EDE policy
+    // identity is still active, keep in_ede=true.
+    const anyEdeStillActive = records.some(r => {
+      if (r.source_type !== 'EDE') return false;
+      if (!isEDEQualified(r)) return false;
+      const eff = dateToMonthKey(r.effective_date);
+      if (!eff || eff > month) return false;
+      if (r.policy_term_date) {
+        const lastActive = lastActiveMonthForTermDate(r.policy_term_date);
+        if (lastActive && month > lastActive) return false;
+      }
+      if (isPolicyIdentityTerminatedForMonth(r, firstOfMonth, overlay)) return false;
+      return true;
+    });
+    if (!anyEdeStillActive) {
+      in_ede = false;
+      supersessionReason = `${SUPERSESSION_REASON_PREFIX} — later carrier file set policy_term_date/broker_term_date superseding this month's EDE coverage.`;
+    }
+  }
+  if (overlay && !in_back_office && !supersessionReason) {
+    const firstOfMonth = monthKeyToFirstOfMonth(month);
+    const supersededBoExists = records.some(r =>
+      r.source_type === 'BACK_OFFICE' &&
+      isPolicyIdentityTerminatedForMonth(r, firstOfMonth, overlay),
+    );
+    if (supersededBoExists) {
+      supersessionReason = `${SUPERSESSION_REASON_PREFIX} — later carrier file's policy_term_date/broker_term_date supersedes stale BO record.`;
+    }
+  }
+
   trace?.recordHelper('sourceFlags', { in_ede, in_back_office, in_commission, paid_amount });
+  if (supersessionReason) trace?.recordHelper('supersession', { reason: supersessionReason });
 
   const base = { month, paid_amount, in_ede, in_back_office, in_commission };
 
@@ -768,7 +838,8 @@ export function classifyCell(
     staleSource,
   );
   if (staleSource) {
-    const reason = 'No current EDE, canonically-active Back Office, or commission source supports this month.';
+    const reason = supersessionReason
+      ?? 'No current EDE, canonically-active Back Office, or commission source supports this month.';
     trace?.recordFiringRule('not_expected_cancelled (stale source)', reason);
     return {
       ...base,
@@ -797,7 +868,11 @@ export function classifyCell(
   const hasBatchMonthContext = context.batchMonthByBatchId !== undefined;
   const batchMonthByBatchId = context.batchMonthByBatchId ?? new Map<string, string>();
   const netPremium: number | null = hasBatchMonthContext
-    ? netPremiumForServiceMonth(records, month, { batchMonthByBatchId, pickerEdeByMonth: context.pickerEdeByMonth })
+    ? netPremiumForServiceMonth(records, month, {
+        batchMonthByBatchId,
+        pickerEdeByMonth: context.pickerEdeByMonth,
+        latestAuthoritativeBoOverlay: context.latestAuthoritativeBoOverlay,
+      })
     : latestEdeNetPremium(records);
   trace?.recordHelper('netPremium', netPremium, hasBatchMonthContext ? 'netPremiumForServiceMonth' : 'latestEdeNetPremium');
   const paidThrough = latestBoPaidThrough(records);
@@ -922,7 +997,10 @@ export function buildClassifierContext(
   records: NormalizedRecord[],
   months: MonthKey[],
   boSnapshotDates: string[] = [],
-  options?: { batchMonthByBatchId?: Map<string, string> },
+  options?: {
+    batchMonthByBatchId?: Map<string, string>;
+    latestAuthoritativeBoOverlay?: LatestAuthoritativeBoOverlay;
+  },
 ): ClassifierContext {
   const commissionStatementMonths = new Set<MonthKey>();
   for (const r of records) {
@@ -936,6 +1014,7 @@ export function buildClassifierContext(
     commissionStatementMonths,
     boSnapshotDates,
     batchMonthByBatchId: options?.batchMonthByBatchId,
+    latestAuthoritativeBoOverlay: options?.latestAuthoritativeBoOverlay,
   };
 }
 

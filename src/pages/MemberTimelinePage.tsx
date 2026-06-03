@@ -20,6 +20,10 @@ import { isCoverallAORByName } from '@/lib/agents';
 import { statementMonthKey, currentMonthKey, addMonths } from '@/lib/dateRange';
 import { classifyMember, buildClassifierContext, buildIsDueEligibleRecord, netPremiumForServiceMonth } from '@/lib/classifier';
 import { buildMonthPickerMapForMember } from '@/lib/canonical/edeMonthPicker';
+import {
+  latestAuthoritativeBoTermDates,
+  makeBoRecency,
+} from '@/lib/canonical/latestAuthoritativeBo';
 import type { NormalizedRecord } from '@/lib/normalize';
 import { buildPaidDollarsAudit } from '@/lib/paidDollarsAudit';
 import { PaidDollarsAuditPanel } from '@/components/PaidDollarsAuditPanel';
@@ -269,6 +273,16 @@ export default function MemberTimelinePage() {
     return map;
   }, [batches]);
 
+  // Phase B — cross-batch BO termination supersession overlay (per canonical
+  // policy-identity key). Latest carrier file's policy_term_date /
+  // broker_term_date wins; later "extends term" reactivates. Used by the
+  // classifier (in_back_office + in_ede gates), memberTimeline (BO source
+  // stamp + CR detection), and netPremiumForServiceMonth BO fallback.
+  const latestAuthoritativeBoOverlay = useMemo(() => {
+    const recency = makeBoRecency({ batchMonthByBatchId });
+    return latestAuthoritativeBoTermDates(records as any, recency);
+  }, [records, batchMonthByBatchId]);
+
   const filteredRecords = useMemo(() => {
     let out = records;
     if (carrier !== 'all') out = out.filter(r => carrierFamily(r.carrier || '') === carrier);
@@ -307,8 +321,9 @@ export default function MemberTimelinePage() {
       pickerMapsByMemberKey,
       selectedAorScope: aorScope === 'official' ? 'official' : 'all',
       payEntity,
+      latestAuthoritativeBoOverlay,
     }),
-    [filteredRecords, monthList, isDueEligibleRecord, rawRecordsByMemberKey, pickerMapsByMemberKey, aorScope, payEntity]
+    [filteredRecords, monthList, isDueEligibleRecord, rawRecordsByMemberKey, pickerMapsByMemberKey, aorScope, payEntity, latestAuthoritativeBoOverlay]
   );
 
   // Phase 2c — enrich each row's cells with the classifier's per-cell state
@@ -321,8 +336,11 @@ export default function MemberTimelinePage() {
     [filteredRecords, isDueEligibleRecord],
   );
   const baseClassifierContext = useMemo(
-    () => buildClassifierContext(classifierEligibleRecords as any, monthList, [], { batchMonthByBatchId }),
-    [classifierEligibleRecords, monthList, batchMonthByBatchId],
+    () => buildClassifierContext(classifierEligibleRecords as any, monthList, [], {
+      batchMonthByBatchId,
+      latestAuthoritativeBoOverlay,
+    }),
+    [classifierEligibleRecords, monthList, batchMonthByBatchId, latestAuthoritativeBoOverlay],
   );
 
   const classifiedRows = useMemo(() => {
@@ -362,6 +380,7 @@ export default function MemberTimelinePage() {
           const np = netPremiumForServiceMonth(recs as any, m, {
             batchMonthByBatchId,
             pickerEdeByMonth: pickerForMember,
+            latestAuthoritativeBoOverlay,
           });
           netBucket = np === null ? '0Net' : np > 0 ? '+Net' : '0Net';
         }
@@ -415,7 +434,7 @@ export default function MemberTimelinePage() {
         hasUnpaidZeroNet,
       } as MemberTimelineRow;
     });
-  }, [allRows, monthList, classifierEligibleRecords, baseClassifierContext, batchMonthByBatchId, pickerMapsByMemberKey]);
+  }, [allRows, monthList, classifierEligibleRecords, baseClassifierContext, batchMonthByBatchId, pickerMapsByMemberKey, latestAuthoritativeBoOverlay]);
 
   // Stage 2 — Source-to-Screen lineage panel wiring.
   const lineage = useCellLineagePanel({

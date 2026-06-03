@@ -9,6 +9,10 @@ import { monthKeyToFirstOfMonth } from './dateRange';
 import { pickEdeForServiceMonth } from './canonical/edeMonthPicker';
 import { NPN_MAP } from './constants';
 import { isCoverallAORByName } from './agents';
+import {
+  isPolicyIdentityTerminatedForMonth,
+  type LatestAuthoritativeBoOverlay,
+} from './canonical/latestAuthoritativeBo';
 
 
 
@@ -222,6 +226,7 @@ function detectCarrierRecognition(
   smEnd: string,
   payEntity: PayEntityScopeMT,
   pickerForMember?: Map<string, NormalizedRecord | null>,
+  latestAuthoritativeBoOverlay?: LatestAuthoritativeBoOverlay,
 ): { isCarrierRecognized: boolean; recognizedPremium: number | undefined } {
   const boScope = rawMemberRecs.find(r => {
     if (r.source_type !== 'BACK_OFFICE') return false;
@@ -238,7 +243,9 @@ function detectCarrierRecognition(
         return false;
       }
     }
-    return isActiveBackOfficeRecord(r, smStart, smEnd);
+    if (!isActiveBackOfficeRecord(r, smStart, smEnd)) return false;
+    if (isPolicyIdentityTerminatedForMonth(r, smStart, latestAuthoritativeBoOverlay)) return false;
+    return true;
   });
   if (!boScope) return { isCarrierRecognized: false, recognizedPremium: undefined };
 
@@ -276,6 +283,8 @@ export function buildMemberTimeline(
     selectedAorScope?: 'official' | 'all';
     /** Pay-entity scope for CR detection. */
     payEntity?: PayEntityScopeMT;
+    /** Cross-batch BO termination overlay — gates the BO source-stamp. */
+    latestAuthoritativeBoOverlay?: LatestAuthoritativeBoOverlay;
   },
 ): MemberTimelineRow[] {
   const monthSet = new Set(monthList);
@@ -374,6 +383,8 @@ export function buildMemberTimeline(
           const firstOfMonth = monthKeyToFirstOfMonth(m);
           const { start: smStart, end: smEnd } = getStatementMonthBounds(firstOfMonth);
           if (!isActiveBackOfficeRecord(r, smStart, smEnd)) continue;
+          // Cross-batch supersession — later carrier file's term dates win.
+          if (isPolicyIdentityTerminatedForMonth(r, smStart, options?.latestAuthoritativeBoOverlay)) continue;
           if (!eligibleForDue) continue;
           cells[m].in_back_office = true;
           cells[m].due = true;
@@ -406,6 +417,7 @@ export function buildMemberTimeline(
         const { start: smStart, end: smEnd } = getStatementMonthBounds(firstOfMonth);
         const { isCarrierRecognized, recognizedPremium } = detectCarrierRecognition(
           rawRecs, m, smStart, smEnd, options?.payEntity ?? 'All', pickerForMember,
+          options?.latestAuthoritativeBoOverlay,
         );
         if (isCarrierRecognized) {
           cells[m].carrier_recognition = true;
@@ -464,12 +476,19 @@ export function applyNoSourceInvariantToMonthCell(cell: MonthCell): MonthCell {
     !cell.in_back_office &&
     !cell.in_commission
   ) {
+    const existingReason = cell.state_reason || '';
+    // Preserve classifier-emitted supersession reason verbatim so the cell
+    // tooltip can explain "later carrier file terminated this policy"
+    // instead of the generic stale-source string. Internal — vendor CSV
+    // export must not leak this reason.
+    const isSupersession = existingReason.startsWith('Superseded by later BO termination');
     return {
       ...cell,
       due: false,
       state: 'not_expected_cancelled',
-      state_reason:
-        'No current EDE, canonically-active Back Office, or commission source supports this month.',
+      state_reason: isSupersession
+        ? existingReason
+        : 'No current EDE, canonically-active Back Office, or commission source supports this month.',
     };
   }
   return cell;

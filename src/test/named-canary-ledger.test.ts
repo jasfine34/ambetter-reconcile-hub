@@ -137,6 +137,8 @@ describe('Named Canary Ledger v1 — MT certification (live data)', () => {
       buildIsDueEligibleRecord,
     } = await import('@/lib/classifier');
     const { getBatches } = await import('@/lib/persistence');
+    const { latestAuthoritativeBoTermDates, makeBoRecency } =
+      await import('@/lib/canonical/latestAuthoritativeBo');
 
     const resolverIndex = await loadResolverIndex(true);
     const allRecords = await getAllNormalizedRecordsForMemberTimeline();
@@ -148,6 +150,13 @@ describe('Named Canary Ledger v1 — MT certification (live data)', () => {
       if (!b?.id || !b?.statement_month) continue;
       batchMonthByBatchId.set(String(b.id), String(b.statement_month).substring(0, 7));
     }
+
+    // Phase B — supersession overlay for cross-batch BO term-date authority.
+    const recency = makeBoRecency({ batchMonthByBatchId });
+    const latestAuthoritativeBoOverlay = latestAuthoritativeBoTermDates(
+      allRecords as any,
+      recency,
+    );
 
     const monthList = buildMonthList('2026-01', '2026-04');
 
@@ -193,6 +202,7 @@ describe('Named Canary Ledger v1 — MT certification (live data)', () => {
           pickerMapsByMemberKey,
           selectedAorScope: cfg.aorScope === 'official' ? 'official' : 'all',
           payEntity: cfg.payEntity,
+          latestAuthoritativeBoOverlay,
         },
       );
 
@@ -208,7 +218,7 @@ describe('Named Canary Ledger v1 — MT certification (live data)', () => {
         classifierRecords as any,
         monthList,
         [],
-        { batchMonthByBatchId },
+        { batchMonthByBatchId, latestAuthoritativeBoOverlay },
       );
 
       // Build a row lookup by policy_number (lowercased).
