@@ -682,12 +682,53 @@ export function classifyCell(
   context: ClassifierContext,
   trace?: TraceContext,
 ): CellClassification {
-  const in_ede = hasEdeForMonth(records, month, context);
-  const in_back_office = hasActiveBoForMonth(records, month);
+  let in_ede = hasEdeForMonth(records, month, context);
+  const in_back_office = hasActiveBoForMonth(records, month, context);
   const in_commission = hasCommissionForMonth(records, month);
   const paid_amount = paidForMonth(records, month);
 
+  // Cross-batch BO termination supersession (Phase B). If the latest carrier
+  // file authoritatively terminated the policy identity by this month, gate
+  // in_ede off — otherwise stale EDE coverage would keep the cell chaseable
+  // even after BO correction. Per-policy-identity grain so a merged member
+  // with policy A (terminated) + policy B (active) stays active via B.
+  let supersessionReason: string | null = null;
+  const overlay = context.latestAuthoritativeBoOverlay;
+  if (overlay && in_ede) {
+    const firstOfMonth = monthKeyToFirstOfMonth(month);
+    // For each EDE row that would have stamped in_ede=true, check the row's
+    // own policy identity against the overlay. If ANY surviving EDE policy
+    // identity is still active, keep in_ede=true.
+    const anyEdeStillActive = records.some(r => {
+      if (r.source_type !== 'EDE') return false;
+      if (!isEDEQualified(r)) return false;
+      const eff = dateToMonthKey(r.effective_date);
+      if (!eff || eff > month) return false;
+      if (r.policy_term_date) {
+        const lastActive = lastActiveMonthForTermDate(r.policy_term_date);
+        if (lastActive && month > lastActive) return false;
+      }
+      if (isPolicyIdentityTerminatedForMonth(r, firstOfMonth, overlay)) return false;
+      return true;
+    });
+    if (!anyEdeStillActive) {
+      in_ede = false;
+      supersessionReason = `${SUPERSESSION_REASON_PREFIX} — later carrier file set policy_term_date/broker_term_date superseding this month's EDE coverage.`;
+    }
+  }
+  if (overlay && !in_back_office && !supersessionReason) {
+    const firstOfMonth = monthKeyToFirstOfMonth(month);
+    const supersededBoExists = records.some(r =>
+      r.source_type === 'BACK_OFFICE' &&
+      isPolicyIdentityTerminatedForMonth(r, firstOfMonth, overlay),
+    );
+    if (supersededBoExists) {
+      supersessionReason = `${SUPERSESSION_REASON_PREFIX} — later carrier file's policy_term_date/broker_term_date supersedes stale BO record.`;
+    }
+  }
+
   trace?.recordHelper('sourceFlags', { in_ede, in_back_office, in_commission, paid_amount });
+  if (supersessionReason) trace?.recordHelper('supersession', { reason: supersessionReason });
 
   const base = { month, paid_amount, in_ede, in_back_office, in_commission };
 
