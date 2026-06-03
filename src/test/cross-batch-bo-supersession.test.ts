@@ -52,7 +52,7 @@ function boRow(over: any): NormalizedRecord {
     eligible_for_commission: 'yes',
     agent_npn: COVERALL_NPN,
     aor_bucket: 'coverall',
-    raw_json: { 'Broker Name': 'JASON SCHWARTZ', broker_name: 'JASON SCHWARTZ' },
+    raw_json: { 'Broker Name': 'Jason Fine', broker_name: 'Jason Fine' },
     batch_id: over.batch_id ?? 'b-feb',
     ...over,
   } as any;
@@ -75,7 +75,7 @@ function edeRow(over: any): NormalizedRecord {
     agent_npn: COVERALL_NPN,
     raw_json: {
       policyStatus: 'Effectuated',
-      currentPolicyAOR: 'JASON SCHWARTZ (21401082)',
+      currentPolicyAOR: 'Jason Fine (21055210)',
     },
     batch_id: 'b-feb',
     ...over,
@@ -119,8 +119,8 @@ describe('latestAuthoritativeBoTermDates — overlay shape', () => {
     ];
     const overlay = latestAuthoritativeBoTermDates(records, recency);
     expect(overlay.size).toBe(2);
-    expect(overlay.get('ambetter|A')?.policy_term_date).toBe('2026-01-31');
-    expect(overlay.get('ambetter|B')?.policy_term_date).toBeNull();
+    expect(overlay.get('ambetter|a')?.policy_term_date).toBe('2026-01-31');
+    expect(overlay.get('ambetter|b')?.policy_term_date).toBeNull();
   });
 
   it('groups by issuer_subscriber_id when policy_number is blank', () => {
@@ -205,11 +205,11 @@ describe('classifyCell — Josie supersession pattern', () => {
   it('multi-policy merged member: terminated policy A; active policy B → cell stays active via B', () => {
     const recs: NormalizedRecord[] = [
       // Policy A — superseded to Jan end
-      boRow({ id: 'bo-a-feb', batch_id: 'b-feb', policy_number: 'POL-A', policy_term_date: '2026-12-31' }),
-      boRow({ id: 'bo-a-apr', batch_id: 'b-apr', policy_number: 'POL-A', policy_term_date: '2026-01-31' }),
+      boRow({ id: 'bo-a-feb', batch_id: 'b-feb', policy_number: 'pola', policy_term_date: '2026-12-31' }),
+      boRow({ id: 'bo-a-apr', batch_id: 'b-apr', policy_number: 'pola', policy_term_date: '2026-01-31' }),
       // Policy B — still active
-      boRow({ id: 'bo-b-apr', batch_id: 'b-apr', policy_number: 'POL-B', policy_term_date: null }),
-      edeRow({ id: 'ede-b', batch_id: 'b-feb', policy_number: 'POL-B', net_premium: 200 }),
+      boRow({ id: 'bo-b-apr', batch_id: 'b-apr', policy_number: 'polb', policy_term_date: null }),
+      edeRow({ id: 'ede-b', batch_id: 'b-feb', policy_number: 'polb', net_premium: 200 }),
     ];
     const overlay = latestAuthoritativeBoTermDates(recs, recency);
     const ctx = buildClassifierContext(recs, MONTHS, [], {
