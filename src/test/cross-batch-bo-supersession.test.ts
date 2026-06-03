@@ -34,7 +34,7 @@ import type { NormalizedRecord } from '@/lib/normalize';
 
 const COVERALL_NPN = '21401082';
 
-function boRow(over: Partial<NormalizedRecord> Partial<NormalizedRecord> & { id: string; batch_id?: string } { id: string; batch_id?: string; policy_number?: string }): NormalizedRecord {
+function boRow(over: any): NormalizedRecord {
   return {
     id: over.id,
     source_type: 'BACK_OFFICE',
