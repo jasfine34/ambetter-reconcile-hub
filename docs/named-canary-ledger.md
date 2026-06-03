@@ -1,7 +1,7 @@
 # Named Canary Ledger
 
 **Version:** v1
-**Last updated:** 2026-05-28
+**Last updated:** 2026-06-03
 
 ## Purpose
 
