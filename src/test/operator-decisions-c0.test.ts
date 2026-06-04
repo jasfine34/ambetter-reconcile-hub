@@ -18,13 +18,13 @@ function nextId(): string {
   return `dec-${String(idCounter++).padStart(6, '0')}`;
 }
 
-function matchGrain(r: Row, g: Record<string, string>): boolean {
-  return r.carrier === g.carrier
-    && r.stable_member_key === g.stable_member_key
-    && r.policy_identity_key === g.policy_identity_key
-    && r.service_month === g.service_month
-    && r.target_scope === g.target_scope
-    && r.reason_code === g.reason_code;
+function matchGrain(r: Row, p: any): boolean {
+  return r.carrier === p.p_carrier
+    && r.stable_member_key === p.p_stable_member_key
+    && r.policy_identity_key === p.p_policy_identity_key
+    && r.service_month === p.p_service_month
+    && r.target_scope === p.p_target_scope
+    && r.reason_code === p.p_reason_code;
 }
 
 const rpcImpls: Record<string, (params: any) => { data: any; error: any }> = {
