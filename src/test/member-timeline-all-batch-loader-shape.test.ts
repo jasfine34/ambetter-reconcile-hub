@@ -101,7 +101,7 @@ describe('getAllNormalizedRecordsForMemberTimeline — query shape', () => {
     }
   });
 
-  it('projects the 9 raw_json subkeys via stable aliases (no ?column? defaults)', async () => {
+  it('projects the 12 raw_json subkeys via stable aliases (no ?column? defaults)', async () => {
     allRows = [makeRow(1)];
     await getAllNormalizedRecordsForMemberTimeline();
     const cols = MEMBER_TIMELINE_ALL_BATCH_COLUMNS;
@@ -114,9 +114,14 @@ describe('getAllNormalizedRecordsForMemberTimeline — query shape', () => {
     expect(cols).toContain('raw_broker_name_title:raw_json->>"Broker Name"');
     expect(cols).toContain('raw_broker_name:raw_json->>broker_name');
     expect(cols).toContain('raw_transaction_id:raw_json->>"Transaction ID"');
+    // Phase C1a — DMI subkeys.
+    expect(cols).toContain('raw_verification_issue_type:raw_json->>verificationIssueType');
+    expect(cols).toContain('raw_verification_end_date:raw_json->>verificationEndDate');
+    expect(cols).toContain('raw_document_uploaded_for_svi_dmi:raw_json->>documentUploadedForSviDmi');
     // The select string used at runtime must match the exported constant.
     expect(queryLog[0].selectCols).toBe(cols);
   });
+
 
 
   it('preserves active predicate and keyset pagination', async () => {
