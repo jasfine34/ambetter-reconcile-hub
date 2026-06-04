@@ -155,13 +155,18 @@ describe('getAllNormalizedRecordsForMemberTimeline — query shape', () => {
       'Broker Name': 'Broker 1',
       broker_name: 'broker_1',
       'Transaction ID': 'TXN-1',
+      verificationIssueType: 'DMI_CITIZENSHIP',
+      verificationEndDate: '2026-03-15',
+      documentUploadedForSviDmi: 'N',
     });
     // The aliased fields are stripped (no leakage).
     expect(row.raw_ffm_app_id).toBeUndefined();
     expect(row.raw_months_paid).toBeUndefined();
     expect(row.raw_broker_name_title).toBeUndefined();
     expect(row.raw_transaction_id).toBeUndefined();
-
+    expect(row.raw_verification_issue_type).toBeUndefined();
+    expect(row.raw_verification_end_date).toBeUndefined();
+    expect(row.raw_document_uploaded_for_svi_dmi).toBeUndefined();
   });
 
   it('omits missing raw keys cleanly (null projected values do not show up as keys)', async () => {
@@ -169,11 +174,17 @@ describe('getAllNormalizedRecordsForMemberTimeline — query shape', () => {
       raw_ffm_app_id: null,
       raw_last_ede_sync: null,
       raw_broker_name: null,
+      raw_verification_issue_type: null,
+      raw_verification_end_date: null,
+      raw_document_uploaded_for_svi_dmi: null,
     })];
     const [row] = await getAllNormalizedRecordsForMemberTimeline();
     expect(row.raw_json).not.toHaveProperty('ffmAppId');
     expect(row.raw_json).not.toHaveProperty('lastEDESync');
     expect(row.raw_json).not.toHaveProperty('broker_name');
+    expect(row.raw_json).not.toHaveProperty('verificationIssueType');
+    expect(row.raw_json).not.toHaveProperty('verificationEndDate');
+    expect(row.raw_json).not.toHaveProperty('documentUploadedForSviDmi');
     expect(row.raw_json.currentPolicyAOR).toBe('Agent 1');
   });
 
