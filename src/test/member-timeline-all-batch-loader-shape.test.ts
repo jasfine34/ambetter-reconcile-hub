@@ -80,6 +80,9 @@ function makeRow(n: number, overrides: Partial<ProjectedRow> = {}): ProjectedRow
     raw_broker_name_title: `Broker ${n}`,
     raw_broker_name: `broker_${n}`,
     raw_transaction_id: `TXN-${n}`,
+    raw_verification_issue_type: 'DMI_CITIZENSHIP',
+    raw_verification_end_date: '2026-03-15',
+    raw_document_uploaded_for_svi_dmi: 'N',
     ...overrides,
   };
 }
