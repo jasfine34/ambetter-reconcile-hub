@@ -548,7 +548,11 @@ const MEMBER_TIMELINE_TYPED_COLUMNS = [
 // PostgREST supports `alias:column->>key` and double-quoted keys for those
 // with spaces. These aliases are required by tests so we never regress to
 // default `?column?` names.
-const MEMBER_TIMELINE_RAW_JSON_PROJECTION = [
+//
+// Phase C1a — three DMI subkeys added so the blocker-facts layer can read
+// the picked service-month EDE record's verificationIssueType /
+// verificationEndDate / documentUploadedForSviDmi without a separate loader.
+export const MEMBER_TIMELINE_RAW_JSON_PROJECTION = [
   'raw_ffm_app_id:raw_json->>ffmAppId',
   'raw_current_policy_aor:raw_json->>currentPolicyAOR',
   'raw_policy_status:raw_json->>policyStatus',
@@ -559,6 +563,10 @@ const MEMBER_TIMELINE_RAW_JSON_PROJECTION = [
   'raw_broker_name:raw_json->>broker_name',
   // R-PAY-012 (Dannielle) — Transaction ID needed for reversed-state evidence.
   'raw_transaction_id:raw_json->>"Transaction ID"',
+  // Phase C1a — DMI signal (picked-EDE accessor).
+  'raw_verification_issue_type:raw_json->>verificationIssueType',
+  'raw_verification_end_date:raw_json->>verificationEndDate',
+  'raw_document_uploaded_for_svi_dmi:raw_json->>documentUploadedForSviDmi',
 ].join(',');
 
 export const MEMBER_TIMELINE_ALL_BATCH_COLUMNS =
@@ -576,6 +584,10 @@ function reconstructRawJson(row: any): any {
   if (row.raw_broker_name != null) raw.broker_name = row.raw_broker_name;
   // R-PAY-012 (Dannielle) — Transaction ID for reversed-state evidence.
   if (row.raw_transaction_id != null) raw['Transaction ID'] = row.raw_transaction_id;
+  // Phase C1a — DMI signal subkeys.
+  if (row.raw_verification_issue_type != null) raw.verificationIssueType = row.raw_verification_issue_type;
+  if (row.raw_verification_end_date != null) raw.verificationEndDate = row.raw_verification_end_date;
+  if (row.raw_document_uploaded_for_svi_dmi != null) raw.documentUploadedForSviDmi = row.raw_document_uploaded_for_svi_dmi;
   const cleaned = { ...row, raw_json: raw };
   delete cleaned.raw_ffm_app_id;
   delete cleaned.raw_current_policy_aor;
@@ -586,6 +598,9 @@ function reconstructRawJson(row: any): any {
   delete cleaned.raw_broker_name_title;
   delete cleaned.raw_broker_name;
   delete cleaned.raw_transaction_id;
+  delete cleaned.raw_verification_issue_type;
+  delete cleaned.raw_verification_end_date;
+  delete cleaned.raw_document_uploaded_for_svi_dmi;
   return cleaned;
 }
 

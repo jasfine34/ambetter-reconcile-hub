@@ -80,6 +80,9 @@ function makeRow(n: number, overrides: Partial<ProjectedRow> = {}): ProjectedRow
     raw_broker_name_title: `Broker ${n}`,
     raw_broker_name: `broker_${n}`,
     raw_transaction_id: `TXN-${n}`,
+    raw_verification_issue_type: 'DMI_CITIZENSHIP',
+    raw_verification_end_date: '2026-03-15',
+    raw_document_uploaded_for_svi_dmi: 'N',
     ...overrides,
   };
 }
@@ -98,7 +101,7 @@ describe('getAllNormalizedRecordsForMemberTimeline — query shape', () => {
     }
   });
 
-  it('projects the 9 raw_json subkeys via stable aliases (no ?column? defaults)', async () => {
+  it('projects the 12 raw_json subkeys via stable aliases (no ?column? defaults)', async () => {
     allRows = [makeRow(1)];
     await getAllNormalizedRecordsForMemberTimeline();
     const cols = MEMBER_TIMELINE_ALL_BATCH_COLUMNS;
@@ -111,9 +114,14 @@ describe('getAllNormalizedRecordsForMemberTimeline — query shape', () => {
     expect(cols).toContain('raw_broker_name_title:raw_json->>"Broker Name"');
     expect(cols).toContain('raw_broker_name:raw_json->>broker_name');
     expect(cols).toContain('raw_transaction_id:raw_json->>"Transaction ID"');
+    // Phase C1a — DMI subkeys.
+    expect(cols).toContain('raw_verification_issue_type:raw_json->>verificationIssueType');
+    expect(cols).toContain('raw_verification_end_date:raw_json->>verificationEndDate');
+    expect(cols).toContain('raw_document_uploaded_for_svi_dmi:raw_json->>documentUploadedForSviDmi');
     // The select string used at runtime must match the exported constant.
     expect(queryLog[0].selectCols).toBe(cols);
   });
+
 
 
   it('preserves active predicate and keyset pagination', async () => {
@@ -147,13 +155,18 @@ describe('getAllNormalizedRecordsForMemberTimeline — query shape', () => {
       'Broker Name': 'Broker 1',
       broker_name: 'broker_1',
       'Transaction ID': 'TXN-1',
+      verificationIssueType: 'DMI_CITIZENSHIP',
+      verificationEndDate: '2026-03-15',
+      documentUploadedForSviDmi: 'N',
     });
     // The aliased fields are stripped (no leakage).
     expect(row.raw_ffm_app_id).toBeUndefined();
     expect(row.raw_months_paid).toBeUndefined();
     expect(row.raw_broker_name_title).toBeUndefined();
     expect(row.raw_transaction_id).toBeUndefined();
-
+    expect(row.raw_verification_issue_type).toBeUndefined();
+    expect(row.raw_verification_end_date).toBeUndefined();
+    expect(row.raw_document_uploaded_for_svi_dmi).toBeUndefined();
   });
 
   it('omits missing raw keys cleanly (null projected values do not show up as keys)', async () => {
@@ -161,11 +174,17 @@ describe('getAllNormalizedRecordsForMemberTimeline — query shape', () => {
       raw_ffm_app_id: null,
       raw_last_ede_sync: null,
       raw_broker_name: null,
+      raw_verification_issue_type: null,
+      raw_verification_end_date: null,
+      raw_document_uploaded_for_svi_dmi: null,
     })];
     const [row] = await getAllNormalizedRecordsForMemberTimeline();
     expect(row.raw_json).not.toHaveProperty('ffmAppId');
     expect(row.raw_json).not.toHaveProperty('lastEDESync');
     expect(row.raw_json).not.toHaveProperty('broker_name');
+    expect(row.raw_json).not.toHaveProperty('verificationIssueType');
+    expect(row.raw_json).not.toHaveProperty('verificationEndDate');
+    expect(row.raw_json).not.toHaveProperty('documentUploadedForSviDmi');
     expect(row.raw_json.currentPolicyAOR).toBe('Agent 1');
   });
 
