@@ -153,7 +153,7 @@ describe('Phase C0 — operator_decisions', () => {
         .toBe('esid:e1');
     });
     it('falls back to policy_number', () => {
-      expect(deriveStableMemberKey({ carrier: 'Ambetter', policy_number: 'P-001' })).toBe('pn:p001');
+      expect(deriveStableMemberKey({ carrier: 'Ambetter', policy_number: 'P0001' })).toBe('pn:p0001');
     });
     it('produces deterministic sentinel for unresolvable policy', () => {
       const { policy_identity_key, unresolved_reason } = derivePolicyKeyOrSentinel(
