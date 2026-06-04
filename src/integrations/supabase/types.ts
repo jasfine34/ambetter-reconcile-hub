@@ -661,6 +661,78 @@ export type Database = {
           },
         ]
       }
+      operator_decisions: {
+        Row: {
+          amount_payload: Json | null
+          carrier: string
+          created_at: string
+          decided_at: string
+          decided_by: string | null
+          decision_type: string
+          evidence_snapshot: Json
+          id: string
+          internal_note: string | null
+          messer_comment: string | null
+          policy_identity_key: string
+          reason_code: string
+          release_rule: string
+          release_trigger: string | null
+          released_at: string | null
+          service_month: string
+          stable_member_key: string
+          status: string
+          superseded_at: string | null
+          superseded_by_decision_id: string | null
+          target_scope: string
+        }
+        Insert: {
+          amount_payload?: Json | null
+          carrier: string
+          created_at?: string
+          decided_at?: string
+          decided_by?: string | null
+          decision_type: string
+          evidence_snapshot?: Json
+          id?: string
+          internal_note?: string | null
+          messer_comment?: string | null
+          policy_identity_key: string
+          reason_code: string
+          release_rule: string
+          release_trigger?: string | null
+          released_at?: string | null
+          service_month: string
+          stable_member_key: string
+          status?: string
+          superseded_at?: string | null
+          superseded_by_decision_id?: string | null
+          target_scope: string
+        }
+        Update: {
+          amount_payload?: Json | null
+          carrier?: string
+          created_at?: string
+          decided_at?: string
+          decided_by?: string | null
+          decision_type?: string
+          evidence_snapshot?: Json
+          id?: string
+          internal_note?: string | null
+          messer_comment?: string | null
+          policy_identity_key?: string
+          reason_code?: string
+          release_rule?: string
+          release_trigger?: string | null
+          released_at?: string | null
+          service_month?: string
+          stable_member_key?: string
+          status?: string
+          superseded_at?: string | null
+          superseded_by_decision_id?: string | null
+          target_scope?: string
+        }
+        Relationships: []
+      }
       reconciled_members: {
         Row: {
           actual_commission: number | null
@@ -981,6 +1053,84 @@ export type Database = {
       preflush_stale_staged_rows: {
         Args: { _batch_id: string; _file_ids: string[] }
         Returns: number
+      }
+      record_operator_decision: {
+        Args: {
+          p_amount_payload?: Json
+          p_carrier: string
+          p_decided_by?: string
+          p_decision_type: string
+          p_evidence_snapshot: Json
+          p_internal_note?: string
+          p_messer_comment?: string
+          p_policy_identity_key: string
+          p_reason_code: string
+          p_release_rule: string
+          p_service_month: string
+          p_stable_member_key: string
+          p_target_scope: string
+        }
+        Returns: {
+          amount_payload: Json | null
+          carrier: string
+          created_at: string
+          decided_at: string
+          decided_by: string | null
+          decision_type: string
+          evidence_snapshot: Json
+          id: string
+          internal_note: string | null
+          messer_comment: string | null
+          policy_identity_key: string
+          reason_code: string
+          release_rule: string
+          release_trigger: string | null
+          released_at: string | null
+          service_month: string
+          stable_member_key: string
+          status: string
+          superseded_at: string | null
+          superseded_by_decision_id: string | null
+          target_scope: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "operator_decisions"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      release_operator_decision: {
+        Args: { p_evidence?: Json; p_id: string; p_trigger: string }
+        Returns: {
+          amount_payload: Json | null
+          carrier: string
+          created_at: string
+          decided_at: string
+          decided_by: string | null
+          decision_type: string
+          evidence_snapshot: Json
+          id: string
+          internal_note: string | null
+          messer_comment: string | null
+          policy_identity_key: string
+          reason_code: string
+          release_rule: string
+          release_trigger: string | null
+          released_at: string | null
+          service_month: string
+          stable_member_key: string
+          status: string
+          superseded_at: string | null
+          superseded_by_decision_id: string | null
+          target_scope: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "operator_decisions"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       release_rebuild_lock: {
         Args: { _batch_id: string; _session_id: string }
