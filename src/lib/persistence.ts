@@ -787,7 +787,7 @@ export async function getCommissionRecordsByTriples(
       lastId = data[data.length - 1].id;
     }
   }
-  return out;
+  return maybeDedup(out, dedupCtx);
 }
 
 /**
