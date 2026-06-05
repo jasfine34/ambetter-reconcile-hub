@@ -740,12 +740,13 @@ export default function MissingCommissionExportPage() {
       // the writing-agent-carrier-id lookup (item-1 preserved). The all-batch
       // projection (memoized by `useAllBatchesDataVersion` + resolver
       // fingerprint) drives the MT-approved selector for production inclusion.
+      const dedupCtx = { batchMonthByBatchId: batchMonthByBatchIdObj };
       const [recs, projection] = await Promise.all([
         getNormalizedRecords(f.batchId!),
         getMtAllBatchProjection({
           allBatchesDataVersion: allBatchesDataVersionSnap,
           resolverIndex: resolverIndexSnapshot,
-          loader: getAllNormalizedRecordsForMemberTimeline,
+          loader: () => getAllNormalizedRecordsForMemberTimeline(dedupCtx),
         }),
       ]);
       selectedBatchRecords = recs || [];
