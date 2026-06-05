@@ -32,7 +32,7 @@ function comm(over: {
     client_address_2: '', client_city: '', client_state_full: '',
     client_zip: '', paid_to_date: '2026-01-31', months_paid: 1,
     writing_agent_carrier_id: '', member_key: 'issub:u96332808',
-    raw_json: { 'Transaction ID': over.txn, 'Months Paid': 1 },
+    raw_json: { 'Transaction ID': over.txn, 'Months Paid': '1' },
   };
   return {
     ...base, id: over.id, batch_id: over.batch_id,
