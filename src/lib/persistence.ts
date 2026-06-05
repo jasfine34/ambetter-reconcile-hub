@@ -640,7 +640,9 @@ function reconstructRawJson(row: any): any {
 }
 
 
-export async function getAllNormalizedRecordsForMemberTimeline() {
+export async function getAllNormalizedRecordsForMemberTimeline(
+  dedupCtx?: CommissionDedupContext,
+) {
   const allData: any[] = [];
   let lastId: string | null = null;
   while (true) {
@@ -659,7 +661,7 @@ export async function getAllNormalizedRecordsForMemberTimeline() {
     if (data.length < NORMALIZED_PAGE_SIZE) break;
     lastId = data[data.length - 1].id;
   }
-  return allData;
+  return maybeDedup(allData, dedupCtx);
 }
 
 // ---------------------------------------------------------------------------
