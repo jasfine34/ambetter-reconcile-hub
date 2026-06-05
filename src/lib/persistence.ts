@@ -2,6 +2,41 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { NormalizedRecord } from './normalize';
 import type { ReconciledMember } from './reconcile';
+import { dedupCommissionRows, type DedupInputRow } from '@/lib/canonical/dedupCommissionRows';
+
+/**
+ * Read-side commission dedup context (canonical commission dedup layer).
+ *
+ * Pass `batchMonthByBatchId` (batch_id → 'YYYY-MM') so cross-batch exact
+ * duplicates collapse to a single survivor (earliest statement month).
+ * When omitted, loaders return raw rows (back-compat for callers not yet
+ * wired). Groups whose batch month can't resolve are passed through
+ * untouched and surfaced via `onDiagnostic`.
+ */
+export interface CommissionDedupContext {
+  batchMonthByBatchId: Record<string, string | null | undefined>;
+  onDiagnostic?: (info: {
+    droppedCount: number;
+    groupCount: number;
+    unresolvedBatchMonthIds: string[];
+  }) => void;
+}
+
+function maybeDedup<T extends DedupInputRow>(
+  rows: T[],
+  ctx?: CommissionDedupContext,
+): T[] {
+  if (!ctx) return rows;
+  const result = dedupCommissionRows(rows, {
+    batchMonthByBatchId: ctx.batchMonthByBatchId,
+  });
+  ctx.onDiagnostic?.({
+    droppedCount: result.droppedCount,
+    groupCount: result.groupCount,
+    unresolvedBatchMonthIds: result.unresolvedBatchMonthIds,
+  });
+  return result.rows;
+}
 
 /**
  * The metadata we need to link a snapshot to newly-inserted normalized_records.
@@ -605,7 +640,9 @@ function reconstructRawJson(row: any): any {
 }
 
 
-export async function getAllNormalizedRecordsForMemberTimeline() {
+export async function getAllNormalizedRecordsForMemberTimeline(
+  dedupCtx?: CommissionDedupContext,
+) {
   const allData: any[] = [];
   let lastId: string | null = null;
   while (true) {
@@ -624,7 +661,7 @@ export async function getAllNormalizedRecordsForMemberTimeline() {
     if (data.length < NORMALIZED_PAGE_SIZE) break;
     lastId = data[data.length - 1].id;
   }
-  return allData;
+  return maybeDedup(allData, dedupCtx);
 }
 
 // ---------------------------------------------------------------------------
@@ -657,7 +694,10 @@ const MCE_IN_CHUNK_SIZE = 200;
  * columns for ANY active normalized_record matching one of the supplied keys,
  * across all batches. Empty input → no DB call.
  */
-export async function getNormalizedRecordsByMemberKeys(memberKeys: string[]) {
+export async function getNormalizedRecordsByMemberKeys(
+  memberKeys: string[],
+  dedupCtx?: CommissionDedupContext,
+) {
   if (!memberKeys || memberKeys.length === 0) return [];
   const uniqueKeys = Array.from(new Set(memberKeys.filter((k) => !!k)));
   if (uniqueKeys.length === 0) return [];
@@ -686,7 +726,7 @@ export async function getNormalizedRecordsByMemberKeys(memberKeys: string[]) {
       lastId = data[data.length - 1].id;
     }
   }
-  return out;
+  return maybeDedup(out, dedupCtx);
 }
 
 /**
@@ -700,6 +740,7 @@ export async function getNormalizedRecordsByMemberKeys(memberKeys: string[]) {
  */
 export async function getCommissionRecordsByTriples(
   triples: Array<{ carrier: string; payEntity: string; agentNpn: string }>,
+  dedupCtx?: CommissionDedupContext,
 ) {
   if (!triples || triples.length === 0) return [];
   const norm = (s: string) => (s ?? '').trim();
@@ -746,7 +787,7 @@ export async function getCommissionRecordsByTriples(
       lastId = data[data.length - 1].id;
     }
   }
-  return out;
+  return maybeDedup(out, dedupCtx);
 }
 
 /**
