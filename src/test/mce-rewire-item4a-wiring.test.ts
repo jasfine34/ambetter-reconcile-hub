@@ -61,7 +61,7 @@ describe('Item 4a D3 — MCE production inclusion sources from MT-approved selec
       /getMtAllBatchProjection\(\s*\{[\s\S]*?resolverIndex:\s*resolverIndexSnapshot/,
     );
     expect(pageSource).toMatch(
-      /loader:\s*getAllNormalizedRecordsForMemberTimeline/,
+      /loader:\s*(?:\(\)\s*=>\s*)?getAllNormalizedRecordsForMemberTimeline/,
     );
   });
 
