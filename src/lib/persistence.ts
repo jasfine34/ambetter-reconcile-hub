@@ -694,7 +694,10 @@ const MCE_IN_CHUNK_SIZE = 200;
  * columns for ANY active normalized_record matching one of the supplied keys,
  * across all batches. Empty input → no DB call.
  */
-export async function getNormalizedRecordsByMemberKeys(memberKeys: string[]) {
+export async function getNormalizedRecordsByMemberKeys(
+  memberKeys: string[],
+  dedupCtx?: CommissionDedupContext,
+) {
   if (!memberKeys || memberKeys.length === 0) return [];
   const uniqueKeys = Array.from(new Set(memberKeys.filter((k) => !!k)));
   if (uniqueKeys.length === 0) return [];
