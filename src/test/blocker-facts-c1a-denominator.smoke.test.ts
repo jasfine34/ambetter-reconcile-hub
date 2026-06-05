@@ -30,15 +30,22 @@ describe('Phase C1a — live active-DMI denominator (RUN_SMOKE_CONTROLS=1 only)'
         await import('@/lib/canonical/latestAuthoritativeBo');
 
       const resolverIndex = await loadResolverIndex(true);
-      const allRecords = await getAllNormalizedRecordsForMemberTimeline();
-      mergeRecordsToMemberKeys(allRecords as any, resolverIndex);
 
       const batches = await getBatches();
       const batchMonthByBatchId = new Map<string, string>();
+      const dedupBatchMonthByBatchId: Record<string, string> = {};
       for (const b of batches ?? []) {
         if (!b?.id || !b?.statement_month) continue;
-        batchMonthByBatchId.set(String(b.id), String(b.statement_month).substring(0, 7));
+        const m = String(b.statement_month).substring(0, 7);
+        batchMonthByBatchId.set(String(b.id), m);
+        dedupBatchMonthByBatchId[String(b.id)] = m;
       }
+
+      const allRecords = await getAllNormalizedRecordsForMemberTimeline({
+        batchMonthByBatchId: dedupBatchMonthByBatchId,
+        onDiagnostic: (d) => console.log('[smoke dedup]', d.droppedCount, d.groupCount, d.unresolvedBatchMonthIds.length),
+      });
+      mergeRecordsToMemberKeys(allRecords as any, resolverIndex);
       const recency = makeBoRecency({ batchMonthByBatchId });
       const overlay = latestAuthoritativeBoTermDates(allRecords as any, recency);
       const monthList = buildMonthList('2026-01', '2026-04');
