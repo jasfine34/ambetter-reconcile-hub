@@ -30,13 +30,19 @@ type CacheEntry = {
 
 let _entry: CacheEntry | null = null;
 
+/**
+ * Cache-key namespace. Bump when the projection's logical contents change
+ * (e.g. canonical commission dedup ship). Forces stale entries to refresh.
+ */
+const CACHE_KEY_NAMESPACE = 'v2-commission-dedup';
+
 export function makeMtAllBatchCacheKey(
   allBatchesDataVersion: string | null | undefined,
   resolverIndex: ResolverIndex | null | undefined,
 ): string {
   const dv = String(allBatchesDataVersion ?? '∅');
   const rf = resolverIndex ? resolverIndex.fingerprint || resolverIndexFingerprint(resolverIndex) : 'no-resolver';
-  return `${dv}::${rf}`;
+  return `${CACHE_KEY_NAMESPACE}::${dv}::${rf}`;
 }
 
 export interface GetMtAllBatchProjectionArgs {
