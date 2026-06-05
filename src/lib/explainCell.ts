@@ -88,15 +88,19 @@ export async function explainCell(input: ExplainCellInput): Promise<CellTrace> {
     const { latestAuthoritativeBoTermDates, makeBoRecency } = await import('./canonical/latestAuthoritativeBo');
 
     const resolverIndex = await loadResolverIndex(true);
-    const allRecords = await getAllNormalizedRecordsForMemberTimeline();
-    mergeRecordsToMemberKeys(allRecords as any, resolverIndex);
-
     const batches = await getBatches();
     const batchMonthByBatchId = new Map<string, string>();
+    const batchMonthByBatchIdObj: Record<string, string> = {};
     for (const b of batches ?? []) {
       if (!b?.id || !b?.statement_month) continue;
-      batchMonthByBatchId.set(String(b.id), String(b.statement_month).substring(0, 7));
+      const ym = String(b.statement_month).substring(0, 7);
+      batchMonthByBatchId.set(String(b.id), ym);
+      batchMonthByBatchIdObj[String(b.id)] = ym;
     }
+    const allRecords = await getAllNormalizedRecordsForMemberTimeline({
+      batchMonthByBatchId: batchMonthByBatchIdObj,
+    });
+    mergeRecordsToMemberKeys(allRecords as any, resolverIndex);
 
     // Phase B — supersession overlay built off all-batch records so
     // explainCell's trace mirrors MT/MCE classification.

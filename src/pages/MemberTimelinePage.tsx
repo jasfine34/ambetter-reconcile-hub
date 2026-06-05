@@ -158,8 +158,16 @@ export default function MemberTimelinePage() {
 
   useEffect(() => {
     setLoading(true);
+    // Canonical commission dedup context (read-side, all-batch only).
+    // Batch-local loader cannot see cross-batch duplicates by design.
+    const batchMonthByBatchId: Record<string, string> = {};
+    for (const b of batches ?? []) {
+      if (b?.id && b?.statement_month) {
+        batchMonthByBatchId[b.id] = String(b.statement_month).substring(0, 7);
+      }
+    }
     const fetch = batchScope === 'all'
-      ? getAllNormalizedRecordsForMemberTimeline()
+      ? getAllNormalizedRecordsForMemberTimeline({ batchMonthByBatchId })
       : currentBatchId
         ? getNormalizedRecords(currentBatchId)
         : Promise.resolve([] as any[]);
@@ -175,7 +183,7 @@ export default function MemberTimelinePage() {
       })
       .catch(() => setRecords([]))
       .finally(() => setLoading(false));
-  }, [currentBatchId, batchScope, resolverIndex, dataVersion]);
+  }, [currentBatchId, batchScope, resolverIndex, dataVersion, batches]);
 
   // Reset start/end to sensible defaults on initial mount and when the batch
   // scope changes. Deliberately NOT dependent on currentBatchId — switching

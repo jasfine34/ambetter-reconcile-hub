@@ -740,12 +740,13 @@ export default function MissingCommissionExportPage() {
       // the writing-agent-carrier-id lookup (item-1 preserved). The all-batch
       // projection (memoized by `useAllBatchesDataVersion` + resolver
       // fingerprint) drives the MT-approved selector for production inclusion.
+      const dedupCtx = { batchMonthByBatchId: batchMonthByBatchIdObj };
       const [recs, projection] = await Promise.all([
         getNormalizedRecords(f.batchId!),
         getMtAllBatchProjection({
           allBatchesDataVersion: allBatchesDataVersionSnap,
           resolverIndex: resolverIndexSnapshot,
-          loader: getAllNormalizedRecordsForMemberTimeline,
+          loader: () => getAllNormalizedRecordsForMemberTimeline(dedupCtx),
         }),
       ]);
       selectedBatchRecords = recs || [];
@@ -868,10 +869,11 @@ export default function MissingCommissionExportPage() {
       }
       const triples = Array.from(tripleSet.values());
 
-      enrichmentRecords = memberKeys.length === 0 ? [] : await getNormalizedRecordsByMemberKeys(memberKeys);
+      const dedupCtx2 = { batchMonthByBatchId: batchMonthByBatchIdObj };
+      enrichmentRecords = memberKeys.length === 0 ? [] : await getNormalizedRecordsByMemberKeys(memberKeys, dedupCtx2);
 
       try {
-        commissionTripleRecords = triples.length === 0 ? [] : await getCommissionRecordsByTriples(triples);
+        commissionTripleRecords = triples.length === 0 ? [] : await getCommissionRecordsByTriples(triples, dedupCtx2);
       } catch (error) {
         commissionTripleFallbackFailed = true;
         commissionTripleRecords = [];
