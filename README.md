@@ -1,4 +1,6 @@
 # Welcome to your Lovable project
+<!-- Sync marker: GH reconnected 2026-06-05 -->
+
 
 TODO: Document your project here
 
