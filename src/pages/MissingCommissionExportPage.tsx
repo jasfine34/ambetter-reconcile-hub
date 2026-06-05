@@ -869,10 +869,11 @@ export default function MissingCommissionExportPage() {
       }
       const triples = Array.from(tripleSet.values());
 
-      enrichmentRecords = memberKeys.length === 0 ? [] : await getNormalizedRecordsByMemberKeys(memberKeys);
+      const dedupCtx2 = { batchMonthByBatchId: batchMonthByBatchIdObj };
+      enrichmentRecords = memberKeys.length === 0 ? [] : await getNormalizedRecordsByMemberKeys(memberKeys, dedupCtx2);
 
       try {
-        commissionTripleRecords = triples.length === 0 ? [] : await getCommissionRecordsByTriples(triples);
+        commissionTripleRecords = triples.length === 0 ? [] : await getCommissionRecordsByTriples(triples, dedupCtx2);
       } catch (error) {
         commissionTripleFallbackFailed = true;
         commissionTripleRecords = [];
