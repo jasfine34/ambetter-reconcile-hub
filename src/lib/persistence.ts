@@ -726,7 +726,7 @@ export async function getNormalizedRecordsByMemberKeys(
       lastId = data[data.length - 1].id;
     }
   }
-  return out;
+  return maybeDedup(out, dedupCtx);
 }
 
 /**
