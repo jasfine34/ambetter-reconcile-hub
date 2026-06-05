@@ -15,6 +15,7 @@ import { classifyPolicyOwnerFromCurrentAor } from '@/lib/canonical/policyOwner';
 import { loadCarrierCompRates } from '@/lib/canonical/compGridLoader';
 import { isCrossBatchIdentityMatch } from '@/lib/canonical/crossBatchIdentityMatch';
 import { evaluateCrossBatchAmountClearing, type AmountClearingCandidate } from '@/lib/canonical/crossBatchAmountClearing';
+import { dedupCommissionRows } from '@/lib/canonical/dedupCommissionRows';
 import {
   buildResolverRecordIndex,
   buildPolicyStateRecords,
