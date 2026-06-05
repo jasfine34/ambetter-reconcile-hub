@@ -141,15 +141,22 @@ describe('Named Canary Ledger v1 — MT certification (live data)', () => {
       await import('@/lib/canonical/latestAuthoritativeBo');
 
     const resolverIndex = await loadResolverIndex(true);
-    const allRecords = await getAllNormalizedRecordsForMemberTimeline();
-    mergeRecordsToMemberKeys(allRecords as any, resolverIndex);
 
     const batches = await getBatches();
     const batchMonthByBatchId = new Map<string, string>();
+    const dedupBatchMonthByBatchId: Record<string, string> = {};
     for (const b of batches ?? []) {
       if (!b?.id || !b?.statement_month) continue;
-      batchMonthByBatchId.set(String(b.id), String(b.statement_month).substring(0, 7));
+      const m = String(b.statement_month).substring(0, 7);
+      batchMonthByBatchId.set(String(b.id), m);
+      dedupBatchMonthByBatchId[String(b.id)] = m;
     }
+
+    const allRecords = await getAllNormalizedRecordsForMemberTimeline({
+      batchMonthByBatchId: dedupBatchMonthByBatchId,
+      onDiagnostic: (d) => console.log('[smoke dedup]', d.droppedCount, d.groupCount, d.unresolvedBatchMonthIds.length),
+    });
+    mergeRecordsToMemberKeys(allRecords as any, resolverIndex);
 
     // Phase B — supersession overlay for cross-batch BO term-date authority.
     const recency = makeBoRecency({ batchMonthByBatchId });
