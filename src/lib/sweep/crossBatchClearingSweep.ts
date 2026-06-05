@@ -329,11 +329,23 @@ export async function runCrossBatchClearingSweep(opts: SweepOptions): Promise<Sw
   const commPolicy = await paginatedIn('policy_number', [...policyNums], 'COMMISSION');
   const commSub = await paginatedIn('issuer_subscriber_id', [...subIds], 'COMMISSION');
   const commSeen = new Set<string>();
-  const commissions: AmountClearingCandidate[] & { __extra?: any }[] = [] as any;
-  const commByCarrier = new Map<string, Array<AmountClearingCandidate & { carrier: string; policy_number: string | null; issuer_subscriber_id: string | null; raw_json?: any }>>();
+  const commRawRows: any[] = [];
   for (const row of [...commPolicy, ...commSub]) {
     if (commSeen.has(row.id)) continue;
     commSeen.add(row.id);
+    commRawRows.push(row);
+  }
+  // R-PAY-010: collapse exact cross-batch / intra-batch commission duplicates
+  // BEFORE evaluateCrossBatchAmountClearing so the May re-listing of April
+  // transactions does not double-count toward `actual_net_amount`. Stamp
+  // source_type=COMMISSION (PROJECTED_NORMALIZED_COLUMNS omits it) so the
+  // dedup helper sees these as commission rows. Raw uploaded rows are not
+  // mutated; we operate on the projected copies returned by paginatedIn.
+  const commForDedup = commRawRows.map(r => ({ ...r, source_type: 'COMMISSION' as const }));
+  const dedupRes = dedupCommissionRows(commForDedup as any, { batchMonthByBatchId: batchMonthById });
+  const commissions: AmountClearingCandidate[] & { __extra?: any }[] = [] as any;
+  const commByCarrier = new Map<string, Array<AmountClearingCandidate & { carrier: string; policy_number: string | null; issuer_subscriber_id: string | null; raw_json?: any }>>();
+  for (const row of dedupRes.rows as any[]) {
     const sm = batchMonthById[row.batch_id];
     if (!sm) continue;
     const cc = canonicalCarrier(row.carrier);
