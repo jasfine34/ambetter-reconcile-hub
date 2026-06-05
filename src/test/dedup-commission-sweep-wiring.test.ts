@@ -45,7 +45,7 @@ describe('sweep — commission dedup before amount clearing', () => {
     const rawNet = [apr, may].reduce((s, r) => s + r.commission_amount, 0);
     expect(rawNet).toBe(200); // bug: double-count
 
-    const deduped = dedupCommissionRows([apr, may], {
+    const deduped = dedupCommissionRows([apr, may] as any, {
       batchMonthByBatchId: { 'b-apr': '2026-04', 'b-may': '2026-05' },
     }).rows;
     expect(deduped).toHaveLength(1);
