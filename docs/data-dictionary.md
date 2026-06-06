@@ -134,7 +134,7 @@ Source adapter: `src/lib/normalize.ts`.
 | Broker effective date | broker_effective_date is enforced by the active-BO predicate as a per-record start boundary. It is NOT part of blanket latest-wins cross-batch supersession; same-broker BED-only correction remains a queued follow-up. | Preserve the distinction: per-record active check yes; blanket latest-wins no. |
 | BO member responsibility | Field is approved as BO fallback for zero-vs-positive premium classification when EDE is missing or unusable. | Audit/debug detail may show the value; normal MT chips should not. Ensure directives do not treat the value as commission dollars. |
 | Carrier-recognition | BO broker can keep a cell in scope when EDE shows another AOR, but only if the BO record is active and mapped to a Coverall official AOR. | Enforce NPN-map gate and active-month gate in MT work. |
-| MCE / MT source of truth | MT is intended to become audit source of truth, but MCE is not yet rewired to MT-approved rows. | Certify MT source-to-screen, add audit decisions, then rewire MCE. |
+| MCE / MT source of truth | MT is certified for the Phase A scope and MCE is rewired to MT-approved rows for Phase B. | Treat the MT-approved selector as the current MCE inclusion source; use Phase C workflow state on top. |
 
 ## Directive Rules
 
