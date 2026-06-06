@@ -782,6 +782,17 @@ export default function MemberTimelinePage() {
           </CardContent>
         </Card>
 
+        {outsideMonths.length > 0 && (
+          <div className="border border-amber-400/50 bg-amber-50/50 rounded-lg px-4 py-3" data-testid="mt-range-warning">
+            <div className="flex items-start gap-3 text-sm">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-amber-600" />
+              <div className="font-medium text-foreground">
+                Current batch view: payment evidence comes from the {statementMonthLabel} statement only. {outsideMonths.length} of the selected months fall outside it and may show "unpaid" even if paid in another statement. Switch to "All batches" for cross-statement payment truth.
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center gap-2 flex-wrap text-xs">
           {(() => {
             const dueRows = classifiedRows.filter(r => r.months_due > 0);
