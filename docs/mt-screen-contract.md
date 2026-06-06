@@ -49,7 +49,7 @@ The 9 values: `paid`, `unpaid`, `reversed`, `not_expected_premium_unpaid`, `not_
 - **Meaning:** Commission expected but not received; dispute candidate.
 - **Trigger:** Classifier Rule 3 — fires after payment/reversal/not-ours/pre-eligibility/terminated/stale-source/pending gates clear.
 - **Authoritative layer:** Classifier emits state, but SUBJECT to no-source override.
-- **Couplings:** `Has unpaid`, `unpaid + Net`, `unpaid 0 Net`, `Partially paid` filters; `membersWithUnpaid`; `totalUnpaidMonths`; `months_unpaid`; export status `UNPAID`.
+- **Couplings:** `Has unpaid`, `unpaid - + Net`, `unpaid - 0 Net`, `Partially paid` filters; `membersWithUnpaid`; `totalUnpaidMonths`; `months_unpaid`; export status `UNPAID`.
 - **State-behavior tests:** `mt-stage2-net-premium-classifier.test.ts`; named canary ledger slot 6 (Adam Wicht); `member-timeline-no-source-invariant.test.ts`.
 - **Visual-rendering tests:** MISSING.
 - **Required new tests:** Visual rendering test.
