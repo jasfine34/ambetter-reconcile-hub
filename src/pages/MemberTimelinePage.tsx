@@ -218,6 +218,9 @@ export default function MemberTimelinePage() {
     return buildMonthList(startMonth, endMonth);
   }, [startMonth, endMonth]);
 
+  const outsideMonths = batchScope === 'current' ? monthsOutsideSelectedStatement(monthList, currentBatch?.statement_month) : [];
+  const statementMonthLabel = formatMonthLabel(statementMonthKey(currentBatch?.statement_month) || '');
+
   // Extract a normalized "carrier family" (e.g. "Ambetter from Sunshine Health" -> "ambetter")
   // so commission files (often labeled with the issuer entity) match EDE/BO carrier values.
   const carrierFamily = (raw: string): string => {
