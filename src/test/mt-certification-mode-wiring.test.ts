@@ -13,7 +13,7 @@
  *   flipping back to "unpaid").
  *
  *   We parse the source rather than asserting bare string presence so leftover
- *   comment text cannot satisfy the guard — the regex must match a real call
+ *   comment text cannot satisfy the guard — the assertion must match a real call
  *   expression whose argument object includes `batchMonthByBatchId`.
  */
 import { describe, it, expect } from 'vitest';
