@@ -68,6 +68,9 @@ let _currentRows: MemberTimelineRow[] = [];
 let _currentMonthList: string[] = ['2026-01'];
 let _resolverIndex: any = null;
 let _lookupResolvedFn: (...args: any[]) => any = () => null;
+let _mockStatementMonth: string | null = TEST_STATEMENT_MONTH;
+
+export function setMockStatementMonth(statementMonth: string | null) { _mockStatementMonth = statementMonth; }
 
 export function setMockRows(rows: MemberTimelineRow[], monthList?: string[]) {
   _currentRows = rows;
@@ -80,6 +83,7 @@ export function resetMTMockState() {
   _currentRows = [];
   _resolverIndex = null;
   _lookupResolvedFn = () => null;
+  _mockStatementMonth = TEST_STATEMENT_MONTH;
 }
 
 export function getMockRows() { return _currentRows; }
@@ -89,7 +93,7 @@ export function getMockMonthList() { return _currentMonthList; }
 export function applyMTMocks(vi: any) {
   vi.mock('@/contexts/BatchContext', () => ({
     useBatch: () => ({
-      batches: [{ id: TEST_BATCH_ID, statement_month: TEST_STATEMENT_MONTH }],
+      batches: [{ id: TEST_BATCH_ID, statement_month: _mockStatementMonth }],
       currentBatchId: TEST_BATCH_ID,
       setCurrentBatchId: () => {},
       reconciled: [],
