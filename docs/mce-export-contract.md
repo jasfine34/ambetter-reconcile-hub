@@ -84,9 +84,9 @@ These appear in the rendered table but are NOT written to the vendor CSV.
 
 The contract is satisfied only when all of these pass.
 
-### AC-1 — Vendor Messer CSV reverts to the 12 locked columns (R-MCE-002 / Task #24)
+### AC-1 - Current vendor Messer CSV emits the 12 shipped columns
 
-`MESSER_COLUMNS` contains exactly the 12 labels listed above, in order. `buildMesserCsv` emits exactly those 12 columns; `Estimated Missing Commission` and `Est_Missing_Status` are NOT present in the vendor CSV. The dollar remains as the preview-only `Est. missing commission` (in `INTERNAL_COLUMNS`); the status remains a backing field on `ExportRow` (`_estMissingStatus`) and is NOT re-added as a standalone preview column.
+`MESSER_COLUMNS` contains exactly the 12 labels listed above, in order. `buildMesserCsv` emits exactly those 12 columns; `Estimated Missing Commission` and `Est_Missing_Status` are NOT present in the vendor CSV. The dollar remains as the preview-only `Est. missing commission`; the status remains a backing field on `ExportRow` (`_estMissingStatus`) and is NOT re-added as a standalone preview column. Future C3 will intentionally revise this to 14 columns after the multi-month/operator-comment export ships.
 
 ### AC-2 — Blank-dollar resolution in the preview
 
