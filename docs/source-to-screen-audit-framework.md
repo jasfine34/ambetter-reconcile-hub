@@ -40,7 +40,7 @@ Use these labels when reviewing prior or partial audits against the 100% source 
 For any audit of expected/unpaid/due/missing-commission surfaces, include these negative-control strata. A CLEAN verdict must prove that these rows are absent from outputs where they should not count.
 
 1. **Stale/historical Back Office rows**
-   - BO rows whose `paid_through_date` or `policy_term_date` predates the selected month/range.
+   - BO rows whose active-support dates (`policy_term_date`, `broker_term_date`, or future `broker_effective_date`) make them inactive for the selected month/range. Do not use `paid_through_date` as an active-BO disqualifier; it is a member-premium-payment signal.
    - Expected: do not create current-month due, unpaid, pending, MCE, EBU, or missing-commission rows unless another current source supports the month.
 
 2. **BO ineligible rows**
