@@ -24,10 +24,9 @@ The estimated missing commission dollar is computed and shown INTERNALLY in the 
 - **Official-AOR scope only.** MCE is a carrier inquiry surface. Even when Phase B item 4 rewires MCE to MT-approved rows, the export remains scoped to the official Jason/Coverall/Vix book. MT's all-AOR audit mode does not propagate to this export.
 - **Pre-effective members excluded** (R-MCE-007).
 - **Reversed cells excluded** from the MCE chase; they route to Phase C operator review (R-PAY-010 / R-PAY-012).
-- **manual_review selected-batch debt** (R-MCE-005) remains until Phase B item 4 closes it.
+- MT-approved inclusion source. Post-Phase-B-4a/4b, MCE row inclusion is produced from MT-approved unpaid member-months via the selector/cache path, then cross-batch overlay/enrichment/dollar logic is applied.
+- manual_review cells excluded from auto-chase. Classifier manual_review cells are not part of the MT-approved unpaid selector. Cross-batch overlay rows with manual-review clearing states remain review evidence and should not be treated as ordinary chase rows.
 - **Cross-batch profile enrichment** (R-MCE-003) — best-known descriptive/contact fields are walked across all uploaded batches.
-
-The rewire to MT-approved-row consumption is Phase B item 4 and is OUT of scope for this contract.
 
 ## Vendor Messer CSV — 12 locked columns (R-MCE-002)
 
