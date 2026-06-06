@@ -10,9 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Search, Download, ChevronDown, ChevronLeft, Info, Bug } from 'lucide-react';
+import { Search, Download, ChevronDown, ChevronLeft, Info, Bug, AlertTriangle } from 'lucide-react';
 import { getNormalizedRecords, getAllNormalizedRecordsForMemberTimeline } from '@/lib/persistence';
-import { buildMemberTimeline, buildMemberTimelineExportRows, buildMonthList, formatMonthLabel, applyNoSourceInvariantToMonthCell, type MemberTimelineRow } from '@/lib/memberTimeline';
+import { buildMemberTimeline, buildMemberTimelineExportRows, buildMonthList, formatMonthLabel, applyNoSourceInvariantToMonthCell, type MemberTimelineRow, monthsOutsideSelectedStatement } from '@/lib/memberTimeline';
 import { mergeRecordsToMemberKeys } from '@/lib/canonical/memberKeyMerge';
 import { exportToCSV } from '@/lib/csvParser';
 import { NPN_MAP } from '@/lib/constants';
@@ -217,6 +217,9 @@ export default function MemberTimelinePage() {
     if (startMonth > endMonth) return [];
     return buildMonthList(startMonth, endMonth);
   }, [startMonth, endMonth]);
+
+  const outsideMonths = batchScope === 'current' ? monthsOutsideSelectedStatement(monthList, currentBatch?.statement_month) : [];
+  const statementMonthLabel = formatMonthLabel(statementMonthKey(currentBatch?.statement_month) || '');
 
   // Extract a normalized "carrier family" (e.g. "Ambetter from Sunshine Health" -> "ambetter")
   // so commission files (often labeled with the issuer entity) match EDE/BO carrier values.
@@ -778,6 +781,17 @@ export default function MemberTimelinePage() {
             </div>
           </CardContent>
         </Card>
+
+        {outsideMonths.length > 0 && (
+          <div className="border border-amber-400/50 bg-amber-50/50 rounded-lg px-4 py-3" data-testid="mt-range-warning">
+            <div className="flex items-start gap-3 text-sm">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-amber-600" />
+              <div className="font-medium text-foreground">
+                Current batch view: payment evidence comes from the {statementMonthLabel} statement only. {outsideMonths.length} of the selected months fall outside it and may show "unpaid" even if paid in another statement. Switch to "All batches" for cross-statement payment truth.
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="flex items-center gap-2 flex-wrap text-xs">
           {(() => {
