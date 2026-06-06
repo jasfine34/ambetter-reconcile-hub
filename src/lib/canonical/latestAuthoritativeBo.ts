@@ -215,3 +215,18 @@ export function makeBoRecency(opts?: {
 /** Stable prefix used in cell reason text + preserved by the no-source
  *  invariant guard. Internal — do not leak to vendor CSV exports. */
 export const SUPERSESSION_REASON_PREFIX = 'Superseded by later BO termination';
+
+/**
+ * C2a alignment: suppress owed (unpaid) rows whose policy identity is
+ * terminated for the statement month per the latest authoritative BO overlay.
+ * NEVER suppresses rows with commission evidence (paid; see reversal rule).
+ */
+export function filterLatestBoTerminatedOwedRows<T extends { in_commission?: boolean | null }>(
+  rows: T[],
+  overlay: LatestAuthoritativeBoOverlay,
+  statementMonthStartIso: string,
+): T[] {
+  return rows.filter((r) =>
+    r?.in_commission === true || !isPolicyIdentityTerminatedForMonth(r as any, statementMonthStartIso, overlay),
+  );
+}
