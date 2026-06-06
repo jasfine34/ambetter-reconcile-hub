@@ -111,10 +111,10 @@ State + member-count are necessary but not sufficient. The following remain legi
 4. **Dollar stays unsupported when evidence absent** — row with no state/count evidence → `UNSUPPORTED`, blank dollar. Legitimate `TBD_AMBIGUOUS_PAYEE` / `NO_RATE_ROW` outcomes are not failures.
 5. **PED not BED** — BO-only row with typed `effective_date` ≠ `broker_effective_date` exports the typed `effective_date`.
 
-## Out of scope (Phase B / future)
+## Out of scope / future
 
-- Row-inclusion rewire to MT-approved rows (Phase B item 4)
-- Large MCE-vs-MT residual classification (premium-unpaid, already-paid, NO_MT_CELL, manual_review)
+- Old standalone MCE inclusion builder behavior (retired in Phase B item 4b)
 - All-AOR audit export variant
 - Reversed-recovery export
-- Adding the dollar to the vendor CSV (requires Jason re-unlock)
+- Adding estimated missing commission or status fields to the vendor CSV
+- Phase C3 14-column multi-month submission export until the C3 directive ships
