@@ -17,19 +17,29 @@
  *   expression whose argument object includes `batchMonthByBatchId`.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
+import * as fs from 'fs';
 import { resolve } from 'path';
+
+function extractCallArgs(source: string, fnName: string): string {
+  const start = source.indexOf(fnName + '(');
+  if (start === -1) return '';
+  let depth = 0;
+  let end = -1;
+  for (let j = start + fnName.length; j < source.length; j++) {
+    const ch = source[j];
+    if (ch === '(') depth++;
+    else if (ch === ')') { depth--; if (depth === 0) { end = j; break; } }
+  }
+  return end === -1 ? '' : source.slice(start + fnName.length + 1, end);
+}
+
+const CANARY_TEST_PATH = resolve(__dirname, 'named-canary-ledger.test.ts');
 
 describe('MT certification-mode wiring (named-canary-ledger)', () => {
   it('passes batchMonthByBatchId into getAllNormalizedRecordsForMemberTimeline(...)', () => {
-    const src = readFileSync(
-      resolve(__dirname, 'named-canary-ledger.test.ts'),
-      'utf8',
-    );
-    // Match: getAllNormalizedRecordsForMemberTimeline(  { ... batchMonthByBatchId ... } ... )
-    // Allow multi-line argument object; require the call expression form.
-    const callWithDedup =
-      /getAllNormalizedRecordsForMemberTimeline\s*\(\s*\{[\s\S]*?batchMonthByBatchId[\s\S]*?\}/;
-    expect(src).toMatch(callWithDedup);
+    const src = fs.readFileSync(CANARY_TEST_PATH, 'utf8');
+    const args = extractCallArgs(src, 'getAllNormalizedRecordsForMemberTimeline');
+    expect(args.length).toBeGreaterThan(0); // the call must exist
+    expect(args).toContain('batchMonthByBatchId'); // dedup ctx must be threaded INSIDE the call
   });
 });
