@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Search, Download, ChevronDown, ChevronLeft, Info, Bug } from 'lucide-react';
+import { Search, Download, ChevronDown, ChevronLeft, Info, Bug, AlertTriangle } from 'lucide-react';
 import { getNormalizedRecords, getAllNormalizedRecordsForMemberTimeline } from '@/lib/persistence';
 import { buildMemberTimeline, buildMemberTimelineExportRows, buildMonthList, formatMonthLabel, applyNoSourceInvariantToMonthCell, type MemberTimelineRow, monthsOutsideSelectedStatement } from '@/lib/memberTimeline';
 import { mergeRecordsToMemberKeys } from '@/lib/canonical/memberKeyMerge';
