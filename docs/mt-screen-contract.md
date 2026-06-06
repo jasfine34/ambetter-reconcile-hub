@@ -49,7 +49,7 @@ The 9 values: `paid`, `unpaid`, `reversed`, `not_expected_premium_unpaid`, `not_
 - **Meaning:** Commission expected but not received; dispute candidate.
 - **Trigger:** Classifier Rule 3 — fires after payment/reversal/not-ours/pre-eligibility/terminated/stale-source/pending gates clear.
 - **Authoritative layer:** Classifier emits state, but SUBJECT to no-source override.
-- **Couplings:** `Has unpaid`, `unpaid + Net`, `unpaid 0 Net`, `Partially paid` filters; `membersWithUnpaid`; `totalUnpaidMonths`; `months_unpaid`; export status `UNPAID`.
+- **Couplings:** `Has unpaid`, `unpaid - + Net`, `unpaid - 0 Net`, `Partially paid` filters; `membersWithUnpaid`; `totalUnpaidMonths`; `months_unpaid`; export status `UNPAID`.
 - **State-behavior tests:** `mt-stage2-net-premium-classifier.test.ts`; named canary ledger slot 6 (Adam Wicht); `member-timeline-no-source-invariant.test.ts`.
 - **Visual-rendering tests:** MISSING.
 - **Required new tests:** Visual rendering test.
@@ -204,7 +204,7 @@ Three small badges rendered above each cell when the corresponding source suppor
 
 ### Reversal evidence card (in tooltip + lineage panel)
 
-- **Visible:** Tooltip "Reversal" block with amount, positive TXN, negative TXN, paid-to-date, statement months. Lineage panel "Reversal evidence" card with same fields.
+- **Visible:** Tooltip reversal evidence fields: `Paid:`, `Reversed:`, and `Paid-to-date:`. The tooltip has no separate Reversal heading. The lineage panel renders a Reversal evidence card with the same evidence.
 - **Meaning:** Structured evidence backing the `reversed` cell state.
 - **Trigger:** `MonthCell.reversal_evidence` populated by classifier Rule 1b's `hasReversalPairForMonth` output; merged into displayed `MonthCell` by `MemberTimelinePage.tsx`.
 - **Authoritative layer:** Classifier (data); display (merge + presentation).
@@ -217,7 +217,7 @@ Three small badges rendered above each cell when the corresponding source suppor
 
 ### Member identity row
 
-- **Member name + Policy/Subscriber ID:** Member name displayed; below it Policy Number or Subscriber ID (whichever is canonical). Source: assembly.
+- **Member name + Policy/Subs ID:** Member name displayed; below it Policy Number or Subscriber ID (whichever is canonical). Source: assembly.
 - **`ResolvedBadge`:** Small badge appears when displayed value is `issuer_subscriber_id` AND resolver confirms. Trigger: `lookupResolved` + `ResolvedBadge`. Visual rendering test MISSING — required new test.
 - **`N× FFM`:** Tag like `2× FFM` when `row.ffm_app_ids.length > 1`. Tooltip lists FFM application IDs. Trigger: `collectFfmAppIds` + Class-A fallback index. State-behavior test: `member-timeline-ffm-visible-ui.test.ts`.
 - **Member AOR text:** Displays `current_policy_aor || aor_bucket || '—'` (U+2014 EM DASH). Visual rendering test for fallback order MISSING.
@@ -238,7 +238,7 @@ Three small badges rendered above each cell when the corresponding source suppor
 
 #### Total paid (`$` column)
 
-- **Visible:** `Total $` table column per row plus top summary `Total paid`.
+- **Visible:** `Total $` table column per row plus top summary `Total paid:`.
 - **Meaning:** Sum of commission dollars attributed to due months for the visible timeline cohort. NOT identical to canonical dashboard net paid.
 - **Trigger:** `row.total_paid` from month cells. Debug audit cross-checks via `buildPaidDollarsAudit`.
 - **Authoritative layer:** Assembly + display.
@@ -319,7 +319,7 @@ Where:
 
 ### Summary totals (top of page)
 
-- `Total paid` — sum of `total_paid` across visible rows.
+- `Total paid:` — sum of `total_paid` across visible rows.
 - `Members w/ gaps:` — count of rows with `months_unpaid > 0`.
 - `Unpaid month-events:` — sum of `months_unpaid` across visible rows.
 

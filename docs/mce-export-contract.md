@@ -13,17 +13,20 @@ If a code change makes the visible output disagree with this contract, either th
 
 ## Two-schema separation
 
-The estimated missing commission **dollar** is computed and shown INTERNALLY in the preview only. It is **NOT** included in the vendor Messer CSV unless Jason separately unlocks the vendor schema (Jason, 2026-05-31). The status that drives the preview's "Needs review" / "TBD" / `$X.XX` text (`_estMissingStatus` on `ExportRow`) is a **backing field**, not a standalone preview column.
+Current shipped schema: vendor CSV is exactly the 12 R-MCE-002 columns. Estimated missing commission and `_estMissingStatus` are preview/backing only and are not exported.
+
+Authorized future C3 schema change (not yet shipped): Jason authorized a deliberate 12 -> 14 transition: append "Missing Month(s)" plus one carrier-facing operator-comment column. This is distinct from the reverted unauthorized dollar/status columns. Until C3 lands, this contract remains the 12-column shipped contract.
+
+The estimated missing commission dollar is computed and shown INTERNALLY in the preview only. It is NOT included in the vendor Messer CSV. Jason's authorized C3 vendor-schema unlock is limited to "Missing Month(s)" plus one carrier-facing operator-comment column; it does not authorize exporting dollar/status fields.
 
 ## Row-scope semantics
 
 - **Official-AOR scope only.** MCE is a carrier inquiry surface. Even when Phase B item 4 rewires MCE to MT-approved rows, the export remains scoped to the official Jason/Coverall/Vix book. MT's all-AOR audit mode does not propagate to this export.
 - **Pre-effective members excluded** (R-MCE-007).
 - **Reversed cells excluded** from the MCE chase; they route to Phase C operator review (R-PAY-010 / R-PAY-012).
-- **manual_review selected-batch debt** (R-MCE-005) remains until Phase B item 4 closes it.
+- MT-approved inclusion source. Post-Phase-B-4a/4b, MCE row inclusion is produced from MT-approved unpaid member-months via the selector/cache path, then cross-batch overlay/enrichment/dollar logic is applied.
+- manual_review cells excluded from auto-chase. Classifier manual_review cells are not part of the MT-approved unpaid selector. Cross-batch overlay rows with manual-review clearing states remain review evidence and should not be treated as ordinary chase rows.
 - **Cross-batch profile enrichment** (R-MCE-003) — best-known descriptive/contact fields are walked across all uploaded batches.
-
-The rewire to MT-approved-row consumption is Phase B item 4 and is OUT of scope for this contract.
 
 ## Vendor Messer CSV — 12 locked columns (R-MCE-002)
 
@@ -72,7 +75,7 @@ These appear in the rendered table but are NOT written to the vendor CSV.
 | Net premium bucket | `_netPremiumBucket` | Filter binding |
 | Missing reason | `_missingReason` | `m.issue_type \|\| 'Missing from Commission'` (:1176) |
 | Est. missing commission | `_estimatedMissingCommission` | Bundle 13e resolver amount. Cell display also reads the backing `_estMissingStatus` to render `Needs review` (UNSUPPORTED), `TBD` (TBD_AMBIGUOUS_PAYEE), or `$X.XX` (resolved) — MissingCommissionExportPage.tsx:1557-1567 |
-| Source Type | `_sourceType` | `classifySourceTypeForRow` (Matched / BO Only / EDE Only) |
+| Source Type | `_sourceType` | Post-4a value carried from MT selector as `_mtSourceType` (Matched / BO Only / EDE Only), with defensive fallback to Matched in the page. The old `classifySourceTypeForRow` page-local contract is historical for MCE. |
 | Clearing | `_clearingStatus` | Bundle 13c cross-batch clearing state chip |
 
 `_estMissingStatus` is intentionally NOT a standalone preview column — it is a backing field that drives the dollar cell text.
@@ -81,9 +84,9 @@ These appear in the rendered table but are NOT written to the vendor CSV.
 
 The contract is satisfied only when all of these pass.
 
-### AC-1 — Vendor Messer CSV reverts to the 12 locked columns (R-MCE-002 / Task #24)
+### AC-1 - Current vendor Messer CSV emits the 12 shipped columns
 
-`MESSER_COLUMNS` contains exactly the 12 labels listed above, in order. `buildMesserCsv` emits exactly those 12 columns; `Estimated Missing Commission` and `Est_Missing_Status` are NOT present in the vendor CSV. The dollar remains as the preview-only `Est. missing commission` (in `INTERNAL_COLUMNS`); the status remains a backing field on `ExportRow` (`_estMissingStatus`) and is NOT re-added as a standalone preview column.
+`MESSER_COLUMNS` contains exactly the 12 labels listed above, in order. `buildMesserCsv` emits exactly those 12 columns; `Estimated Missing Commission` and `Est_Missing_Status` are NOT present in the vendor CSV. The dollar remains as the preview-only `Est. missing commission`; the status remains a backing field on `ExportRow` (`_estMissingStatus`) and is NOT re-added as a standalone preview column. Future C3 will intentionally revise this to 14 columns after the multi-month/operator-comment export ships.
 
 ### AC-2 — Blank-dollar resolution in the preview
 
@@ -108,10 +111,10 @@ State + member-count are necessary but not sufficient. The following remain legi
 4. **Dollar stays unsupported when evidence absent** — row with no state/count evidence → `UNSUPPORTED`, blank dollar. Legitimate `TBD_AMBIGUOUS_PAYEE` / `NO_RATE_ROW` outcomes are not failures.
 5. **PED not BED** — BO-only row with typed `effective_date` ≠ `broker_effective_date` exports the typed `effective_date`.
 
-## Out of scope (Phase B / future)
+## Out of scope / future
 
-- Row-inclusion rewire to MT-approved rows (Phase B item 4)
-- Large MCE-vs-MT residual classification (premium-unpaid, already-paid, NO_MT_CELL, manual_review)
+- Old standalone MCE inclusion builder behavior (retired in Phase B item 4b)
 - All-AOR audit export variant
 - Reversed-recovery export
-- Adding the dollar to the vendor CSV (requires Jason re-unlock)
+- Adding estimated missing commission or status fields to the vendor CSV
+- Phase C3 14-column multi-month submission export until the C3 directive ships
