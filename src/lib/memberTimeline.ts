@@ -5,7 +5,7 @@ import { isEDEQualified } from './canonical/edeQualified';
 import { lastActiveMonthForTermDate } from './canonical/termBoundary';
 import { isActiveBackOfficeRecord } from './canonical/isActiveBackOfficeRecord';
 import { getStatementMonthBounds } from './canonical/statementMonthBounds';
-import { monthKeyToFirstOfMonth } from './dateRange';
+import { monthKeyToFirstOfMonth, statementMonthKey } from './dateRange';
 import { pickEdeForServiceMonth } from './canonical/edeMonthPicker';
 import { NPN_MAP } from './constants';
 import { isCoverallAORByName } from './agents';
@@ -13,6 +13,13 @@ import {
   isPolicyIdentityTerminatedForMonth,
   type LatestAuthoritativeBoOverlay,
 } from './canonical/latestAuthoritativeBo';
+
+/** Months in the selected range that fall outside the selected statement batch's month. */
+export function monthsOutsideSelectedStatement(monthList: string[], statementMonth: string | null | undefined): string[] {
+  const sm = statementMonthKey(statementMonth);
+  if (!sm) return []; // unknown statement month -> suppress warning, never guess
+  return monthList.filter((m) => m !== sm);
+}
 
 
 
