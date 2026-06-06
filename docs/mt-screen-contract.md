@@ -255,6 +255,45 @@ Three small badges rendered above each cell when the corresponding source suppor
 - **Visual-rendering tests:** MISSING.
 - **Required new tests:** Visual rendering test asserting the `CR×{N}` text format AND count correctness.
 
+## Current-batch range warning banner
+
+### Trigger predicate
+
+The banner renders when **all** of the following are true:
+- `batchScope === 'current'` (the batch scope filter is set to "Current batch").
+- `monthsOutsideSelectedStatement(monthList, currentBatch?.statement_month)` returns a non-empty array.
+
+The canonical helper `monthsOutsideSelectedStatement` lives in `src/lib/memberTimeline.ts` and is imported into `MemberTimelinePage.tsx`. It compares the user-selected month range against the current batch's statement month and returns the months that fall outside it.
+
+### Suppress conditions
+
+The banner is **absent** when any of the following hold:
+- `batchScope === 'all'` ("All batches" scope).
+- No `currentBatch` is available.
+- `currentBatch.statement_month` is `null` or unparseable.
+- `monthList` is empty (no month range selected).
+
+### Verbatim banner copy
+
+The rendered text is byte-equal to the following (interpolations noted):
+
+> Current batch view: payment evidence comes from the {statementMonthLabel} statement only. {n} of the selected months fall outside it and may show "unpaid" even if paid in another statement. Switch to "All batches" for cross-statement payment truth.
+
+Where:
+- `{statementMonthLabel}` = `formatMonthLabel(statementMonthKey(currentBatch.statement_month))`
+- `{n}` = `outsideMonths.length`
+
+### Semantic note (locked)
+
+> Current-batch mode is a selected-statement inspection view; All-batches mode is the certified cross-statement payment view.
+
+### Rendering details
+
+- The banner element carries `data-testid="mt-range-warning"`.
+- The banner is **non-dismissible**.
+- Because the default current-batch range is year-to-date, the banner **will show by default** in current-batch mode when the selected range spans months outside the current statement.
+
+
 ## Summary / filter surfaces
 
 **Contract policy on filter chip and summary counts:**
