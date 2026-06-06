@@ -15,8 +15,8 @@ const boRows: any[] = [
     batch_id: BATCH,
     source_type: 'BACK_OFFICE',
     carrier: CARRIER,
-    policy_number: 'P-TERM',
-    issuer_subscriber_id: 'S-TERM',
+    policy_number: 'PTERM001',
+    issuer_subscriber_id: 'STERM001',
     policy_term_date: '2026-01-15', // terminated before Feb start
     broker_term_date: null,
   },
@@ -25,8 +25,8 @@ const boRows: any[] = [
     batch_id: BATCH,
     source_type: 'BACK_OFFICE',
     carrier: CARRIER,
-    policy_number: 'P-LIVE',
-    issuer_subscriber_id: 'S-LIVE',
+    policy_number: 'PLIVE002',
+    issuer_subscriber_id: 'SLIVE002',
     policy_term_date: null,
     broker_term_date: null,
   },
@@ -36,16 +36,16 @@ const batchMonthByBatchId = new Map<string, string>([[BATCH, '2026-02']]);
 const overlay = latestAuthoritativeBoTermDates(boRows, makeBoRecency({ batchMonthByBatchId }));
 
 const termedUnpaid = {
-  carrier: CARRIER, policy_number: 'P-TERM', issuer_subscriber_id: 'S-TERM', in_commission: false,
+  carrier: CARRIER, policy_number: 'PTERM001', issuer_subscriber_id: 'STERM001', in_commission: false,
 };
 const termedPaid = {
-  carrier: CARRIER, policy_number: 'P-TERM', issuer_subscriber_id: 'S-TERM', in_commission: true,
+  carrier: CARRIER, policy_number: 'PTERM001', issuer_subscriber_id: 'STERM001', in_commission: true,
 };
 const liveUnpaid = {
-  carrier: CARRIER, policy_number: 'P-LIVE', issuer_subscriber_id: 'S-LIVE', in_commission: false,
+  carrier: CARRIER, policy_number: 'PLIVE002', issuer_subscriber_id: 'SLIVE002', in_commission: false,
 };
 const liveNullCommission = {
-  carrier: CARRIER, policy_number: 'P-LIVE', issuer_subscriber_id: 'S-LIVE', in_commission: null as any,
+  carrier: CARRIER, policy_number: 'PLIVE002', issuer_subscriber_id: 'SLIVE002', in_commission: null as any,
 };
 
 describe('filterLatestBoTerminatedOwedRows', () => {
