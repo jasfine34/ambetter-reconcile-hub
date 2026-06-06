@@ -319,7 +319,7 @@ Where:
 
 ### Summary totals (top of page)
 
-- `Total paid` — sum of `total_paid` across visible rows.
+- `Total paid:` — sum of `total_paid` across visible rows.
 - `Members w/ gaps:` — count of rows with `months_unpaid > 0`.
 - `Unpaid month-events:` — sum of `months_unpaid` across visible rows.
 
