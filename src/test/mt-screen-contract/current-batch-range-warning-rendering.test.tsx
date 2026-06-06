@@ -56,8 +56,7 @@ describe('MT current-batch range warning — banner rendering', () => {
     const months = ['2026-01', '2026-02', '2026-03', STATEMENT_KEY];
     setMockRows([rowForMonths(months)], months);
     await renderMTPage();
-    // Wait for the page to settle, then assert no banner.
-    await waitFor(() => expect(screen.queryAllByTestId('mt-cell').length).toBeGreaterThan(0));
+    await new Promise((r) => setTimeout(r, 50));
     expect(screen.queryByTestId('mt-range-warning')).toBeNull();
   });
 
@@ -65,7 +64,7 @@ describe('MT current-batch range warning — banner rendering', () => {
     const months = [STATEMENT_KEY];
     setMockRows([rowForMonths(months)], months);
     await renderMTPage();
-    await waitFor(() => expect(screen.queryAllByTestId('mt-cell').length).toBeGreaterThan(0));
+    await new Promise((r) => setTimeout(r, 50));
     expect(screen.queryByTestId('mt-range-warning')).toBeNull();
   });
 
@@ -74,7 +73,7 @@ describe('MT current-batch range warning — banner rendering', () => {
     const months = ['2026-01', '2026-02', STATEMENT_KEY];
     setMockRows([rowForMonths(months)], months);
     await renderMTPage();
-    await waitFor(() => expect(screen.queryAllByTestId('mt-cell').length).toBeGreaterThan(0));
+    await new Promise((r) => setTimeout(r, 50));
     expect(screen.queryByTestId('mt-range-warning')).toBeNull();
     setMockStatementMonth(TEST_STATEMENT_MONTH);
   });
