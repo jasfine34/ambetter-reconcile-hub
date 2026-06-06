@@ -217,7 +217,7 @@ Three small badges rendered above each cell when the corresponding source suppor
 
 ### Member identity row
 
-- **Member name + Policy/Subscriber ID:** Member name displayed; below it Policy Number or Subscriber ID (whichever is canonical). Source: assembly.
+- **Member name + Policy/Subs ID:** Member name displayed; below it Policy Number or Subscriber ID (whichever is canonical). Source: assembly.
 - **`ResolvedBadge`:** Small badge appears when displayed value is `issuer_subscriber_id` AND resolver confirms. Trigger: `lookupResolved` + `ResolvedBadge`. Visual rendering test MISSING — required new test.
 - **`N× FFM`:** Tag like `2× FFM` when `row.ffm_app_ids.length > 1`. Tooltip lists FFM application IDs. Trigger: `collectFfmAppIds` + Class-A fallback index. State-behavior test: `member-timeline-ffm-visible-ui.test.ts`.
 - **Member AOR text:** Displays `current_policy_aor || aor_bucket || '—'` (U+2014 EM DASH). Visual rendering test for fallback order MISSING.
