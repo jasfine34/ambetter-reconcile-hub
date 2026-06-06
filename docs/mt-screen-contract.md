@@ -204,7 +204,7 @@ Three small badges rendered above each cell when the corresponding source suppor
 
 ### Reversal evidence card (in tooltip + lineage panel)
 
-- **Visible:** Tooltip "Reversal" block with amount, positive TXN, negative TXN, paid-to-date, statement months. Lineage panel "Reversal evidence" card with same fields.
+- **Visible:** Tooltip reversal evidence fields: `Paid:`, `Reversed:`, and `Paid-to-date:`. The tooltip has no separate Reversal heading. The lineage panel renders a Reversal evidence card with the same evidence.
 - **Meaning:** Structured evidence backing the `reversed` cell state.
 - **Trigger:** `MonthCell.reversal_evidence` populated by classifier Rule 1b's `hasReversalPairForMonth` output; merged into displayed `MonthCell` by `MemberTimelinePage.tsx`.
 - **Authoritative layer:** Classifier (data); display (merge + presentation).
