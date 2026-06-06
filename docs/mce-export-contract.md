@@ -13,7 +13,11 @@ If a code change makes the visible output disagree with this contract, either th
 
 ## Two-schema separation
 
-The estimated missing commission **dollar** is computed and shown INTERNALLY in the preview only. It is **NOT** included in the vendor Messer CSV unless Jason separately unlocks the vendor schema (Jason, 2026-05-31). The status that drives the preview's "Needs review" / "TBD" / `$X.XX` text (`_estMissingStatus` on `ExportRow`) is a **backing field**, not a standalone preview column.
+Current shipped schema: vendor CSV is exactly the 12 R-MCE-002 columns. Estimated missing commission and `_estMissingStatus` are preview/backing only and are not exported.
+
+Authorized future C3 schema change (not yet shipped): Jason authorized a deliberate 12 -> 14 transition: append "Missing Month(s)" plus one carrier-facing operator-comment column. This is distinct from the reverted unauthorized dollar/status columns. Until C3 lands, this contract remains the 12-column shipped contract.
+
+The estimated missing commission dollar is computed and shown INTERNALLY in the preview only. It is NOT included in the vendor Messer CSV. Jason's authorized C3 vendor-schema unlock is limited to "Missing Month(s)" plus one carrier-facing operator-comment column; it does not authorize exporting dollar/status fields.
 
 ## Row-scope semantics
 
