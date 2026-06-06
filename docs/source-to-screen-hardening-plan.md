@@ -1,6 +1,6 @@
 # Source-to-Screen Hardening Plan
 
-Status: planning artifact for Claude/Codex review.
+Status: historical guardrail plan. MT certification and the MCE rewire have since shipped for the Ambetter Phase A/B scope. Keep this document for field-semantics lessons, but do not use its pre-certification status statements as current implementation truth; cite ROADMAP.md and final verdicts instead.
 
 This is not a standalone Lovable build directive. It is a guardrail plan for preventing more field-semantics mistakes before Member Timeline is certified and before MCE is rewired to consume MT-approved rows.
 
