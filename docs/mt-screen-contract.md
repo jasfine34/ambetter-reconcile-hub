@@ -238,7 +238,7 @@ Three small badges rendered above each cell when the corresponding source suppor
 
 #### Total paid (`$` column)
 
-- **Visible:** `Total $` table column per row plus top summary `Total paid`.
+- **Visible:** `Total $` table column per row plus top summary `Total paid:`.
 - **Meaning:** Sum of commission dollars attributed to due months for the visible timeline cohort. NOT identical to canonical dashboard net paid.
 - **Trigger:** `row.total_paid` from month cells. Debug audit cross-checks via `buildPaidDollarsAudit`.
 - **Authoritative layer:** Assembly + display.
