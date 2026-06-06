@@ -75,7 +75,7 @@ These appear in the rendered table but are NOT written to the vendor CSV.
 | Net premium bucket | `_netPremiumBucket` | Filter binding |
 | Missing reason | `_missingReason` | `m.issue_type \|\| 'Missing from Commission'` (:1176) |
 | Est. missing commission | `_estimatedMissingCommission` | Bundle 13e resolver amount. Cell display also reads the backing `_estMissingStatus` to render `Needs review` (UNSUPPORTED), `TBD` (TBD_AMBIGUOUS_PAYEE), or `$X.XX` (resolved) — MissingCommissionExportPage.tsx:1557-1567 |
-| Source Type | `_sourceType` | `classifySourceTypeForRow` (Matched / BO Only / EDE Only) |
+| Source Type | `_sourceType` | Post-4a value carried from MT selector as `_mtSourceType` (Matched / BO Only / EDE Only), with defensive fallback to Matched in the page. The old `classifySourceTypeForRow` page-local contract is historical for MCE. |
 | Clearing | `_clearingStatus` | Bundle 13c cross-batch clearing state chip |
 
 `_estMissingStatus` is intentionally NOT a standalone preview column — it is a backing field that drives the dollar cell text.
