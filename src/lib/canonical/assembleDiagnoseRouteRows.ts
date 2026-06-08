@@ -145,6 +145,7 @@ function synthesizeEvidenceRow(
   recs: NormalizedRecord[],
   serviceMonth: string,
   scope: TargetScope,
+  batchMonthByBatchId: Record<string, string>,
 ): Record<string, unknown> {
   const sample =
     recs.find((r) => r.source_type === 'BACK_OFFICE') ??
@@ -157,11 +158,23 @@ function synthesizeEvidenceRow(
     (sample as any)?.raw_json?.['client_state'] ??
     (sample as any)?.client_state_full ??
     null;
-  const memberCount =
-    (sample as any)?.raw_json?.['member_count'] ??
-    (sample as any)?.raw_json?.['covered_member_count'] ??
-    (sample as any)?.raw_json?.['Members'] ??
-    null;
+  // C2b-1 member-count corrective (R-CARR-007): route the scoped member's
+  // records through the canonical adapter + resolver. targetBatchMonth is
+  // LOCKED to the row's serviceMonth — never the latest month — so a Feb
+  // assembler row never inherits Mar's count from the all-batch cache.
+  // No default-to-1; an unresolved/manual_review result emits null so the
+  // resolver reports MISSING_MEMBER_COUNT legitimately (Stage 2 will route
+  // manual_review separately).
+  const countRecords = buildPolicyMemberCountRecords({
+    normalizedRecords: recs as any,
+    batchMonthById: batchMonthByBatchId,
+  });
+  const memberCountRes = resolvePolicyMemberCountForCompGrid({
+    records: countRecords,
+    targetBatchMonth: serviceMonth,
+    targetServiceMonths: [serviceMonth],
+  });
+  const memberCount = memberCountRes.status === 'resolved' ? memberCountRes.memberCount : null;
   const commissionRec = recs.find(
     (r) => r.source_type === 'COMMISSION' && !!(r as any).pay_entity,
   );
