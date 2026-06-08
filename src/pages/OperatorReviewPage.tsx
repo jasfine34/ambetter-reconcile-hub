@@ -403,20 +403,20 @@ export default function OperatorReviewPage() {
             <span className="text-sm">No rows match the current filter.</span>
           </div>
         ) : (
-          <div className="border rounded-lg bg-card">
+          <MirroredScrollTable>
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_hsl(var(--border))]">
                 <TableRow>
-                  <TableHead>Member</TableHead>
-                  <TableHead>Scope</TableHead>
-                  <TableHead>Service month</TableHead>
-                  <TableHead>Pop</TableHead>
-                  <TableHead>Route</TableHead>
-                  <TableHead>FYI</TableHead>
-                  <TableHead>Amount evidence</TableHead>
-                  <TableHead>DMI</TableHead>
-                  <TableHead>Premium / Count</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead className="bg-card">Member</TableHead>
+                  <TableHead className="bg-card">Scope</TableHead>
+                  <TableHead className="bg-card">Service month</TableHead>
+                  <TableHead className="bg-card">Pop</TableHead>
+                  <TableHead className="bg-card">Route</TableHead>
+                  <TableHead className="bg-card">Actions</TableHead>
+                  <TableHead className="bg-card">FYI</TableHead>
+                  <TableHead className="bg-card">Amount evidence</TableHead>
+                  <TableHead className="bg-card">DMI</TableHead>
+                  <TableHead className="bg-card">Premium / Count</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -444,27 +444,14 @@ export default function OperatorReviewPage() {
                       <TableCell className="text-xs">
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Badge variant={ROUTE_VARIANT[decision.route]} data-testid="route-badge">
-                              {decision.route}
-                            </Badge>
+                            <span className="inline-block">
+                              <Badge variant={ROUTE_VARIANT[decision.route]} data-testid="route-badge">
+                                {decision.route}
+                              </Badge>
+                            </span>
                           </TooltipTrigger>
                           <TooltipContent>{decision.rationale}</TooltipContent>
                         </Tooltip>
-                      </TableCell>
-                      <TableCell className="text-xs space-x-1">
-                        {fyi.length === 0 ? <span className="text-muted-foreground">—</span> : null}
-                        {fyi.map((f) => (
-                          <Badge key={f} variant="outline" data-testid="fyi-badge">{f}</Badge>
-                        ))}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <AmountEvidence facts={r.facts} />
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <DmiEvidence facts={r.facts} />
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <PremiumCountEvidence facts={r.facts} />
                       </TableCell>
                       <TableCell className="text-xs space-x-1">
                         {actions.map((spec) => (
@@ -483,13 +470,29 @@ export default function OperatorReviewPage() {
                           </Button>
                         ))}
                       </TableCell>
+                      <TableCell className="text-xs space-x-1">
+                        {fyi.length === 0 ? <span className="text-muted-foreground">—</span> : null}
+                        {fyi.map((f) => (
+                          <Badge key={f} variant="outline" data-testid="fyi-badge">{f}</Badge>
+                        ))}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        <AmountEvidence facts={r.facts} />
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        <DmiEvidence facts={r.facts} />
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        <PremiumCountEvidence facts={r.facts} />
+                      </TableCell>
                     </TableRow>
                   );
                 })}
               </TableBody>
             </Table>
-          </div>
+          </MirroredScrollTable>
         )}
+
 
         <Dialog open={prompt !== null} onOpenChange={(open) => { if (!open && !prompt?.submitting) setPrompt(null); }}>
           <DialogContent data-testid="hold-prompt">
