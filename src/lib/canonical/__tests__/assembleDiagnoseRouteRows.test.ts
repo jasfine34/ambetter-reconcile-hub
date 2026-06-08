@@ -276,6 +276,10 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
 
   it('1+2 emits unpaid/paid rows with correct populations and skips not_expected_*', () => {
     const { rows, diagnostics } = run();
+    // eslint-disable-next-line no-console
+    console.log('DBG rows', rows.map(r => ({ rowKey: r.rowKey, scope: r.targetScope, stable: r.stableMemberKey, pop: r.population, state: r.facts.premium.kind })));
+    // eslint-disable-next-line no-console
+    console.log('DBG diag', diagnostics);
     const m1Coverall = findRow(rows, 'M1', 'Coverall');
     expect(m1Coverall).toBeDefined();
     expect(m1Coverall!.population).toBe(1);
