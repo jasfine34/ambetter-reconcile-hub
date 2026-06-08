@@ -119,6 +119,7 @@ function bo(member: string, opts: Partial<NormalizedRecord> & {
     agent_npn: opts.npn,
     agent_name: opts.brokerName,
     net_premium: opts.net_premium ?? 100,
+    paid_through_date: opts.paid_through_date ?? '2026-04-30',
     raw_json: {
       'Broker Name': opts.brokerName,
       'issuer': 'Ambetter',
