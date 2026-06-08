@@ -1888,31 +1888,43 @@ export default function DashboardPage() {
                 <MetricCard title="Paid: Commission Statement Only" value={metrics.commissionOnly} icon={<FileText className="h-4 w-4" />} variant="warning" onClick={() => setDrilldown('commissionOnly')} tooltip={{ text: "Members appearing only on commission statements (no EDE, no active BO).", why: "Commission-only ghosts — typically trailing $1 retention payments on legacy books." }} />
                 <MetricCard title="Unpaid: Back Office Only" value={metrics.backOfficeOnly} icon={<Building2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('backOfficeOnly')} tooltip={{ text: "Members active in Back Office, not in EDE, not yet paid.", why: "May represent missed enrollments or future revenue not yet realized." }} />
                 <div className="relative">
-                  <MetricCard
-                    title="Expected But Unpaid"
-                    value={metrics.adjustedUnpaidExpected}
-                    icon={<XCircle className="h-4 w-4" />}
-                    variant="destructive"
-                    onClick={() => setDrilldown('unpaidExpected')}
-                    tooltip={{ text: "Members in the expected-payment universe (Matched / BO Only / EDE Only) that were not paid, after applying cross-batch payment clearings.", why: "Primary recovery target — expected revenue that was not received." }}
-                    splits={(() => {
-                      const o = metrics.adjustedUnpaidOwnerSplit;
-                      return [
-                        { label: 'JF', value: o.JF },
-                        { label: 'EF', value: o.EF },
-                        { label: 'BS', value: o.BS },
-                        { label: 'Other', value: o.Other },
-                      ].filter((s) => s.value > 0);
-                    })()}
-                  />
-                  {metrics.sourceCoverageReviewRows.length > 0 && (
-                    <Badge
-                      data-testid="source-coverage-ebu-needs-review-chip"
-                      className="absolute top-2 right-2 border-amber-300 bg-amber-50 text-amber-700"
-                      variant="outline"
+                  {metrics.latestBoLoading ? (
+                    <div
+                      className="rounded-xl border p-5 text-left bg-muted/30 border-muted text-muted-foreground text-sm"
+                      data-testid="source-coverage-ebu-latest-bo-loading"
                     >
-                      Needs review: {metrics.sourceCoverageReviewRows.length}
-                    </Badge>
+                      <div className="font-medium text-foreground mb-1">Expected But Unpaid</div>
+                      Latest-BO alignment loading…
+                    </div>
+                  ) : (
+                    <>
+                      <MetricCard
+                        title="Expected But Unpaid"
+                        value={metrics.adjustedUnpaidExpected}
+                        icon={<XCircle className="h-4 w-4" />}
+                        variant="destructive"
+                        onClick={() => setDrilldown('unpaidExpected')}
+                        tooltip={{ text: "Members in the expected-payment universe (Matched / BO Only / EDE Only) that were not paid, after applying cross-batch payment clearings.", why: "Primary recovery target — expected revenue that was not received." }}
+                        splits={(() => {
+                          const o = metrics.adjustedUnpaidOwnerSplit;
+                          return [
+                            { label: 'JF', value: o.JF },
+                            { label: 'EF', value: o.EF },
+                            { label: 'BS', value: o.BS },
+                            { label: 'Other', value: o.Other },
+                          ].filter((s) => s.value > 0);
+                        })()}
+                      />
+                      {metrics.sourceCoverageReviewRows.length > 0 && (
+                        <Badge
+                          data-testid="source-coverage-ebu-needs-review-chip"
+                          className="absolute top-2 right-2 border-amber-300 bg-amber-50 text-amber-700"
+                          variant="outline"
+                        >
+                          Needs review: {metrics.sourceCoverageReviewRows.length}
+                        </Badge>
+                      )}
+                    </>
                   )}
                 </div>
                 <MetricCard
