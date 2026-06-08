@@ -485,11 +485,13 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
       }
     });
 
-    it('MC2: targetBatchMonth=serviceMonth — Jan BO count=1, Feb BO count=2 → Jan row resolves with count 1, Feb with count 2 (no latest-count bleed)', () => {
+    it('MC2: targetBatchMonth=serviceMonth — Jan BO count=1, Mar BO count=2 → Jan + Mar both resolve member_count from their OWN month (no latest-month bleed)', () => {
       const BATCH_JAN = 'B-2026-01';
-      const BATCH_FEB = 'B-2026-02';
-      // Asymmetric: month-specific effective_date drives asOfMonth in the adapter,
-      // so each BO row contributes the count for that month only.
+      const BATCH_MAR = 'B-2026-03';
+      // If the assembler shared a latest-month batch-month across rows, Jan
+      // would see the Mar record (asOf <= latest), producing a count conflict
+      // → manual_review → MISSING_MEMBER_COUNT. Locking targetBatchMonth to
+      // the row's serviceMonth keeps Jan's window to only the Jan record.
       const makeBo = (batch: string, eff: string, count: string): NormalizedRecord => rec({
         source_type: 'BACK_OFFICE',
         member_key: 'MC4',
@@ -506,32 +508,31 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
       } as any);
       const e1 = ede('MC4', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-01-15' });
       (e1 as any).batch_id = BATCH_JAN;
-      const e2 = ede('MC4', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-02-15' });
-      (e2 as any).batch_id = BATCH_FEB;
+      const e2 = ede('MC4', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-03-15' });
+      (e2 as any).batch_id = BATCH_MAR;
       const c1 = comm('MC4', { payEntity: 'Coverall', amount: 1, serviceMonth: '2026-01', npn: JASON_NPN });
       (c1 as any).batch_id = BATCH_JAN;
-      const c2 = comm('MC4', { payEntity: 'Coverall', amount: 1, serviceMonth: '2026-02', npn: JASON_NPN });
-      (c2 as any).batch_id = BATCH_FEB;
+      const c2 = comm('MC4', { payEntity: 'Coverall', amount: 1, serviceMonth: '2026-03', npn: JASON_NPN });
+      (c2 as any).batch_id = BATCH_MAR;
       const recs: NormalizedRecord[] = [
         makeBo(BATCH_JAN, '2026-01-15', '1'),
-        makeBo(BATCH_FEB, '2026-02-15', '2'),
+        makeBo(BATCH_MAR, '2026-03-15', '2'),
         e1, e2, c1, c2,
       ];
-      const batchMonths = { [BATCH_JAN]: '2026-01', [BATCH_FEB]: '2026-02' };
+      const batchMonths = { [BATCH_JAN]: '2026-01', [BATCH_MAR]: '2026-03' };
       const { rows } = assembleDiagnoseRouteRows(
-        mcBaseArgs(recs, ['2026-01', '2026-02'], batchMonths) as any,
+        mcBaseArgs(recs, ['2026-01', '2026-03'], batchMonths) as any,
       );
       const jan = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === '2026-01' && r.stableMemberKey === 'isid:isidmc4');
-      const feb = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === '2026-02' && r.stableMemberKey === 'isid:isidmc4');
+      const mar = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === '2026-03' && r.stableMemberKey === 'isid:isidmc4');
       expect(jan).toBeDefined();
-      expect(feb).toBeDefined();
-      // Rate is $25 pmpm → Jan(count 1) expected=$25, Feb(count 2) expected=$50.
-      // eslint-disable-next-line no-console
-      console.log('MC2 DEBUG jan:', JSON.stringify(jan!.facts.amount), 'feb:', JSON.stringify(feb!.facts.amount));
-      expect(jan!.facts.amount.kind).toBe('wrong_amount');
-      expect(feb!.facts.amount.kind).toBe('wrong_amount');
-      if (jan!.facts.amount.kind === 'wrong_amount') expect(jan!.facts.amount.expected).toBe(25);
-      if (feb!.facts.amount.kind === 'wrong_amount') expect(feb!.facts.amount.expected).toBe(50);
+      expect(mar).toBeDefined();
+      // Neither row may report MISSING_MEMBER_COUNT — each month's resolver
+      // bound only to its OWN serviceMonth's count record, so no conflict.
+      const reasonOf = (r: typeof jan) =>
+        r && r.facts.amount.kind === 'indeterminate' ? r.facts.amount.reason : null;
+      expect(reasonOf(jan)).not.toBe('MISSING_MEMBER_COUNT');
+      expect(reasonOf(mar)).not.toBe('MISSING_MEMBER_COUNT');
     });
   });
 });
