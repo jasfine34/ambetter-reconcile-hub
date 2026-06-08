@@ -616,6 +616,7 @@ function MirroredScrollTable({ children }: { children: React.ReactNode }) {
     if (!el) return;
     const measure = () => setInnerWidth(el.scrollWidth);
     measure();
+    if (typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     if (el.firstElementChild) ro.observe(el.firstElementChild as Element);
