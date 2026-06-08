@@ -267,8 +267,8 @@ describe('OperatorReviewPage — Stage 3 hold actions + run-cycle', () => {
   it('OR3: reason-code select offers ONLY REASON_CODES_BY_TYPE[hold_premium] entries', async () => {
     // jsdom polyfills required for Radix Select pointer interactions.
     if (!(globalThis as any).PointerEvent) {
-      (globalThis as any).PointerEvent = class extends Event {
-        constructor(type: string, props: any = {}) { super(type, props); Object.assign(this, props); }
+      (globalThis as any).PointerEvent = class PE {
+        constructor(public type: string, public init: any = {}) { Object.assign(this, init); }
       } as any;
     }
     if (!(Element.prototype as any).hasPointerCapture) {
