@@ -79,11 +79,19 @@ export interface CrossEntitySatisfiedFact {
   amountStatus: AmountStatus;
 }
 
+export type MemberCountFact =
+  | { status: 'ok' }
+  | { status: 'unresolved' }
+  | { status: 'manual_review'; reason: 'member_count_manual_review'; conflicts?: number[] };
+
 export interface BlockerFacts {
   premium: PremiumFact;
   dmi: DmiFact;
   crossEntitySatisfied: CrossEntitySatisfiedFact;
   amount: AmountStatus;
+  /** C2b-1 Stage 2 (R-CARR-007). Optional + additive — absent or
+   *  `{status:'ok'}` leaves all existing routes unchanged. */
+  memberCount?: MemberCountFact;
 }
 
 // ----- Inputs --------------------------------------------------------------
