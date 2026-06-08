@@ -26,9 +26,10 @@ vi.mock('@/integrations/supabase/client', () => ({
   supabase: { from: () => ({ select: () => ({ eq: () => ({ order: () => ({ range: () => Promise.resolve({ data: [], error: null }) }) }) }) }), rpc: () => Promise.resolve({ data: null, error: null }) },
 }));
 
+const __batches = [{ id: 'b1', statement_month: '2026-02-01' }];
 vi.mock('@/contexts/BatchContext', () => ({
   useBatch: () => ({
-    batches: [{ id: 'b1', statement_month: '2026-02-01' }],
+    batches: __batches,
     resolverIndex: null,
   }),
 }));
