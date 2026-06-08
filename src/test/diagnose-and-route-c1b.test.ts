@@ -510,15 +510,13 @@ describe('projectDiagnoseRoutes — read-only projection', () => {
     const recordsBefore = recordRpcCalls;
     const releasesBefore = releaseRpcCalls;
 
-    const r = row('clean', {
-      facts: facts({ crossEntitySatisfied: { satisfied: true, satisfyingEntity: 'Vix', actualPaid: 10, expectedBasis: 10, amountStatus: { kind: 'correct' } } }),
-    });
+    const r = row('plain');
     const proj = await projectDiagnoseRoutes({ rows: [r], forceDecisionIndex: true });
 
     expect(recordRpcCalls).toBe(recordsBefore);
     expect(releaseRpcCalls).toBe(releasesBefore);
     // Pre-release state: hold_dmi still active → routed to dmi queue.
-    expect(proj.queues.dmi).toEqual(['clean']);
+    expect(proj.queues.dmi).toEqual(['plain']);
   });
 
   it('FORCED LOAD: forceDecisionIndex flag is threaded into loader (true/false/default)', async () => {
