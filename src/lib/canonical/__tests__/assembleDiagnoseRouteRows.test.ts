@@ -526,6 +526,8 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
       expect(jan).toBeDefined();
       expect(feb).toBeDefined();
       // Rate is $25 pmpm → Jan(count 1) expected=$25, Feb(count 2) expected=$50.
+      // eslint-disable-next-line no-console
+      console.log('MC2 DEBUG jan:', JSON.stringify(jan!.facts.amount), 'feb:', JSON.stringify(feb!.facts.amount));
       expect(jan!.facts.amount.kind).toBe('wrong_amount');
       expect(feb!.facts.amount.kind).toBe('wrong_amount');
       if (jan!.facts.amount.kind === 'wrong_amount') expect(jan!.facts.amount.expected).toBe(25);
