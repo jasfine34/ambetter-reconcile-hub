@@ -79,9 +79,10 @@ describe('C2a T6 — useLatestBoOverlay caching + loading', () => {
     // One render → one cache call. Stage 3 hook must NOT bypass the cache.
     expect(projectionSpy).toHaveBeenCalledTimes(1);
     // Cache call carries the dedup ctx (batchMonthByBatchId) via the loader.
-    const arg = projectionSpy.mock.calls[0][0];
+    const arg = projectionSpy.mock.calls[0]?.[0];
+    expect(arg).toBeDefined();
     expect(arg).toHaveProperty('allBatchesDataVersion', 'dv-stable-token');
     expect(arg).toHaveProperty('resolverIndex');
-    expect(typeof arg.loader).toBe('function');
+    expect(typeof arg!.loader).toBe('function');
   });
 });
