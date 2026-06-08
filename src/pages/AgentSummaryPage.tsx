@@ -360,6 +360,16 @@ export default function AgentSummaryPage() {
         {EBU_BATCH_SCOPE_DISCLAIMER}
       </p>
 
+      {latestBoLoading && (
+        <div
+          data-testid="agent-summary-latest-bo-loading"
+          className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground"
+        >
+          Latest-BO alignment loading… Unpaid, Needs Review, and Est. Missing columns will refresh once the
+          cross-batch supersession overlay is ready. CSV export is disabled until then.
+        </div>
+      )}
+
       <div className="grid grid-cols-3 gap-4">
         {agentData.map(a => (
           <MetricCard
@@ -370,7 +380,11 @@ export default function AgentSummaryPage() {
           />
         ))}
       </div>
-      <DataTable data={tableData} columns={columns} exportFileName="agent_summary.csv" />
+      <DataTable
+        data={tableData}
+        columns={columns}
+        exportFileName={latestBoLoading ? undefined : 'agent_summary.csv'}
+      />
     </div>
   );
 }
