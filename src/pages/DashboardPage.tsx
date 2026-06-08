@@ -374,6 +374,46 @@ export default function DashboardPage() {
   const priorMonth = coveredMonths[0] ?? '';
   const statementMonth = coveredMonths[1] ?? '';
 
+  // C2a — Latest-BO supersession overlay for secondary-surface alignment.
+  // Built from the SAME all-batch projection MCE uses (see
+  // src/lib/canonical/mtApprovedMceSelector.ts:187-188), so EBU surfaces
+  // here gate owed/unpaid rows against the cross-batch latest authoritative
+  // BO termination overlay — NOT the per-batch clearing overlay above.
+  const allBatchesDataVersion = useAllBatchesDataVersion();
+  const [latestBoOverlay, setLatestBoOverlay] = useState<LatestAuthoritativeBoOverlay | null>(null);
+  const statementMonthStartIso = statementMonth ? `${statementMonth}-01` : '';
+  useEffect(() => {
+    let cancelled = false;
+    // Cold-cache → loading state. Reset on key change.
+    setLatestBoOverlay(null);
+    if (!statementMonth) return;
+    const batchMonthByBatchIdObj: Record<string, string> = {};
+    for (const b of batches as any[]) {
+      const ym = b?.statement_month ? String(b.statement_month).substring(0, 7) : '';
+      batchMonthByBatchIdObj[b.id] = ym;
+    }
+    const dedupCtx = { batchMonthByBatchId: batchMonthByBatchIdObj };
+    (async () => {
+      try {
+        const projection = await getMtAllBatchProjection({
+          allBatchesDataVersion,
+          resolverIndex,
+          loader: () => getAllNormalizedRecordsForMemberTimeline(dedupCtx),
+        });
+        if (cancelled) return;
+        const recency = makeBoRecency({
+          batchMonthByBatchId: new Map(Object.entries(batchMonthByBatchIdObj)),
+        });
+        const overlay = latestAuthoritativeBoTermDates(projection.records || [], recency);
+        if (!cancelled) setLatestBoOverlay(overlay);
+      } catch {
+        if (!cancelled) setLatestBoOverlay(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [statementMonth, allBatchesDataVersion, resolverIndex, batches]);
+  const latestBoLoading = !statementMonthStartIso || latestBoOverlay === null;
+
   // Fetch normalized records for the funnel + future classifier-driven widgets.
   // Re-fetch when the batch changes OR when reconciled data updates (rebuild,
   // re-run, upload completion — all refresh reconciled via refreshAll()).
