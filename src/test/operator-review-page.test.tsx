@@ -265,17 +265,28 @@ describe('OperatorReviewPage — Stage 3 hold actions + run-cycle', () => {
   });
 
   it('OR3: reason-code select offers ONLY REASON_CODES_BY_TYPE[hold_premium] entries', async () => {
+    // jsdom polyfills required for Radix Select pointer interactions.
+    if (!(globalThis as any).PointerEvent) {
+      (globalThis as any).PointerEvent = class extends Event {
+        constructor(type: string, props: any = {}) { super(type, props); Object.assign(this, props); }
+      } as any;
+    }
+    if (!(Element.prototype as any).hasPointerCapture) {
+      (Element.prototype as any).hasPointerCapture = () => false;
+      (Element.prototype as any).releasePointerCapture = () => {};
+      (Element.prototype as any).setPointerCapture = () => {};
+    }
+    if (!(Element.prototype as any).scrollIntoView) {
+      (Element.prototype as any).scrollIntoView = () => {};
+    }
     renderPage();
     await waitFor(() => expect(screen.getByText('Alice Actionable')).toBeInTheDocument());
     const row = screen.getByText('Alice Actionable').closest('tr')!;
     fireEvent.click(within(row).getByTestId('action-hold_premium'));
     await waitFor(() => expect(screen.getByTestId('hold-prompt')).toBeInTheDocument());
-    // Open the select (Radix renders options on open).
-    fireEvent.pointerDown(
-      screen.getByTestId('hold-reason-select'),
-      new (window as any).PointerEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false }),
-    );
-    fireEvent.click(screen.getByTestId('hold-reason-select'));
+    const trigger = screen.getByTestId('hold-reason-select');
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerType: 'mouse' } as any);
+    fireEvent.click(trigger);
     await waitFor(() => {
       for (const code of REASON_CODES_BY_TYPE.hold_premium) {
         expect(screen.queryByTestId(`reason-${code}`)).not.toBeNull();
