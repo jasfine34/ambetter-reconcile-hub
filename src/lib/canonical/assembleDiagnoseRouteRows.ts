@@ -406,7 +406,9 @@ export function assembleDiagnoseRouteRows(
         if (!cell) continue;
         if (cell.state !== 'unpaid' && cell.state !== 'paid') continue;
         const recs = ctx.scopedByMember.get(memberKey) ?? [];
-        const synth = synthesizeEvidenceRow(memberKey, recs, serviceMonth, scope, args.batchMonthByBatchId);
+        const pickedEdeForMonth =
+          pickerMapsByMemberKey.get(memberKey)?.get(serviceMonth) ?? null;
+        const synth = synthesizeEvidenceRow(memberKey, recs, serviceMonth, scope, args.batchMonthByBatchId, pickedEdeForMonth);
         monthEvidenceRows.push(synth.row);
         memberCountResByMember.set(memberKey, synth.memberCountResolution);
       }
