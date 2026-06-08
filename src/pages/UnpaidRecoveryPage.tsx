@@ -413,11 +413,18 @@ export default function UnpaidRecoveryPage() {
   const rawUnpaidRows = breakdown.unpaidRows;
   const universe = breakdown.universe;
 
-  // Bundle 13c — overlay-aware partition.
+  // Bundle 13c — overlay-aware partition. C2a Stage 3: pre-filter rawUnpaidRows
+  // through the latest-BO supersession overlay before partitioning so terminated-
+  // policy owed rows are suppressed (matches Dashboard EBU + Agent Summary).
   const { overlay: clearingOverlay } = useCrossBatchOverlay();
   const partition = useMemo(
-    () => partitionUnpaidRowsByOverlay(rawUnpaidRows, clearingOverlay),
-    [rawUnpaidRows, clearingOverlay],
+    () => partitionUnpaidRowsByOverlay(
+      latestBoLoading
+        ? rawUnpaidRows
+        : filterLatestBoTerminatedOwedRows(rawUnpaidRows, latestBoOverlay!, statementMonthStartIso),
+      clearingOverlay,
+    ),
+    [rawUnpaidRows, clearingOverlay, latestBoLoading, latestBoOverlay, statementMonthStartIso],
   );
   // Map row → AdjustedRow for badge / dollar lookups.
   const adjustedByRow = useMemo(() => {
