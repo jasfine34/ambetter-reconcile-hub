@@ -1777,7 +1777,17 @@ export default function DashboardPage() {
               )}
             </div>
             <MetricCard title="Clawbacks / Adjustments" value={`$${metrics.totalClawbacks.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} icon={<TrendingDown className="h-4 w-4" />} variant="destructive" tooltip={{ text: "The total dollar amount of negative commission rows (clawbacks, reversals, adjustments).", why: "These reduce your net revenue. A high clawback amount may indicate policy cancellations or billing corrections." }} />
-            <MetricCard title="Est. Missing Commission" value={`$${metrics.adjustedEstMissing.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} icon={<TrendingDown className="h-4 w-4" />} variant="warning" tooltip={{ text: "Estimate of how much commission may be missing based on unpaid policies, after applying cross-batch payment clearings.", why: "This represents potential recoverable revenue and helps prioritize follow-up with carriers." }} />
+            {metrics.latestBoLoading ? (
+              <div
+                className="rounded-xl border p-5 text-left bg-muted/30 border-muted text-muted-foreground text-sm"
+                data-testid="dashboard-ebu-est-missing-latest-bo-loading"
+              >
+                <div className="font-medium text-foreground mb-1">Est. Missing Commission</div>
+                Latest-BO alignment loading…
+              </div>
+            ) : (
+              <MetricCard title="Est. Missing Commission" value={`$${metrics.adjustedEstMissing.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} icon={<TrendingDown className="h-4 w-4" />} variant="warning" tooltip={{ text: "Estimate of how much commission may be missing based on unpaid policies, after applying cross-batch payment clearings.", why: "This represents potential recoverable revenue and helps prioritize follow-up with carriers." }} />
+            )}
           </div>
           <p
             data-testid="dashboard-ebu-disclaimer"
