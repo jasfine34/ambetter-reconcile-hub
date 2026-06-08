@@ -1,21 +1,35 @@
 /**
- * C2b-2 — Operator Review (read-only on load).
+ * C2b-2 — Operator Review.
  *
- * Mirrors the MCE async boundary:
- *   1. useBatch + useAllBatchesDataVersion + useCrossBatchOverlay supply
- *      the cached all-batch projection inputs.
- *   2. getMtAllBatchProjection reuses the SAME memoized projection MCE uses
- *      (no second all-batch loader).
- *   3. loadCarrierCompRates feeds the headless assembler.
- *   4. assembleDiagnoseRouteRows composes the certified MT helpers into
- *      RouteRowInput[] (no helper edits).
- *   5. projectDiagnoseRoutes({ rows, forceDecisionIndex: true }) routes
- *      against the CURRENT decision index — READ-ONLY. NEVER calls
- *      runDiagnoseCycle (no C0 writes on mount).
+ * Stage 1: read-only projection via projectDiagnoseRoutes.
+ * Stage 2: page render (table + filter + name enrichment).
+ * Stage 3 (this file): HOLD actions per actionable row + explicit
+ *   "Run cycle / apply releases" button.
  *
- * Stage 2 of 3 — actions (hold buttons + run-cycle) land in Stage 3.
+ * Hold actions land per route:
+ *   premium            → hold_premium  (auto_premium)
+ *   chase_eligible     → hold_premium  (auto_premium)
+ *   dmi                → hold_dmi      (sticky_manual)
+ *   prior_balance      → hold_prior_balance (sticky_manual)
+ *   amount_discrepancy → hold_amount   (sticky_manual)
+ *   manual_review      → hold_amount   (sticky_manual)
+ *
+ * Deferred (NOT rendered): add_to_chase, dismiss_cr_flag, scope_correct.
+ *
+ * Guards:
+ *   OR1 — the row object is CAPTURED at click time so a refresh / re-sort
+ *         cannot retarget the write to a different row.
+ *   OR3 — reason_code is a SELECT bound to REASON_CODES_BY_TYPE; free text
+ *         goes to internal_note only. validateDecisionInput throws surface
+ *         as a failed write (error toast).
+ *   OR4 — the per-row action button and the run-cycle button disable while
+ *         their write/cycle is pending. No double-write, no overlapping
+ *         cycle.
+ *
+ * After a successful write OR a successful cycle:
+ *   invalidateOperatorDecisionCache() + re-project against current truth.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useBatch } from '@/contexts/BatchContext';
 import { useAllBatchesDataVersion } from '@/hooks/useBatchDataVersion';
 import { useCrossBatchOverlay } from '@/hooks/useCrossBatchOverlay';
@@ -26,16 +40,34 @@ import { buildMonthList } from '@/lib/memberTimeline';
 import { assembleDiagnoseRouteRows } from '@/lib/canonical/assembleDiagnoseRouteRows';
 import {
   projectDiagnoseRoutes,
+  runDiagnoseCycle,
   type DiagnoseRoutesProjection,
   type RouteRowInput,
   type RouteName,
 } from '@/lib/canonical/diagnoseAndRoute';
-import { deriveStableMemberKey } from '@/lib/canonical/operatorDecisions';
+import {
+  deriveStableMemberKey,
+  recordDecision,
+  invalidateOperatorDecisionCache,
+  REASON_CODES_BY_TYPE,
+  type DecisionType,
+  type ReleaseRule,
+  type RecordDecisionInput,
+} from '@/lib/canonical/operatorDecisions';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Loader2, RefreshCw, AlertCircle, Inbox } from 'lucide-react';
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Loader2, RefreshCw, AlertCircle, Inbox, Play } from 'lucide-react';
+import { toast } from 'sonner';
 
 const ACTIONABLE_ROUTES: ReadonlySet<RouteName> = new Set<RouteName>([
   'chase_eligible', 'premium', 'dmi', 'prior_balance', 'amount_discrepancy', 'manual_review',
@@ -51,7 +83,45 @@ const ROUTE_VARIANT: Record<RouteName, 'default' | 'secondary' | 'destructive' |
   manual_review: 'destructive',
 };
 
+interface HoldActionSpec {
+  decision_type: DecisionType;
+  release_rule: ReleaseRule;
+  defaultReason: string;
+  label: string;
+}
+
+/** Hold action(s) valid per route. */
+const HOLD_ACTIONS_BY_ROUTE: Record<RouteName, HoldActionSpec[]> = {
+  satisfied: [],
+  chase_eligible: [
+    { decision_type: 'hold_premium', release_rule: 'auto_premium', defaultReason: 'awaiting_premium', label: 'Hold premium' },
+  ],
+  premium: [
+    { decision_type: 'hold_premium', release_rule: 'auto_premium', defaultReason: 'awaiting_premium', label: 'Hold premium' },
+  ],
+  dmi: [
+    { decision_type: 'hold_dmi', release_rule: 'sticky_manual', defaultReason: 'data_mismatch_investigation', label: 'Hold DMI' },
+  ],
+  prior_balance: [
+    { decision_type: 'hold_prior_balance', release_rule: 'sticky_manual', defaultReason: 'prior_balance_owed', label: 'Hold prior balance' },
+  ],
+  amount_discrepancy: [
+    { decision_type: 'hold_amount', release_rule: 'sticky_manual', defaultReason: 'amount_discrepancy', label: 'Hold amount' },
+  ],
+  manual_review: [
+    { decision_type: 'hold_amount', release_rule: 'sticky_manual', defaultReason: 'amount_discrepancy', label: 'Hold amount' },
+  ],
+};
+
 type Status = 'idle' | 'loading' | 'ready' | 'error';
+
+interface HoldPromptState {
+  row: RouteRowInput;             // OR1: captured at click time
+  spec: HoldActionSpec;
+  reasonCode: string;
+  internalNote: string;
+  submitting: boolean;
+}
 
 export default function OperatorReviewPage() {
   const { batches, resolverIndex } = useBatch();
@@ -65,9 +135,14 @@ export default function OperatorReviewPage() {
   const [nameByStableKey, setNameByStableKey] = useState<Map<string, string>>(new Map());
   const [showSatisfied, setShowSatisfied] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
+  const [prompt, setPrompt] = useState<HoldPromptState | null>(null);
+  const [pendingRowKey, setPendingRowKey] = useState<string | null>(null);
+  const [cycleRunning, setCycleRunning] = useState(false);
+  const [lastCycleSummary, setLastCycleSummary] = useState<
+    null | { applied: string[]; noopCount: number }
+  >(null);
   const genRef = useRef(0);
 
-  // Build batch-month maps + monthList (MCE pattern).
   const { batchMonthByBatchIdObj, monthList, batchMonths } = useMemo(() => {
     const obj: Record<string, string> = {};
     const months: string[] = [];
@@ -86,7 +161,6 @@ export default function OperatorReviewPage() {
     };
   }, [batches]);
 
-  // Main load (deps include refreshTick for explicit Refresh button).
   useEffect(() => {
     if (batches.length === 0) return;
     genRef.current += 1;
@@ -139,14 +213,12 @@ export default function OperatorReviewPage() {
         });
         if (!isLatest()) return;
 
-        // READ-ONLY projection — current decision index, no C0 writes.
         const proj = await projectDiagnoseRoutes({
           rows: assembled.rows,
           forceDecisionIndex: true,
         });
         if (!isLatest()) return;
 
-        // Enrich names: stableMemberKey → applicant_name from projection.records.
         const nameMap = new Map<string, string>();
         for (const r of projRecords as any[]) {
           const stable = deriveStableMemberKey({
@@ -183,6 +255,71 @@ export default function OperatorReviewPage() {
     });
   }, [rows, projection, showSatisfied]);
 
+  /** Re-project against the CURRENT decision index (no write). */
+  const reproject = useCallback(async () => {
+    const snap = rows;
+    if (snap.length === 0) return;
+    const proj = await projectDiagnoseRoutes({ rows: snap, forceDecisionIndex: true });
+    setProjection(proj);
+  }, [rows]);
+
+  const openHoldPrompt = useCallback((row: RouteRowInput, spec: HoldActionSpec) => {
+    // OR1: capture the CLICKED row object at click time.
+    setPrompt({ row, spec, reasonCode: spec.defaultReason, internalNote: '', submitting: false });
+  }, []);
+
+  const submitHold = useCallback(async () => {
+    if (!prompt) return;
+    if (pendingRowKey || cycleRunning) return; // OR4
+    const { row, spec } = prompt;
+    setPendingRowKey(row.rowKey);
+    setPrompt({ ...prompt, submitting: true });
+    const input: RecordDecisionInput = {
+      identity: row.identity,
+      service_month: row.serviceMonth,
+      target_scope: row.targetScope,
+      decision_type: spec.decision_type,
+      reason_code: prompt.reasonCode,
+      release_rule: spec.release_rule,
+      internal_note: prompt.internalNote?.trim() ? prompt.internalNote.trim() : null,
+    };
+    try {
+      await recordDecision(input);
+      invalidateOperatorDecisionCache();
+      await reproject();
+      toast.success(`${spec.label} recorded`);
+      setPrompt(null);
+    } catch (err) {
+      // OR3: validation/throw surfaces as a failed write.
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`Hold failed: ${msg}`);
+      setPrompt((p) => (p ? { ...p, submitting: false } : null));
+    } finally {
+      setPendingRowKey(null);
+    }
+  }, [prompt, pendingRowKey, cycleRunning, reproject]);
+
+  const runCycle = useCallback(async () => {
+    if (cycleRunning || pendingRowKey) return; // OR4
+    if (rows.length === 0) return;
+    setCycleRunning(true);
+    try {
+      const result = await runDiagnoseCycle({ rows });
+      invalidateOperatorDecisionCache();
+      await reproject();
+      const applied = result.appliedReleases.map((r) => r.id);
+      setLastCycleSummary({ applied, noopCount: result.observedNoopSignals.length });
+      toast.success(
+        `Cycle: ${applied.length} release(s), ${result.observedNoopSignals.length} no-op signal(s)`,
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`Cycle failed: ${msg}`);
+    } finally {
+      setCycleRunning(false);
+    }
+  }, [rows, cycleRunning, pendingRowKey, reproject]);
+
   if (status === 'loading' || status === 'idle') {
     return (
       <div className="flex items-center justify-center py-20 text-muted-foreground">
@@ -204,6 +341,8 @@ export default function OperatorReviewPage() {
     );
   }
 
+  const allowedReasonCodes = prompt ? REASON_CODES_BY_TYPE[prompt.spec.decision_type] : [];
+
   return (
     <TooltipProvider>
       <div className="space-y-4">
@@ -211,8 +350,8 @@ export default function OperatorReviewPage() {
           <div>
             <h1 className="text-xl font-bold tracking-tight">Operator Review</h1>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Read-only projection of the diagnose-and-route engine over the current decision index.
-              Actions land in Stage 3.
+              Read-only projection of the diagnose-and-route engine. Holds write
+              through C0; "Run cycle" is the only path that applies releases.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -229,11 +368,34 @@ export default function OperatorReviewPage() {
               variant="outline"
               onClick={() => setRefreshTick((t) => t + 1)}
               data-testid="refresh"
+              disabled={cycleRunning || pendingRowKey !== null}
             >
               <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Refresh
             </Button>
+            <Button
+              size="sm"
+              onClick={runCycle}
+              data-testid="run-cycle"
+              disabled={cycleRunning || pendingRowKey !== null}
+            >
+              {cycleRunning
+                ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                : <Play className="h-3.5 w-3.5 mr-1.5" />}
+              Run cycle / apply releases
+            </Button>
           </div>
         </header>
+
+        {lastCycleSummary && (
+          <div className="rounded-md border bg-muted/40 px-3 py-2 text-xs" data-testid="cycle-summary">
+            <span className="font-medium">Last cycle:</span>{' '}
+            applied {lastCycleSummary.applied.length} release(s)
+            {lastCycleSummary.applied.length > 0 && (
+              <> [{lastCycleSummary.applied.join(', ')}]</>
+            )}
+            {' '}· {lastCycleSummary.noopCount} no-op signal(s)
+          </div>
+        )}
 
         {visibleRows.length === 0 ? (
           <div className="flex items-center gap-2 p-6 rounded-lg border bg-card text-muted-foreground">
@@ -254,6 +416,7 @@ export default function OperatorReviewPage() {
                   <TableHead>Amount evidence</TableHead>
                   <TableHead>DMI</TableHead>
                   <TableHead>Premium / Count</TableHead>
+                  <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -261,8 +424,16 @@ export default function OperatorReviewPage() {
                   const decision = projection!.routes.get(r.rowKey)!;
                   const fyi = projection!.fyi.get(r.rowKey) ?? [];
                   const name = nameByStableKey.get(r.stableMemberKey) ?? r.stableMemberKey;
+                  const actions = HOLD_ACTIONS_BY_ROUTE[decision.route] ?? [];
+                  const rowPending = pendingRowKey === r.rowKey;
+                  const anyPending = pendingRowKey !== null || cycleRunning;
                   return (
-                    <TableRow key={r.rowKey} data-testid="op-row" data-route={decision.route}>
+                    <TableRow
+                      key={r.rowKey}
+                      data-testid="op-row"
+                      data-route={decision.route}
+                      data-row-key={r.rowKey}
+                    >
                       <TableCell className="text-xs">
                         <div className="font-medium">{name}</div>
                         <div className="text-muted-foreground">{r.carrier}</div>
@@ -295,6 +466,23 @@ export default function OperatorReviewPage() {
                       <TableCell className="text-xs">
                         <PremiumCountEvidence facts={r.facts} />
                       </TableCell>
+                      <TableCell className="text-xs space-x-1">
+                        {actions.map((spec) => (
+                          <Button
+                            key={spec.decision_type}
+                            size="sm"
+                            variant="outline"
+                            data-testid={`action-${spec.decision_type}`}
+                            disabled={anyPending}
+                            onClick={() => openHoldPrompt(r, spec)}
+                          >
+                            {rowPending
+                              ? <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                              : null}
+                            {spec.label}
+                          </Button>
+                        ))}
+                      </TableCell>
                     </TableRow>
                   );
                 })}
@@ -302,6 +490,67 @@ export default function OperatorReviewPage() {
             </Table>
           </div>
         )}
+
+        <Dialog open={prompt !== null} onOpenChange={(open) => { if (!open && !prompt?.submitting) setPrompt(null); }}>
+          <DialogContent data-testid="hold-prompt">
+            {prompt && (
+              <>
+                <DialogHeader>
+                  <DialogTitle>{prompt.spec.label}</DialogTitle>
+                  <DialogDescription>
+                    {prompt.row.targetScope} · {prompt.row.serviceMonth} · {prompt.row.stableMemberKey}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Reason code</Label>
+                    <Select
+                      value={prompt.reasonCode}
+                      onValueChange={(v) => setPrompt((p) => (p ? { ...p, reasonCode: v } : null))}
+                    >
+                      <SelectTrigger data-testid="hold-reason-select"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {allowedReasonCodes.map((code) => (
+                          <SelectItem key={code} value={code} data-testid={`reason-${code}`}>
+                            {code}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Internal note (optional, free-text)</Label>
+                    <Textarea
+                      data-testid="hold-internal-note"
+                      value={prompt.internalNote}
+                      onChange={(e) => setPrompt((p) => (p ? { ...p, internalNote: e.target.value } : null))}
+                      rows={3}
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    onClick={() => setPrompt(null)}
+                    disabled={prompt.submitting}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={submitHold}
+                    disabled={prompt.submitting}
+                    data-testid="hold-submit"
+                  >
+                    {prompt.submitting
+                      ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                      : null}
+                    Record hold
+                  </Button>
+                </DialogFooter>
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </TooltipProvider>
   );
