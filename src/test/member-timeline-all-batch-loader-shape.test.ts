@@ -193,11 +193,137 @@ describe('getAllNormalizedRecordsForMemberTimeline — query shape', () => {
     expect(row.raw_json.currentPolicyAOR).toBe('Agent 1');
   });
 
-  it('buildMemberTimeline still surfaces fallback FFM IDs from loader output (Class-A pattern)', async () => {
-    // Two EDE rows for the same member: BO/Commission absent, FFM ID present
-    // in raw_json — mirrors the Diedric/Lisa/Frederick/Erica canary pattern.
-    allRows = [
+  // ── C2b-1 corrective ────────────────────────────────────────────────
+  it('C2b-1: MEMBER_TIMELINE_ALL_BATCH_COLUMNS contains client_state_full as a plain typed column', async () => {
+    allRows = [makeRow(1, { client_state_full: 'FL' })];
+    await getAllNormalizedRecordsForMemberTimeline();
+    const colsArr = MEMBER_TIMELINE_ALL_BATCH_COLUMNS.split(',').map(s => s.trim());
+    expect(colsArr).toContain('client_state_full');
+    // Plain typed column, not a raw_json subkey alias.
+    expect(MEMBER_TIMELINE_ALL_BATCH_COLUMNS).not.toMatch(/client_state_full:raw_json/);
+    // Runtime select uses the exported constant.
+    expect(queryLog[0].selectCols).toBe(MEMBER_TIMELINE_ALL_BATCH_COLUMNS);
+  });
+
+  it('C2b-1: loader preserves row.client_state_full while raw_json alias stripping still works', async () => {
+    allRows = [makeRow(1, { client_state_full: 'FL' })];
+    const [row] = await getAllNormalizedRecordsForMemberTimeline();
+    expect(row.client_state_full).toBe('FL');
+    // raw_json reconstruction still works and aliases are still stripped.
+    expect(row.raw_json.currentPolicyAOR).toBe('Agent 1');
+    expect(row.raw_ffm_app_id).toBeUndefined();
+    expect(row.raw_broker_name_title).toBeUndefined();
+  });
+
+  it('C2b-1: paid row whose state arrives via projection resolves amount fact (NOT MISSING_STATE)', async () => {
+    // Mirror the production path: projection-shaped rows (no field pre-seeded
+    // on a hand-built fixture) flow through the loader, then into the headless
+    // assembler. Before the corrective, client_state_full was dropped by
+    // MEMBER_TIMELINE_TYPED_COLUMNS, starving the resolver of state.
+    const STMT_MONTH = '2026-03';
+    const lastDay = '2026-03-31';
+    const projected = [
       makeRow(1, {
+        id: 'id-000001',
+        batch_id: 'B-2026-03',
+        source_type: 'BACK_OFFICE',
+        member_key: 'mkPAID',
+        issuer_subscriber_id: 'ISIDPAID',
+        policy_number: 'POLPAID',
+        carrier: 'Ambetter',
+        applicant_name: 'Loader Paid',
+        agent_npn: '21055210',
+        agent_name: 'Jason Fine',
+        eligible_for_commission: 'Yes',
+        net_premium: 100,
+        paid_through_date: '2026-04-30',
+        effective_date: '2025-12-01',
+        client_state_full: 'FL',
+        raw_broker_name_title: 'Jason Fine',
+        raw_issuer: 'Ambetter',
+        raw_current_policy_aor: 'Jason Fine (21055210)',
+      }),
+      makeRow(2, {
+        id: 'id-000002',
+        batch_id: 'B-2026-03',
+        source_type: 'EDE',
+        member_key: 'mkPAID',
+        issuer_subscriber_id: 'ISIDPAID',
+        policy_number: 'POLPAID',
+        carrier: 'Ambetter',
+        applicant_name: 'Loader Paid',
+        agent_npn: '21055210',
+        status: 'effectuated',
+        effective_date: '2025-12-01',
+        client_state_full: 'FL',
+        raw_current_policy_aor: 'Jason Fine (21055210)',
+        raw_policy_status: 'effectuated',
+        raw_issuer: 'Ambetter',
+      }),
+      makeRow(3, {
+        id: 'id-000003',
+        batch_id: 'B-2026-03',
+        source_type: 'COMMISSION',
+        member_key: 'mkPAID',
+        issuer_subscriber_id: 'ISIDPAID',
+        policy_number: 'POLPAID',
+        carrier: 'Ambetter',
+        applicant_name: 'Loader Paid',
+        pay_entity: 'Coverall',
+        agent_npn: '21055210',
+        commission_amount: 50,
+        paid_to_date: lastDay,
+        months_paid: 1,
+        effective_date: '2025-12-01',
+        client_state_full: 'FL',
+      }),
+    ];
+    allRows = projected;
+    const loaded = await getAllNormalizedRecordsForMemberTimeline();
+    // Sanity: state survives projection (the actual bug under test).
+    for (const r of loaded) expect(r.client_state_full).toBe('FL');
+
+    const rate: CarrierCompRateRow = {
+      id: 'rate-fl-pmpm-2026',
+      rate_key: 'ambetter|FL|standard|2026',
+      carrier_key: 'ambetter',
+      carrier_display: 'Ambetter',
+      state_code: 'FL',
+      plan_variant: 'standard',
+      comp_basis: 'pmpm',
+      calculation_basis: 'per_member_pmpm',
+      rate_value: 25,
+      rate_unit: 'USD',
+      member_min: null,
+      member_max: null,
+      member_cap: null,
+      effective_year: 2026,
+      support_status: 'supported',
+      unsupported_reason: null,
+    };
+
+    const { rows } = assembleDiagnoseRouteRows({
+      allBatchRecords: loaded as any,
+      monthList: ['2026-01', '2026-02', '2026-03', '2026-04'],
+      serviceMonths: [STMT_MONTH],
+      targetScopes: ['Coverall'],
+      batchMonthByBatchId: { 'B-2026-03': STMT_MONTH },
+      today: '2026-04-10',
+      rateRows: [rate],
+    } as any);
+
+    const paid = rows.find(
+      (r) => r.targetScope === 'Coverall' && r.serviceMonth === STMT_MONTH && r.stableMemberKey === 'isid:isidpaid',
+    );
+    expect(paid).toBeDefined();
+    expect(paid!.population).toBe(2);
+    // The corrective's contract: amount fact must NOT report MISSING_STATE.
+    // (MISSING_MEMBER_COUNT is the documented next-blocker and out of scope.)
+    if (paid!.facts.amount.kind === 'indeterminate') {
+      expect(paid!.facts.amount.reason).not.toBe('MISSING_STATE');
+    }
+  });
+});
         member_key: 'mk-canary',
         source_type: 'EDE',
         raw_ffm_app_id: 'FFM-CANARY-001',
