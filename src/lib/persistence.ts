@@ -637,6 +637,14 @@ function reconstructRawJson(row: any): any {
   if (row.raw_verification_issue_type != null) raw.verificationIssueType = row.raw_verification_issue_type;
   if (row.raw_verification_end_date != null) raw.verificationEndDate = row.raw_verification_end_date;
   if (row.raw_document_uploaded_for_svi_dmi != null) raw.documentUploadedForSviDmi = row.raw_document_uploaded_for_svi_dmi;
+  // C2b-1 member-count corrective (R-CARR-007) — restore each spelling
+  // under its ORIGINAL raw_json key so buildPolicyMemberCountRecords
+  // (which probes coveredMemberCount / CoveredMemberCount /
+  // covered_member_count / "Number of Members") sees it.
+  if (row.raw_number_of_members != null) raw['Number of Members'] = row.raw_number_of_members;
+  if (row.raw_covered_member_count != null) raw.coveredMemberCount = row.raw_covered_member_count;
+  if (row.raw_covered_member_count_cap != null) raw.CoveredMemberCount = row.raw_covered_member_count_cap;
+  if (row.raw_covered_member_count_snake != null) raw.covered_member_count = row.raw_covered_member_count_snake;
   const cleaned = { ...row, raw_json: raw };
   delete cleaned.raw_ffm_app_id;
   delete cleaned.raw_current_policy_aor;
@@ -650,6 +658,10 @@ function reconstructRawJson(row: any): any {
   delete cleaned.raw_verification_issue_type;
   delete cleaned.raw_verification_end_date;
   delete cleaned.raw_document_uploaded_for_svi_dmi;
+  delete cleaned.raw_number_of_members;
+  delete cleaned.raw_covered_member_count;
+  delete cleaned.raw_covered_member_count_cap;
+  delete cleaned.raw_covered_member_count_snake;
   return cleaned;
 }
 
