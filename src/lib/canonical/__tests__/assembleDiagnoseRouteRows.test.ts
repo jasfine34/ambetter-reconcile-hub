@@ -603,14 +603,14 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
     }
 
     it('PS1: raw full-state value (client_state_full="Florida") resolves canonically to FL (NOT NO_RATE_ROW)', () => {
-      const boRow = bo('PS1', { brokerName: 'Jason Fine', npn: JASON_NPN, effective_date: '2026-01-15', raw_json: { 'Number of Members': '1', plan_variant: 'standard' } });
+      const boRow = bo('PS1', { carrier: 'ambetter', brokerName: 'Jason Fine', npn: JASON_NPN, effective_date: '2026-01-15', raw_json: { 'Number of Members': '1', plan_variant: 'standard' } });
       (boRow as any).client_state_full = 'Florida';
-      const edeRow = ede('PS1', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-01-15', raw_json: { plan_variant: 'standard' } });
+      const edeRow = ede('PS1', { carrier: 'ambetter', aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-01-15', raw_json: { plan_variant: 'standard' } });
       (edeRow as any).client_state_full = 'Florida';
       const recs: NormalizedRecord[] = [
         boRow,
         edeRow,
-        comm('PS1', { payEntity: 'Coverall', amount: 50, serviceMonth: STMT_MONTH, npn: JASON_NPN }),
+        comm('PS1', { carrier: 'ambetter', payEntity: 'Coverall', amount: 50, serviceMonth: STMT_MONTH, npn: JASON_NPN }),
       ];
       const { rows } = assembleDiagnoseRouteRows(psBaseArgs(recs, [STMT_MONTH], BATCH_MONTH) as any);
       const row = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === STMT_MONTH && r.stableMemberKey === 'isid:isidps1');
@@ -623,9 +623,9 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
 
     it('PS2: already-canonical two-letter state ("FL") stays resolved (idempotent)', () => {
       const recs: NormalizedRecord[] = [
-        bo('PS2', { brokerName: 'Jason Fine', npn: JASON_NPN, effective_date: '2026-01-15', raw_json: { 'Number of Members': '1', plan_variant: 'standard' } }),
-        ede('PS2', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-01-15', raw_json: { plan_variant: 'standard' } }),
-        comm('PS2', { payEntity: 'Coverall', amount: 50, serviceMonth: STMT_MONTH, npn: JASON_NPN }),
+        bo('PS2', { carrier: 'ambetter', brokerName: 'Jason Fine', npn: JASON_NPN, effective_date: '2026-01-15', raw_json: { 'Number of Members': '1', plan_variant: 'standard' } }),
+        ede('PS2', { carrier: 'ambetter', aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-01-15', raw_json: { plan_variant: 'standard' } }),
+        comm('PS2', { carrier: 'ambetter', payEntity: 'Coverall', amount: 50, serviceMonth: STMT_MONTH, npn: JASON_NPN }),
       ];
       const { rows } = assembleDiagnoseRouteRows(psBaseArgs(recs, [STMT_MONTH], BATCH_MONTH) as any);
       const row = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === STMT_MONTH && r.stableMemberKey === 'isid:isidps2');
