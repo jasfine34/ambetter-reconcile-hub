@@ -48,28 +48,28 @@ const STATEMENT_MONTH = '2026-02';
 const STATEMENT_MONTH_START_ISO = '2026-02-01';
 
 const JOSIE = {
-  policy_number: 'POL-JOSIE-001',
+  policy_number: 'POLJOSIE001',
   issuer_subscriber_id: 'u96466529',
   applicant_name: 'Josie Martinez',
 };
 const SYANIA = {
-  policy_number: 'POL-SYANIA-002',
-  issuer_subscriber_id: 'SYAN-77231',
+  policy_number: 'POLSYANIA002',
+  issuer_subscriber_id: 'SYAN77231',
   applicant_name: 'Syania Example',
 };
 const LIVE = {
-  policy_number: 'POL-LIVE-003',
-  issuer_subscriber_id: 'LIVE-99001',
+  policy_number: 'POLLIVE003',
+  issuer_subscriber_id: 'LIVE99001',
   applicant_name: 'Live Member',
 };
 const LIVE_PARTIAL = {
-  policy_number: 'POL-LIVE-PARTIAL-004',
-  issuer_subscriber_id: 'LIVE-PART-99002',
+  policy_number: 'POLLIVEPARTIAL004',
+  issuer_subscriber_id: 'LIVEPART99002',
   applicant_name: 'Partial Cleared Live',
 };
 const TERMED_CLAWBACK = {
-  policy_number: 'POL-CLAW-005',
-  issuer_subscriber_id: 'CLAW-99003',
+  policy_number: 'POLCLAW005',
+  issuer_subscriber_id: 'CLAW99003',
   applicant_name: 'Terminated With Clawback',
 };
 
