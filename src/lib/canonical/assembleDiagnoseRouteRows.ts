@@ -428,6 +428,7 @@ export function assembleDiagnoseRouteRows(
         }
 
         const evidenceForResolver = sourceEvidenceByMemberKey.get(memberKey);
+        const memberCountResolution = memberCountResByMember.get(memberKey);
 
         const facts = buildBlockerFacts({
           targetScope: scope,
@@ -438,7 +439,9 @@ export function assembleDiagnoseRouteRows(
           evidenceForResolver,
           resolve: (call) => resolve({ row: { member_key: call.member_key }, inputEvidence: call.inputEvidence }),
           memberKey,
+          memberCountResolution,
         });
+
 
         // Diagnostics: count resolver UNSUPPORTED reasons (one probe per
         // emitted row that actually exercises the resolver — either target
