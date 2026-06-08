@@ -48,6 +48,8 @@ import {
 import { filterReconciledByScope } from '@/lib/canonical/scope';
 import { EBU_BATCH_SCOPE_DISCLAIMER } from '@/lib/constants';
 import { useCrossBatchOverlay } from '@/hooks/useCrossBatchOverlay';
+import { useLatestBoOverlay } from '@/hooks/useLatestBoOverlay';
+import { filterLatestBoTerminatedOwedRows } from '@/lib/canonical/latestAuthoritativeBo';
 import {
   partitionUnpaidRowsByOverlay,
   type AdjustedRow,
