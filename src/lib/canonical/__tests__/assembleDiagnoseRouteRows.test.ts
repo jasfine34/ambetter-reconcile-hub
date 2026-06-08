@@ -530,5 +530,4 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
       if (feb!.facts.amount.kind === 'wrong_amount') expect(feb!.facts.amount.expected).toBe(50);
     });
   });
-  });
 });
