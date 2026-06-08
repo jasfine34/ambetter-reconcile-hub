@@ -801,9 +801,10 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
       ];
       const { rows } = assembleDiagnoseRouteRows(aeBaseArgs(recs, [STMT_MONTH], BATCH_MONTH) as any);
       const row = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === STMT_MONTH && r.stableMemberKey === 'isid:isiduc1');
-      expect(row).toBeDefined();
-      // Must NOT be 'correct' or 'wrong_amount' — those would mean we keyed a rate.
-      expect(row!.facts.amount.kind).toBe('indeterminate');
+      // Uncanonicalizable carrier → assembler skips emitting any row
+      // (cannot key downstream decisions on display text). The "miss" is
+      // a no-row emit, NOT a falsely-resolved amount.
+      expect(row).toBeUndefined();
     });
 
     it('AE4 PARITY-BY-CONSTRUCTION: assembler synthetic row resolves to the SAME amount + status as direct getExpectedCommissionForClearing across {Coverall non-override, Erica Coverall override, Erica Vix override}', async () => {
