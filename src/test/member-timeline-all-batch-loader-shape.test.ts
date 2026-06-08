@@ -323,7 +323,12 @@ describe('getAllNormalizedRecordsForMemberTimeline — query shape', () => {
       expect(paid!.facts.amount.reason).not.toBe('MISSING_STATE');
     }
   });
-});
+
+  it('buildMemberTimeline still surfaces fallback FFM IDs from loader output (Class-A pattern)', async () => {
+    // Two EDE rows for the same member: BO/Commission absent, FFM ID present
+    // in raw_json — mirrors the Diedric/Lisa/Frederick/Erica canary pattern.
+    allRows = [
+      makeRow(1, {
         member_key: 'mk-canary',
         source_type: 'EDE',
         raw_ffm_app_id: 'FFM-CANARY-001',
