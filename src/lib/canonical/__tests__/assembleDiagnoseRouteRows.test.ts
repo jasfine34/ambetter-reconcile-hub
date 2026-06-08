@@ -586,7 +586,132 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
         expect(r!.facts.memberCount!.reason).toBe('member_count_manual_review');
         expect(r!.facts.memberCount!.conflicts?.sort()).toEqual([1, 3]);
       }
+  });
+
+  // ── C2b-1 NO_RATE_ROW corrective (canonical state resolver wiring) ──
+  describe('policy-state resolver wiring (NO_RATE_ROW fix)', () => {
+    function psBaseArgs(records: NormalizedRecord[], serviceMonths: string[], batchMonths: Record<string, string>) {
+      return {
+        allBatchRecords: records,
+        monthList: MONTH_LIST,
+        serviceMonths,
+        targetScopes: ['Coverall'] as const,
+        batchMonthByBatchId: batchMonths,
+        today: TODAY,
+        rateRows: [RATE_AMBETTER_FL],
+      };
+    }
+
+    it('PS1: raw full-state value (client_state_full="Florida") resolves canonically to FL (NOT NO_RATE_ROW)', () => {
+      const boRow = bo('PS1', { brokerName: 'Jason Fine', npn: JASON_NPN, effective_date: '2025-12-01', raw_json: { 'Number of Members': '1' } });
+      (boRow as any).client_state_full = 'Florida';
+      const edeRow = ede('PS1', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2025-12-01' });
+      (edeRow as any).client_state_full = 'Florida';
+      const recs: NormalizedRecord[] = [
+        boRow,
+        edeRow,
+        comm('PS1', { payEntity: 'Coverall', amount: 50, serviceMonth: STMT_MONTH, npn: JASON_NPN }),
+      ];
+      const { rows } = assembleDiagnoseRouteRows(psBaseArgs(recs, [STMT_MONTH], BATCH_MONTH) as any);
+      const row = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === STMT_MONTH && r.stableMemberKey === 'isid:isidps1');
+      expect(row).toBeDefined();
+      if (row!.facts.amount.kind === 'indeterminate') {
+        expect(row!.facts.amount.reason).not.toBe('NO_RATE_ROW');
+        expect(row!.facts.amount.reason).not.toBe('MISSING_STATE');
+      }
+    });
+
+    it('PS2: already-canonical two-letter state ("FL") stays resolved (idempotent)', () => {
+      const recs: NormalizedRecord[] = [
+        bo('PS2', { brokerName: 'Jason Fine', npn: JASON_NPN, effective_date: '2025-12-01', raw_json: { 'Number of Members': '1' } }),
+        ede('PS2', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2025-12-01' }),
+        comm('PS2', { payEntity: 'Coverall', amount: 50, serviceMonth: STMT_MONTH, npn: JASON_NPN }),
+      ];
+      const { rows } = assembleDiagnoseRouteRows(psBaseArgs(recs, [STMT_MONTH], BATCH_MONTH) as any);
+      const row = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === STMT_MONTH && r.stableMemberKey === 'isid:isidps2');
+      expect(row).toBeDefined();
+      if (row!.facts.amount.kind === 'indeterminate') {
+        expect(row!.facts.amount.reason).not.toBe('NO_RATE_ROW');
+        expect(row!.facts.amount.reason).not.toBe('MISSING_STATE');
+      }
+    });
+
+    it('PS3: genuinely unresolvable state → MISSING_STATE (NOT NO_RATE_ROW)', () => {
+      const boRow = bo('PS3', { brokerName: 'Jason Fine', npn: JASON_NPN, effective_date: '2025-12-01', raw_json: { 'Number of Members': '1' } });
+      (boRow as any).client_state_full = '';
+      const edeRow = ede('PS3', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2025-12-01' });
+      (edeRow as any).client_state_full = '';
+      const recs: NormalizedRecord[] = [
+        boRow,
+        edeRow,
+        comm('PS3', { payEntity: 'Coverall', amount: 50, serviceMonth: STMT_MONTH, npn: JASON_NPN }),
+      ];
+      const { rows } = assembleDiagnoseRouteRows(psBaseArgs(recs, [STMT_MONTH], BATCH_MONTH) as any);
+      const row = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === STMT_MONTH && r.stableMemberKey === 'isid:isidps3');
+      expect(row).toBeDefined();
+      expect(row!.facts.amount.kind).toBe('indeterminate');
+      if (row!.facts.amount.kind === 'indeterminate') {
+        expect(row!.facts.amount.reason).toBe('MISSING_STATE');
+      }
+    });
+
+    it('PS4: multi-month state change — each row resolves its OWN month\'s state (no latest-month bleed)', () => {
+      const BATCH_JAN = 'B-2026-01';
+      const BATCH_MAR = 'B-2026-03';
+      const makeBo = (batch: string, eff: string, stateFull: string): NormalizedRecord => {
+        const r = rec({
+          source_type: 'BACK_OFFICE',
+          member_key: 'PS4',
+          issuer_subscriber_id: 'ISIDPS4',
+          policy_number: 'POLPS4',
+          agent_npn: JASON_NPN,
+          agent_name: 'Jason Fine',
+          net_premium: 100,
+          paid_through_date: '2026-04-30',
+          effective_date: eff,
+          eligible_for_commission: 'Yes',
+          raw_json: { 'Broker Name': 'Jason Fine', issuer: 'Ambetter', 'Number of Members': '1' },
+          ...({ batch_id: batch } as any),
+        } as any);
+        (r as any).client_state_full = stateFull;
+        return r;
+      };
+      const e1 = ede('PS4', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-01-15' });
+      (e1 as any).batch_id = BATCH_JAN;
+      (e1 as any).client_state_full = 'Florida';
+      const e2 = ede('PS4', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-03-15' });
+      (e2 as any).batch_id = BATCH_MAR;
+      (e2 as any).client_state_full = 'Texas';
+      const c1 = comm('PS4', { payEntity: 'Coverall', amount: 1, serviceMonth: '2026-01', npn: JASON_NPN });
+      (c1 as any).batch_id = BATCH_JAN;
+      const c2 = comm('PS4', { payEntity: 'Coverall', amount: 1, serviceMonth: '2026-03', npn: JASON_NPN });
+      (c2 as any).batch_id = BATCH_MAR;
+      const recs: NormalizedRecord[] = [
+        makeBo(BATCH_JAN, '2026-01-15', 'Florida'),
+        makeBo(BATCH_MAR, '2026-03-15', 'Texas'),
+        e1, e2, c1, c2,
+      ];
+      const batchMonths = { [BATCH_JAN]: '2026-01', [BATCH_MAR]: '2026-03' };
+      // Rate row exists only for FL; if Mar bled FL into Jan we couldn't tell —
+      // we instead check that Mar row carries TX state (no rate row → NO_RATE_ROW)
+      // and Jan carries FL (resolved). This proves no latest-month bleed.
+      const { rows } = assembleDiagnoseRouteRows(psBaseArgs(recs, ['2026-01', '2026-03'], batchMonths) as any);
+      const jan = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === '2026-01' && r.stableMemberKey === 'isid:isidps4');
+      const mar = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === '2026-03' && r.stableMemberKey === 'isid:isidps4');
+      expect(jan).toBeDefined();
+      expect(mar).toBeDefined();
+      // Jan keyed on FL → resolves (no MISSING_STATE / NO_RATE_ROW).
+      if (jan!.facts.amount.kind === 'indeterminate') {
+        expect(jan!.facts.amount.reason).not.toBe('MISSING_STATE');
+        expect(jan!.facts.amount.reason).not.toBe('NO_RATE_ROW');
+      }
+      // Mar keyed on TX (no rate row in fixture) → NO_RATE_ROW, NOT MISSING_STATE.
+      expect(mar!.facts.amount.kind).toBe('indeterminate');
+      if (mar!.facts.amount.kind === 'indeterminate') {
+        expect(mar!.facts.amount.reason).toBe('NO_RATE_ROW');
+      }
     });
   });
 });
+
 
