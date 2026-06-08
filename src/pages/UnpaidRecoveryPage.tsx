@@ -590,7 +590,18 @@ export default function UnpaidRecoveryPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {pagedRows.length === 0 ? (
+            {latestBoLoading ? (
+              <TableRow>
+                <TableCell
+                  colSpan={COLUMNS.length}
+                  className="text-center text-muted-foreground py-8"
+                  data-testid="unpaid-recovery-latest-bo-loading"
+                >
+                  Latest-BO alignment loading… table and export will populate once the cross-batch
+                  supersession overlay is ready.
+                </TableCell>
+              </TableRow>
+            ) : pagedRows.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={COLUMNS.length} className="text-center text-muted-foreground py-8">
                   No unpaid policies match the current filters.
