@@ -670,16 +670,16 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
           paid_through_date: '2026-04-30',
           effective_date: eff,
           eligible_for_commission: 'Yes',
-          raw_json: { 'Broker Name': 'Jason Fine', issuer: 'Ambetter', 'Number of Members': '1' },
+          raw_json: { 'Broker Name': 'Jason Fine', issuer: 'Ambetter', 'Number of Members': '1', plan_variant: 'standard' },
           ...({ batch_id: batch } as any),
         } as any);
         (r as any).client_state_full = stateFull;
         return r;
       };
-      const e1 = ede('PS4', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-01-15' });
+      const e1 = ede('PS4', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-01-15', raw_json: { plan_variant: 'standard' } });
       (e1 as any).batch_id = BATCH_JAN;
       (e1 as any).client_state_full = 'Florida';
-      const e2 = ede('PS4', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-03-15' });
+      const e2 = ede('PS4', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-03-15', raw_json: { plan_variant: 'standard' } });
       (e2 as any).batch_id = BATCH_MAR;
       (e2 as any).client_state_full = 'Texas';
       const c1 = comm('PS4', { payEntity: 'Coverall', amount: 1, serviceMonth: '2026-01', npn: JASON_NPN });
