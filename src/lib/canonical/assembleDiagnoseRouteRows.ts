@@ -147,12 +147,20 @@ function synthesizeEvidenceRow(
   serviceMonth: string,
   scope: TargetScope,
   batchMonthByBatchId: Record<string, string>,
+  pickedEdeForMonth: NormalizedRecord | null,
 ): { row: Record<string, unknown>; memberCountResolution: { status: 'resolved' | 'unresolved' | 'manual_review'; conflicts?: number[] } } {
   const sample =
     recs.find((r) => r.source_type === 'BACK_OFFICE') ??
     recs.find((r) => r.source_type === 'EDE') ??
     recs.find((r) => r.source_type === 'COMMISSION') ??
     recs[0];
+  // C2b-1 AMOUNT-EVIDENCE FIX: canonicalize carrier so rate-grid lookups
+  // key on the same canonical form as the rate chart (e.g. "Ambetter" →
+  // "ambetter"). NO display-text fallback — an uncanonicalizable carrier
+  // must MISS truthfully (downstream resolver reports MISSING_CARRIER /
+  // carrier_state_not_in_grid) instead of pretending to key on display text.
+  const carrierCanonicalEvidence =
+    canonicalCarrier(sample?.carrier ?? '') || null;
   // C2b-1 NO_RATE_ROW corrective: route the scoped member's records through
   // the canonical state resolver so rate lookups key on normalized state
   // (e.g. "Florida" → "FL") just like MCE. Locking targetBatchMonth to the
@@ -189,17 +197,34 @@ function synthesizeEvidenceRow(
   const commissionRec = recs.find(
     (r) => r.source_type === 'COMMISSION' && !!(r as any).pay_entity,
   );
+  // C2b-1 AMOUNT-EVIDENCE FIX: AOR sourced from the service-month picked EDE
+  // (same picker the facts loop uses). Controlled fallback only across scoped
+  // EDE rows — NEVER fall back to the BO-first sample (BO is from latest BO
+  // batch and would mask Erica overrides on terminated/recreated policies,
+  // producing the wrong dollar via the regular grid instead of the $0.50/$4.50
+  // override).
+  let currentPolicyAor: string | null =
+    ((pickedEdeForMonth as any)?.raw_json?.['currentPolicyAOR'] as string | undefined) ?? null;
+  if (!currentPolicyAor) {
+    for (const r of recs) {
+      if (r.source_type !== 'EDE') continue;
+      const v = (r as any)?.raw_json?.['currentPolicyAOR'] as string | undefined;
+      if (v) {
+        currentPolicyAor = v;
+        break;
+      }
+    }
+  }
   return {
     row: {
       member_key: memberKey,
-      carrier: sample?.carrier ?? null,
+      carrier: carrierCanonicalEvidence,
       state,
       member_count: memberCount,
       target_service_month: serviceMonth,
       expected_ede_effective_month: serviceMonth,
       effective_date: sample?.effective_date ?? null,
-      current_policy_aor:
-        ((sample as any)?.raw_json?.['currentPolicyAOR'] as string | undefined) ?? null,
+      current_policy_aor: currentPolicyAor,
       actual_pay_entity:
         (commissionRec as any)?.pay_entity ??
         (scope === 'All' ? null : scope),
@@ -214,6 +239,7 @@ function synthesizeEvidenceRow(
     },
   };
 }
+
 
 
 interface ScopeContext {
@@ -380,7 +406,9 @@ export function assembleDiagnoseRouteRows(
         if (!cell) continue;
         if (cell.state !== 'unpaid' && cell.state !== 'paid') continue;
         const recs = ctx.scopedByMember.get(memberKey) ?? [];
-        const synth = synthesizeEvidenceRow(memberKey, recs, serviceMonth, scope, args.batchMonthByBatchId);
+        const pickedEdeForMonth =
+          pickerMapsByMemberKey.get(memberKey)?.get(serviceMonth) ?? null;
+        const synth = synthesizeEvidenceRow(memberKey, recs, serviceMonth, scope, args.batchMonthByBatchId, pickedEdeForMonth);
         monthEvidenceRows.push(synth.row);
         memberCountResByMember.set(memberKey, synth.memberCountResolution);
       }
