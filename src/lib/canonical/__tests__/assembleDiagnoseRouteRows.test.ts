@@ -269,9 +269,9 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
   }
 
   function findRow(rows: RouteRowInput[], member: string, scope: string, month = STMT_MONTH) {
+    const lc = `isid:isid${member.toLowerCase()}`;
     return rows.find(
-      (r) => r.rowKey === `${scope}|isid:ISID${member}|${month}` ||
-        r.rowKey.endsWith(`|${month}`) && r.targetScope === scope && r.stableMemberKey.includes(`ISID${member}`),
+      (r) => r.targetScope === scope && r.serviceMonth === month && r.stableMemberKey === lc,
     );
   }
 
