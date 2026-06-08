@@ -1581,31 +1581,43 @@ export default function DashboardPage() {
               ]}
             />
             <div className="relative">
-              <MetricCard
-                title="Expected But Unpaid"
-                value={metrics.adjustedUnpaid}
-                icon={<XCircle className="h-4 w-4" />}
-                variant="destructive"
-                onClick={() => setDrilldown('unpaid')}
-                tooltip={{ text: "Members in the expected-payment universe (Matched + BO Only + EDE Only) that were not paid, after applying cross-batch payment clearings.", why: "Primary recovery target — expected revenue that was not received." }}
-                splits={[
-                  { label: 'Matched', value: metrics.adjustedUnpaidSplit.matched },
-                  { label: 'BO Only', value: metrics.adjustedUnpaidSplit.boOnly },
-                  { label: 'EDE Only', value: metrics.adjustedUnpaidSplit.edeOnly },
-                ]}
-                splits2={[
-                  { label: 'Zero Net Premium', value: metrics.adjustedUnpaidPremiumSplit.zeroNetPremium },
-                  { label: 'Has Premium', value: metrics.adjustedUnpaidPremiumSplit.hasPremium },
-                ]}
-              />
-              {metrics.dashboardReviewRows.length > 0 && (
-                <Badge
-                  data-testid="dashboard-ebu-needs-review-chip"
-                  className="absolute top-2 right-2 border-amber-300 bg-amber-50 text-amber-700"
-                  variant="outline"
+              {metrics.latestBoLoading ? (
+                <div
+                  className="rounded-xl border p-5 text-left bg-muted/30 border-muted text-muted-foreground text-sm"
+                  data-testid="dashboard-ebu-latest-bo-loading"
                 >
-                  Needs review: {metrics.dashboardReviewRows.length}
-                </Badge>
+                  <div className="font-medium text-foreground mb-1">Expected But Unpaid</div>
+                  Latest-BO alignment loading…
+                </div>
+              ) : (
+                <>
+                  <MetricCard
+                    title="Expected But Unpaid"
+                    value={metrics.adjustedUnpaid}
+                    icon={<XCircle className="h-4 w-4" />}
+                    variant="destructive"
+                    onClick={() => setDrilldown('unpaid')}
+                    tooltip={{ text: "Members in the expected-payment universe (Matched + BO Only + EDE Only) that were not paid, after applying cross-batch payment clearings.", why: "Primary recovery target — expected revenue that was not received." }}
+                    splits={[
+                      { label: 'Matched', value: metrics.adjustedUnpaidSplit.matched },
+                      { label: 'BO Only', value: metrics.adjustedUnpaidSplit.boOnly },
+                      { label: 'EDE Only', value: metrics.adjustedUnpaidSplit.edeOnly },
+                    ]}
+                    splits2={[
+                      { label: 'Zero Net Premium', value: metrics.adjustedUnpaidPremiumSplit.zeroNetPremium },
+                      { label: 'Has Premium', value: metrics.adjustedUnpaidPremiumSplit.hasPremium },
+                    ]}
+                  />
+                  {metrics.dashboardReviewRows.length > 0 && (
+                    <Badge
+                      data-testid="dashboard-ebu-needs-review-chip"
+                      className="absolute top-2 right-2 border-amber-300 bg-amber-50 text-amber-700"
+                      variant="outline"
+                    >
+                      Needs review: {metrics.dashboardReviewRows.length}
+                    </Badge>
+                  )}
+                </>
               )}
             </div>
             {/* Bundle 13c — Cleared then reversed cohort tile (always renders). */}
