@@ -178,8 +178,13 @@ export default function AgentSummaryPage() {
     : clearingOverlay;
 
   const adjustedPartition = useMemo(
-    () => partitionUnpaidRowsByOverlay(canonicalUnpaidRows, agentSummaryClearingOverlay),
-    [canonicalUnpaidRows, agentSummaryClearingOverlay],
+    () => partitionUnpaidRowsByOverlay(
+      latestBoLoading
+        ? canonicalUnpaidRows
+        : filterLatestBoTerminatedOwedRows(canonicalUnpaidRows, latestBoOverlay!, statementMonthStartIso),
+      agentSummaryClearingOverlay,
+    ),
+    [canonicalUnpaidRows, agentSummaryClearingOverlay, latestBoLoading, latestBoOverlay, statementMonthStartIso],
   );
 
   // Group canonical unpaid rows by EDE current_policy_aor ownership bucket,
