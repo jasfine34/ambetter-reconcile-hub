@@ -168,6 +168,7 @@ describe('getAllNormalizedRecordsForMemberTimeline — query shape', () => {
       verificationIssueType: 'DMI_CITIZENSHIP',
       verificationEndDate: '2026-03-15',
       documentUploadedForSviDmi: 'N',
+      'Number of Members': '1',
     });
     // The aliased fields are stripped (no leakage).
     expect(row.raw_ffm_app_id).toBeUndefined();
@@ -177,6 +178,10 @@ describe('getAllNormalizedRecordsForMemberTimeline — query shape', () => {
     expect(row.raw_verification_issue_type).toBeUndefined();
     expect(row.raw_verification_end_date).toBeUndefined();
     expect(row.raw_document_uploaded_for_svi_dmi).toBeUndefined();
+    expect(row.raw_number_of_members).toBeUndefined();
+    expect(row.raw_covered_member_count).toBeUndefined();
+    expect(row.raw_covered_member_count_cap).toBeUndefined();
+    expect(row.raw_covered_member_count_snake).toBeUndefined();
   });
 
   it('omits missing raw keys cleanly (null projected values do not show up as keys)', async () => {
