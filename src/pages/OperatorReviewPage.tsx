@@ -595,7 +595,65 @@ function PremiumCountEvidence({ facts }: { facts: any }) {
     parts.push(`count conflict: [${(facts.memberCount.conflicts ?? []).join(',')}]`);
   } else if (facts?.memberCount?.status === 'ok') {
     parts.push('count: ok');
-  }
+}
+
+/**
+ * Wraps a wide table with a mirrored top scrollbar that stays in sync with
+ * the table's own bottom overflow-x scroll. Purely presentational.
+ */
+function MirroredScrollTable({ children }: { children: React.ReactNode }) {
+  const topRef = useRef<HTMLDivElement | null>(null);
+  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const [innerWidth, setInnerWidth] = useState(0);
+  const syncing = useRef<'top' | 'bottom' | null>(null);
+
+  useEffect(() => {
+    const el = bottomRef.current;
+    if (!el) return;
+    const measure = () => setInnerWidth(el.scrollWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild as Element);
+    return () => ro.disconnect();
+  }, [children]);
+
+  const onTopScroll = () => {
+    if (syncing.current === 'bottom') { syncing.current = null; return; }
+    if (!topRef.current || !bottomRef.current) return;
+    syncing.current = 'top';
+    bottomRef.current.scrollLeft = topRef.current.scrollLeft;
+  };
+  const onBottomScroll = () => {
+    if (syncing.current === 'top') { syncing.current = null; return; }
+    if (!topRef.current || !bottomRef.current) return;
+    syncing.current = 'bottom';
+    topRef.current.scrollLeft = bottomRef.current.scrollLeft;
+  };
+
+  return (
+    <div className="border rounded-lg bg-card">
+      <div
+        ref={topRef}
+        onScroll={onTopScroll}
+        className="overflow-x-auto overflow-y-hidden"
+        aria-hidden="true"
+        data-testid="op-top-scrollbar"
+      >
+        <div style={{ width: innerWidth || 1, height: 1 }} />
+      </div>
+      <div
+        ref={bottomRef}
+        onScroll={onBottomScroll}
+        className="overflow-x-auto max-h-[70vh] overflow-y-auto"
+        data-testid="op-table-scroll"
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
   return parts.length === 0
     ? <span className="text-muted-foreground">—</span>
     : <span>{parts.join(' · ')}</span>;
