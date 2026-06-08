@@ -356,8 +356,8 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
       allBatchRecords: extraRecs,
       serviceMonths: ['2026-02', '2026-03'],
     } as any);
-    const m2Feb = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === '2026-02' && r.stableMemberKey.includes('M2'));
-    const m2Mar = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === '2026-03' && r.stableMemberKey.includes('M2'));
+    const m2Feb = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === '2026-02' && r.stableMemberKey === 'isid:isidm2');
+    const m2Mar = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === '2026-03' && r.stableMemberKey === 'isid:isidm2');
     expect(m2Feb).toBeDefined();
     expect(m2Mar).toBeDefined();
     expect(m2Feb!.rowKey).not.toBe(m2Mar!.rowKey);
