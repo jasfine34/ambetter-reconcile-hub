@@ -24,6 +24,8 @@ import {
   type WeakMatchOverride,
 } from '@/lib/weakMatch';
 import { useCrossBatchOverlay } from '@/hooks/useCrossBatchOverlay';
+import { useLatestBoOverlay } from '@/hooks/useLatestBoOverlay';
+import { filterLatestBoTerminatedOwedRows } from '@/lib/canonical/latestAuthoritativeBo';
 import {
   EMPTY_CLEARING_OVERLAY_MAP,
   partitionUnpaidRowsByOverlay,
