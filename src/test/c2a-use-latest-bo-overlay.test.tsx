@@ -21,13 +21,13 @@ vi.mock('@/hooks/useBatchDataVersion', () => ({
 }));
 
 // Mock persistence loader — the cache path calls this, but only on a miss.
-const loaderSpy = vi.fn(async () => [] as any[]);
+const loaderSpy = vi.fn<(...args: any[]) => Promise<any[]>>(async () => []);
 vi.mock('@/lib/persistence', () => ({
   getAllNormalizedRecordsForMemberTimeline: (...args: any[]) => loaderSpy(...args),
 }));
 
 // Spy on the cache helper so we can both count calls AND control the promise.
-const projectionSpy = vi.fn(async () => ({ records: [] as any[] }));
+const projectionSpy = vi.fn<(args: any) => Promise<{ records: any[] }>>(async () => ({ records: [] }));
 vi.mock('@/lib/canonical/mtApprovedMceCache', () => ({
   getMtAllBatchProjection: (args: any) => projectionSpy(args),
 }));
