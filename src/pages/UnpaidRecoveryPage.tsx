@@ -48,6 +48,8 @@ import {
 import { filterReconciledByScope } from '@/lib/canonical/scope';
 import { EBU_BATCH_SCOPE_DISCLAIMER } from '@/lib/constants';
 import { useCrossBatchOverlay } from '@/hooks/useCrossBatchOverlay';
+import { useLatestBoOverlay } from '@/hooks/useLatestBoOverlay';
+import { filterLatestBoTerminatedOwedRows } from '@/lib/canonical/latestAuthoritativeBo';
 import {
   partitionUnpaidRowsByOverlay,
   type AdjustedRow,
@@ -372,6 +374,9 @@ export default function UnpaidRecoveryPage() {
     () => getCoveredMonths(currentBatch?.statement_month),
     [currentBatch?.statement_month],
   );
+  const statementMonth = coveredMonths[1] ?? '';
+  const { overlay: latestBoOverlay, loading: latestBoLoading, statementMonthStartIso } =
+    useLatestBoOverlay(statementMonth, batches, resolverIndex);
 
   const filteredEde = useMemo(
     () => computeFilteredEde(normalizedRecords, reconciled, scope, coveredMonths, resolverIndex),
@@ -408,11 +413,18 @@ export default function UnpaidRecoveryPage() {
   const rawUnpaidRows = breakdown.unpaidRows;
   const universe = breakdown.universe;
 
-  // Bundle 13c — overlay-aware partition.
+  // Bundle 13c — overlay-aware partition. C2a Stage 3: pre-filter rawUnpaidRows
+  // through the latest-BO supersession overlay before partitioning so terminated-
+  // policy owed rows are suppressed (matches Dashboard EBU + Agent Summary).
   const { overlay: clearingOverlay } = useCrossBatchOverlay();
   const partition = useMemo(
-    () => partitionUnpaidRowsByOverlay(rawUnpaidRows, clearingOverlay),
-    [rawUnpaidRows, clearingOverlay],
+    () => partitionUnpaidRowsByOverlay(
+      latestBoLoading
+        ? rawUnpaidRows
+        : filterLatestBoTerminatedOwedRows(rawUnpaidRows, latestBoOverlay!, statementMonthStartIso),
+      clearingOverlay,
+    ),
+    [rawUnpaidRows, clearingOverlay, latestBoLoading, latestBoOverlay, statementMonthStartIso],
   );
   // Map row → AdjustedRow for badge / dollar lookups.
   const adjustedByRow = useMemo(() => {
@@ -543,7 +555,13 @@ export default function UnpaidRecoveryPage() {
             <SelectItem value="hasPremium">Has Premium</SelectItem>
           </SelectContent>
         </Select>
-        <Button variant="outline" size="sm" onClick={handleExport} disabled={filteredRows.length === 0}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleExport}
+          disabled={latestBoLoading || filteredRows.length === 0}
+          data-testid="ur-export-button"
+        >
           <Download className="h-4 w-4 mr-1" /> Export filtered rows
         </Button>
       </div>
@@ -572,7 +590,18 @@ export default function UnpaidRecoveryPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {pagedRows.length === 0 ? (
+            {latestBoLoading ? (
+              <TableRow>
+                <TableCell
+                  colSpan={COLUMNS.length}
+                  className="text-center text-muted-foreground py-8"
+                  data-testid="unpaid-recovery-latest-bo-loading"
+                >
+                  Latest-BO alignment loading… table and export will populate once the cross-batch
+                  supersession overlay is ready.
+                </TableCell>
+              </TableRow>
+            ) : pagedRows.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={COLUMNS.length} className="text-center text-muted-foreground py-8">
                   No unpaid policies match the current filters.
