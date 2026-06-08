@@ -116,6 +116,7 @@ import {
   routeMemberMonth,
   detectSignals,
   runDiagnoseCycle,
+  projectDiagnoseRoutes,
   type RouteRowInput,
 } from '@/lib/canonical/diagnoseAndRoute';
 import type { BlockerFacts } from '@/lib/canonical/blockerFacts';
