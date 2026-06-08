@@ -193,7 +193,7 @@ function synthesizeEvidenceRow(
     row: {
       member_key: memberKey,
       carrier: sample?.carrier ?? null,
-      state: stateRaw,
+      state,
       member_count: memberCount,
       target_service_month: serviceMonth,
       expected_ede_effective_month: serviceMonth,
