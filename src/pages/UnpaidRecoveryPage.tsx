@@ -374,6 +374,9 @@ export default function UnpaidRecoveryPage() {
     () => getCoveredMonths(currentBatch?.statement_month),
     [currentBatch?.statement_month],
   );
+  const statementMonth = coveredMonths[1] ?? '';
+  const { overlay: latestBoOverlay, loading: latestBoLoading, statementMonthStartIso } =
+    useLatestBoOverlay(statementMonth, batches, resolverIndex);
 
   const filteredEde = useMemo(
     () => computeFilteredEde(normalizedRecords, reconciled, scope, coveredMonths, resolverIndex),
