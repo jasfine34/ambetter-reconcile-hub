@@ -534,5 +534,59 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
       expect(reasonOf(jan)).not.toBe('MISSING_MEMBER_COUNT');
       expect(reasonOf(mar)).not.toBe('MISSING_MEMBER_COUNT');
     });
+
+    it('MC3 (Stage 2): conflicting BO counts populate facts.memberCount.status=manual_review with conflicts', () => {
+      // Two BO records in the SAME service month with different counts →
+      // resolver returns manual_review → assembler must surface that on
+      // facts.memberCount (Stage 2 wiring), not collapse it.
+      const BATCH_A = 'B-2026-03-a';
+      const BATCH_B = 'B-2026-03-b';
+      const boA = rec({
+        source_type: 'BACK_OFFICE',
+        member_key: 'MC5',
+        issuer_subscriber_id: 'ISIDMC5',
+        policy_number: 'POLMC5',
+        agent_npn: JASON_NPN,
+        agent_name: 'Jason Fine',
+        net_premium: 100,
+        paid_through_date: '2026-04-30',
+        effective_date: '2026-03-15',
+        eligible_for_commission: 'Yes',
+        raw_json: { 'Broker Name': 'Jason Fine', issuer: 'Ambetter', 'Number of Members': '1' },
+        ...({ batch_id: BATCH_A } as any),
+      } as any);
+      const boB = rec({
+        source_type: 'BACK_OFFICE',
+        member_key: 'MC5',
+        issuer_subscriber_id: 'ISIDMC5',
+        policy_number: 'POLMC5',
+        agent_npn: JASON_NPN,
+        agent_name: 'Jason Fine',
+        net_premium: 100,
+        paid_through_date: '2026-04-30',
+        effective_date: '2026-03-15',
+        eligible_for_commission: 'Yes',
+        raw_json: { 'Broker Name': 'Jason Fine', issuer: 'Ambetter', 'Number of Members': '3' },
+        ...({ batch_id: BATCH_B } as any),
+      } as any);
+      const e = ede('MC5', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-03-15' });
+      (e as any).batch_id = BATCH_A;
+      const c = comm('MC5', { payEntity: 'Coverall', amount: 50, serviceMonth: STMT_MONTH, npn: JASON_NPN });
+      (c as any).batch_id = BATCH_A;
+      const recs: NormalizedRecord[] = [boA, boB, e, c];
+      const batchMonths = { [BATCH_A]: STMT_MONTH, [BATCH_B]: STMT_MONTH };
+      const { rows } = assembleDiagnoseRouteRows(
+        mcBaseArgs(recs, [STMT_MONTH], batchMonths) as any,
+      );
+      const r = rows.find((rr) => rr.targetScope === 'Coverall' && rr.serviceMonth === STMT_MONTH && rr.stableMemberKey === 'isid:isidmc5');
+      expect(r).toBeDefined();
+      expect(r!.facts.memberCount).toBeDefined();
+      expect(r!.facts.memberCount!.status).toBe('manual_review');
+      if (r!.facts.memberCount!.status === 'manual_review') {
+        expect(r!.facts.memberCount!.reason).toBe('member_count_manual_review');
+        expect(r!.facts.memberCount!.conflicts?.sort()).toEqual([1, 3]);
+      }
+    });
   });
 });
+
