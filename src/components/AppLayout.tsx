@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Upload, AlertTriangle, Users, Building2, Link2, FileText, CalendarRange, FileDown, Inbox } from 'lucide-react';
+import { LayoutDashboard, Upload, AlertTriangle, Users, Building2, Link2, FileText, CalendarRange, FileDown, Inbox, ClipboardCheck } from 'lucide-react';
 
 const links = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -11,6 +11,7 @@ const links = [
   { to: '/member-timeline', icon: CalendarRange, label: 'Member Timeline' },
   { to: '/records', icon: FileText, label: 'All Records' },
   { to: '/unpaid-recovery', icon: Inbox, label: 'Unpaid Recovery' },
+  { to: '/operator-review', icon: ClipboardCheck, label: 'Operator Review' },
   { to: '/exports/missing-commission', icon: FileDown, label: 'Missing Commission' },
 ];
 
