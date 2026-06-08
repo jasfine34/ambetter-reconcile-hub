@@ -262,7 +262,7 @@ describe('C2a T5 — Dashboard raw-diagnostic guard: raw fields untouched by the
       // sourceCoverage.expectedButUnpaid.rows. Never against universe / shouldPay /
       // expectedReceived / paid buckets / raw breakdown fields.
       expect(m).toMatch(/expectedPaymentBreakdown\.unpaidRows|sourceCoverage\.expectedButUnpaid\.rows/);
-      expect(m).not.toMatch(/shouldPay|expectedReceived|paidRows|universe\b/);
+      expect(m).not.toMatch(/\bshouldPay\b|\bexpectedReceived\b|(?<!un)paidRows\b|\buniverse\b/);
     }
   });
 
