@@ -457,3 +457,81 @@ describe('routeMemberMonth — memberCount manual_review precedence (R-CARR-007)
   });
 });
 
+
+// ─────────────────────────────────────────────────────────────────────────
+// C2b-2 Stage 1 — projectDiagnoseRoutes (read-only projection)
+// ─────────────────────────────────────────────────────────────────────────
+describe('projectDiagnoseRoutes — read-only projection', () => {
+  function seededPopulation(): RouteRowInput[] {
+    return [
+      row('chase', { stableMemberKey: 'isid:u1', identity: { carrier: 'Ambetter', issuer_subscriber_id: 'U1' } }),
+      row('sat', {
+        stableMemberKey: 'isid:u2',
+        identity: { carrier: 'Ambetter', issuer_subscriber_id: 'U2' },
+        facts: facts({ crossEntitySatisfied: { satisfied: true, satisfyingEntity: 'Vix', actualPaid: 10, expectedBasis: 10, amountStatus: { kind: 'correct' } } }),
+      }),
+      row('prem', {
+        stableMemberKey: 'isid:u3',
+        identity: { carrier: 'Ambetter', issuer_subscriber_id: 'U3' },
+        facts: facts({ premium: { kind: 'premium_blocked' } }),
+      }),
+      row('p2wa', {
+        stableMemberKey: 'isid:u4',
+        identity: { carrier: 'Ambetter', issuer_subscriber_id: 'U4' },
+        population: 2,
+        facts: facts({ amount: { kind: 'wrong_amount', actual: 1, expected: 2 } }),
+      }),
+    ];
+  }
+
+  it('PARITY: with no due-for-release decisions, projection === cycle (routes/fyi/buckets)', async () => {
+    const rows = seededPopulation();
+    const cycle = await runDiagnoseCycle({ rows });
+    const proj = await projectDiagnoseRoutes({ rows });
+
+    expect(proj.chaseEligible.sort()).toEqual(cycle.chaseEligible.sort());
+    expect(proj.satisfied.sort()).toEqual(cycle.satisfied.sort());
+    expect(proj.queues.amount_discrepancy.sort()).toEqual(cycle.queues.amount_discrepancy.sort());
+    expect(proj.queues.premium.sort()).toEqual(cycle.queues.premium.sort());
+    expect(proj.queues.dmi.sort()).toEqual(cycle.queues.dmi.sort());
+    expect(proj.queues.prior_balance.sort()).toEqual(cycle.queues.prior_balance.sort());
+    expect(proj.queues.manual_review.sort()).toEqual(cycle.queues.manual_review.sort());
+
+    for (const r of rows) {
+      expect(proj.routes.get(r.rowKey)?.route).toBe(cycle.routes.get(r.rowKey)?.route);
+      expect(proj.routes.get(r.rowKey)?.rationale).toBe(cycle.routes.get(r.rowKey)?.rationale);
+      expect(proj.fyi.get(r.rowKey) ?? []).toEqual(cycle.fyi.get(r.rowKey) ?? []);
+    }
+  });
+
+  it('NO-WRITE: projection performs zero RPC writes (record + release)', async () => {
+    // Seed a hold + a row that WOULD release in a full cycle.
+    await recordDecision(BASE_DECISION); // hold_dmi
+    const recordsBefore = recordRpcCalls;
+    const releasesBefore = releaseRpcCalls;
+
+    const r = row('clean', {
+      facts: facts({ crossEntitySatisfied: { satisfied: true, satisfyingEntity: 'Vix', actualPaid: 10, expectedBasis: 10, amountStatus: { kind: 'correct' } } }),
+    });
+    const proj = await projectDiagnoseRoutes({ rows: [r] });
+
+    expect(recordRpcCalls).toBe(recordsBefore);
+    expect(releaseRpcCalls).toBe(releasesBefore);
+    // Pre-release state: hold_dmi still active → routed to dmi queue.
+    expect(proj.queues.dmi).toEqual(['clean']);
+  });
+
+  it('FORCED LOAD: forceDecisionIndex flag is threaded into loader (true/false/default)', async () => {
+    const rows = seededPopulation();
+    const loader = vi.fn(async (_force: boolean) => loadOperatorDecisionIndex(_force));
+
+    await projectDiagnoseRoutes({ rows, loadDecisionIndex: loader, forceDecisionIndex: true });
+    expect(loader).toHaveBeenLastCalledWith(true);
+
+    await projectDiagnoseRoutes({ rows, loadDecisionIndex: loader, forceDecisionIndex: false });
+    expect(loader).toHaveBeenLastCalledWith(false);
+
+    await projectDiagnoseRoutes({ rows, loadDecisionIndex: loader });
+    expect(loader).toHaveBeenLastCalledWith(false);
+  });
+});
