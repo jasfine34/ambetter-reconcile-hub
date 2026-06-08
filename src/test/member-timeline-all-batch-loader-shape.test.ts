@@ -88,6 +88,11 @@ function makeRow(n: number, overrides: Partial<ProjectedRow> = {}): ProjectedRow
     raw_verification_issue_type: 'DMI_CITIZENSHIP',
     raw_verification_end_date: '2026-03-15',
     raw_document_uploaded_for_svi_dmi: 'N',
+    // C2b-1 member-count corrective — four member-count aliases.
+    raw_number_of_members: '1',
+    raw_covered_member_count: null,
+    raw_covered_member_count_cap: null,
+    raw_covered_member_count_snake: null,
     ...overrides,
   };
 }
