@@ -595,6 +595,10 @@ function PremiumCountEvidence({ facts }: { facts: any }) {
     parts.push(`count conflict: [${(facts.memberCount.conflicts ?? []).join(',')}]`);
   } else if (facts?.memberCount?.status === 'ok') {
     parts.push('count: ok');
+  }
+  return parts.length === 0
+    ? <span className="text-muted-foreground">—</span>
+    : <span>{parts.join(' · ')}</span>;
 }
 
 /**
@@ -654,7 +658,3 @@ function MirroredScrollTable({ children }: { children: React.ReactNode }) {
   );
 }
 
-  return parts.length === 0
-    ? <span className="text-muted-foreground">—</span>
-    : <span>{parts.join(' · ')}</span>;
-}
