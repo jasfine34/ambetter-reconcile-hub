@@ -363,17 +363,19 @@ export function assembleDiagnoseRouteRows(
       // Build per-month synthesized evidence-row set ONLY for members whose
       // target-scope cell exists this month.
       const monthEvidenceRows: Array<Record<string, unknown>> = [];
+      const memberCountResByMember = new Map<string, { status: 'resolved' | 'unresolved' | 'manual_review'; conflicts?: number[] }>();
       for (const [memberKey, classification] of ctx.classificationByMember) {
         const cell: CellClassification | undefined = classification.cells[serviceMonth];
         if (!cell) continue;
         if (cell.state !== 'unpaid' && cell.state !== 'paid') continue;
         const recs = ctx.scopedByMember.get(memberKey) ?? [];
-        monthEvidenceRows.push(
-          synthesizeEvidenceRow(memberKey, recs, serviceMonth, scope, args.batchMonthByBatchId),
-        );
+        const synth = synthesizeEvidenceRow(memberKey, recs, serviceMonth, scope, args.batchMonthByBatchId);
+        monthEvidenceRows.push(synth.row);
+        memberCountResByMember.set(memberKey, synth.memberCountResolution);
       }
       const sourceEvidenceByMemberKey: Map<string, EstMissingInputEvidence> =
         buildSourceEvidenceMap(monthEvidenceRows);
+
 
       const resolverScope = scope; // 'Coverall'|'Vix'|'All'
       const { resolve } = createEstMissingResolver({
