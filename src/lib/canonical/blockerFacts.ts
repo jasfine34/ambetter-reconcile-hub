@@ -79,11 +79,19 @@ export interface CrossEntitySatisfiedFact {
   amountStatus: AmountStatus;
 }
 
+export type MemberCountFact =
+  | { status: 'ok' }
+  | { status: 'unresolved' }
+  | { status: 'manual_review'; reason: 'member_count_manual_review'; conflicts?: number[] };
+
 export interface BlockerFacts {
   premium: PremiumFact;
   dmi: DmiFact;
   crossEntitySatisfied: CrossEntitySatisfiedFact;
   amount: AmountStatus;
+  /** C2b-1 Stage 2 (R-CARR-007). Optional + additive — absent or
+   *  `{status:'ok'}` leaves all existing routes unchanged. */
+  memberCount?: MemberCountFact;
 }
 
 // ----- Inputs --------------------------------------------------------------
@@ -127,6 +135,12 @@ export interface BlockerFactsInputs {
    *  basis (override-aware via getExpectedCommissionForClearing — Vix flat
    *  override is honoured because that wrapper is what the resolver calls). */
   preResolvedOther?: EstMissingResolution;
+  /** C2b-1 Stage 2 (R-CARR-007). Optional pre-computed member-count
+   *  resolution; assembler maps resolver status → MemberCountFact. */
+  memberCountResolution?: {
+    status: 'resolved' | 'unresolved' | 'manual_review';
+    conflicts?: number[];
+  };
 }
 
 // ----- premium passthrough --------------------------------------------------
@@ -295,5 +309,26 @@ export function buildBlockerFacts(inputs: BlockerFactsInputs): BlockerFacts {
     amount = crossEntitySatisfied.amountStatus;
   }
 
-  return { premium, dmi, crossEntitySatisfied, amount };
+  // Member-count fact (R-CARR-007) — additive, optional. Absent input
+  // yields no fact, preserving existing route semantics for all callers
+  // that haven't opted in.
+  let memberCount: MemberCountFact | undefined;
+  const mcr = inputs.memberCountResolution;
+  if (mcr) {
+    if (mcr.status === 'manual_review') {
+      memberCount = {
+        status: 'manual_review',
+        reason: 'member_count_manual_review',
+        conflicts: mcr.conflicts,
+      };
+    } else if (mcr.status === 'unresolved') {
+      memberCount = { status: 'unresolved' };
+    } else {
+      memberCount = { status: 'ok' };
+    }
+  }
+
+  const out: BlockerFacts = { premium, dmi, crossEntitySatisfied, amount };
+  if (memberCount) out.memberCount = memberCount;
+  return out;
 }

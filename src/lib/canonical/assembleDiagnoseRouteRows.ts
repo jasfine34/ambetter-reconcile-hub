@@ -146,7 +146,7 @@ function synthesizeEvidenceRow(
   serviceMonth: string,
   scope: TargetScope,
   batchMonthByBatchId: Record<string, string>,
-): Record<string, unknown> {
+): { row: Record<string, unknown>; memberCountResolution: { status: 'resolved' | 'unresolved' | 'manual_review'; conflicts?: number[] } } {
   const sample =
     recs.find((r) => r.source_type === 'BACK_OFFICE') ??
     recs.find((r) => r.source_type === 'EDE') ??
@@ -163,8 +163,8 @@ function synthesizeEvidenceRow(
   // LOCKED to the row's serviceMonth — never the latest month — so a Feb
   // assembler row never inherits Mar's count from the all-batch cache.
   // No default-to-1; an unresolved/manual_review result emits null so the
-  // resolver reports MISSING_MEMBER_COUNT legitimately (Stage 2 will route
-  // manual_review separately).
+  // resolver reports MISSING_MEMBER_COUNT legitimately. Stage 2 surfaces
+  // the conflict (manual_review) on facts.memberCount for the engine.
   const countRecords = buildPolicyMemberCountRecords({
     normalizedRecords: recs as any,
     batchMonthById: batchMonthByBatchId,
@@ -179,24 +179,31 @@ function synthesizeEvidenceRow(
     (r) => r.source_type === 'COMMISSION' && !!(r as any).pay_entity,
   );
   return {
-    member_key: memberKey,
-    carrier: sample?.carrier ?? null,
-    state: stateRaw,
-    member_count: memberCount,
-    target_service_month: serviceMonth,
-    expected_ede_effective_month: serviceMonth,
-    effective_date: sample?.effective_date ?? null,
-    current_policy_aor:
-      ((sample as any)?.raw_json?.['currentPolicyAOR'] as string | undefined) ?? null,
-    actual_pay_entity:
-      (commissionRec as any)?.pay_entity ??
-      (scope === 'All' ? null : scope),
-    matched_payee: scope === 'All' ? null : scope,
-    policy_identity_key: null,
-    plan_variant:
-      ((sample as any)?.raw_json?.['plan_variant'] as string | undefined) ?? null,
+    row: {
+      member_key: memberKey,
+      carrier: sample?.carrier ?? null,
+      state: stateRaw,
+      member_count: memberCount,
+      target_service_month: serviceMonth,
+      expected_ede_effective_month: serviceMonth,
+      effective_date: sample?.effective_date ?? null,
+      current_policy_aor:
+        ((sample as any)?.raw_json?.['currentPolicyAOR'] as string | undefined) ?? null,
+      actual_pay_entity:
+        (commissionRec as any)?.pay_entity ??
+        (scope === 'All' ? null : scope),
+      matched_payee: scope === 'All' ? null : scope,
+      policy_identity_key: null,
+      plan_variant:
+        ((sample as any)?.raw_json?.['plan_variant'] as string | undefined) ?? null,
+    },
+    memberCountResolution: {
+      status: memberCountRes.status,
+      conflicts: memberCountRes.conflicts,
+    },
   };
 }
+
 
 interface ScopeContext {
   scope: TargetScope;
@@ -356,17 +363,19 @@ export function assembleDiagnoseRouteRows(
       // Build per-month synthesized evidence-row set ONLY for members whose
       // target-scope cell exists this month.
       const monthEvidenceRows: Array<Record<string, unknown>> = [];
+      const memberCountResByMember = new Map<string, { status: 'resolved' | 'unresolved' | 'manual_review'; conflicts?: number[] }>();
       for (const [memberKey, classification] of ctx.classificationByMember) {
         const cell: CellClassification | undefined = classification.cells[serviceMonth];
         if (!cell) continue;
         if (cell.state !== 'unpaid' && cell.state !== 'paid') continue;
         const recs = ctx.scopedByMember.get(memberKey) ?? [];
-        monthEvidenceRows.push(
-          synthesizeEvidenceRow(memberKey, recs, serviceMonth, scope, args.batchMonthByBatchId),
-        );
+        const synth = synthesizeEvidenceRow(memberKey, recs, serviceMonth, scope, args.batchMonthByBatchId);
+        monthEvidenceRows.push(synth.row);
+        memberCountResByMember.set(memberKey, synth.memberCountResolution);
       }
       const sourceEvidenceByMemberKey: Map<string, EstMissingInputEvidence> =
         buildSourceEvidenceMap(monthEvidenceRows);
+
 
       const resolverScope = scope; // 'Coverall'|'Vix'|'All'
       const { resolve } = createEstMissingResolver({
@@ -419,6 +428,7 @@ export function assembleDiagnoseRouteRows(
         }
 
         const evidenceForResolver = sourceEvidenceByMemberKey.get(memberKey);
+        const memberCountResolution = memberCountResByMember.get(memberKey);
 
         const facts = buildBlockerFacts({
           targetScope: scope,
@@ -429,7 +439,9 @@ export function assembleDiagnoseRouteRows(
           evidenceForResolver,
           resolve: (call) => resolve({ row: { member_key: call.member_key }, inputEvidence: call.inputEvidence }),
           memberKey,
+          memberCountResolution,
         });
+
 
         // Diagnostics: count resolver UNSUPPORTED reasons (one probe per
         // emitted row that actually exercises the resolver — either target

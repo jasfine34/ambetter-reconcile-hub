@@ -154,6 +154,13 @@ export function routeMemberMonth(args: {
 
   // Population 2: paid → amount-discrepancy detector only.
   if (row.population === 2) {
+    // C2b-1 Stage 2 (R-CARR-007): a member-count conflict on a row that
+    // computes an expected dollar is undecidable downstream — route it to
+    // manual_review BEFORE amount handling so conflicts are not silently
+    // collapsed into "satisfied" or default-1 expected basis.
+    if (f.memberCount?.status === 'manual_review') {
+      return { route: 'manual_review', fyi, rationale: 'member_count_manual_review' };
+    }
     if (f.amount.kind === 'wrong_amount') {
       return { route: 'amount_discrepancy', fyi, rationale: 'target_scope_paid_wrong_amount' };
     }
@@ -168,6 +175,11 @@ export function routeMemberMonth(args: {
 
   // 1. Cross-entity satisfaction (D2).
   if (f.crossEntitySatisfied.satisfied) {
+    // C2b-1 Stage 2 (R-CARR-007): conflict precedence applies here too —
+    // a cross-entity-satisfied unpaid row computes an expected dollar.
+    if (f.memberCount?.status === 'manual_review') {
+      return { route: 'manual_review', fyi, rationale: 'member_count_manual_review' };
+    }
     if (f.crossEntitySatisfied.amountStatus.kind === 'wrong_amount') {
       fyi.push('cross_entity_wrong_amount');
       return {
@@ -182,6 +194,9 @@ export function routeMemberMonth(args: {
     }
     return { route: 'satisfied', fyi, rationale: 'cross_entity_satisfied_correct' };
   }
+  // Ordinary unpaid rows (no amount calc): a memberCount conflict is
+  // recorded on the fact but MUST NOT pull the row out of chase.
+
 
   // 2. Premium-blocked → premium queue (fact-driven membership; no decision required).
   if (f.premium.kind === 'premium_blocked') {

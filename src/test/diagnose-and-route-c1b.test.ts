@@ -403,3 +403,56 @@ describe('chase lifecycle', () => {
     expect(after.release_trigger).toBe('commission_file');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// C2b-1 Stage 2 — member-count conflict precedence (R-CARR-007)
+// ─────────────────────────────────────────────────────────────────────────
+describe('routeMemberMonth — memberCount manual_review precedence (R-CARR-007)', () => {
+  const emptyIdx = { all: [], byId: new Map(), byMemberMonth: new Map(), byGrain: new Map(), fingerprint: 'empty' } as any;
+
+  it('pop2 paid + memberCount manual_review → manual_review (NOT satisfied, NOT default-to-1)', () => {
+    const r = row('r', {
+      population: 2,
+      facts: facts({
+        amount: { kind: 'correct' },
+        memberCount: { status: 'manual_review', reason: 'member_count_manual_review', conflicts: [1, 2] },
+      }),
+    });
+    const d = routeMemberMonth({ row: r, activeDecisions: emptyIdx });
+    expect(d.route).toBe('manual_review');
+    expect(d.rationale).toBe('member_count_manual_review');
+  });
+
+  it('pop1 cross-entity-satisfied + memberCount manual_review → manual_review (not satisfied)', () => {
+    const r = row('r', {
+      facts: facts({
+        crossEntitySatisfied: { satisfied: true, satisfyingEntity: 'Vix', actualPaid: 10, expectedBasis: 10, amountStatus: { kind: 'correct' } },
+        memberCount: { status: 'manual_review', reason: 'member_count_manual_review', conflicts: [1, 3] },
+      }),
+    });
+    const d = routeMemberMonth({ row: r, activeDecisions: emptyIdx });
+    expect(d.route).toBe('manual_review');
+    expect(d.rationale).toBe('member_count_manual_review');
+  });
+
+  it('pop1 ordinary unpaid + memberCount manual_review (no amount calc) → STAYS in chase', () => {
+    const r = row('r', {
+      facts: facts({
+        memberCount: { status: 'manual_review', reason: 'member_count_manual_review', conflicts: [1, 2] },
+      }),
+    });
+    const d = routeMemberMonth({ row: r, activeDecisions: emptyIdx });
+    expect(d.route).toBe('chase_eligible');
+  });
+
+  it('memberCount ok / absent leaves existing routes unchanged', () => {
+    const okRow = row('ok', {
+      population: 2,
+      facts: facts({ amount: { kind: 'correct' }, memberCount: { status: 'ok' } }),
+    });
+    expect(routeMemberMonth({ row: okRow, activeDecisions: emptyIdx }).route).toBe('satisfied');
+    const absentRow = row('absent', { population: 2, facts: facts({ amount: { kind: 'correct' } }) });
+    expect(routeMemberMonth({ row: absentRow, activeDecisions: emptyIdx }).route).toBe('satisfied');
+  });
+});
+
