@@ -69,7 +69,12 @@ vi.mock('@/lib/canonical/compGridLoader', () => ({
   loadCarrierCompRates: vi.fn().mockResolvedValue([]),
 }));
 
-// Default assembler output (Stage 2 baseline). Tests can override per-case.
+vi.mock('@/lib/canonical/assembleDiagnoseRouteRows', () => ({
+  // Default rows are injected via beforeEach below; factory must be hoist-safe.
+  assembleDiagnoseRouteRows: vi.fn().mockReturnValue({ rows: [], diagnostics: {} }),
+}));
+
+// Test fixtures (referenced from beforeEach, NOT from any vi.mock factory).
 const aliceCoverall = {
   rowKey: 'Coverall|isid:u1|2026-02',
   carrier: 'ambetter',
@@ -118,13 +123,6 @@ const aliceVix = {
     amount: { kind: 'not_applicable' },
   },
 };
-
-vi.mock('@/lib/canonical/assembleDiagnoseRouteRows', () => ({
-  assembleDiagnoseRouteRows: vi.fn().mockReturnValue({
-    rows: [aliceCoverall, samCoverall],
-    diagnostics: {},
-  }),
-}));
 
 vi.mock('@/lib/canonical/operatorDecisions', async (importOriginal) => {
   const actual: any = await importOriginal();
