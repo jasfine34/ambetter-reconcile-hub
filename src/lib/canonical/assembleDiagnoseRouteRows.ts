@@ -362,7 +362,7 @@ export function assembleDiagnoseRouteRows(
         if (cell.state !== 'unpaid' && cell.state !== 'paid') continue;
         const recs = ctx.scopedByMember.get(memberKey) ?? [];
         monthEvidenceRows.push(
-          synthesizeEvidenceRow(memberKey, recs, serviceMonth, scope),
+          synthesizeEvidenceRow(memberKey, recs, serviceMonth, scope, args.batchMonthByBatchId),
         );
       }
       const sourceEvidenceByMemberKey: Map<string, EstMissingInputEvidence> =
