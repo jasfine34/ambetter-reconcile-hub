@@ -396,8 +396,27 @@ export async function runDiagnoseCycle(args: RunDiagnoseCycleArgs): Promise<Cycl
   const post = await load(true);
 
   // Phase iv — derive routes from POST state.
+  const { routes, fyi: fyiMap, chaseEligible, satisfied, queues } = bucketRoutes(args.rows, post);
+
+  return { routes, queues, chaseEligible, satisfied, fyi: fyiMap, appliedReleases, observedNoopSignals };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Shared Phase-iv bucketing (used by runDiagnoseCycle + projectDiagnoseRoutes)
+// ─────────────────────────────────────────────────────────────────────────
+
+function bucketRoutes(
+  rows: RouteRowInput[],
+  idx: OperatorDecisionIndex,
+): {
+  routes: Map<string, RouteDecision>;
+  fyi: Map<string, FyiTag[]>;
+  chaseEligible: string[];
+  satisfied: string[];
+  queues: CycleResult['queues'];
+} {
   const routes = new Map<string, RouteDecision>();
-  const fyiMap = new Map<string, FyiTag[]>();
+  const fyi = new Map<string, FyiTag[]>();
   const chaseEligible: string[] = [];
   const satisfied: string[] = [];
   const queues: CycleResult['queues'] = {
@@ -407,17 +426,37 @@ export async function runDiagnoseCycle(args: RunDiagnoseCycleArgs): Promise<Cycl
     prior_balance: [],
     manual_review: [],
   };
-
-  for (const r of args.rows) {
-    const d = routeMemberMonth({ row: r, activeDecisions: post });
+  for (const r of rows) {
+    const d = routeMemberMonth({ row: r, activeDecisions: idx });
     routes.set(r.rowKey, d);
-    if (d.fyi.length > 0) fyiMap.set(r.rowKey, d.fyi);
+    if (d.fyi.length > 0) fyi.set(r.rowKey, d.fyi);
     if (d.route === 'chase_eligible') chaseEligible.push(r.rowKey);
     else if (d.route === 'satisfied') satisfied.push(r.rowKey);
     else queues[d.route].push(r.rowKey);
   }
+  return { routes, fyi, chaseEligible, satisfied, queues };
+}
 
-  return { routes, queues, chaseEligible, satisfied, fyi: fyiMap, appliedReleases, observedNoopSignals };
+// ─────────────────────────────────────────────────────────────────────────
+// Read-only projection — derives routes/queues WITHOUT phase ii/iii writes.
+// Used by the operator review screen (C2b-2). Persists NOTHING.
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface ProjectDiagnoseRoutesArgs {
+  rows: RouteRowInput[];
+  loadDecisionIndex?: (force: boolean) => Promise<OperatorDecisionIndex>;
+  forceDecisionIndex?: boolean;
+}
+
+export type DiagnoseRoutesProjection = Omit<CycleResult, 'appliedReleases' | 'observedNoopSignals'>;
+
+export async function projectDiagnoseRoutes(
+  args: ProjectDiagnoseRoutesArgs,
+): Promise<DiagnoseRoutesProjection> {
+  const load = args.loadDecisionIndex ?? loadOperatorDecisionIndex;
+  const idx = await load(args.forceDecisionIndex ?? false);
+  const { routes, fyi, chaseEligible, satisfied, queues } = bucketRoutes(args.rows, idx);
+  return { routes, queues, chaseEligible, satisfied, fyi };
 }
 
 // Helper exported for callers that want to canonicalize a carrier upfront.
