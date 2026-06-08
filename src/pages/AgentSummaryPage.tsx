@@ -88,6 +88,9 @@ export default function AgentSummaryPage() {
     () => getCoveredMonths(currentBatch?.statement_month),
     [currentBatch?.statement_month],
   );
+  const statementMonth = coveredMonths[1] ?? '';
+  const { overlay: latestBoOverlay, loading: latestBoLoading, statementMonthStartIso } =
+    useLatestBoOverlay(statementMonth, batches, resolverIndex);
 
   useEffect(() => {
     if (!currentBatchId) { setNormalizedRecords([]); return; }
