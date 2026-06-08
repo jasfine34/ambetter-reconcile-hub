@@ -714,6 +714,136 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
     });
   });
   });
+
+  // ── C2b-1 AMOUNT-EVIDENCE FIX (canonical carrier + service-month AOR) ──
+  describe('amount-evidence canonicalization (carrier + AOR)', () => {
+    function aeBaseArgs(records: NormalizedRecord[], serviceMonths: string[], batchMonths: Record<string, string>, scopes: readonly TargetScope[] = ['Coverall']) {
+      return {
+        allBatchRecords: records,
+        monthList: MONTH_LIST,
+        serviceMonths,
+        targetScopes: scopes,
+        batchMonthByBatchId: batchMonths,
+        today: TODAY,
+        rateRows: [RATE_AMBETTER_FL],
+      };
+    }
+
+    it('AE1 ERICA COVERALL OVERRIDE: BO sample (BO-first) has NO AOR; service-month picked EDE supplies AOR=Erica → resolves through RESOLVED_WITH_OVERRIDE to $0.50 (NOT the $25 regular grid)', () => {
+      // BO has NO currentPolicyAOR; EDE for STMT_MONTH carries Erica AOR.
+      // Without the fix, AOR fell back to the BO sample (null) → no override
+      // → grid amount ($25). With the fix, AOR is sourced from the picked
+      // EDE → Erica owner → Coverall override $0.50 per_policy_month.
+      const boRow = bo('EO1', { brokerName: 'Erica Fine', npn: ERICA_NPN, effective_date: '2026-01-15', raw_json: { 'Number of Members': '1' } });
+      // explicit: no currentPolicyAOR on BO
+      const edeRow = ede('EO1', { aor: 'Erica Fine (21277051)', npn: ERICA_NPN, effective_date: '2026-01-15' });
+      // Pay grid amount ($25 = 25 * 1 member * 1 month). Override expected $0.50 → wrong_amount with expected=0.50.
+      const recs: NormalizedRecord[] = [
+        boRow,
+        edeRow,
+        comm('EO1', { payEntity: 'Coverall', amount: 25, serviceMonth: STMT_MONTH, npn: ERICA_NPN }),
+      ];
+      const { rows } = assembleDiagnoseRouteRows(aeBaseArgs(recs, [STMT_MONTH], BATCH_MONTH, ['Coverall', 'Vix']) as any);
+      const row = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === STMT_MONTH && r.stableMemberKey === 'isid:isideo1');
+      expect(row).toBeDefined();
+      // amount fact must NOT be the regular grid ($25 = correct). It MUST
+      // reflect the override expected ($0.50).
+      expect(row!.facts.amount.kind).toBe('wrong_amount');
+      if (row!.facts.amount.kind === 'wrong_amount') {
+        expect(row!.facts.amount.expected).toBe(0.50);
+        expect(row!.facts.amount.expected).not.toBe(25);
+      }
+    });
+
+    it('AE1b ERICA VIX OVERRIDE: picked EDE supplies AOR=Erica + scope=Vix → override expected $4.50 (NOT $25 grid)', () => {
+      const boRow = bo('EO2', { brokerName: 'Erica Fine', npn: ERICA_NPN, effective_date: '2026-01-15', raw_json: { 'Number of Members': '1' } });
+      const edeRow = ede('EO2', { aor: 'Erica Fine (21277051)', npn: ERICA_NPN, effective_date: '2026-01-15' });
+      const recs: NormalizedRecord[] = [
+        boRow,
+        edeRow,
+        comm('EO2', { payEntity: 'Vix', amount: 25, serviceMonth: STMT_MONTH, npn: ERICA_NPN }),
+      ];
+      const { rows } = assembleDiagnoseRouteRows(aeBaseArgs(recs, [STMT_MONTH], BATCH_MONTH, ['Coverall', 'Vix']) as any);
+      const row = rows.find((r) => r.targetScope === 'Vix' && r.serviceMonth === STMT_MONTH && r.stableMemberKey === 'isid:isideo2');
+      expect(row).toBeDefined();
+      expect(row!.facts.amount.kind).toBe('wrong_amount');
+      if (row!.facts.amount.kind === 'wrong_amount') {
+        expect(row!.facts.amount.expected).toBe(4.50);
+        expect(row!.facts.amount.expected).not.toBe(25);
+      }
+    });
+
+    it('AE2 CARRIER REGRESSION: display-shaped carrier "Ambetter" (NOT "ambetter") resolves through the rate grid (NOT NO_RATE_ROW)', () => {
+      // Fixtures supply RAW display carrier "Ambetter"; rate row carrier_key
+      // is canonical "ambetter". Without canonicalization the assembler fed
+      // display text to the grid → NO_RATE_ROW. With the fix → resolves.
+      const boRow = bo('CR1', { carrier: 'Ambetter', brokerName: 'Jason Fine', npn: JASON_NPN, effective_date: '2026-01-15', raw_json: { 'Number of Members': '1', plan_variant: 'standard' } });
+      const edeRow = ede('CR1', { carrier: 'Ambetter', aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-01-15', raw_json: { plan_variant: 'standard' } });
+      const recs: NormalizedRecord[] = [
+        boRow,
+        edeRow,
+        comm('CR1', { carrier: 'Ambetter', payEntity: 'Coverall', amount: 25, serviceMonth: STMT_MONTH, npn: JASON_NPN }),
+      ];
+      const { rows } = assembleDiagnoseRouteRows(aeBaseArgs(recs, [STMT_MONTH], BATCH_MONTH) as any);
+      const row = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === STMT_MONTH && r.stableMemberKey === 'isid:isidcr1');
+      expect(row).toBeDefined();
+      // Must resolve through the rate grid — actual $25 vs expected $25 = correct.
+      expect(row!.facts.amount.kind).toBe('correct');
+    });
+
+    it('AE3 UNKNOWN CARRIER: uncanonicalizable carrier does NOT falsely resolve (named miss, not RESOLVED)', () => {
+      const boRow = bo('UC1', { carrier: 'UnknownCorpXYZ', brokerName: 'Jason Fine', npn: JASON_NPN, effective_date: '2026-01-15', raw_json: { 'Number of Members': '1', plan_variant: 'standard' } });
+      const edeRow = ede('UC1', { carrier: 'UnknownCorpXYZ', aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-01-15', raw_json: { plan_variant: 'standard' } });
+      const recs: NormalizedRecord[] = [
+        boRow,
+        edeRow,
+        comm('UC1', { carrier: 'UnknownCorpXYZ', payEntity: 'Coverall', amount: 25, serviceMonth: STMT_MONTH, npn: JASON_NPN }),
+      ];
+      const { rows } = assembleDiagnoseRouteRows(aeBaseArgs(recs, [STMT_MONTH], BATCH_MONTH) as any);
+      const row = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === STMT_MONTH && r.stableMemberKey === 'isid:isiduc1');
+      expect(row).toBeDefined();
+      // Must NOT be 'correct' or 'wrong_amount' — those would mean we keyed a rate.
+      expect(row!.facts.amount.kind).toBe('indeterminate');
+    });
+
+    it('AE4 PARITY-BY-CONSTRUCTION: assembler synthetic row resolves to the SAME amount + status as direct getExpectedCommissionForClearing across {Coverall non-override, Erica Coverall override, Erica Vix override}', async () => {
+      const { getExpectedCommissionForClearing } = await import('../expectedCommissionForClearing');
+      const POLICY_YEAR = 2026;
+      const cases: Array<{ member: string; aor: string; npn: string; payEntity: 'Coverall' | 'Vix'; expectedAmount: number }> = [
+        { member: 'PB1', aor: 'Jason Fine (21055210)', npn: JASON_NPN, payEntity: 'Coverall', expectedAmount: 25 },
+        { member: 'PB2', aor: 'Erica Fine (21277051)', npn: ERICA_NPN, payEntity: 'Coverall', expectedAmount: 0.50 },
+        { member: 'PB3', aor: 'Erica Fine (21277051)', npn: ERICA_NPN, payEntity: 'Vix', expectedAmount: 4.50 },
+      ];
+      const allRecs: NormalizedRecord[] = [];
+      for (const c of cases) {
+        const brokerName = c.npn === ERICA_NPN ? 'Erica Fine' : 'Jason Fine';
+        allRecs.push(bo(c.member, { carrier: 'Ambetter', brokerName, npn: c.npn, effective_date: '2026-01-15', raw_json: { 'Number of Members': '1', plan_variant: 'standard' } }));
+        allRecs.push(ede(c.member, { carrier: 'Ambetter', aor: c.aor, npn: c.npn, effective_date: '2026-01-15', raw_json: { plan_variant: 'standard' } }));
+        allRecs.push(comm(c.member, { carrier: 'Ambetter', payEntity: c.payEntity, amount: c.expectedAmount, serviceMonth: STMT_MONTH, npn: c.npn }));
+      }
+      const { rows } = assembleDiagnoseRouteRows(aeBaseArgs(allRecs, [STMT_MONTH], BATCH_MONTH, ['Coverall', 'Vix']) as any);
+      for (const c of cases) {
+        const stableKey = `isid:isid${c.member.toLowerCase()}`;
+        const row = rows.find((r) => r.targetScope === c.payEntity && r.serviceMonth === STMT_MONTH && r.stableMemberKey === stableKey);
+        expect(row, `row for ${c.member}/${c.payEntity}`).toBeDefined();
+        // Direct call mirroring the resolver's expected lookup.
+        const direct = getExpectedCommissionForClearing(
+          { carrier: 'ambetter', state: 'FL', members: 1, months: 1, planVariant: 'standard', policyYear: POLICY_YEAR },
+          [RATE_AMBETTER_FL],
+          { current_policy_aor: c.aor, matched_payee: c.payEntity, policy_identity_key: '', target_service_month: STMT_MONTH },
+        );
+        expect(direct.expectedAmount, `direct expected for ${c.member}`).toBe(c.expectedAmount);
+        // Assembler amount fact MUST be 'correct' (actual == expected).
+        // A 'wrong_amount' or 'indeterminate' would prove a field is still
+        // display-shaped vs the canonical resolver. Name the field below.
+        if (row!.facts.amount.kind !== 'correct') {
+          const fieldDiag = `member=${c.member} scope=${c.payEntity} amountKind=${row!.facts.amount.kind} (check carrier/state/aor/plan_variant canonicalization in synthesizeEvidenceRow)`;
+          throw new Error(`PARITY-BY-CONSTRUCTION fail: ${fieldDiag}`);
+        }
+      }
+    });
+  });
 });
+
 
 
