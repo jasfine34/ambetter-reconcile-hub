@@ -24,7 +24,7 @@ import { assembleDiagnoseRouteRows } from '../assembleDiagnoseRouteRows';
 import { runDiagnoseCycle, type RouteRowInput } from '../diagnoseAndRoute';
 import type { NormalizedRecord } from '@/lib/normalize';
 import type { CarrierCompRateRow } from '../compGrid';
-import type { OperatorDecisionIndex } from '../operatorDecisions';
+import type { OperatorDecisionIndex, TargetScope } from '../operatorDecisions';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Fixtures
