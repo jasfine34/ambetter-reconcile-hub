@@ -427,4 +427,112 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
     expect(bucketCount).toBe(rows.length);
     expect(cycle.routes.size).toBe(rows.length);
   });
+
+  // ── C2b-1 member-count corrective (R-CARR-007) ──────────────────────
+  describe('member-count resolver wiring (R-CARR-007)', () => {
+    function mcBaseArgs(records: NormalizedRecord[], serviceMonths: string[], batchMonths: Record<string, string>) {
+      return {
+        allBatchRecords: records,
+        monthList: MONTH_LIST,
+        serviceMonths,
+        targetScopes: ['Coverall'] as const,
+        batchMonthByBatchId: batchMonths,
+        today: TODAY,
+        rateRows: [RATE_AMBETTER_FL],
+      };
+    }
+
+    it('MC1a: BO "Number of Members" resolves amount (NOT MISSING_MEMBER_COUNT)', () => {
+      const recs: NormalizedRecord[] = [
+        bo('MC1', { brokerName: 'Jason Fine', npn: JASON_NPN, effective_date: '2025-12-01', raw_json: { 'Number of Members': '2' } }),
+        ede('MC1', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2025-12-01' }),
+        comm('MC1', { payEntity: 'Coverall', amount: 50, serviceMonth: STMT_MONTH, npn: JASON_NPN }),
+      ];
+      const { rows } = assembleDiagnoseRouteRows(mcBaseArgs(recs, [STMT_MONTH], BATCH_MONTH) as any);
+      const row = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === STMT_MONTH && r.stableMemberKey === 'isid:isidmc1');
+      expect(row).toBeDefined();
+      if (row!.facts.amount.kind === 'indeterminate') {
+        expect(row!.facts.amount.reason).not.toBe('MISSING_MEMBER_COUNT');
+      }
+    });
+
+    it('MC1b: EDE-spelling fallback (coveredMemberCount) resolves amount', () => {
+      const recs: NormalizedRecord[] = [
+        bo('MC2', { brokerName: 'Jason Fine', npn: JASON_NPN, effective_date: '2025-12-01' }), // no count on BO
+        ede('MC2', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2025-12-01', raw_json: { coveredMemberCount: '3' } }),
+        comm('MC2', { payEntity: 'Coverall', amount: 50, serviceMonth: STMT_MONTH, npn: JASON_NPN }),
+      ];
+      const { rows } = assembleDiagnoseRouteRows(mcBaseArgs(recs, [STMT_MONTH], BATCH_MONTH) as any);
+      const row = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === STMT_MONTH && r.stableMemberKey === 'isid:isidmc2');
+      expect(row).toBeDefined();
+      if (row!.facts.amount.kind === 'indeterminate') {
+        expect(row!.facts.amount.reason).not.toBe('MISSING_MEMBER_COUNT');
+      }
+    });
+
+    it('MC1c: missing count → MISSING_MEMBER_COUNT (NO default-to-1)', () => {
+      const recs: NormalizedRecord[] = [
+        bo('MC3', { brokerName: 'Jason Fine', npn: JASON_NPN, effective_date: '2025-12-01' }),
+        ede('MC3', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2025-12-01' }),
+        comm('MC3', { payEntity: 'Coverall', amount: 50, serviceMonth: STMT_MONTH, npn: JASON_NPN }),
+      ];
+      const { rows } = assembleDiagnoseRouteRows(mcBaseArgs(recs, [STMT_MONTH], BATCH_MONTH) as any);
+      const row = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === STMT_MONTH && r.stableMemberKey === 'isid:isidmc3');
+      expect(row).toBeDefined();
+      expect(row!.facts.amount.kind).toBe('indeterminate');
+      if (row!.facts.amount.kind === 'indeterminate') {
+        expect(row!.facts.amount.reason).toBe('MISSING_MEMBER_COUNT');
+      }
+    });
+
+    it('MC2: targetBatchMonth=serviceMonth — Jan BO count=1, Mar BO count=2 → Jan + Mar both resolve member_count from their OWN month (no latest-month bleed)', () => {
+      const BATCH_JAN = 'B-2026-01';
+      const BATCH_MAR = 'B-2026-03';
+      // If the assembler shared a latest-month batch-month across rows, Jan
+      // would see the Mar record (asOf <= latest), producing a count conflict
+      // → manual_review → MISSING_MEMBER_COUNT. Locking targetBatchMonth to
+      // the row's serviceMonth keeps Jan's window to only the Jan record.
+      const makeBo = (batch: string, eff: string, count: string): NormalizedRecord => rec({
+        source_type: 'BACK_OFFICE',
+        member_key: 'MC4',
+        issuer_subscriber_id: 'ISIDMC4',
+        policy_number: 'POLMC4',
+        agent_npn: JASON_NPN,
+        agent_name: 'Jason Fine',
+        net_premium: 100,
+        paid_through_date: '2026-04-30',
+        effective_date: eff,
+        eligible_for_commission: 'Yes',
+        raw_json: { 'Broker Name': 'Jason Fine', issuer: 'Ambetter', 'Number of Members': count },
+        ...({ batch_id: batch } as any),
+      } as any);
+      const e1 = ede('MC4', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-01-15' });
+      (e1 as any).batch_id = BATCH_JAN;
+      const e2 = ede('MC4', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-03-15' });
+      (e2 as any).batch_id = BATCH_MAR;
+      const c1 = comm('MC4', { payEntity: 'Coverall', amount: 1, serviceMonth: '2026-01', npn: JASON_NPN });
+      (c1 as any).batch_id = BATCH_JAN;
+      const c2 = comm('MC4', { payEntity: 'Coverall', amount: 1, serviceMonth: '2026-03', npn: JASON_NPN });
+      (c2 as any).batch_id = BATCH_MAR;
+      const recs: NormalizedRecord[] = [
+        makeBo(BATCH_JAN, '2026-01-15', '1'),
+        makeBo(BATCH_MAR, '2026-03-15', '2'),
+        e1, e2, c1, c2,
+      ];
+      const batchMonths = { [BATCH_JAN]: '2026-01', [BATCH_MAR]: '2026-03' };
+      const { rows } = assembleDiagnoseRouteRows(
+        mcBaseArgs(recs, ['2026-01', '2026-03'], batchMonths) as any,
+      );
+      const jan = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === '2026-01' && r.stableMemberKey === 'isid:isidmc4');
+      const mar = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === '2026-03' && r.stableMemberKey === 'isid:isidmc4');
+      expect(jan).toBeDefined();
+      expect(mar).toBeDefined();
+      // Neither row may report MISSING_MEMBER_COUNT — each month's resolver
+      // bound only to its OWN serviceMonth's count record, so no conflict.
+      const reasonOf = (r: typeof jan) =>
+        r && r.facts.amount.kind === 'indeterminate' ? r.facts.amount.reason : null;
+      expect(reasonOf(jan)).not.toBe('MISSING_MEMBER_COUNT');
+      expect(reasonOf(mar)).not.toBe('MISSING_MEMBER_COUNT');
+    });
+  });
 });

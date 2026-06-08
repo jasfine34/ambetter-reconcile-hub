@@ -88,6 +88,11 @@ function makeRow(n: number, overrides: Partial<ProjectedRow> = {}): ProjectedRow
     raw_verification_issue_type: 'DMI_CITIZENSHIP',
     raw_verification_end_date: '2026-03-15',
     raw_document_uploaded_for_svi_dmi: 'N',
+    // C2b-1 member-count corrective — four member-count aliases.
+    raw_number_of_members: '1',
+    raw_covered_member_count: null,
+    raw_covered_member_count_cap: null,
+    raw_covered_member_count_snake: null,
     ...overrides,
   };
 }
@@ -163,6 +168,7 @@ describe('getAllNormalizedRecordsForMemberTimeline — query shape', () => {
       verificationIssueType: 'DMI_CITIZENSHIP',
       verificationEndDate: '2026-03-15',
       documentUploadedForSviDmi: 'N',
+      'Number of Members': '1',
     });
     // The aliased fields are stripped (no leakage).
     expect(row.raw_ffm_app_id).toBeUndefined();
@@ -172,6 +178,10 @@ describe('getAllNormalizedRecordsForMemberTimeline — query shape', () => {
     expect(row.raw_verification_issue_type).toBeUndefined();
     expect(row.raw_verification_end_date).toBeUndefined();
     expect(row.raw_document_uploaded_for_svi_dmi).toBeUndefined();
+    expect(row.raw_number_of_members).toBeUndefined();
+    expect(row.raw_covered_member_count).toBeUndefined();
+    expect(row.raw_covered_member_count_cap).toBeUndefined();
+    expect(row.raw_covered_member_count_snake).toBeUndefined();
   });
 
   it('omits missing raw keys cleanly (null projected values do not show up as keys)', async () => {
@@ -348,5 +358,35 @@ describe('getAllNormalizedRecordsForMemberTimeline — query shape', () => {
     }
     // Smoke: buildMemberTimeline can consume the projected rows without throwing.
     expect(() => buildMemberTimeline(rows as any, ['2026-01'])).not.toThrow();
+  });
+
+  // ── C2b-1 member-count corrective (R-CARR-007) ──────────────────────
+  it('C2b-1 MC: MEMBER_TIMELINE_ALL_BATCH_COLUMNS contains the four member-count aliases', async () => {
+    allRows = [makeRow(1)];
+    await getAllNormalizedRecordsForMemberTimeline();
+    const cols = MEMBER_TIMELINE_ALL_BATCH_COLUMNS;
+    expect(cols).toContain('raw_number_of_members:raw_json->>"Number of Members"');
+    expect(cols).toContain('raw_covered_member_count:raw_json->>coveredMemberCount');
+    expect(cols).toContain('raw_covered_member_count_cap:raw_json->>CoveredMemberCount');
+    expect(cols).toContain('raw_covered_member_count_snake:raw_json->>covered_member_count');
+    expect(queryLog[0].selectCols).toBe(cols);
+  });
+
+  it('C2b-1 MC: projected row reconstructs all four original member-count raw_json keys with aliases stripped', async () => {
+    allRows = [makeRow(1, {
+      raw_number_of_members: '4',
+      raw_covered_member_count: '2',
+      raw_covered_member_count_cap: '3',
+      raw_covered_member_count_snake: '5',
+    })];
+    const [row] = await getAllNormalizedRecordsForMemberTimeline();
+    expect(row.raw_json['Number of Members']).toBe('4');
+    expect(row.raw_json.coveredMemberCount).toBe('2');
+    expect(row.raw_json.CoveredMemberCount).toBe('3');
+    expect(row.raw_json.covered_member_count).toBe('5');
+    expect(row.raw_number_of_members).toBeUndefined();
+    expect(row.raw_covered_member_count).toBeUndefined();
+    expect(row.raw_covered_member_count_cap).toBeUndefined();
+    expect(row.raw_covered_member_count_snake).toBeUndefined();
   });
 });
