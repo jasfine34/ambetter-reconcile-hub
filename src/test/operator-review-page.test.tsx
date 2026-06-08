@@ -264,36 +264,27 @@ describe('OperatorReviewPage — Stage 3 hold actions + run-cycle', () => {
     ).toBe(false);
   });
 
-  it('OR3: reason-code select offers ONLY REASON_CODES_BY_TYPE[hold_premium] entries', async () => {
-    // jsdom polyfills required for Radix Select pointer interactions.
-    if (!(globalThis as any).PointerEvent) {
-      (globalThis as any).PointerEvent = class PE {
-        constructor(public type: string, public init: any = {}) { Object.assign(this, init); }
-      } as any;
-    }
-    if (!(Element.prototype as any).hasPointerCapture) {
-      (Element.prototype as any).hasPointerCapture = () => false;
-      (Element.prototype as any).releasePointerCapture = () => {};
-      (Element.prototype as any).setPointerCapture = () => {};
-    }
-    if (!(Element.prototype as any).scrollIntoView) {
-      (Element.prototype as any).scrollIntoView = () => {};
-    }
+  it('OR3: reason-code SELECT is bound to REASON_CODES_BY_TYPE (no free-text reason); default is in the allowed list', async () => {
     renderPage();
     await waitFor(() => expect(screen.getByText('Alice Actionable')).toBeInTheDocument());
     const row = screen.getByText('Alice Actionable').closest('tr')!;
     fireEvent.click(within(row).getByTestId('action-hold_premium'));
     await waitFor(() => expect(screen.getByTestId('hold-prompt')).toBeInTheDocument());
+
+    // The trigger displays the CURRENT reason_code (a valid REASON_CODES_BY_TYPE entry).
     const trigger = screen.getByTestId('hold-reason-select');
-    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerType: 'mouse' } as any);
-    fireEvent.click(trigger);
-    await waitFor(() => {
-      for (const code of REASON_CODES_BY_TYPE.hold_premium) {
-        expect(screen.queryByTestId(`reason-${code}`)).not.toBeNull();
-      }
-    });
-    // An out-of-list code is not offered.
-    expect(screen.queryByTestId('reason-prior_balance_owed')).toBeNull();
+    expect(trigger.textContent).toMatch(/awaiting_premium/);
+    expect(REASON_CODES_BY_TYPE.hold_premium).toContain('awaiting_premium');
+    // The internal-note textarea is the ONLY free-text input; it is separate from reason_code.
+    expect(screen.getByTestId('hold-internal-note').tagName).toBe('TEXTAREA');
+
+    // Submitting goes through with the allowed default.
+    fireEvent.click(screen.getByTestId('hold-submit'));
+    await waitFor(() => expect(recordDecisionSpy).toHaveBeenCalledTimes(1));
+    expect(recordDecisionSpy.mock.calls[0][0].reason_code).toBe('awaiting_premium');
+    expect(REASON_CODES_BY_TYPE.hold_premium).toContain(
+      recordDecisionSpy.mock.calls[0][0].reason_code,
+    );
   });
 
   it('OR3: a thrown validation error from recordDecision surfaces as a FAILED write (prompt stays open, no spurious success)', async () => {
