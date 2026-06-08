@@ -427,4 +427,110 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
     expect(bucketCount).toBe(rows.length);
     expect(cycle.routes.size).toBe(rows.length);
   });
+
+  // ── C2b-1 member-count corrective (R-CARR-007) ──────────────────────
+  describe('member-count resolver wiring (R-CARR-007)', () => {
+    function mcBaseArgs(records: NormalizedRecord[], serviceMonths: string[], batchMonths: Record<string, string>) {
+      return {
+        allBatchRecords: records,
+        monthList: MONTH_LIST,
+        serviceMonths,
+        targetScopes: ['Coverall'] as const,
+        batchMonthByBatchId: batchMonths,
+        today: TODAY,
+        rateRows: [RATE_AMBETTER_FL],
+      };
+    }
+
+    it('MC1a: BO "Number of Members" resolves amount (NOT MISSING_MEMBER_COUNT)', () => {
+      const recs: NormalizedRecord[] = [
+        bo('MC1', { brokerName: 'Jason Fine', npn: JASON_NPN, effective_date: '2025-12-01', raw_json: { 'Number of Members': '2' } }),
+        ede('MC1', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2025-12-01' }),
+        comm('MC1', { payEntity: 'Coverall', amount: 50, serviceMonth: STMT_MONTH, npn: JASON_NPN }),
+      ];
+      const { rows } = assembleDiagnoseRouteRows(mcBaseArgs(recs, [STMT_MONTH], BATCH_MONTH) as any);
+      const row = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === STMT_MONTH && r.stableMemberKey === 'isid:isidmc1');
+      expect(row).toBeDefined();
+      if (row!.facts.amount.kind === 'indeterminate') {
+        expect(row!.facts.amount.reason).not.toBe('MISSING_MEMBER_COUNT');
+      }
+    });
+
+    it('MC1b: EDE-spelling fallback (coveredMemberCount) resolves amount', () => {
+      const recs: NormalizedRecord[] = [
+        bo('MC2', { brokerName: 'Jason Fine', npn: JASON_NPN, effective_date: '2025-12-01' }), // no count on BO
+        ede('MC2', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2025-12-01', raw_json: { coveredMemberCount: '3' } }),
+        comm('MC2', { payEntity: 'Coverall', amount: 50, serviceMonth: STMT_MONTH, npn: JASON_NPN }),
+      ];
+      const { rows } = assembleDiagnoseRouteRows(mcBaseArgs(recs, [STMT_MONTH], BATCH_MONTH) as any);
+      const row = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === STMT_MONTH && r.stableMemberKey === 'isid:isidmc2');
+      expect(row).toBeDefined();
+      if (row!.facts.amount.kind === 'indeterminate') {
+        expect(row!.facts.amount.reason).not.toBe('MISSING_MEMBER_COUNT');
+      }
+    });
+
+    it('MC1c: missing count → MISSING_MEMBER_COUNT (NO default-to-1)', () => {
+      const recs: NormalizedRecord[] = [
+        bo('MC3', { brokerName: 'Jason Fine', npn: JASON_NPN, effective_date: '2025-12-01' }),
+        ede('MC3', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2025-12-01' }),
+        comm('MC3', { payEntity: 'Coverall', amount: 50, serviceMonth: STMT_MONTH, npn: JASON_NPN }),
+      ];
+      const { rows } = assembleDiagnoseRouteRows(mcBaseArgs(recs, [STMT_MONTH], BATCH_MONTH) as any);
+      const row = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === STMT_MONTH && r.stableMemberKey === 'isid:isidmc3');
+      expect(row).toBeDefined();
+      expect(row!.facts.amount.kind).toBe('indeterminate');
+      if (row!.facts.amount.kind === 'indeterminate') {
+        expect(row!.facts.amount.reason).toBe('MISSING_MEMBER_COUNT');
+      }
+    });
+
+    it('MC2: targetBatchMonth=serviceMonth — Jan BO count=1, Feb BO count=2 → Jan row resolves with count 1, Feb with count 2 (no latest-count bleed)', () => {
+      const BATCH_JAN = 'B-2026-01';
+      const BATCH_FEB = 'B-2026-02';
+      // Asymmetric: month-specific effective_date drives asOfMonth in the adapter,
+      // so each BO row contributes the count for that month only.
+      const makeBo = (batch: string, eff: string, count: string): NormalizedRecord => rec({
+        source_type: 'BACK_OFFICE',
+        member_key: 'MC4',
+        issuer_subscriber_id: 'ISIDMC4',
+        policy_number: 'POLMC4',
+        agent_npn: JASON_NPN,
+        agent_name: 'Jason Fine',
+        net_premium: 100,
+        paid_through_date: '2026-04-30',
+        effective_date: eff,
+        eligible_for_commission: 'Yes',
+        raw_json: { 'Broker Name': 'Jason Fine', issuer: 'Ambetter', 'Number of Members': count },
+        ...({ batch_id: batch } as any),
+      } as any);
+      const recs: NormalizedRecord[] = [
+        makeBo(BATCH_JAN, '2026-01-15', '1'),
+        makeBo(BATCH_FEB, '2026-02-15', '2'),
+        ede('MC4', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-01-15', batch_id: BATCH_JAN } as any),
+        ede('MC4', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-02-15', batch_id: BATCH_FEB } as any),
+        // Paid in both months so amount fact actually exercises the resolver.
+        comm('MC4', { payEntity: 'Coverall', amount: 25, serviceMonth: '2026-01', npn: JASON_NPN, batch_id: BATCH_JAN } as any),
+        comm('MC4', { payEntity: 'Coverall', amount: 50, serviceMonth: '2026-02', npn: JASON_NPN, batch_id: BATCH_FEB } as any),
+      ];
+      const batchMonths = { [BATCH_JAN]: '2026-01', [BATCH_FEB]: '2026-02' };
+      const { rows } = assembleDiagnoseRouteRows(
+        mcBaseArgs(recs, ['2026-01', '2026-02'], batchMonths) as any,
+      );
+      const jan = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === '2026-01' && r.stableMemberKey === 'isid:isidmc4');
+      const feb = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === '2026-02' && r.stableMemberKey === 'isid:isidmc4');
+      expect(jan).toBeDefined();
+      expect(feb).toBeDefined();
+      // Rate is $25 pmpm → Jan(count 1)=$25, Feb(count 2)=$50 expected.
+      const expectedFor = (r: typeof jan) => {
+        if (!r) return null;
+        if (r.facts.amount.kind === 'correct' || r.facts.amount.kind === 'wrong_amount') {
+          return r.facts.amount.expected;
+        }
+        return null;
+      };
+      expect(expectedFor(jan)).toBe(25);
+      expect(expectedFor(feb)).toBe(50);
+    });
+  });
 });
