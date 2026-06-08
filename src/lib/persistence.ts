@@ -606,6 +606,16 @@ export const MEMBER_TIMELINE_RAW_JSON_PROJECTION = [
   'raw_verification_issue_type:raw_json->>verificationIssueType',
   'raw_verification_end_date:raw_json->>verificationEndDate',
   'raw_document_uploaded_for_svi_dmi:raw_json->>documentUploadedForSviDmi',
+  // C2b-1 member-count corrective (R-CARR-007) — feed all four spellings
+  // the canonical adapter (buildPolicyMemberCountRecords) accepts so the
+  // headless assembler can resolve memberCount via
+  // resolvePolicyMemberCountForCompGrid. BO "Number of Members" is the
+  // authoritative source; the three EDE spellings are fallbacks. Project
+  // all four because narrowing to one would silently downgrade the contract.
+  'raw_number_of_members:raw_json->>"Number of Members"',
+  'raw_covered_member_count:raw_json->>coveredMemberCount',
+  'raw_covered_member_count_cap:raw_json->>CoveredMemberCount',
+  'raw_covered_member_count_snake:raw_json->>covered_member_count',
 ].join(',');
 
 export const MEMBER_TIMELINE_ALL_BATCH_COLUMNS =
