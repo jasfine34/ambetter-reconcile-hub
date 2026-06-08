@@ -507,13 +507,18 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
       const recs: NormalizedRecord[] = [
         makeBo(BATCH_JAN, '2026-01-15', '1'),
         makeBo(BATCH_FEB, '2026-02-15', '2'),
-        ede('MC4', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-01-15', batch_id: BATCH_JAN } as any),
-        ede('MC4', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-02-15', batch_id: BATCH_FEB } as any),
-        // Paid amounts INTENTIONALLY mismatched so the amount fact lands on
-        // 'wrong_amount' (which exposes the resolver's `expected`); proves
-        // expected basis = rate * monthly count without latest-month bleed.
-        comm('MC4', { payEntity: 'Coverall', amount: 1, serviceMonth: '2026-01', npn: JASON_NPN, batch_id: BATCH_JAN } as any),
-        comm('MC4', { payEntity: 'Coverall', amount: 1, serviceMonth: '2026-02', npn: JASON_NPN, batch_id: BATCH_FEB } as any),
+      const e1 = ede('MC4', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-01-15' });
+      (e1 as any).batch_id = BATCH_JAN;
+      const e2 = ede('MC4', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-02-15' });
+      (e2 as any).batch_id = BATCH_FEB;
+      const c1 = comm('MC4', { payEntity: 'Coverall', amount: 1, serviceMonth: '2026-01', npn: JASON_NPN });
+      (c1 as any).batch_id = BATCH_JAN;
+      const c2 = comm('MC4', { payEntity: 'Coverall', amount: 1, serviceMonth: '2026-02', npn: JASON_NPN });
+      (c2 as any).batch_id = BATCH_FEB;
+      const recs: NormalizedRecord[] = [
+        makeBo(BATCH_JAN, '2026-01-15', '1'),
+        makeBo(BATCH_FEB, '2026-02-15', '2'),
+        e1, e2, c1, c2,
       ];
       const batchMonths = { [BATCH_JAN]: '2026-01', [BATCH_FEB]: '2026-02' };
       const { rows } = assembleDiagnoseRouteRows(
