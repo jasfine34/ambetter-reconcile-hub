@@ -403,20 +403,20 @@ export default function OperatorReviewPage() {
             <span className="text-sm">No rows match the current filter.</span>
           </div>
         ) : (
-          <div className="border rounded-lg bg-card">
+          <MirroredScrollTable>
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_hsl(var(--border))]">
                 <TableRow>
-                  <TableHead>Member</TableHead>
-                  <TableHead>Scope</TableHead>
-                  <TableHead>Service month</TableHead>
-                  <TableHead>Pop</TableHead>
-                  <TableHead>Route</TableHead>
-                  <TableHead>FYI</TableHead>
-                  <TableHead>Amount evidence</TableHead>
-                  <TableHead>DMI</TableHead>
-                  <TableHead>Premium / Count</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead className="bg-card">Member</TableHead>
+                  <TableHead className="bg-card">Scope</TableHead>
+                  <TableHead className="bg-card">Service month</TableHead>
+                  <TableHead className="bg-card">Pop</TableHead>
+                  <TableHead className="bg-card">Route</TableHead>
+                  <TableHead className="bg-card">Actions</TableHead>
+                  <TableHead className="bg-card">FYI</TableHead>
+                  <TableHead className="bg-card">Amount evidence</TableHead>
+                  <TableHead className="bg-card">DMI</TableHead>
+                  <TableHead className="bg-card">Premium / Count</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -444,27 +444,14 @@ export default function OperatorReviewPage() {
                       <TableCell className="text-xs">
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Badge variant={ROUTE_VARIANT[decision.route]} data-testid="route-badge">
-                              {decision.route}
-                            </Badge>
+                            <span className="inline-block">
+                              <Badge variant={ROUTE_VARIANT[decision.route]} data-testid="route-badge">
+                                {decision.route}
+                              </Badge>
+                            </span>
                           </TooltipTrigger>
                           <TooltipContent>{decision.rationale}</TooltipContent>
                         </Tooltip>
-                      </TableCell>
-                      <TableCell className="text-xs space-x-1">
-                        {fyi.length === 0 ? <span className="text-muted-foreground">—</span> : null}
-                        {fyi.map((f) => (
-                          <Badge key={f} variant="outline" data-testid="fyi-badge">{f}</Badge>
-                        ))}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <AmountEvidence facts={r.facts} />
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <DmiEvidence facts={r.facts} />
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <PremiumCountEvidence facts={r.facts} />
                       </TableCell>
                       <TableCell className="text-xs space-x-1">
                         {actions.map((spec) => (
@@ -483,13 +470,29 @@ export default function OperatorReviewPage() {
                           </Button>
                         ))}
                       </TableCell>
+                      <TableCell className="text-xs space-x-1">
+                        {fyi.length === 0 ? <span className="text-muted-foreground">—</span> : null}
+                        {fyi.map((f) => (
+                          <Badge key={f} variant="outline" data-testid="fyi-badge">{f}</Badge>
+                        ))}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        <AmountEvidence facts={r.facts} />
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        <DmiEvidence facts={r.facts} />
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        <PremiumCountEvidence facts={r.facts} />
+                      </TableCell>
                     </TableRow>
                   );
                 })}
               </TableBody>
             </Table>
-          </div>
+          </MirroredScrollTable>
         )}
+
 
         <Dialog open={prompt !== null} onOpenChange={(open) => { if (!open && !prompt?.submitting) setPrompt(null); }}>
           <DialogContent data-testid="hold-prompt">
@@ -597,3 +600,62 @@ function PremiumCountEvidence({ facts }: { facts: any }) {
     ? <span className="text-muted-foreground">—</span>
     : <span>{parts.join(' · ')}</span>;
 }
+
+/**
+ * Wraps a wide table with a mirrored top scrollbar that stays in sync with
+ * the table's own bottom overflow-x scroll. Purely presentational.
+ */
+function MirroredScrollTable({ children }: { children: React.ReactNode }) {
+  const topRef = useRef<HTMLDivElement | null>(null);
+  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const [innerWidth, setInnerWidth] = useState(0);
+  const syncing = useRef<'top' | 'bottom' | null>(null);
+
+  useEffect(() => {
+    const el = bottomRef.current;
+    if (!el) return;
+    const measure = () => setInnerWidth(el.scrollWidth);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild as Element);
+    return () => ro.disconnect();
+  }, [children]);
+
+  const onTopScroll = () => {
+    if (syncing.current === 'bottom') { syncing.current = null; return; }
+    if (!topRef.current || !bottomRef.current) return;
+    syncing.current = 'top';
+    bottomRef.current.scrollLeft = topRef.current.scrollLeft;
+  };
+  const onBottomScroll = () => {
+    if (syncing.current === 'top') { syncing.current = null; return; }
+    if (!topRef.current || !bottomRef.current) return;
+    syncing.current = 'bottom';
+    topRef.current.scrollLeft = bottomRef.current.scrollLeft;
+  };
+
+  return (
+    <div className="border rounded-lg bg-card">
+      <div
+        ref={topRef}
+        onScroll={onTopScroll}
+        className="overflow-x-auto overflow-y-hidden"
+        aria-hidden="true"
+        data-testid="op-top-scrollbar"
+      >
+        <div style={{ width: innerWidth || 1, height: 1 }} />
+      </div>
+      <div
+        ref={bottomRef}
+        onScroll={onBottomScroll}
+        className="overflow-x-auto max-h-[70vh] overflow-y-auto"
+        data-testid="op-table-scroll"
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
