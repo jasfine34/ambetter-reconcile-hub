@@ -914,13 +914,37 @@ export default function DashboardPage() {
     const paidCommRecords = sourceCoverage.totalPoliciesPaid.count;
     const boActiveNonCurrentEde = sourceCoverage.boActiveNonCurrentEde.count;
 
-    // Bundle 13c — adjusted-cohort partition for Dashboard EBU + Source Coverage EBU.
-    const dashPartition = partitionUnpaidRowsByOverlay(expectedPaymentBreakdown.unpaidRows, dashboardClearingOverlay);
+    // Bundle 13c + C2a — adjusted-cohort partition for Dashboard EBU + Source
+    // Coverage EBU. Two overlays compose here in a fixed order:
+    //   1) C2a latest-BO supersession: drop owed rows whose policy identity is
+    //      terminated for the statement month per the cross-batch latest
+    //      authoritative BO overlay (never drops rows with commission
+    //      evidence — see filterLatestBoTerminatedOwedRows).
+    //   2) Bundle 13c clearing overlay: partition the remainder into
+    //      regular/reversed (cleared-then-reversed) buckets.
+    // When the all-batch projection has not loaded yet (cold cache), the EBU
+    // surfaces render a "Latest-BO alignment loading…" state instead of raw
+    // counts that would flip once the overlay arrives.
+    const dashUnpaidAligned = latestBoLoading
+      ? expectedPaymentBreakdown.unpaidRows
+      : filterLatestBoTerminatedOwedRows(
+          expectedPaymentBreakdown.unpaidRows as any[],
+          latestBoOverlay!,
+          statementMonthStartIso,
+        );
+    const dashPartition = partitionUnpaidRowsByOverlay(dashUnpaidAligned, dashboardClearingOverlay);
     const dashRegular = dashPartition.regular;
     const dashReversed = dashPartition.reversed;
     const dashReviewRows = dashRegular.filter(isReviewWorthyAdjustment);
 
-    const scPartition = partitionUnpaidRowsByOverlay(sourceCoverage.expectedButUnpaid.rows, dashboardClearingOverlay);
+    const scUnpaidAligned = latestBoLoading
+      ? sourceCoverage.expectedButUnpaid.rows
+      : filterLatestBoTerminatedOwedRows(
+          sourceCoverage.expectedButUnpaid.rows as any[],
+          latestBoOverlay!,
+          statementMonthStartIso,
+        );
+    const scPartition = partitionUnpaidRowsByOverlay(scUnpaidAligned, dashboardClearingOverlay);
     const scRegular = scPartition.regular;
     const scReviewRows = scRegular.filter(isReviewWorthyAdjustment);
 
@@ -959,8 +983,12 @@ export default function DashboardPage() {
       sourceCoverageReviewRows: scReviewRows,
       reversedAdjustedRows: dashReversed,
       reversedUnpaidAmount: sumReversedAmount(dashReversed),
+      // C2a — when true, EBU + EBU drilldown + Source-Coverage EBU surfaces
+      // must render an explicit loading state (never raw counts that would
+      // flip once the latest-BO overlay arrives).
+      latestBoLoading,
     };
-  }, [filtered, boAdjustedReconciled, reconciled, normalizedRecords, payEntityFilter, boAdjustedFilteredEde, rawFilteredEde, eeUniverseKeys, priorMonth, statementMonth, effInBO, confirmedUpgradeMemberKeys, coveredMonths, dashboardClearingOverlay]);
+  }, [filtered, boAdjustedReconciled, reconciled, normalizedRecords, payEntityFilter, boAdjustedFilteredEde, rawFilteredEde, eeUniverseKeys, priorMonth, statementMonth, effInBO, confirmedUpgradeMemberKeys, coveredMonths, dashboardClearingOverlay, latestBoOverlay, latestBoLoading, statementMonthStartIso]);
 
   // Phase 1.7: keep metricsRef in sync so executeInvariants reads the latest.
   useEffect(() => { metricsRef.current = metrics; }, [metrics]);
