@@ -62,6 +62,8 @@ import {
   MEMBER_TIMELINE_ALL_BATCH_COLUMNS,
 } from '@/lib/persistence';
 import { buildMemberTimeline } from '@/lib/memberTimeline';
+import { assembleDiagnoseRouteRows } from '@/lib/canonical/assembleDiagnoseRouteRows';
+import type { CarrierCompRateRow } from '@/lib/canonical/compGrid';
 
 function makeRow(n: number, overrides: Partial<ProjectedRow> = {}): ProjectedRow {
   return {
@@ -71,6 +73,9 @@ function makeRow(n: number, overrides: Partial<ProjectedRow> = {}): ProjectedRow
     superseded_at: null,
     source_type: 'EDE',
     member_key: `mk-${n}`,
+    // C2b-1 corrective — client_state_full is now a typed projected column
+    // (not a raw_json subkey), so it arrives on the loader row as-is.
+    client_state_full: 'FL',
     raw_ffm_app_id: `FFM-${n}`,
     raw_current_policy_aor: `Agent ${n}`,
     raw_policy_status: 'PENDING',
