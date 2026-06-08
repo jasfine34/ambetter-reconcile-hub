@@ -135,6 +135,12 @@ export interface BlockerFactsInputs {
    *  basis (override-aware via getExpectedCommissionForClearing — Vix flat
    *  override is honoured because that wrapper is what the resolver calls). */
   preResolvedOther?: EstMissingResolution;
+  /** C2b-1 Stage 2 (R-CARR-007). Optional pre-computed member-count
+   *  resolution; assembler maps resolver status → MemberCountFact. */
+  memberCountResolution?: {
+    status: 'resolved' | 'unresolved' | 'manual_review';
+    conflicts?: number[];
+  };
 }
 
 // ----- premium passthrough --------------------------------------------------
