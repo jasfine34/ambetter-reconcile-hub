@@ -712,6 +712,7 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
       }
     });
   });
+  });
 });
 
 
