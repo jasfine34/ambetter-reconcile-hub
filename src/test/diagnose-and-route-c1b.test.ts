@@ -513,7 +513,7 @@ describe('projectDiagnoseRoutes — read-only projection', () => {
     const r = row('clean', {
       facts: facts({ crossEntitySatisfied: { satisfied: true, satisfyingEntity: 'Vix', actualPaid: 10, expectedBasis: 10, amountStatus: { kind: 'correct' } } }),
     });
-    const proj = await projectDiagnoseRoutes({ rows: [r] });
+    const proj = await projectDiagnoseRoutes({ rows: [r], forceDecisionIndex: true });
 
     expect(recordRpcCalls).toBe(recordsBefore);
     expect(releaseRpcCalls).toBe(releasesBefore);
