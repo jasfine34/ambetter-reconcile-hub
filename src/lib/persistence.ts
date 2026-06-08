@@ -571,6 +571,10 @@ const MEMBER_TIMELINE_TYPED_COLUMNS = [
   'policy_number','exchange_subscriber_id','exchange_policy_id',
   'issuer_policy_id','issuer_subscriber_id',
   'agent_name','agent_npn','aor_bucket','pay_entity',
+  // C2b-1 corrective: project client_state_full so the headless assembler's
+  // resolver evidence row carries member state and stops reporting MISSING_STATE.
+  // Plain typed column (same as MCE_ENRICHMENT_COLUMNS), not a raw_json subkey.
+  'client_state_full',
   'status','effective_date','premium','net_premium','member_responsibility','commission_amount',
   'eligible_for_commission','policy_term_date','paid_through_date',
   'broker_effective_date','broker_term_date','on_off_exchange','auto_renewal',
