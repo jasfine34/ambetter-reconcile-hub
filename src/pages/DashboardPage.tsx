@@ -1865,7 +1865,16 @@ export default function DashboardPage() {
                 <h3 className="text-lg font-semibold capitalize">{drilldown} Details</h3>
                 <button onClick={() => setDrilldown(null)} className="text-sm text-primary hover:underline">Close</button>
               </div>
-              <DataTable data={drilldownData} columns={drilldown === 'expected' ? EXPECTED_DRILLDOWN_COLUMNS : drilldown === 'paidEdeOnly' ? PAID_EDE_ONLY_DRILLDOWN_COLUMNS : drilldown === 'boActiveNonCurrentEde' ? BO_ACTIVE_NON_CURRENT_EDE_COLUMNS : drilldown === 'unpaid' ? UNPAID_DETAILS_DRILLDOWN_COLUMNS : isExceptionDrilldown ? EXCEPTION_DRILLDOWN_COLUMNS : (isCoverageDrilldown ? COVERAGE_DRILLDOWN_COLUMNS : RECON_COLUMNS)} exportFileName={`${drilldown}_details.csv`} />
+              {metrics.latestBoLoading && (drilldown === 'unpaid' || drilldown === 'unpaidExpected') ? (
+                <div
+                  className="rounded-md border p-4 bg-muted/30 text-muted-foreground text-sm"
+                  data-testid="dashboard-ebu-drilldown-latest-bo-loading"
+                >
+                  Latest-BO alignment loading…
+                </div>
+              ) : (
+                <DataTable data={drilldownData} columns={drilldown === 'expected' ? EXPECTED_DRILLDOWN_COLUMNS : drilldown === 'paidEdeOnly' ? PAID_EDE_ONLY_DRILLDOWN_COLUMNS : drilldown === 'boActiveNonCurrentEde' ? BO_ACTIVE_NON_CURRENT_EDE_COLUMNS : drilldown === 'unpaid' ? UNPAID_DETAILS_DRILLDOWN_COLUMNS : isExceptionDrilldown ? EXCEPTION_DRILLDOWN_COLUMNS : (isCoverageDrilldown ? COVERAGE_DRILLDOWN_COLUMNS : RECON_COLUMNS)} exportFileName={`${drilldown}_details.csv`} />
+              )}
             </div>
           )}
 
