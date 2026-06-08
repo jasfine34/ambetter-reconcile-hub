@@ -74,8 +74,9 @@ import type { RouteRowInput } from './diagnoseAndRoute';
 import type { NormalizedRecord } from '../normalize';
 import type { CarrierCompRateRow } from './compGrid';
 import type { ClearingOverlayMap } from './crossBatchOverlay';
-import { buildPolicyMemberCountRecords } from '../sweep/resolverRecordAdapters';
+import { buildPolicyMemberCountRecords, buildPolicyStateRecords } from '../sweep/resolverRecordAdapters';
 import { resolvePolicyMemberCountForCompGrid } from './policyMemberCount';
+import { resolvePolicyStateForCompGrid } from './policyState';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Public types
@@ -152,12 +153,22 @@ function synthesizeEvidenceRow(
     recs.find((r) => r.source_type === 'EDE') ??
     recs.find((r) => r.source_type === 'COMMISSION') ??
     recs[0];
-  const stateRaw =
-    (sample as any)?.raw_json?.['state'] ??
-    (sample as any)?.raw_json?.['State'] ??
-    (sample as any)?.raw_json?.['client_state'] ??
-    (sample as any)?.client_state_full ??
-    null;
+  // C2b-1 NO_RATE_ROW corrective: route the scoped member's records through
+  // the canonical state resolver so rate lookups key on normalized state
+  // (e.g. "Florida" → "FL") just like MCE. Locking targetBatchMonth to the
+  // row's serviceMonth prevents latest-month bleed across service months.
+  // unresolved / manual_review → null → resolver reports MISSING_STATE
+  // truthfully instead of false NO_RATE_ROW.
+  const stateRecords = buildPolicyStateRecords({
+    normalizedRecords: recs as any,
+    batchMonthById: batchMonthByBatchId,
+  });
+  const stateRes = resolvePolicyStateForCompGrid({
+    records: stateRecords,
+    targetBatchMonth: serviceMonth,
+    targetServiceMonths: [serviceMonth],
+  });
+  const state = stateRes.status === 'resolved' ? stateRes.state : null;
   // C2b-1 member-count corrective (R-CARR-007): route the scoped member's
   // records through the canonical adapter + resolver. targetBatchMonth is
   // LOCKED to the row's serviceMonth — never the latest month — so a Feb
@@ -182,7 +193,7 @@ function synthesizeEvidenceRow(
     row: {
       member_key: memberKey,
       carrier: sample?.carrier ?? null,
-      state: stateRaw,
+      state,
       member_count: memberCount,
       target_service_month: serviceMonth,
       expected_ede_effective_month: serviceMonth,
