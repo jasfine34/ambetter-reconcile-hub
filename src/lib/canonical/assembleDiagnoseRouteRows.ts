@@ -74,6 +74,8 @@ import type { RouteRowInput } from './diagnoseAndRoute';
 import type { NormalizedRecord } from '../normalize';
 import type { CarrierCompRateRow } from './compGrid';
 import type { ClearingOverlayMap } from './crossBatchOverlay';
+import { buildPolicyMemberCountRecords } from '../sweep/resolverRecordAdapters';
+import { resolvePolicyMemberCountForCompGrid } from './policyMemberCount';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Public types
