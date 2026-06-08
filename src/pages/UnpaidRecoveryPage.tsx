@@ -555,7 +555,13 @@ export default function UnpaidRecoveryPage() {
             <SelectItem value="hasPremium">Has Premium</SelectItem>
           </SelectContent>
         </Select>
-        <Button variant="outline" size="sm" onClick={handleExport} disabled={filteredRows.length === 0}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleExport}
+          disabled={latestBoLoading || filteredRows.length === 0}
+          data-testid="ur-export-button"
+        >
           <Download className="h-4 w-4 mr-1" /> Export filtered rows
         </Button>
       </div>
