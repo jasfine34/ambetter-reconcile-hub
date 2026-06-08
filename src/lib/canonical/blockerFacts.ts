@@ -309,5 +309,26 @@ export function buildBlockerFacts(inputs: BlockerFactsInputs): BlockerFacts {
     amount = crossEntitySatisfied.amountStatus;
   }
 
-  return { premium, dmi, crossEntitySatisfied, amount };
+  // Member-count fact (R-CARR-007) — additive, optional. Absent input
+  // yields no fact, preserving existing route semantics for all callers
+  // that haven't opted in.
+  let memberCount: MemberCountFact | undefined;
+  const mcr = inputs.memberCountResolution;
+  if (mcr) {
+    if (mcr.status === 'manual_review') {
+      memberCount = {
+        status: 'manual_review',
+        reason: 'member_count_manual_review',
+        conflicts: mcr.conflicts,
+      };
+    } else if (mcr.status === 'unresolved') {
+      memberCount = { status: 'unresolved' };
+    } else {
+      memberCount = { status: 'ok' };
+    }
+  }
+
+  const out: BlockerFacts = { premium, dmi, crossEntitySatisfied, amount };
+  if (memberCount) out.memberCount = memberCount;
+  return out;
 }
