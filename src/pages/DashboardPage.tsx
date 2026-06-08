@@ -8,7 +8,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Users, Building2, DollarSign, AlertTriangle, CheckCircle2, XCircle, FileText, TrendingDown, Database, Info, ShieldAlert, RefreshCw, Hammer, Link2 } from 'lucide-react';
-import { getNormalizedRecords, saveReconciledMembers, saveAndVerifyReconciled } from '@/lib/persistence';
+import { getNormalizedRecords, saveReconciledMembers, saveAndVerifyReconciled, getAllNormalizedRecordsForMemberTimeline } from '@/lib/persistence';
+import { useAllBatchesDataVersion } from '@/hooks/useBatchDataVersion';
+import { getMtAllBatchProjection } from '@/lib/canonical/mtApprovedMceCache';
+import {
+  filterLatestBoTerminatedOwedRows,
+  latestAuthoritativeBoTermDates,
+  makeBoRecency,
+  type LatestAuthoritativeBoOverlay,
+} from '@/lib/canonical/latestAuthoritativeBo';
 import { reconcile } from '@/lib/reconcile';
 import { useToast } from '@/hooks/use-toast';
 import { RebuildBatchButton } from '@/components/RebuildBatchButton';
@@ -365,6 +373,46 @@ export default function DashboardPage() {
   );
   const priorMonth = coveredMonths[0] ?? '';
   const statementMonth = coveredMonths[1] ?? '';
+
+  // C2a — Latest-BO supersession overlay for secondary-surface alignment.
+  // Built from the SAME all-batch projection MCE uses (see
+  // src/lib/canonical/mtApprovedMceSelector.ts:187-188), so EBU surfaces
+  // here gate owed/unpaid rows against the cross-batch latest authoritative
+  // BO termination overlay — NOT the per-batch clearing overlay above.
+  const allBatchesDataVersion = useAllBatchesDataVersion();
+  const [latestBoOverlay, setLatestBoOverlay] = useState<LatestAuthoritativeBoOverlay | null>(null);
+  const statementMonthStartIso = statementMonth ? `${statementMonth}-01` : '';
+  useEffect(() => {
+    let cancelled = false;
+    // Cold-cache → loading state. Reset on key change.
+    setLatestBoOverlay(null);
+    if (!statementMonth) return;
+    const batchMonthByBatchIdObj: Record<string, string> = {};
+    for (const b of batches as any[]) {
+      const ym = b?.statement_month ? String(b.statement_month).substring(0, 7) : '';
+      batchMonthByBatchIdObj[b.id] = ym;
+    }
+    const dedupCtx = { batchMonthByBatchId: batchMonthByBatchIdObj };
+    (async () => {
+      try {
+        const projection = await getMtAllBatchProjection({
+          allBatchesDataVersion,
+          resolverIndex,
+          loader: () => getAllNormalizedRecordsForMemberTimeline(dedupCtx),
+        });
+        if (cancelled) return;
+        const recency = makeBoRecency({
+          batchMonthByBatchId: new Map(Object.entries(batchMonthByBatchIdObj)),
+        });
+        const overlay = latestAuthoritativeBoTermDates(projection.records || [], recency);
+        if (!cancelled) setLatestBoOverlay(overlay);
+      } catch {
+        if (!cancelled) setLatestBoOverlay(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [statementMonth, allBatchesDataVersion, resolverIndex, batches]);
+  const latestBoLoading = !statementMonthStartIso || latestBoOverlay === null;
 
   // Fetch normalized records for the funnel + future classifier-driven widgets.
   // Re-fetch when the batch changes OR when reconciled data updates (rebuild,
@@ -866,13 +914,37 @@ export default function DashboardPage() {
     const paidCommRecords = sourceCoverage.totalPoliciesPaid.count;
     const boActiveNonCurrentEde = sourceCoverage.boActiveNonCurrentEde.count;
 
-    // Bundle 13c — adjusted-cohort partition for Dashboard EBU + Source Coverage EBU.
-    const dashPartition = partitionUnpaidRowsByOverlay(expectedPaymentBreakdown.unpaidRows, dashboardClearingOverlay);
+    // Bundle 13c + C2a — adjusted-cohort partition for Dashboard EBU + Source
+    // Coverage EBU. Two overlays compose here in a fixed order:
+    //   1) C2a latest-BO supersession: drop owed rows whose policy identity is
+    //      terminated for the statement month per the cross-batch latest
+    //      authoritative BO overlay (never drops rows with commission
+    //      evidence — see filterLatestBoTerminatedOwedRows).
+    //   2) Bundle 13c clearing overlay: partition the remainder into
+    //      regular/reversed (cleared-then-reversed) buckets.
+    // When the all-batch projection has not loaded yet (cold cache), the EBU
+    // surfaces render a "Latest-BO alignment loading…" state instead of raw
+    // counts that would flip once the overlay arrives.
+    const dashUnpaidAligned = latestBoLoading
+      ? expectedPaymentBreakdown.unpaidRows
+      : filterLatestBoTerminatedOwedRows(
+          expectedPaymentBreakdown.unpaidRows as any[],
+          latestBoOverlay!,
+          statementMonthStartIso,
+        );
+    const dashPartition = partitionUnpaidRowsByOverlay(dashUnpaidAligned, dashboardClearingOverlay);
     const dashRegular = dashPartition.regular;
     const dashReversed = dashPartition.reversed;
     const dashReviewRows = dashRegular.filter(isReviewWorthyAdjustment);
 
-    const scPartition = partitionUnpaidRowsByOverlay(sourceCoverage.expectedButUnpaid.rows, dashboardClearingOverlay);
+    const scUnpaidAligned = latestBoLoading
+      ? sourceCoverage.expectedButUnpaid.rows
+      : filterLatestBoTerminatedOwedRows(
+          sourceCoverage.expectedButUnpaid.rows as any[],
+          latestBoOverlay!,
+          statementMonthStartIso,
+        );
+    const scPartition = partitionUnpaidRowsByOverlay(scUnpaidAligned, dashboardClearingOverlay);
     const scRegular = scPartition.regular;
     const scReviewRows = scRegular.filter(isReviewWorthyAdjustment);
 
@@ -911,8 +983,12 @@ export default function DashboardPage() {
       sourceCoverageReviewRows: scReviewRows,
       reversedAdjustedRows: dashReversed,
       reversedUnpaidAmount: sumReversedAmount(dashReversed),
+      // C2a — when true, EBU + EBU drilldown + Source-Coverage EBU surfaces
+      // must render an explicit loading state (never raw counts that would
+      // flip once the latest-BO overlay arrives).
+      latestBoLoading,
     };
-  }, [filtered, boAdjustedReconciled, reconciled, normalizedRecords, payEntityFilter, boAdjustedFilteredEde, rawFilteredEde, eeUniverseKeys, priorMonth, statementMonth, effInBO, confirmedUpgradeMemberKeys, coveredMonths, dashboardClearingOverlay]);
+  }, [filtered, boAdjustedReconciled, reconciled, normalizedRecords, payEntityFilter, boAdjustedFilteredEde, rawFilteredEde, eeUniverseKeys, priorMonth, statementMonth, effInBO, confirmedUpgradeMemberKeys, coveredMonths, dashboardClearingOverlay, latestBoOverlay, latestBoLoading, statementMonthStartIso]);
 
   // Phase 1.7: keep metricsRef in sync so executeInvariants reads the latest.
   useEffect(() => { metricsRef.current = metrics; }, [metrics]);
@@ -1505,31 +1581,43 @@ export default function DashboardPage() {
               ]}
             />
             <div className="relative">
-              <MetricCard
-                title="Expected But Unpaid"
-                value={metrics.adjustedUnpaid}
-                icon={<XCircle className="h-4 w-4" />}
-                variant="destructive"
-                onClick={() => setDrilldown('unpaid')}
-                tooltip={{ text: "Members in the expected-payment universe (Matched + BO Only + EDE Only) that were not paid, after applying cross-batch payment clearings.", why: "Primary recovery target — expected revenue that was not received." }}
-                splits={[
-                  { label: 'Matched', value: metrics.adjustedUnpaidSplit.matched },
-                  { label: 'BO Only', value: metrics.adjustedUnpaidSplit.boOnly },
-                  { label: 'EDE Only', value: metrics.adjustedUnpaidSplit.edeOnly },
-                ]}
-                splits2={[
-                  { label: 'Zero Net Premium', value: metrics.adjustedUnpaidPremiumSplit.zeroNetPremium },
-                  { label: 'Has Premium', value: metrics.adjustedUnpaidPremiumSplit.hasPremium },
-                ]}
-              />
-              {metrics.dashboardReviewRows.length > 0 && (
-                <Badge
-                  data-testid="dashboard-ebu-needs-review-chip"
-                  className="absolute top-2 right-2 border-amber-300 bg-amber-50 text-amber-700"
-                  variant="outline"
+              {metrics.latestBoLoading ? (
+                <div
+                  className="rounded-xl border p-5 text-left bg-muted/30 border-muted text-muted-foreground text-sm"
+                  data-testid="dashboard-ebu-latest-bo-loading"
                 >
-                  Needs review: {metrics.dashboardReviewRows.length}
-                </Badge>
+                  <div className="font-medium text-foreground mb-1">Expected But Unpaid</div>
+                  Latest-BO alignment loading…
+                </div>
+              ) : (
+                <>
+                  <MetricCard
+                    title="Expected But Unpaid"
+                    value={metrics.adjustedUnpaid}
+                    icon={<XCircle className="h-4 w-4" />}
+                    variant="destructive"
+                    onClick={() => setDrilldown('unpaid')}
+                    tooltip={{ text: "Members in the expected-payment universe (Matched + BO Only + EDE Only) that were not paid, after applying cross-batch payment clearings.", why: "Primary recovery target — expected revenue that was not received." }}
+                    splits={[
+                      { label: 'Matched', value: metrics.adjustedUnpaidSplit.matched },
+                      { label: 'BO Only', value: metrics.adjustedUnpaidSplit.boOnly },
+                      { label: 'EDE Only', value: metrics.adjustedUnpaidSplit.edeOnly },
+                    ]}
+                    splits2={[
+                      { label: 'Zero Net Premium', value: metrics.adjustedUnpaidPremiumSplit.zeroNetPremium },
+                      { label: 'Has Premium', value: metrics.adjustedUnpaidPremiumSplit.hasPremium },
+                    ]}
+                  />
+                  {metrics.dashboardReviewRows.length > 0 && (
+                    <Badge
+                      data-testid="dashboard-ebu-needs-review-chip"
+                      className="absolute top-2 right-2 border-amber-300 bg-amber-50 text-amber-700"
+                      variant="outline"
+                    >
+                      Needs review: {metrics.dashboardReviewRows.length}
+                    </Badge>
+                  )}
+                </>
               )}
             </div>
             {/* Bundle 13c — Cleared then reversed cohort tile (always renders). */}
@@ -1689,7 +1777,17 @@ export default function DashboardPage() {
               )}
             </div>
             <MetricCard title="Clawbacks / Adjustments" value={`$${metrics.totalClawbacks.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} icon={<TrendingDown className="h-4 w-4" />} variant="destructive" tooltip={{ text: "The total dollar amount of negative commission rows (clawbacks, reversals, adjustments).", why: "These reduce your net revenue. A high clawback amount may indicate policy cancellations or billing corrections." }} />
-            <MetricCard title="Est. Missing Commission" value={`$${metrics.adjustedEstMissing.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} icon={<TrendingDown className="h-4 w-4" />} variant="warning" tooltip={{ text: "Estimate of how much commission may be missing based on unpaid policies, after applying cross-batch payment clearings.", why: "This represents potential recoverable revenue and helps prioritize follow-up with carriers." }} />
+            {metrics.latestBoLoading ? (
+              <div
+                className="rounded-xl border p-5 text-left bg-muted/30 border-muted text-muted-foreground text-sm"
+                data-testid="dashboard-ebu-est-missing-latest-bo-loading"
+              >
+                <div className="font-medium text-foreground mb-1">Est. Missing Commission</div>
+                Latest-BO alignment loading…
+              </div>
+            ) : (
+              <MetricCard title="Est. Missing Commission" value={`$${metrics.adjustedEstMissing.toLocaleString(undefined, { minimumFractionDigits: 2 })}`} icon={<TrendingDown className="h-4 w-4" />} variant="warning" tooltip={{ text: "Estimate of how much commission may be missing based on unpaid policies, after applying cross-batch payment clearings.", why: "This represents potential recoverable revenue and helps prioritize follow-up with carriers." }} />
+            )}
           </div>
           <p
             data-testid="dashboard-ebu-disclaimer"
@@ -1767,7 +1865,16 @@ export default function DashboardPage() {
                 <h3 className="text-lg font-semibold capitalize">{drilldown} Details</h3>
                 <button onClick={() => setDrilldown(null)} className="text-sm text-primary hover:underline">Close</button>
               </div>
-              <DataTable data={drilldownData} columns={drilldown === 'expected' ? EXPECTED_DRILLDOWN_COLUMNS : drilldown === 'paidEdeOnly' ? PAID_EDE_ONLY_DRILLDOWN_COLUMNS : drilldown === 'boActiveNonCurrentEde' ? BO_ACTIVE_NON_CURRENT_EDE_COLUMNS : drilldown === 'unpaid' ? UNPAID_DETAILS_DRILLDOWN_COLUMNS : isExceptionDrilldown ? EXCEPTION_DRILLDOWN_COLUMNS : (isCoverageDrilldown ? COVERAGE_DRILLDOWN_COLUMNS : RECON_COLUMNS)} exportFileName={`${drilldown}_details.csv`} />
+              {metrics.latestBoLoading && (drilldown === 'unpaid' || drilldown === 'unpaidExpected') ? (
+                <div
+                  className="rounded-md border p-4 bg-muted/30 text-muted-foreground text-sm"
+                  data-testid="dashboard-ebu-drilldown-latest-bo-loading"
+                >
+                  Latest-BO alignment loading…
+                </div>
+              ) : (
+                <DataTable data={drilldownData} columns={drilldown === 'expected' ? EXPECTED_DRILLDOWN_COLUMNS : drilldown === 'paidEdeOnly' ? PAID_EDE_ONLY_DRILLDOWN_COLUMNS : drilldown === 'boActiveNonCurrentEde' ? BO_ACTIVE_NON_CURRENT_EDE_COLUMNS : drilldown === 'unpaid' ? UNPAID_DETAILS_DRILLDOWN_COLUMNS : isExceptionDrilldown ? EXCEPTION_DRILLDOWN_COLUMNS : (isCoverageDrilldown ? COVERAGE_DRILLDOWN_COLUMNS : RECON_COLUMNS)} exportFileName={`${drilldown}_details.csv`} />
+              )}
             </div>
           )}
 
@@ -1781,31 +1888,43 @@ export default function DashboardPage() {
                 <MetricCard title="Paid: Commission Statement Only" value={metrics.commissionOnly} icon={<FileText className="h-4 w-4" />} variant="warning" onClick={() => setDrilldown('commissionOnly')} tooltip={{ text: "Members appearing only on commission statements (no EDE, no active BO).", why: "Commission-only ghosts — typically trailing $1 retention payments on legacy books." }} />
                 <MetricCard title="Unpaid: Back Office Only" value={metrics.backOfficeOnly} icon={<Building2 className="h-4 w-4" />} variant="info" onClick={() => setDrilldown('backOfficeOnly')} tooltip={{ text: "Members active in Back Office, not in EDE, not yet paid.", why: "May represent missed enrollments or future revenue not yet realized." }} />
                 <div className="relative">
-                  <MetricCard
-                    title="Expected But Unpaid"
-                    value={metrics.adjustedUnpaidExpected}
-                    icon={<XCircle className="h-4 w-4" />}
-                    variant="destructive"
-                    onClick={() => setDrilldown('unpaidExpected')}
-                    tooltip={{ text: "Members in the expected-payment universe (Matched / BO Only / EDE Only) that were not paid, after applying cross-batch payment clearings.", why: "Primary recovery target — expected revenue that was not received." }}
-                    splits={(() => {
-                      const o = metrics.adjustedUnpaidOwnerSplit;
-                      return [
-                        { label: 'JF', value: o.JF },
-                        { label: 'EF', value: o.EF },
-                        { label: 'BS', value: o.BS },
-                        { label: 'Other', value: o.Other },
-                      ].filter((s) => s.value > 0);
-                    })()}
-                  />
-                  {metrics.sourceCoverageReviewRows.length > 0 && (
-                    <Badge
-                      data-testid="source-coverage-ebu-needs-review-chip"
-                      className="absolute top-2 right-2 border-amber-300 bg-amber-50 text-amber-700"
-                      variant="outline"
+                  {metrics.latestBoLoading ? (
+                    <div
+                      className="rounded-xl border p-5 text-left bg-muted/30 border-muted text-muted-foreground text-sm"
+                      data-testid="source-coverage-ebu-latest-bo-loading"
                     >
-                      Needs review: {metrics.sourceCoverageReviewRows.length}
-                    </Badge>
+                      <div className="font-medium text-foreground mb-1">Expected But Unpaid</div>
+                      Latest-BO alignment loading…
+                    </div>
+                  ) : (
+                    <>
+                      <MetricCard
+                        title="Expected But Unpaid"
+                        value={metrics.adjustedUnpaidExpected}
+                        icon={<XCircle className="h-4 w-4" />}
+                        variant="destructive"
+                        onClick={() => setDrilldown('unpaidExpected')}
+                        tooltip={{ text: "Members in the expected-payment universe (Matched / BO Only / EDE Only) that were not paid, after applying cross-batch payment clearings.", why: "Primary recovery target — expected revenue that was not received." }}
+                        splits={(() => {
+                          const o = metrics.adjustedUnpaidOwnerSplit;
+                          return [
+                            { label: 'JF', value: o.JF },
+                            { label: 'EF', value: o.EF },
+                            { label: 'BS', value: o.BS },
+                            { label: 'Other', value: o.Other },
+                          ].filter((s) => s.value > 0);
+                        })()}
+                      />
+                      {metrics.sourceCoverageReviewRows.length > 0 && (
+                        <Badge
+                          data-testid="source-coverage-ebu-needs-review-chip"
+                          className="absolute top-2 right-2 border-amber-300 bg-amber-50 text-amber-700"
+                          variant="outline"
+                        >
+                          Needs review: {metrics.sourceCoverageReviewRows.length}
+                        </Badge>
+                      )}
+                    </>
                   )}
                 </div>
                 <MetricCard
