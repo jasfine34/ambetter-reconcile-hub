@@ -219,7 +219,8 @@ export const SUPERSESSION_REASON_PREFIX = 'Superseded by later BO termination';
 /**
  * C2a alignment: suppress owed (unpaid) rows whose policy identity is
  * terminated for the statement month per the latest authoritative BO overlay.
- * NEVER suppresses rows with commission evidence (paid; see reversal rule).
+ * NEVER suppresses rows with commission evidence (positive payment OR any
+ * matched commission record, incl. pure clawback/reversal).
  */
 export function filterLatestBoTerminatedOwedRows<T extends { in_commission?: boolean | null }>(
   rows: T[],
@@ -227,6 +228,8 @@ export function filterLatestBoTerminatedOwedRows<T extends { in_commission?: boo
   statementMonthStartIso: string,
 ): T[] {
   return rows.filter((r) =>
-    r?.in_commission === true || !isPolicyIdentityTerminatedForMonth(r as any, statementMonthStartIso, overlay),
+    r?.in_commission === true ||
+    ((r as any)?.commission_record_count ?? 0) > 0 ||
+    !isPolicyIdentityTerminatedForMonth(r as any, statementMonthStartIso, overlay),
   );
 }

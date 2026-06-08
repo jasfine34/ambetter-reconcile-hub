@@ -64,4 +64,18 @@ describe('filterLatestBoTerminatedOwedRows', () => {
   it('preserves non-terminated row with null/undefined in_commission', () => {
     expect(filterLatestBoTerminatedOwedRows([liveNullCommission], overlay, STMT_START)).toEqual([liveNullCommission]);
   });
+  it('preserves terminated-policy pure-clawback row (commission_record_count>0, in_commission=false)', () => {
+    const pureClawback = {
+      carrier: CARRIER, policy_number: 'PTERM001', issuer_subscriber_id: 'STERM001',
+      in_commission: false, commission_record_count: 1, clawback_amount: -120,
+    };
+    expect(filterLatestBoTerminatedOwedRows([pureClawback as any], overlay, STMT_START)).toEqual([pureClawback]);
+  });
+  it('suppresses terminated-policy row with no commission evidence (in_commission=false, commission_record_count=0)', () => {
+    const noEvidence = {
+      carrier: CARRIER, policy_number: 'PTERM001', issuer_subscriber_id: 'STERM001',
+      in_commission: false, commission_record_count: 0,
+    };
+    expect(filterLatestBoTerminatedOwedRows([noEvidence as any], overlay, STMT_START)).toEqual([]);
+  });
 });
