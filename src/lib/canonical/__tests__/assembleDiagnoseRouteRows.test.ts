@@ -509,9 +509,11 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
         makeBo(BATCH_FEB, '2026-02-15', '2'),
         ede('MC4', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-01-15', batch_id: BATCH_JAN } as any),
         ede('MC4', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-02-15', batch_id: BATCH_FEB } as any),
-        // Paid in both months so amount fact actually exercises the resolver.
-        comm('MC4', { payEntity: 'Coverall', amount: 25, serviceMonth: '2026-01', npn: JASON_NPN, batch_id: BATCH_JAN } as any),
-        comm('MC4', { payEntity: 'Coverall', amount: 50, serviceMonth: '2026-02', npn: JASON_NPN, batch_id: BATCH_FEB } as any),
+        // Paid amounts INTENTIONALLY mismatched so the amount fact lands on
+        // 'wrong_amount' (which exposes the resolver's `expected`); proves
+        // expected basis = rate * monthly count without latest-month bleed.
+        comm('MC4', { payEntity: 'Coverall', amount: 1, serviceMonth: '2026-01', npn: JASON_NPN, batch_id: BATCH_JAN } as any),
+        comm('MC4', { payEntity: 'Coverall', amount: 1, serviceMonth: '2026-02', npn: JASON_NPN, batch_id: BATCH_FEB } as any),
       ];
       const batchMonths = { [BATCH_JAN]: '2026-01', [BATCH_FEB]: '2026-02' };
       const { rows } = assembleDiagnoseRouteRows(
@@ -521,16 +523,12 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
       const feb = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === '2026-02' && r.stableMemberKey === 'isid:isidmc4');
       expect(jan).toBeDefined();
       expect(feb).toBeDefined();
-      // Rate is $25 pmpm → Jan(count 1)=$25, Feb(count 2)=$50 expected.
-      const expectedFor = (r: typeof jan) => {
-        if (!r) return null;
-        if (r.facts.amount.kind === 'correct' || r.facts.amount.kind === 'wrong_amount') {
-          return r.facts.amount.expected;
-        }
-        return null;
-      };
-      expect(expectedFor(jan)).toBe(25);
-      expect(expectedFor(feb)).toBe(50);
+      // Rate is $25 pmpm → Jan(count 1) expected=$25, Feb(count 2) expected=$50.
+      expect(jan!.facts.amount.kind).toBe('wrong_amount');
+      expect(feb!.facts.amount.kind).toBe('wrong_amount');
+      if (jan!.facts.amount.kind === 'wrong_amount') expect(jan!.facts.amount.expected).toBe(25);
+      if (feb!.facts.amount.kind === 'wrong_amount') expect(feb!.facts.amount.expected).toBe(50);
     });
+  });
   });
 });
