@@ -8,7 +8,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Users, Building2, DollarSign, AlertTriangle, CheckCircle2, XCircle, FileText, TrendingDown, Database, Info, ShieldAlert, RefreshCw, Hammer, Link2 } from 'lucide-react';
-import { getNormalizedRecords, saveReconciledMembers, saveAndVerifyReconciled } from '@/lib/persistence';
+import { getNormalizedRecords, saveReconciledMembers, saveAndVerifyReconciled, getAllNormalizedRecordsForMemberTimeline } from '@/lib/persistence';
+import { useAllBatchesDataVersion } from '@/hooks/useBatchDataVersion';
+import { getMtAllBatchProjection } from '@/lib/canonical/mtApprovedMceCache';
+import {
+  filterLatestBoTerminatedOwedRows,
+  latestAuthoritativeBoTermDates,
+  makeBoRecency,
+  type LatestAuthoritativeBoOverlay,
+} from '@/lib/canonical/latestAuthoritativeBo';
 import { reconcile } from '@/lib/reconcile';
 import { useToast } from '@/hooks/use-toast';
 import { RebuildBatchButton } from '@/components/RebuildBatchButton';
