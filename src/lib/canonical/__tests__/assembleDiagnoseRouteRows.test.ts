@@ -504,9 +504,6 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
         raw_json: { 'Broker Name': 'Jason Fine', issuer: 'Ambetter', 'Number of Members': count },
         ...({ batch_id: batch } as any),
       } as any);
-      const recs: NormalizedRecord[] = [
-        makeBo(BATCH_JAN, '2026-01-15', '1'),
-        makeBo(BATCH_FEB, '2026-02-15', '2'),
       const e1 = ede('MC4', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-01-15' });
       (e1 as any).batch_id = BATCH_JAN;
       const e2 = ede('MC4', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-02-15' });
