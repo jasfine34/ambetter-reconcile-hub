@@ -661,6 +661,7 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
       const makeBo = (batch: string, eff: string, stateFull: string): NormalizedRecord => {
         const r = rec({
           source_type: 'BACK_OFFICE',
+          carrier: 'ambetter',
           member_key: 'PS4',
           issuer_subscriber_id: 'ISIDPS4',
           policy_number: 'POLPS4',
@@ -676,15 +677,15 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
         (r as any).client_state_full = stateFull;
         return r;
       };
-      const e1 = ede('PS4', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-01-15', raw_json: { plan_variant: 'standard' } });
+      const e1 = ede('PS4', { carrier: 'ambetter', aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-01-15', raw_json: { plan_variant: 'standard' } });
       (e1 as any).batch_id = BATCH_JAN;
       (e1 as any).client_state_full = 'Florida';
-      const e2 = ede('PS4', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-03-15', raw_json: { plan_variant: 'standard' } });
+      const e2 = ede('PS4', { carrier: 'ambetter', aor: 'Jason Fine (21055210)', npn: JASON_NPN, effective_date: '2026-03-15', raw_json: { plan_variant: 'standard' } });
       (e2 as any).batch_id = BATCH_MAR;
       (e2 as any).client_state_full = 'Texas';
-      const c1 = comm('PS4', { payEntity: 'Coverall', amount: 1, serviceMonth: '2026-01', npn: JASON_NPN });
+      const c1 = comm('PS4', { carrier: 'ambetter', payEntity: 'Coverall', amount: 1, serviceMonth: '2026-01', npn: JASON_NPN });
       (c1 as any).batch_id = BATCH_JAN;
-      const c2 = comm('PS4', { payEntity: 'Coverall', amount: 1, serviceMonth: '2026-03', npn: JASON_NPN });
+      const c2 = comm('PS4', { carrier: 'ambetter', payEntity: 'Coverall', amount: 1, serviceMonth: '2026-03', npn: JASON_NPN });
       (c2 as any).batch_id = BATCH_MAR;
       const recs: NormalizedRecord[] = [
         makeBo(BATCH_JAN, '2026-01-15', 'Florida'),
