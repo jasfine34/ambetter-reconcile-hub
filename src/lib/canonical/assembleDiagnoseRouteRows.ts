@@ -393,7 +393,6 @@ export function assembleDiagnoseRouteRows(
     }
     arr.push(r);
   }
-  const pickerMapsByMemberKey = new Map<string, Map<string, NormalizedRecord | null>>();
   for (const [k, recs] of rawRecordsByMemberKey) {
     pickerMapsByMemberKey.set(k, buildMonthPickerMapForMember(recs, args.monthList));
   }
@@ -407,17 +406,22 @@ export function assembleDiagnoseRouteRows(
   }
   const scopeCtxByScope = new Map<TargetScope, ScopeContext>();
   for (const s of requiredScopes) {
-    scopeCtxByScope.set(
+    const built = buildScopeContext(
       s,
-      buildScopeContext(
-        s,
-        args,
-        rawRecordsByMemberKey,
-        pickerMapsByMemberKey,
-        batchMonthMap,
-        overlay,
-      ),
+      args,
+      rawRecordsByMemberKey,
+      pickerMapsByMemberKey,
+      batchMonthMap,
+      overlay,
     );
+    scopeCtxByScope.set(s, built);
+    // C2c additive — surface scope trace context for evidence drawer (NO behavior change).
+    traceContextByScope.set(s, {
+      scopedRecordsByMemberKey: built.scopedByMember,
+      baseClassifierContext: built.baseClassifierContext,
+      mtRowsByMember: built.mtRowsByMember,
+      classificationByMember: built.classificationByMember,
+    });
   }
 
   // 3. Per (scope, serviceMonth) — build evidence map + resolver fresh
