@@ -168,6 +168,26 @@ const baseArgs = {
   loadDecisionIndex: async () => EMPTY_IDX,
 };
 
+/** Anchor commission so the classifier's commissionServiceMonths covers STMT_MONTH. */
+function anchorRipeness(): NormalizedRecord[] {
+  return [
+    bo('ANCHOR', { brokerName: 'Jason Fine', npn: JASON_NPN }),
+    ede('ANCHOR', { aor: 'Jason Fine (21055210)', npn: JASON_NPN }),
+    rec({
+      source_type: 'COMMISSION',
+      member_key: 'ANCHOR',
+      issuer_subscriber_id: 'ISIDANCHOR',
+      policy_number: 'POLANCHOR',
+      pay_entity: 'Coverall',
+      commission_amount: 1,
+      paid_to_date: '2026-03-31',
+      months_paid: 1,
+      agent_npn: JASON_NPN,
+      ...({ batch_id: BATCH } as any),
+    } as any),
+  ];
+}
+
 describe('assembleCommissionSubmission — C3a headless assembler', () => {
   it('(1) chase truth: only chase_eligible months are included', async () => {
     // M1 chase-eligible (BO+EDE, no commission); M2 paid (commission)
