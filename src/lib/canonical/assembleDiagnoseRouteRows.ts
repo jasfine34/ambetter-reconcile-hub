@@ -557,9 +557,18 @@ export function assembleDiagnoseRouteRows(
           crFlag,
           population,
         });
+        // C2c additive — capture binding AT EMIT TIME (never reverse-derive).
+        // scope here is one of args.targetScopes; the assembler currently
+        // emits only 'Coverall' | 'Vix' (the per-entity rows). Cast is safe.
+        evidenceBindingsByRowKey.set(rowKey, {
+          rowKey,
+          memberKey,
+          serviceMonth,
+          targetScope: scope as 'Coverall' | 'Vix',
+        });
       }
     }
   }
 
-  return { rows, diagnostics };
+  return { rows, diagnostics, evidenceBindingsByRowKey, pickerMapsByMemberKey, traceContextByScope };
 }
