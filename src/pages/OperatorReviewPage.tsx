@@ -267,6 +267,10 @@ export default function OperatorReviewPage(props: OperatorReviewPageProps = {}) 
   const [dmiGroupFilter, setDmiGroupFilter] = useState<Set<DmiGroup>>(new Set());
   const [dmiSortDeadline, setDmiSortDeadline] = useState(false);
 
+  // C2c slice 1 — member search + per-member expand.
+  const [search, setSearch] = useState('');
+  const [expandedMembers, setExpandedMembers] = useState<Set<string>>(new Set());
+
   const genRef = useRef(0);
 
   const { batchMonthByBatchIdObj, monthList, batchMonths } = useMemo(() => {
