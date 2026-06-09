@@ -77,7 +77,7 @@ describe('MCE contract §7.1 — vendor CSV column lock (12 locked R-MCE-002 col
   it('MESSER_COLUMNS source block does NOT mention estimatedMissingCommission or estMissingStatus', () => {
     // C3b-2: the page literal is now a derive expression
     // (`BASE_MESSER_COLUMNS_12.map(...)`) terminated by `;`, not by `];`.
-    const messerBlock = PAGE_SRC.match(/const MESSER_COLUMNS[\s\S]*?;\n/)?.[0] ?? '';
+    const messerBlock = PAGE_SRC.match(/const MESSER_COLUMNS[\s\S]*?;\r?\n/)?.[0] ?? '';
     expect(messerBlock.length).toBeGreaterThan(0);
     expect(messerBlock).not.toMatch(/estimatedMissingCommission/);
     expect(messerBlock).not.toMatch(/estMissingStatus/);
