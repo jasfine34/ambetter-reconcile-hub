@@ -507,4 +507,139 @@ describe('assembleCommissionSubmission — C3a headless assembler', () => {
     expect(out.diagnostics.previewDollarPolicyGrainCount).toBe(2);
     expect(out.diagnostics.previewDollarMemberFallbackCount).toBe(0);
   });
+
+  // ───────────────────────────────────────────────────────────────────
+  // C3 grain-fix regressions (same-value pn/sub key-form collapse).
+  // ───────────────────────────────────────────────────────────────────
+
+  it('G1/unit same-value collapse: pn-form + sub-only record → ONE row, NPN+Policy# populated, sub-form paid-through retained', async () => {
+    const recs: NormalizedRecord[] = [
+      bo('SV', {
+        brokerName: 'Jason Fine', npn: JASON_NPN,
+        issuer_subscriber_id: 'SAMEID', policy_number: 'SAMEID',
+        paid_through_date: '2026-02-28',
+      } as any),
+      ede('SV', {
+        aor: 'Jason Fine (21055210)', npn: JASON_NPN,
+        issuer_subscriber_id: 'SAMEID', policy_number: '',
+      } as any),
+      // Extra BO snapshot keyed only via sub-form (policy_number blank),
+      // providing a LATER paid-through that R2 must retain across forms.
+      rec({
+        source_type: 'BACK_OFFICE',
+        member_key: 'SV',
+        issuer_subscriber_id: 'SAMEID',
+        policy_number: '',
+        agent_npn: JASON_NPN,
+        agent_name: 'Jason Fine',
+        net_premium: 100,
+        paid_through_date: '2026-04-30',
+        raw_json: { 'Broker Name': 'Jason Fine', issuer: 'Ambetter', 'Number of Members': '1' },
+        ...({ batch_id: BATCH } as any),
+      } as any),
+      ...anchorRipeness(),
+    ];
+    const out = await assembleCommissionSubmission({ ...baseArgs, allBatchRecords: recs });
+    const svRows = out.rows.filter((r) => r.grainKey.stableMemberKey === 'isid:sameid');
+    expect(svRows.length).toBe(1);
+    const row = svRows[0];
+    expect(row.grainKey.policy_identity_key).toBe('ambetter|sameid');
+    expect(row.grainKey.policy_identity_key).not.toMatch(/\|sub:/);
+    expect(row.npn).toBeTruthy();
+    expect(row.policyNumber).toBeTruthy();
+    // R2: canonical-key membership merged BOTH key-form records, so the
+    // seeded comment retains the sub-form record's later paid-through.
+    expect(row.seededComment).toContain('paid-through April 2026');
+  });
+
+  it('G1/G2 unit: sub-only (no pn anywhere) survives as ONE row (legitimate BO-only / direct-write)', async () => {
+    const recs: NormalizedRecord[] = [
+      bo('SO', {
+        brokerName: 'Jason Fine', npn: JASON_NPN,
+        issuer_subscriber_id: 'SUBONLYID', policy_number: '',
+      } as any),
+      ede('SO', {
+        aor: 'Jason Fine (21055210)', npn: JASON_NPN,
+        issuer_subscriber_id: 'SUBONLYID', policy_number: '',
+      } as any),
+      ...anchorRipeness(),
+    ];
+    const out = await assembleCommissionSubmission({ ...baseArgs, allBatchRecords: recs });
+    const soRows = out.rows.filter((r) => r.grainKey.stableMemberKey === 'isid:subonlyid');
+    expect(soRows.length).toBe(1);
+    expect(soRows[0].grainKey.policy_identity_key).toBe('ambetter|sub:subonlyid');
+  });
+
+  it('G1 unit: two genuinely distinct pn values stay TWO rows, each with its own vendor fields', async () => {
+    const recs: NormalizedRecord[] = [
+      bo('DP', {
+        brokerName: 'Jason Fine', npn: JASON_NPN,
+        issuer_subscriber_id: 'ISIDDP', policy_number: 'POLX',
+        raw_json: { 'Number of Members': '1', plan_variant: 'standard' },
+      } as any),
+      ede('DP', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, issuer_subscriber_id: 'ISIDDP', policy_number: 'POLX' } as any),
+      bo('DP', {
+        brokerName: 'Jason Fine', npn: JASON_NPN,
+        issuer_subscriber_id: 'ISIDDP', policy_number: 'POLW',
+        raw_json: { 'Number of Members': '1', plan_variant: 'standard' },
+      } as any),
+      ede('DP', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, issuer_subscriber_id: 'ISIDDP', policy_number: 'POLW' } as any),
+      ...anchorRipeness(),
+    ];
+    const out = await assembleCommissionSubmission({ ...baseArgs, allBatchRecords: recs });
+    const polX = out.rows.find((r) => r.grainKey.policy_identity_key === 'ambetter|polx');
+    const polW = out.rows.find((r) => r.grainKey.policy_identity_key === 'ambetter|polw');
+    expect(polX).toBeDefined();
+    expect(polW).toBeDefined();
+    expect(polX!.policyNumber).toBeTruthy();
+    expect(polW!.policyNumber).toBeTruthy();
+  });
+
+  it('G1/G2/G3: per (member,scope) uniqueness + no phantom blank-all-three rows + dollars conserved', async () => {
+    const recs: NormalizedRecord[] = [
+      // Member A: same-value pn/sub key-form mismatch → MUST collapse.
+      bo('A', { brokerName: 'Jason Fine', npn: JASON_NPN, issuer_subscriber_id: 'AID', policy_number: 'AID' } as any),
+      ede('A', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, issuer_subscriber_id: 'AID', policy_number: '' } as any),
+      // Member B: legitimately distinct two pn values → MUST stay 2 rows.
+      bo('B', { brokerName: 'Jason Fine', npn: JASON_NPN, issuer_subscriber_id: 'BID', policy_number: 'B1' } as any),
+      ede('B', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, issuer_subscriber_id: 'BID', policy_number: 'B1' } as any),
+      bo('B', { brokerName: 'Jason Fine', npn: JASON_NPN, issuer_subscriber_id: 'BID', policy_number: 'B2' } as any),
+      ede('B', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, issuer_subscriber_id: 'BID', policy_number: 'B2' } as any),
+      ...anchorRipeness(),
+    ];
+    const out = await assembleCommissionSubmission({ ...baseArgs, allBatchRecords: recs });
+
+    // G1: no (member,scope) emits both cc|<id> AND cc|sub:<id> for same value.
+    const byMemberScope = new Map<string, string[]>();
+    for (const r of out.rows) {
+      const k = `${r.grainKey.stableMemberKey}|${r.grainKey.targetScope}`;
+      const list = byMemberScope.get(k) ?? [];
+      list.push(r.grainKey.policy_identity_key);
+      byMemberScope.set(k, list);
+    }
+    for (const keys of byMemberScope.values()) {
+      for (const k of keys) {
+        const m = k.match(/^([^|]+)\|sub:(.+)$/);
+        if (m) {
+          const pnForm = `${m[1]}|${m[2]}`;
+          expect(keys).not.toContain(pnForm);
+        }
+      }
+    }
+
+    // G2: no row has blank NPN + blank Writing Agent Carrier ID + blank Policy# all at once.
+    for (const r of out.rows) {
+      const allBlank = !r.npn && !r.writingAgentCarrierId && !r.policyNumber;
+      expect(allBlank).toBe(false);
+    }
+
+    // Collapse / preservation counts.
+    expect(out.rows.filter((r) => r.grainKey.stableMemberKey === 'isid:aid').length).toBe(1);
+    expect(out.rows.filter((r) => r.grainKey.stableMemberKey === 'isid:bid').length).toBe(2);
+
+    // G3: dollar conservation — preview totals finite and positive.
+    const total = out.rows.reduce((s, r) => s + (r.previewEstimatedTotal ?? 0), 0);
+    expect(Number.isFinite(total)).toBe(true);
+    expect(total).toBeGreaterThan(0);
+  });
 });
