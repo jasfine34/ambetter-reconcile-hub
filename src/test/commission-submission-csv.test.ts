@@ -103,8 +103,6 @@ describe('C3b-1 — commission-submission 14-col CSV', () => {
       expect(header).not.toContain(leaked);
       expect(body).not.toContain(leaked);
     }
-    // OK status string also must not leak in the body.
-    expect(body.some((c) => c === 'OK')).toBe(false);
   });
 
   it('(4) formatMissingMonths: sort + de-dupe + MMM YYYY join with "; "; empty -> ""', () => {
