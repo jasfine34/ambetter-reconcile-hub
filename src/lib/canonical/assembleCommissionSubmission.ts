@@ -374,7 +374,9 @@ export async function assembleCommissionSubmission(
       groups.set(groupKey, group);
     }
     group.months.add(row.serviceMonth);
-    group.anchors.push({ serviceMonth: row.serviceMonth, rowKey: row.rowKey });
+    if (!group.anchors.some((a) => a.rowKey === row.rowKey)) {
+      group.anchors.push({ serviceMonth: row.serviceMonth, rowKey: row.rowKey });
+    }
 
     // Set-relationship measure.
     const candKey = `${row.targetScope}|${row.serviceMonth}|${row.stableMemberKey}|${pol.policy_identity_key}`;
