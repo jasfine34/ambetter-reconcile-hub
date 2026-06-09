@@ -272,6 +272,7 @@ interface ScopeContext {
   mtRowsByMember: Map<string, MemberTimelineRow>;
   classificationByMember: Map<string, MemberClassification>;
   scopedByMember: Map<string, NormalizedRecord[]>;
+  baseClassifierContext: ClassifierContext;
 }
 
 function buildScopeContext(
@@ -334,7 +335,14 @@ function buildScopeContext(
     classificationByMember.set(row.member_key, classifyMember(recs as any, ctx));
   }
 
-  return { scope, predicate, mtRowsByMember, classificationByMember, scopedByMember };
+  return {
+    scope,
+    predicate,
+    mtRowsByMember,
+    classificationByMember,
+    scopedByMember,
+    baseClassifierContext: baseContext,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────
