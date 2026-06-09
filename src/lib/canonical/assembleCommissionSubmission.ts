@@ -478,6 +478,11 @@ export async function assembleCommissionSubmission(
     const scopedForRow = assembled.traceContextByScope.get(row.targetScope)?.scopedRecordsByMemberKey.get(rowMemberKey)
       ?? recordsByMemberKey.get(rowMemberKey)
       ?? [];
+    // C3-grain-fix Pass 2: canonicalize each record's raw key against the
+    // (scope, stable) pn-form set, then enumerate grains from CANONICAL keys.
+    // Prefer an identity that carries `policy_number` so the downstream
+    // derivePolicyKeyOrSentinel emits the pn-form key (full vendor fields).
+    const pnKeySet = getPnSet(row.targetScope, row.stableMemberKey);
     const policyIdentities = new Map<string, DecisionIdentityInput>();
     for (const rec of scopedForRow) {
       const identity: DecisionIdentityInput = {
@@ -487,8 +492,15 @@ export async function assembleCommissionSubmission(
         policy_number: rec.policy_number ?? null,
       };
       if (deriveStableMemberKey(identity) !== row.stableMemberKey) continue;
-      const key = policyIdentityKeyForRecord(rec);
-      if (key && !policyIdentities.has(key)) policyIdentities.set(key, identity);
+      const rawKey = policyIdentityKeyForRecord(rec);
+      if (!rawKey) continue;
+      const canonical = canonicalizePolicyKey(rawKey, pnKeySet);
+      const existing = policyIdentities.get(canonical);
+      if (!existing) {
+        policyIdentities.set(canonical, identity);
+      } else if (!existing.policy_number && identity.policy_number) {
+        policyIdentities.set(canonical, identity);
+      }
     }
 
     const grains = policyIdentities.size > 0
@@ -507,12 +519,13 @@ export async function assembleCommissionSubmission(
 
     for (const grain of grains) {
       const grainPol = derivePolicyKeyOrSentinel(grain.identity, row.stableMemberKey);
+      const canonicalPolicyKey = canonicalizePolicyKey(grainPol.policy_identity_key, pnKeySet);
       const carrier = canonicalCarrier(grain.identity.carrier ?? '') || row.carrier;
       const grainKey: SubmissionRowGrainKey = {
         carrier,
         targetScope: row.targetScope as 'Coverall' | 'Vix',
         stableMemberKey: row.stableMemberKey,
-        policy_identity_key: grainPol.policy_identity_key,
+        policy_identity_key: canonicalPolicyKey,
         policy_identity_unresolved_reason: grainPol.unresolved_reason,
       };
       const groupKey = `${grainKey.carrier}|${grainKey.targetScope}|${grainKey.stableMemberKey}|${grainKey.policy_identity_key}`;
