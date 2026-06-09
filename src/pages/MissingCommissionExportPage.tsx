@@ -79,6 +79,7 @@ import {
 } from '@/lib/sweep/resolverRecordAdapters';
 import { resolvePolicyStateForCompGrid } from '@/lib/canonical/policyState';
 import { resolvePolicyMemberCountForCompGrid } from '@/lib/canonical/policyMemberCount';
+import { isZeroNetPremium } from '@/lib/canonical/metrics';
 
 
 type PremiumBucket = 'all' | 'zero_premium' | 'has_premium';
@@ -161,7 +162,8 @@ const INTERNAL_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
 
 // ---------------------------------------------------------------------------
 // C3a Extraction A — pure vendor-field helpers + enrichVendorFields now live
-// in `src/lib/mce/vendorEnrichment.ts`. They are re-exported here so existing
+// in `src/lib/mce/vendorEnrichment.ts`. classifyNetPremium still delegates to
+// canonical isZeroNetPremium there. They are re-exported here so existing
 // tests + agent-summary imports continue to resolve unchanged.
 // ---------------------------------------------------------------------------
 
@@ -172,7 +174,6 @@ export {
   buildWritingAgentCarrierIdLookup,
   resolveTargetPayEntity,
   resolveWritingAgentCarrierId,
-  classifyNetPremium,
   enrichVendorFields,
   type WritingAgentIdEntry,
 } from '@/lib/mce/vendorEnrichment';
@@ -181,6 +182,10 @@ import {
   enrichVendorFields,
   buildWritingAgentCarrierIdLookup,
 } from '@/lib/mce/vendorEnrichment';
+
+export function classifyNetPremium(row: any): PremiumBucket {
+  return isZeroNetPremium(row) ? 'zero_premium' : 'has_premium';
+}
 
 export function buildMesserCsvFilename(opts: {
   scope: CanonicalScope;
@@ -785,7 +790,10 @@ export default function MissingCommissionExportPage() {
           scope: f.scope,
           writingAgentIdLookup,
           adjustedRow: adj,
-          resolveEstMissing: (input) => estMissingResolver.resolve(input),
+          resolveEstMissing: ({ row }) => estMissingResolver.resolve({
+            row,
+            adjustedRow: adj,
+          }),
         });
         const estMissing = vendorFields.estimatedMissingCommission;
         const estMissingStatus = vendorFields.estMissingStatus;
