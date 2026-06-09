@@ -60,6 +60,7 @@ import {
   buildIsDueEligibleRecord,
   classifyMember,
   type CellClassification,
+  type ClassifierContext,
   type MemberClassification,
   type PayEntityScope,
 } from '../classifier';
@@ -110,9 +111,32 @@ export interface AssembleDiagnoseRouteRowsDiagnostics {
   unsupportedResolverReasons: Record<string, number>;
 }
 
+export interface EvidenceBinding {
+  rowKey: string;
+  /** The exact MT member_key used at row emit time. Never reverse-derive. */
+  memberKey: string;
+  serviceMonth: string;
+  targetScope: 'Coverall' | 'Vix';
+}
+
+export interface ScopeTraceContext {
+  /** Per-member, scope-filtered records (what explainCell expects pre-scoped). */
+  scopedRecordsByMemberKey: Map<string, NormalizedRecord[]>;
+  /** Scope-level base classifier context (NO per-member picker overlay). */
+  baseClassifierContext: ClassifierContext;
+  mtRowsByMember: Map<string, MemberTimelineRow>;
+  classificationByMember: Map<string, MemberClassification>;
+}
+
 export interface AssembleDiagnoseRouteRowsResult {
   rows: RouteRowInput[];
   diagnostics: AssembleDiagnoseRouteRowsDiagnostics;
+  /** C2c additive — Evidence binding per emitted row (captured AT EMIT TIME). */
+  evidenceBindingsByRowKey: Map<string, EvidenceBinding>;
+  /** C2c additive — Per-member EDE month-picker map (shared across scopes). */
+  pickerMapsByMemberKey: Map<string, Map<string, NormalizedRecord | null>>;
+  /** C2c additive — Per-scope trace context (records + base classifier ctx). */
+  traceContextByScope: Map<TargetScope, ScopeTraceContext>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -248,6 +272,7 @@ interface ScopeContext {
   mtRowsByMember: Map<string, MemberTimelineRow>;
   classificationByMember: Map<string, MemberClassification>;
   scopedByMember: Map<string, NormalizedRecord[]>;
+  baseClassifierContext: ClassifierContext;
 }
 
 function buildScopeContext(
@@ -310,7 +335,14 @@ function buildScopeContext(
     classificationByMember.set(row.member_key, classifyMember(recs as any, ctx));
   }
 
-  return { scope, predicate, mtRowsByMember, classificationByMember, scopedByMember };
+  return {
+    scope,
+    predicate,
+    mtRowsByMember,
+    classificationByMember,
+    scopedByMember,
+    baseClassifierContext: baseContext,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -327,13 +359,16 @@ export function assembleDiagnoseRouteRows(
     unsupportedResolverReasons: {},
   };
   const rows: RouteRowInput[] = [];
+  const evidenceBindingsByRowKey = new Map<string, EvidenceBinding>();
+  const pickerMapsByMemberKey = new Map<string, Map<string, NormalizedRecord | null>>();
+  const traceContextByScope = new Map<TargetScope, ScopeTraceContext>();
 
   if (
     args.allBatchRecords.length === 0 ||
     args.serviceMonths.length === 0 ||
     args.targetScopes.length === 0
   ) {
-    return { rows, diagnostics };
+    return { rows, diagnostics, evidenceBindingsByRowKey, pickerMapsByMemberKey, traceContextByScope };
   }
 
   const serviceMonthSet = new Set(args.serviceMonths);
@@ -358,7 +393,6 @@ export function assembleDiagnoseRouteRows(
     }
     arr.push(r);
   }
-  const pickerMapsByMemberKey = new Map<string, Map<string, NormalizedRecord | null>>();
   for (const [k, recs] of rawRecordsByMemberKey) {
     pickerMapsByMemberKey.set(k, buildMonthPickerMapForMember(recs, args.monthList));
   }
@@ -372,17 +406,22 @@ export function assembleDiagnoseRouteRows(
   }
   const scopeCtxByScope = new Map<TargetScope, ScopeContext>();
   for (const s of requiredScopes) {
-    scopeCtxByScope.set(
+    const built = buildScopeContext(
       s,
-      buildScopeContext(
-        s,
-        args,
-        rawRecordsByMemberKey,
-        pickerMapsByMemberKey,
-        batchMonthMap,
-        overlay,
-      ),
+      args,
+      rawRecordsByMemberKey,
+      pickerMapsByMemberKey,
+      batchMonthMap,
+      overlay,
     );
+    scopeCtxByScope.set(s, built);
+    // C2c additive — surface scope trace context for evidence drawer (NO behavior change).
+    traceContextByScope.set(s, {
+      scopedRecordsByMemberKey: built.scopedByMember,
+      baseClassifierContext: built.baseClassifierContext,
+      mtRowsByMember: built.mtRowsByMember,
+      classificationByMember: built.classificationByMember,
+    });
   }
 
   // 3. Per (scope, serviceMonth) — build evidence map + resolver fresh
@@ -518,9 +557,18 @@ export function assembleDiagnoseRouteRows(
           crFlag,
           population,
         });
+        // C2c additive — capture binding AT EMIT TIME (never reverse-derive).
+        // scope here is one of args.targetScopes; the assembler currently
+        // emits only 'Coverall' | 'Vix' (the per-entity rows). Cast is safe.
+        evidenceBindingsByRowKey.set(rowKey, {
+          rowKey,
+          memberKey,
+          serviceMonth,
+          targetScope: scope as 'Coverall' | 'Vix',
+        });
       }
     }
   }
 
-  return { rows, diagnostics };
+  return { rows, diagnostics, evidenceBindingsByRowKey, pickerMapsByMemberKey, traceContextByScope };
 }

@@ -846,5 +846,63 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// C2c — additive evidence-return surface (rows/diagnostics unchanged).
+// ─────────────────────────────────────────────────────────────────────────
+describe('assembleDiagnoseRouteRows — C2c additive evidence surface', () => {
+  const baseArgs = {
+    allBatchRecords: RECS,
+    monthList: MONTH_LIST,
+    serviceMonths: [STMT_MONTH],
+    targetScopes: ['Coverall', 'Vix'] as const,
+    batchMonthByBatchId: BATCH_MONTH,
+    today: TODAY,
+    rateRows: [RATE_AMBETTER_FL],
+  };
+
+  it('C2c-1 BYTE-IDENTICAL guard: {rows,diagnostics} serialization matches the legacy snapshot (new evidence maps EXCLUDED)', () => {
+    const result = assembleDiagnoseRouteRows(baseArgs as any);
+    const serialized = JSON.stringify({ rows: result.rows, diagnostics: result.diagnostics });
+    expect(serialized).toMatchSnapshot();
+    // Determinism: a second call yields the same byte string.
+    const second = assembleDiagnoseRouteRows(baseArgs as any);
+    expect(JSON.stringify({ rows: second.rows, diagnostics: second.diagnostics })).toBe(serialized);
+  });
+
+  it('C2c-2 evidenceBindingsByRowKey has one binding per emitted row, consistent fields', () => {
+    const result = assembleDiagnoseRouteRows(baseArgs as any);
+    expect(result.evidenceBindingsByRowKey.size).toBe(result.rows.length);
+    for (const r of result.rows) {
+      const b = result.evidenceBindingsByRowKey.get(r.rowKey);
+      expect(b, `binding for ${r.rowKey}`).toBeDefined();
+      expect(b!.rowKey).toBe(r.rowKey);
+      expect(b!.serviceMonth).toBe(r.serviceMonth);
+      expect(b!.targetScope).toBe(r.targetScope as 'Coverall' | 'Vix');
+      expect(typeof b!.memberKey).toBe('string');
+      expect(b!.memberKey.length).toBeGreaterThan(0);
+      const scopeCtx = result.traceContextByScope.get(r.targetScope);
+      expect(scopeCtx).toBeDefined();
+      expect(scopeCtx!.scopedRecordsByMemberKey.has(b!.memberKey)).toBe(true);
+      expect(scopeCtx!.classificationByMember.has(b!.memberKey)).toBe(true);
+    }
+  });
+
+  it('C2c-3 pickerMapsByMemberKey populated; baseClassifierContext per scope has NO per-member picker overlay', () => {
+    const result = assembleDiagnoseRouteRows(baseArgs as any);
+    expect(result.pickerMapsByMemberKey.size).toBeGreaterThan(0);
+    for (const r of result.rows) {
+      const b = result.evidenceBindingsByRowKey.get(r.rowKey)!;
+      expect(result.pickerMapsByMemberKey.has(b.memberKey)).toBe(true);
+    }
+    for (const scope of ['Coverall', 'Vix'] as const) {
+      const ctx = result.traceContextByScope.get(scope);
+      expect(ctx).toBeDefined();
+      expect(ctx!.baseClassifierContext).toBeDefined();
+      expect((ctx!.baseClassifierContext as any).pickerEdeByMonth).toBeUndefined();
+    }
+  });
+});
+
+
 
 

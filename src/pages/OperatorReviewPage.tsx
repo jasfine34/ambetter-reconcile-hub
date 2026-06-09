@@ -1,33 +1,17 @@
 /**
  * C2b-2 — Operator Review.
  *
- * Stage 1: read-only projection via projectDiagnoseRoutes.
- * Stage 2: page render (table + filter + name enrichment).
- * Stage 3 (this file): HOLD actions per actionable row + explicit
- *   "Run cycle / apply releases" button.
+ * C2c adds (presentation-only):
+ *   - Reason-typed filter CHIPS with disjoint counts (replaces the binary
+ *     Actionable/Satisfied toggle).
+ *   - DMI work-surface controls (issue-type chips, status subfilter,
+ *     deadline sort) when the DMI chip is selected.
+ *   - Per-row evidence DRAWER (lean explainCell trace + route facts).
  *
- * Hold actions land per route:
- *   premium            → hold_premium  (auto_premium)
- *   chase_eligible     → hold_premium  (auto_premium)
- *   dmi                → hold_dmi      (sticky_manual)
- *   prior_balance      → hold_prior_balance (sticky_manual)
- *   amount_discrepancy → hold_amount   (sticky_manual)
- *   manual_review      → hold_amount   (sticky_manual)
- *
- * Deferred (NOT rendered): add_to_chase, dismiss_cr_flag, scope_correct.
- *
- * Guards:
- *   OR1 — the row object is CAPTURED at click time so a refresh / re-sort
- *         cannot retarget the write to a different row.
- *   OR3 — reason_code is a SELECT bound to REASON_CODES_BY_TYPE; free text
- *         goes to internal_note only. validateDecisionInput throws surface
- *         as a failed write (error toast).
- *   OR4 — the per-row action button and the run-cycle button disable while
- *         their write/cycle is pending. No double-write, no overlapping
- *         cycle.
- *
- * After a successful write OR a successful cycle:
- *   invalidateOperatorDecisionCache() + re-project against current truth.
+ * Hold action handlers, the hold Dialog, OR1/OR3/OR4 guards, runCycle,
+ * reproject, the read-only-load contract, MirroredScrollTable + sticky
+ * header — all unchanged. Only write path remains the existing hold
+ * recordDecision.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useBatch } from '@/contexts/BatchContext';
@@ -37,7 +21,10 @@ import { getAllNormalizedRecordsForMemberTimeline } from '@/lib/persistence';
 import { getMtAllBatchProjection } from '@/lib/canonical/mtApprovedMceCache';
 import { loadCarrierCompRates } from '@/lib/canonical/compGridLoader';
 import { buildMonthList } from '@/lib/memberTimeline';
-import { assembleDiagnoseRouteRows } from '@/lib/canonical/assembleDiagnoseRouteRows';
+import {
+  assembleDiagnoseRouteRows,
+  type AssembleDiagnoseRouteRowsResult,
+} from '@/lib/canonical/assembleDiagnoseRouteRows';
 import {
   projectDiagnoseRoutes,
   runDiagnoseCycle,
@@ -54,6 +41,8 @@ import {
   type ReleaseRule,
   type RecordDecisionInput,
 } from '@/lib/canonical/operatorDecisions';
+import { explainCell as defaultExplainCell } from '@/lib/explainCell';
+import type { CellTrace } from '@/lib/explainCellTypes';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -62,16 +51,15 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
+} from '@/components/ui/sheet';
+import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Loader2, RefreshCw, AlertCircle, Inbox, Play } from 'lucide-react';
+import { Loader2, RefreshCw, AlertCircle, Inbox, Play, FileSearch } from 'lucide-react';
 import { toast } from 'sonner';
-
-const ACTIONABLE_ROUTES: ReadonlySet<RouteName> = new Set<RouteName>([
-  'chase_eligible', 'premium', 'dmi', 'prior_balance', 'amount_discrepancy', 'manual_review',
-]);
 
 const ROUTE_VARIANT: Record<RouteName, 'default' | 'secondary' | 'destructive' | 'outline'> = {
   satisfied: 'outline',
@@ -90,7 +78,6 @@ interface HoldActionSpec {
   label: string;
 }
 
-/** Hold action(s) valid per route. */
 const HOLD_ACTIONS_BY_ROUTE: Record<RouteName, HoldActionSpec[]> = {
   satisfied: [],
   chase_eligible: [
@@ -115,15 +102,120 @@ const HOLD_ACTIONS_BY_ROUTE: Record<RouteName, HoldActionSpec[]> = {
 
 type Status = 'idle' | 'loading' | 'ready' | 'error';
 
+type FilterKey =
+  | 'all_actionable'
+  | 'chase'
+  | 'premium'
+  | 'amount'
+  | 'prior_balance'
+  | 'dmi'
+  | 'manual_review'
+  | 'satisfied';
+
 interface HoldPromptState {
-  row: RouteRowInput;             // OR1: captured at click time
+  row: RouteRowInput;
   spec: HoldActionSpec;
   reasonCode: string;
   internalNote: string;
   submitting: boolean;
 }
 
-export default function OperatorReviewPage() {
+interface DrawerState {
+  row: RouteRowInput;
+  loading: boolean;
+  trace: CellTrace | null;
+  error: string | null;
+}
+
+// C2c — DMI issue-type groupings.
+const DMI_GROUPS = [
+  'NONESCMEC',
+  'ANNUAL_INCOME',
+  'CITIZENSHIP',
+  'SSN',
+  'ESCMEC',
+  'QHP_LAWFUL_PRESENCE',
+  'LOSS_OF_MEC_SEP',
+] as const;
+type DmiGroup = (typeof DMI_GROUPS)[number] | 'Other';
+
+function tokenizeIssueType(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split('|')
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0);
+}
+
+function groupForToken(t: string): DmiGroup {
+  const upper = t.toUpperCase();
+  for (const g of DMI_GROUPS) {
+    if (upper.includes(g)) return g;
+  }
+  return 'Other';
+}
+
+function groupsForRow(row: RouteRowInput): DmiGroup[] {
+  const tokens = tokenizeIssueType((row.facts as any)?.dmi?.issueType ?? null);
+  if (tokens.length === 0) return [];
+  const seen = new Set<DmiGroup>();
+  for (const t of tokens) seen.add(groupForToken(t));
+  return Array.from(seen);
+}
+
+interface Buckets {
+  chase: Set<string>;
+  premium: Set<string>;
+  amount: Set<string>;
+  prior_balance: Set<string>;
+  dmi: Set<string>;
+  manual_review: Set<string>;
+  satisfied: Set<string>;
+  all_actionable: Set<string>;
+}
+
+function computeBuckets(proj: DiagnoseRoutesProjection): Buckets {
+  const fyi = proj.fyi;
+  const mrDmi: string[] = [];
+  const mrOther: string[] = [];
+  for (const k of proj.queues.manual_review ?? []) {
+    const tags = fyi.get(k) ?? [];
+    if (tags.includes('dmi_expired')) mrDmi.push(k);
+    else mrOther.push(k);
+  }
+  const dmi = new Set<string>([...(proj.queues.dmi ?? []), ...mrDmi]);
+  const manual_review = new Set<string>(mrOther);
+  const chase = new Set<string>(proj.chaseEligible ?? []);
+  const premium = new Set<string>(proj.queues.premium ?? []);
+  const amount = new Set<string>(proj.queues.amount_discrepancy ?? []);
+  const prior_balance = new Set<string>(proj.queues.prior_balance ?? []);
+  const satisfied = new Set<string>(proj.satisfied ?? []);
+  const all_actionable = new Set<string>([
+    ...chase, ...premium, ...amount, ...prior_balance, ...dmi, ...manual_review,
+  ]);
+  return { chase, premium, amount, prior_balance, dmi, manual_review, satisfied, all_actionable };
+}
+
+const CHIP_DEFS: Array<{ key: FilterKey; label: string; testid: string }> = [
+  { key: 'all_actionable', label: 'All actionable', testid: 'filter-all_actionable' },
+  { key: 'chase', label: 'Chase', testid: 'filter-chase' },
+  { key: 'premium', label: 'Premium', testid: 'filter-premium' },
+  { key: 'amount', label: 'Amount', testid: 'filter-amount' },
+  { key: 'prior_balance', label: 'Prior balance', testid: 'filter-prior_balance' },
+  { key: 'dmi', label: 'DMI', testid: 'filter-dmi' },
+  { key: 'manual_review', label: 'Manual review', testid: 'filter-manual_review' },
+  // NOTE: the satisfied chip retains the legacy testid for back-compat.
+  { key: 'satisfied', label: 'Satisfied / FYI', testid: 'filter-satisfied' },
+];
+
+interface OperatorReviewPageProps {
+  /** Test seam — defaults to the real explainCell. */
+  explainCellFn?: typeof defaultExplainCell;
+}
+
+export default function OperatorReviewPage(props: OperatorReviewPageProps = {}) {
+  const explainCellFn = props.explainCellFn ?? defaultExplainCell;
+
   const { batches, resolverIndex } = useBatch();
   const allBatchesDataVersion = useAllBatchesDataVersion();
   const { overlay: clearingOverlay } = useCrossBatchOverlay();
@@ -132,8 +224,13 @@ export default function OperatorReviewPage() {
   const [error, setError] = useState<Error | null>(null);
   const [rows, setRows] = useState<RouteRowInput[]>([]);
   const [projection, setProjection] = useState<DiagnoseRoutesProjection | null>(null);
+  // C2c — retain widened assembler evidence in page state.
+  const [evidence, setEvidence] = useState<Pick<
+    AssembleDiagnoseRouteRowsResult,
+    'evidenceBindingsByRowKey' | 'pickerMapsByMemberKey' | 'traceContextByScope'
+  > | null>(null);
   const [nameByStableKey, setNameByStableKey] = useState<Map<string, string>>(new Map());
-  const [showSatisfied, setShowSatisfied] = useState(false);
+  const [selectedFilter, setSelectedFilter] = useState<FilterKey>('all_actionable');
   const [refreshTick, setRefreshTick] = useState(0);
   const [prompt, setPrompt] = useState<HoldPromptState | null>(null);
   const [pendingRowKey, setPendingRowKey] = useState<string | null>(null);
@@ -141,6 +238,12 @@ export default function OperatorReviewPage() {
   const [lastCycleSummary, setLastCycleSummary] = useState<
     null | { applied: string[]; noopCount: number }
   >(null);
+  const [drawer, setDrawer] = useState<DrawerState | null>(null);
+  // DMI work-surface controls.
+  const [dmiStatus, setDmiStatus] = useState<'all' | 'open' | 'expired' | 'in_progress'>('all');
+  const [dmiGroupFilter, setDmiGroupFilter] = useState<Set<DmiGroup>>(new Set());
+  const [dmiSortDeadline, setDmiSortDeadline] = useState(false);
+
   const genRef = useRef(0);
 
   const { batchMonthByBatchIdObj, monthList, batchMonths } = useMemo(() => {
@@ -235,6 +338,11 @@ export default function OperatorReviewPage() {
 
         setRows(assembled.rows);
         setProjection(proj);
+        setEvidence({
+          evidenceBindingsByRowKey: assembled.evidenceBindingsByRowKey ?? new Map(),
+          pickerMapsByMemberKey: assembled.pickerMapsByMemberKey ?? new Map(),
+          traceContextByScope: assembled.traceContextByScope ?? new Map(),
+        });
         setNameByStableKey(nameMap);
         setStatus('ready');
       } catch (err) {
@@ -246,14 +354,79 @@ export default function OperatorReviewPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batches, allBatchesDataVersion, resolverIndex, refreshTick]);
 
+  const buckets = useMemo<Buckets | null>(
+    () => (projection ? computeBuckets(projection) : null),
+    [projection],
+  );
+
+  const rowsByKey = useMemo(() => {
+    const m = new Map<string, RouteRowInput>();
+    for (const r of rows) m.set(r.rowKey, r);
+    return m;
+  }, [rows]);
+
   const visibleRows = useMemo(() => {
-    if (!projection) return [] as RouteRowInput[];
-    return rows.filter((r) => {
-      const route = projection.routes.get(r.rowKey)?.route;
-      if (!route) return false;
-      return showSatisfied ? route === 'satisfied' : ACTIONABLE_ROUTES.has(route);
-    });
-  }, [rows, projection, showSatisfied]);
+    if (!projection || !buckets) return [] as RouteRowInput[];
+    const set = buckets[selectedFilter];
+    let result = rows.filter((r) => set.has(r.rowKey));
+
+    if (selectedFilter === 'dmi') {
+      // Issue-type group filter (empty → no filter).
+      if (dmiGroupFilter.size > 0) {
+        result = result.filter((r) => {
+          const gs = groupsForRow(r);
+          for (const g of gs) if (dmiGroupFilter.has(g)) return true;
+          return false;
+        });
+      }
+      // Status subfilter.
+      if (dmiStatus !== 'all') {
+        const fyi = projection.fyi;
+        result = result.filter((r) => {
+          const d = (r.facts as any)?.dmi;
+          if (dmiStatus === 'open') return Boolean(d?.active && d?.surfaceEligible && !d?.expired);
+          if (dmiStatus === 'in_progress') return d?.inProgress === true;
+          if (dmiStatus === 'expired') {
+            const tags = fyi.get(r.rowKey) ?? [];
+            return tags.includes('dmi_expired');
+          }
+          return true;
+        });
+      }
+      // Deadline sort: ascending by verificationEndDate; expired first;
+      // missing date last.
+      if (dmiSortDeadline) {
+        const fyi = projection.fyi;
+        const isExpired = (r: RouteRowInput) =>
+          (fyi.get(r.rowKey) ?? []).includes('dmi_expired')
+          || Boolean((r.facts as any)?.dmi?.expired);
+        result = [...result].sort((a, b) => {
+          const ae = isExpired(a) ? 0 : 1;
+          const be = isExpired(b) ? 0 : 1;
+          if (ae !== be) return ae - be;
+          const ad = (a.facts as any)?.dmi?.verificationEndDate as string | null | undefined;
+          const bd = (b.facts as any)?.dmi?.verificationEndDate as string | null | undefined;
+          if (!ad && !bd) return 0;
+          if (!ad) return 1;
+          if (!bd) return -1;
+          return ad < bd ? -1 : ad > bd ? 1 : 0;
+        });
+      }
+    }
+    return result;
+  }, [rows, projection, buckets, selectedFilter, dmiStatus, dmiGroupFilter, dmiSortDeadline]);
+
+  // Present DMI groups across the current DMI bucket (for chip listing).
+  const presentDmiGroups = useMemo<DmiGroup[]>(() => {
+    if (!buckets) return [];
+    const seen = new Set<DmiGroup>();
+    for (const k of buckets.dmi) {
+      const r = rowsByKey.get(k);
+      if (!r) continue;
+      for (const g of groupsForRow(r)) seen.add(g);
+    }
+    return ([...DMI_GROUPS, 'Other'] as DmiGroup[]).filter((g) => seen.has(g));
+  }, [buckets, rowsByKey]);
 
   /** Re-project against the CURRENT decision index (no write). */
   const reproject = useCallback(async () => {
@@ -264,13 +437,12 @@ export default function OperatorReviewPage() {
   }, [rows]);
 
   const openHoldPrompt = useCallback((row: RouteRowInput, spec: HoldActionSpec) => {
-    // OR1: capture the CLICKED row object at click time.
     setPrompt({ row, spec, reasonCode: spec.defaultReason, internalNote: '', submitting: false });
   }, []);
 
   const submitHold = useCallback(async () => {
     if (!prompt) return;
-    if (pendingRowKey || cycleRunning) return; // OR4
+    if (pendingRowKey || cycleRunning) return;
     const { row, spec } = prompt;
     setPendingRowKey(row.rowKey);
     setPrompt({ ...prompt, submitting: true });
@@ -290,7 +462,6 @@ export default function OperatorReviewPage() {
       toast.success(`${spec.label} recorded`);
       setPrompt(null);
     } catch (err) {
-      // OR3: validation/throw surfaces as a failed write.
       const msg = err instanceof Error ? err.message : String(err);
       toast.error(`Hold failed: ${msg}`);
       setPrompt((p) => (p ? { ...p, submitting: false } : null));
@@ -300,7 +471,7 @@ export default function OperatorReviewPage() {
   }, [prompt, pendingRowKey, cycleRunning, reproject]);
 
   const runCycle = useCallback(async () => {
-    if (cycleRunning || pendingRowKey) return; // OR4
+    if (cycleRunning || pendingRowKey) return;
     if (rows.length === 0) return;
     setCycleRunning(true);
     try {
@@ -319,6 +490,56 @@ export default function OperatorReviewPage() {
       setCycleRunning(false);
     }
   }, [rows, cycleRunning, pendingRowKey, reproject]);
+
+  const openEvidence = useCallback(
+    async (row: RouteRowInput) => {
+      if (!evidence) {
+        toast.error('Evidence binding not yet loaded.');
+        return;
+      }
+      const binding = evidence.evidenceBindingsByRowKey.get(row.rowKey);
+      const scopeCtx = evidence.traceContextByScope.get(row.targetScope);
+      if (!binding || !scopeCtx) {
+        toast.error('No evidence binding for this row.');
+        return;
+      }
+      const preloadedRecords =
+        scopeCtx.scopedRecordsByMemberKey.get(binding.memberKey) ?? [];
+      const pickerForMember = evidence.pickerMapsByMemberKey.get(binding.memberKey);
+      const preloadedContext = {
+        ...(scopeCtx.baseClassifierContext as any),
+        pickerEdeByMonth: pickerForMember,
+      };
+      setDrawer({ row, loading: true, trace: null, error: null });
+      try {
+        const trace = await explainCellFn({
+          memberKey: binding.memberKey,
+          monthKey: row.serviceMonth,
+          scope: row.targetScope as 'Coverall' | 'Vix',
+          preloadedRecords,
+          preloadedContext,
+        });
+        setDrawer({ row, loading: false, trace, error: null });
+      } catch (err) {
+        setDrawer({
+          row,
+          loading: false,
+          trace: null,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    },
+    [evidence, explainCellFn],
+  );
+
+  const toggleDmiGroup = (g: DmiGroup) => {
+    setDmiGroupFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(g)) next.delete(g);
+      else next.add(g);
+      return next;
+    });
+  };
 
   if (status === 'loading' || status === 'idle') {
     return (
@@ -357,14 +578,6 @@ export default function OperatorReviewPage() {
           <div className="flex items-center gap-2">
             <Button
               size="sm"
-              variant={showSatisfied ? 'default' : 'outline'}
-              onClick={() => setShowSatisfied((v) => !v)}
-              data-testid="filter-satisfied"
-            >
-              {showSatisfied ? 'Satisfied / FYI' : 'Actionable only'}
-            </Button>
-            <Button
-              size="sm"
               variant="outline"
               onClick={() => setRefreshTick((t) => t + 1)}
               data-testid="refresh"
@@ -385,6 +598,88 @@ export default function OperatorReviewPage() {
             </Button>
           </div>
         </header>
+
+        {buckets && (
+          <div className="flex flex-wrap gap-2" data-testid="filter-chips">
+            {CHIP_DEFS.map((c) => {
+              const count = buckets[c.key].size;
+              const active = selectedFilter === c.key;
+              return (
+                <Button
+                  key={c.key}
+                  size="sm"
+                  variant={active ? 'default' : 'outline'}
+                  onClick={() => setSelectedFilter(c.key)}
+                  data-testid={c.testid}
+                  data-count={count}
+                  data-active={active ? 'true' : 'false'}
+                >
+                  {c.label}
+                  <span className="ml-1.5 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-muted px-1.5 text-[10px] font-semibold text-foreground">
+                    {count}
+                  </span>
+                </Button>
+              );
+            })}
+          </div>
+        )}
+
+        {selectedFilter === 'dmi' && (
+          <div
+            className="rounded-md border bg-card p-3 space-y-3"
+            data-testid="dmi-controls"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-muted-foreground mr-1">Status:</span>
+              {(['all', 'open', 'expired', 'in_progress'] as const).map((s) => (
+                <Button
+                  key={s}
+                  size="sm"
+                  variant={dmiStatus === s ? 'default' : 'outline'}
+                  onClick={() => setDmiStatus(s)}
+                  data-testid={`dmi-status-${s}`}
+                >
+                  {s.replace('_', ' ')}
+                </Button>
+              ))}
+              <span className="mx-2 h-4 w-px bg-border" />
+              <Button
+                size="sm"
+                variant={dmiSortDeadline ? 'default' : 'outline'}
+                onClick={() => setDmiSortDeadline((v) => !v)}
+                data-testid="dmi-sort-deadline"
+              >
+                Sort by deadline {dmiSortDeadline ? '↑' : ''}
+              </Button>
+            </div>
+            {presentDmiGroups.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold text-muted-foreground mr-1">Issue type:</span>
+                {presentDmiGroups.map((g) => (
+                  <Button
+                    key={g}
+                    size="sm"
+                    variant={dmiGroupFilter.has(g) ? 'default' : 'outline'}
+                    onClick={() => toggleDmiGroup(g)}
+                    data-testid={`dmi-group-${g}`}
+                  >
+                    {g}
+                  </Button>
+                ))}
+                {dmiGroupFilter.size > 0 && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setDmiGroupFilter(new Set())}
+                    data-testid="dmi-group-clear"
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {lastCycleSummary && (
           <div className="rounded-md border bg-muted/40 px-3 py-2 text-xs" data-testid="cycle-summary">
@@ -413,6 +708,7 @@ export default function OperatorReviewPage() {
                   <TableHead className="bg-card">Pop</TableHead>
                   <TableHead className="bg-card">Route</TableHead>
                   <TableHead className="bg-card">Actions</TableHead>
+                  <TableHead className="bg-card">Evidence</TableHead>
                   <TableHead className="bg-card">FYI</TableHead>
                   <TableHead className="bg-card">Amount evidence</TableHead>
                   <TableHead className="bg-card">DMI</TableHead>
@@ -470,6 +766,17 @@ export default function OperatorReviewPage() {
                           </Button>
                         ))}
                       </TableCell>
+                      <TableCell className="text-xs">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          data-testid="open-evidence"
+                          onClick={() => openEvidence(r)}
+                        >
+                          <FileSearch className="h-3.5 w-3.5 mr-1" />
+                          Evidence
+                        </Button>
+                      </TableCell>
                       <TableCell className="text-xs space-x-1">
                         {fyi.length === 0 ? <span className="text-muted-foreground">—</span> : null}
                         {fyi.map((f) => (
@@ -492,7 +799,6 @@ export default function OperatorReviewPage() {
             </Table>
           </MirroredScrollTable>
         )}
-
 
         <Dialog open={prompt !== null} onOpenChange={(open) => { if (!open && !prompt?.submitting) setPrompt(null); }}>
           <DialogContent data-testid="hold-prompt">
@@ -554,6 +860,116 @@ export default function OperatorReviewPage() {
             )}
           </DialogContent>
         </Dialog>
+
+        <Sheet open={drawer !== null} onOpenChange={(open) => { if (!open) setDrawer(null); }}>
+          <SheetContent
+            side="right"
+            className="w-[640px] sm:max-w-[640px] overflow-y-auto"
+            data-testid="evidence-drawer"
+          >
+            {drawer && (
+              <>
+                <SheetHeader>
+                  <SheetTitle>Row evidence</SheetTitle>
+                  <SheetDescription>
+                    {drawer.row.targetScope} · {drawer.row.serviceMonth} · {drawer.row.stableMemberKey}
+                  </SheetDescription>
+                </SheetHeader>
+                <div className="mt-4 space-y-4 text-xs">
+                  <section>
+                    <div className="font-semibold mb-1">Route</div>
+                    <div data-testid="drawer-route">
+                      <Badge variant={ROUTE_VARIANT[projection!.routes.get(drawer.row.rowKey)?.route ?? 'manual_review']}>
+                        {projection!.routes.get(drawer.row.rowKey)?.route}
+                      </Badge>
+                      <span className="ml-2 text-muted-foreground">
+                        {projection!.routes.get(drawer.row.rowKey)?.rationale}
+                      </span>
+                    </div>
+                    {(projection!.fyi.get(drawer.row.rowKey) ?? []).length > 0 && (
+                      <div className="mt-2 space-x-1" data-testid="drawer-fyi">
+                        {(projection!.fyi.get(drawer.row.rowKey) ?? []).map((f) => (
+                          <Badge key={f} variant="outline">{f}</Badge>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                  <section data-testid="drawer-facts">
+                    <div className="font-semibold mb-1">Route facts</div>
+                    <pre className="text-[11px] bg-muted/40 rounded p-2 overflow-x-auto whitespace-pre-wrap">
+{JSON.stringify({
+  dmi: (drawer.row.facts as any)?.dmi,
+  premium: (drawer.row.facts as any)?.premium,
+  amount: (drawer.row.facts as any)?.amount,
+  crossEntitySatisfied: (drawer.row.facts as any)?.crossEntitySatisfied,
+  memberCount: (drawer.row.facts as any)?.memberCount,
+}, null, 2)}
+                    </pre>
+                  </section>
+                  <section data-testid="drawer-trace">
+                    <div className="font-semibold mb-1">MT trace (explainCell)</div>
+                    {drawer.loading && (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Loader2 className="h-3 w-3 animate-spin" /> Loading trace…
+                      </div>
+                    )}
+                    {drawer.error && (
+                      <div className="text-destructive">Failed: {drawer.error}</div>
+                    )}
+                    {drawer.trace && (
+                      <div className="space-y-2">
+                        <div>
+                          <span className="font-medium">State:</span> {drawer.trace.final.state}
+                          {drawer.trace.final.reason ? ` (${drawer.trace.final.reason})` : ''}
+                        </div>
+                        {drawer.trace.firingRule && (
+                          <div data-testid="drawer-firing-rule">
+                            <span className="font-medium">Firing rule:</span>{' '}
+                            {drawer.trace.firingRule.name} — {drawer.trace.firingRule.reason}
+                          </div>
+                        )}
+                        <div>
+                          <span className="font-medium">Sources:</span>{' '}
+                          E={String(drawer.trace.final.chips.in_ede)}{' '}
+                          B={String(drawer.trace.final.chips.in_back_office)}{' '}
+                          C={String(drawer.trace.final.chips.in_commission)}{' '}
+                          paid=${drawer.trace.final.chips.paid_amount}
+                        </div>
+                        {drawer.trace.final.badges?.reversal_evidence && (
+                          <div>
+                            <span className="font-medium">Reversal evidence:</span>{' '}
+                            <code>{JSON.stringify(drawer.trace.final.badges.reversal_evidence)}</code>
+                          </div>
+                        )}
+                        {drawer.trace.helpers.length > 0 && (
+                          <details>
+                            <summary className="cursor-pointer">Helpers ({drawer.trace.helpers.length})</summary>
+                            <pre className="text-[11px] bg-muted/40 rounded p-2 mt-1 overflow-x-auto">
+{JSON.stringify(drawer.trace.helpers, null, 2)}
+                            </pre>
+                          </details>
+                        )}
+                        {drawer.trace.scopedRows.length > 0 && (
+                          <details>
+                            <summary className="cursor-pointer">Scoped rows ({drawer.trace.scopedRows.length})</summary>
+                            <pre className="text-[11px] bg-muted/40 rounded p-2 mt-1 overflow-x-auto">
+{JSON.stringify(drawer.trace.scopedRows.map((r) => ({
+  source_type: (r as any).source_type,
+  batch_id: (r as any).batch_id,
+  effective_date: (r as any).effective_date,
+  policy_term_date: (r as any).policy_term_date,
+})), null, 2)}
+                            </pre>
+                          </details>
+                        )}
+                      </div>
+                    )}
+                  </section>
+                </div>
+              </>
+            )}
+          </SheetContent>
+        </Sheet>
       </div>
     </TooltipProvider>
   );
@@ -580,10 +996,18 @@ function AmountEvidence({ facts }: { facts: any }) {
 function DmiEvidence({ facts }: { facts: any }) {
   const d = facts?.dmi;
   if (!d?.active) return <span className="text-muted-foreground">—</span>;
+  // C2c — show tokenized groups as chips; preserve raw issueType in title.
+  const tokens = tokenizeIssueType(d.issueType ?? null);
+  const groups = Array.from(new Set(tokens.map(groupForToken)));
   return (
-    <span>
-      {d.issueType ?? 'DMI'}{d.expired ? ' (expired)' : ''}
-      {d.verificationEndDate ? ` · ${d.verificationEndDate}` : ''}
+    <span title={d.issueType ?? ''} className="space-x-1">
+      {groups.length > 0
+        ? groups.map((g) => (
+            <Badge key={g} variant="outline" data-testid="dmi-issue-chip">{g}</Badge>
+          ))
+        : <span>{d.issueType ?? 'DMI'}</span>}
+      {d.expired ? <span className="text-destructive">(expired)</span> : null}
+      {d.verificationEndDate ? <span className="text-muted-foreground"> · {d.verificationEndDate}</span> : null}
     </span>
   );
 }
@@ -601,10 +1025,6 @@ function PremiumCountEvidence({ facts }: { facts: any }) {
     : <span>{parts.join(' · ')}</span>;
 }
 
-/**
- * Wraps a wide table with a mirrored top scrollbar that stays in sync with
- * the table's own bottom overflow-x scroll. Purely presentational.
- */
 function MirroredScrollTable({ children }: { children: React.ReactNode }) {
   const topRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -658,4 +1078,3 @@ function MirroredScrollTable({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
-
