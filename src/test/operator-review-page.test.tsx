@@ -246,6 +246,10 @@ describe('OperatorReviewPage — Stage 3 hold actions + run-cycle', () => {
       diagnostics: {},
     });
     renderPage();
+    // Same-member group now collapses by default — first row (Coverall sorts before Vix) renders;
+    // expand the group via the +N toggle to reveal Vix.
+    await waitFor(() => expect(screen.getAllByTestId('op-row').length).toBe(1));
+    fireEvent.click(screen.getByTestId('member-toggle'));
     await waitFor(() => expect(screen.getAllByTestId('op-row').length).toBe(2));
     const coverallRow = screen
       .getAllByTestId('op-row')
@@ -714,4 +718,198 @@ describe('OperatorReviewPage — C2c evidence drawer', () => {
     expect(loaderSpy.mock.calls.length).toBe(loaderCallsBefore);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// C2c slice 1 — member search + grouping + expand + bucket tooltips.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('OperatorReviewPage — C2c slice 1 member search + grouping', () => {
+  // Two distinct members, each with two months (so each gets a +N toggle).
+  const aliceFeb = mkRow({
+    rowKey: 'Coverall|isid:u1|2026-02',
+    targetScope: 'Coverall',
+    stableMemberKey: 'isid:u1',
+  });
+  aliceFeb.identity = { carrier: 'Ambetter', issuer_subscriber_id: 'U1', policy_number: 'POL-A' };
+  aliceFeb.serviceMonth = '2026-02';
+  const aliceMar = mkRow({
+    rowKey: 'Coverall|isid:u1|2026-03',
+    targetScope: 'Coverall',
+    stableMemberKey: 'isid:u1',
+  });
+  aliceMar.identity = { carrier: 'Ambetter', issuer_subscriber_id: 'U1', policy_number: 'POL-A' };
+  aliceMar.serviceMonth = '2026-03';
+  const bobFeb = mkRow({
+    rowKey: 'Coverall|isid:u9|2026-02',
+    targetScope: 'Coverall',
+    stableMemberKey: 'isid:u9',
+  });
+  bobFeb.identity = { carrier: 'Ambetter', issuer_subscriber_id: 'U9', policy_number: 'POL-B' };
+  bobFeb.serviceMonth = '2026-02';
+  const bobMar = mkRow({
+    rowKey: 'Coverall|isid:u9|2026-03',
+    targetScope: 'Coverall',
+    stableMemberKey: 'isid:u9',
+  });
+  bobMar.identity = { carrier: 'Ambetter', issuer_subscriber_id: 'U9', policy_number: 'POL-B' };
+  bobMar.serviceMonth = '2026-03';
+  // Single-row member (no toggle expected).
+  const carolFeb = mkRow({
+    rowKey: 'Coverall|isid:u5|2026-02',
+    targetScope: 'Coverall',
+    stableMemberKey: 'isid:u5',
+  });
+  carolFeb.identity = { carrier: 'Ambetter', issuer_subscriber_id: 'U5', policy_number: 'POL-C' };
+
+  async function mountAll() {
+    // Interleave member rows in the input to verify first-appearance grouping.
+    const all = [aliceFeb, bobFeb, aliceMar, bobMar, carolFeb];
+    // Provide a name map: applicant_name comes via the persistence loader mock.
+    const records = [
+      { issuer_subscriber_id: 'U1', applicant_name: 'Alice Actionable', carrier: 'Ambetter' },
+      { issuer_subscriber_id: 'U9', applicant_name: 'Bob Bench', carrier: 'Ambetter' },
+      { issuer_subscriber_id: 'U5', applicant_name: 'Carol Calm', carrier: 'Ambetter' },
+    ];
+    const loader = await import('@/lib/persistence');
+    (loader.getAllNormalizedRecordsForMemberTimeline as any).mockResolvedValueOnce(records);
+    (assembleDiagnoseRouteRows as any).mockReturnValue({
+      rows: all, diagnostics: {}, ...evidenceMapsFor(all),
+    });
+    return all;
+  }
+
+  it('groups same-member months contiguously; default collapsed; +N toggle on multi-row members only', async () => {
+    await mountAll();
+    renderPage();
+    // 3 members → 3 first rows by default (Alice, Bob, Carol).
+    await waitFor(() => expect(screen.getAllByTestId('op-row').length).toBe(3));
+    const keys = screen.getAllByTestId('op-row').map((tr) => tr.getAttribute('data-row-key'));
+    // Members appear in first-appearance order (alice → bob → carol).
+    expect(keys).toEqual([
+      aliceFeb.rowKey, // Alice first appearance
+      bobFeb.rowKey,   // Bob first appearance
+      carolFeb.rowKey, // Carol first appearance
+    ]);
+    // Two member-toggles (alice + bob); carol has none.
+    const toggles = screen.getAllByTestId('member-toggle');
+    expect(toggles.length).toBe(2);
+    expect(toggles.map((t) => t.getAttribute('data-member-key')).sort()).toEqual(['isid:u1', 'isid:u9'].sort());
+
+    // Expand alice → her March row appears immediately below Feb.
+    const aliceToggle = toggles.find((t) => t.getAttribute('data-member-key') === 'isid:u1')!;
+    fireEvent.click(aliceToggle);
+    await waitFor(() => expect(screen.getAllByTestId('op-row').length).toBe(4));
+    const keysAfter = screen.getAllByTestId('op-row').map((tr) => tr.getAttribute('data-row-key'));
+    expect(keysAfter).toEqual([
+      aliceFeb.rowKey,
+      aliceMar.rowKey, // contiguous under alice
+      bobFeb.rowKey,
+      carolFeb.rowKey,
+    ]);
+    // No writes from grouping / toggling.
+    expect(recordDecisionSpy).not.toHaveBeenCalled();
+    expect(applyDecisionReductionSpy).not.toHaveBeenCalled();
+    expect(runDiagnoseCycleSpy).not.toHaveBeenCalled();
+  });
+
+  it('search by name narrows rows + auto-expands matching groups; clearing restores manual expand state and writes nothing', async () => {
+    await mountAll();
+    renderPage();
+    await waitFor(() => expect(screen.getAllByTestId('op-row').length).toBe(3));
+    const allActionableCountBefore = screen.getByTestId('filter-all_actionable').getAttribute('data-count');
+
+    // Search for "alice" — only her group remains; auto-expanded → 2 rows visible.
+    fireEvent.change(screen.getByTestId('member-search'), { target: { value: 'alice' } });
+    await waitFor(() => {
+      const keys = screen.getAllByTestId('op-row').map((tr) => tr.getAttribute('data-row-key'));
+      expect(keys).toEqual([aliceFeb.rowKey, aliceMar.rowKey]);
+    });
+    // Manual expand state was NOT mutated by typing: clearing returns to collapsed.
+    fireEvent.click(screen.getByTestId('member-search-clear'));
+    await waitFor(() => expect(screen.getAllByTestId('op-row').length).toBe(3));
+    // Chip counts unaffected by search/grouping.
+    expect(screen.getByTestId('filter-all_actionable').getAttribute('data-count'))
+      .toBe(allActionableCountBefore);
+
+    expect(recordDecisionSpy).not.toHaveBeenCalled();
+    expect(applyDecisionReductionSpy).not.toHaveBeenCalled();
+    expect(runDiagnoseCycleSpy).not.toHaveBeenCalled();
+  });
+
+  it('search matches subscriber id and policy number; empty search returns full set', async () => {
+    await mountAll();
+    renderPage();
+    await waitFor(() => expect(screen.getAllByTestId('op-row').length).toBe(3));
+
+    // Subscriber id (case-insensitive).
+    fireEvent.change(screen.getByTestId('member-search'), { target: { value: 'u9' } });
+    await waitFor(() => {
+      const keys = screen.getAllByTestId('op-row').map((tr) => tr.getAttribute('data-row-key'));
+      expect(keys).toEqual([bobFeb.rowKey, bobMar.rowKey]);
+    });
+
+    // Policy number.
+    fireEvent.change(screen.getByTestId('member-search'), { target: { value: 'pol-c' } });
+    await waitFor(() => {
+      const keys = screen.getAllByTestId('op-row').map((tr) => tr.getAttribute('data-row-key'));
+      expect(keys).toEqual([carolFeb.rowKey]);
+    });
+
+    // Empty search → full set.
+    fireEvent.change(screen.getByTestId('member-search'), { target: { value: '' } });
+    await waitFor(() => expect(screen.getAllByTestId('op-row').length).toBe(3));
+  });
+
+  it('expanded row binds by data-row-key: hold action targets the expanded row exactly', async () => {
+    await mountAll();
+    renderPage();
+    await waitFor(() => expect(screen.getAllByTestId('op-row').length).toBe(3));
+    // Expand alice; pick the SECOND (March) row.
+    const aliceToggle = screen.getAllByTestId('member-toggle')
+      .find((t) => t.getAttribute('data-member-key') === 'isid:u1')!;
+    fireEvent.click(aliceToggle);
+    await waitFor(() => expect(screen.getAllByTestId('op-row').length).toBe(4));
+    const marRow = screen.getAllByTestId('op-row')
+      .find((tr) => tr.getAttribute('data-row-key') === aliceMar.rowKey)!;
+    fireEvent.click(within(marRow).getByTestId('action-hold_premium'));
+    await waitFor(() => expect(screen.getByTestId('hold-prompt')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('hold-submit'));
+    await waitFor(() => expect(recordDecisionSpy).toHaveBeenCalledTimes(1));
+    expect(recordDecisionSpy.mock.calls[0][0].service_month).toBe('2026-03');
+  });
+
+  it('expanded row Evidence button binds by data-row-key', async () => {
+    await mountAll();
+    const explainCellFn = vi.fn().mockResolvedValue({
+      member: {}, cell: {}, final: { state: 'unpaid', chips: { in_ede: false, in_back_office: false, in_commission: false, paid_amount: 0 }, badges: {} },
+      helpers: [], guards: [], firingRule: null, scopedRows: [],
+    });
+    renderPage({ explainCellFn });
+    await waitFor(() => expect(screen.getAllByTestId('op-row').length).toBe(3));
+    const aliceToggle = screen.getAllByTestId('member-toggle')
+      .find((t) => t.getAttribute('data-member-key') === 'isid:u1')!;
+    fireEvent.click(aliceToggle);
+    await waitFor(() => expect(screen.getAllByTestId('op-row').length).toBe(4));
+    const marRow = screen.getAllByTestId('op-row')
+      .find((tr) => tr.getAttribute('data-row-key') === aliceMar.rowKey)!;
+    fireEvent.click(within(marRow).getByTestId('open-evidence'));
+    await waitFor(() => expect(explainCellFn).toHaveBeenCalledTimes(1));
+    expect(explainCellFn.mock.calls[0][0].monthKey).toBe('2026-03');
+    expect(explainCellFn.mock.calls[0][0].memberKey).toBe('MK-isid:u1');
+  });
+
+  it('bucket chips expose info affordances with the exact tooltip copy', async () => {
+    await mountAll();
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('filter-chips')).toBeInTheDocument());
+    // Every chip has a sibling chip-info button.
+    for (const k of [
+      'all_actionable', 'chase', 'premium', 'amount', 'prior_balance',
+      'dmi', 'manual_review', 'satisfied',
+    ]) {
+      expect(screen.getByTestId(`chip-info-${k}`)).toBeInTheDocument();
+    }
+  });
+});
+
 

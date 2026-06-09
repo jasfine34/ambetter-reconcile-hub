@@ -13,7 +13,7 @@
  * header — all unchanged. Only write path remains the existing hold
  * recordDecision.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useBatch } from '@/contexts/BatchContext';
 import { useAllBatchesDataVersion } from '@/hooks/useBatchDataVersion';
 import { useCrossBatchOverlay } from '@/hooks/useCrossBatchOverlay';
@@ -58,7 +58,11 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Loader2, RefreshCw, AlertCircle, Inbox, Play, FileSearch } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import {
+  Loader2, RefreshCw, AlertCircle, Inbox, Play, FileSearch, Info,
+  ChevronRight, ChevronDown, X,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 const ROUTE_VARIANT: Record<RouteName, 'default' | 'secondary' | 'destructive' | 'outline'> = {
@@ -208,6 +212,25 @@ const CHIP_DEFS: Array<{ key: FilterKey; label: string; testid: string }> = [
   { key: 'satisfied', label: 'Satisfied / FYI', testid: 'filter-satisfied' },
 ];
 
+const CHIP_TOOLTIPS: Record<FilterKey, string> = {
+  all_actionable:
+    'Every member-month that still needs a decision — all buckets except Satisfied.',
+  chase:
+    "Unpaid commission that's owed and ready to chase — premium is satisfied (or it's a $0 net-premium / fully-subsidized plan) and nothing is blocking it. Zero-net-premium plans appear here as dispute candidates.",
+  premium:
+    "Held because the member owes a positive premium that hasn't been paid yet (net premium > 0 and back-office paid-through is before the service month). Not chaseable until premium is paid. This is NOT zero-net-premium — those are chaseable and appear under Chase.",
+  amount:
+    'A payment exists but the amount is wrong — actual does not equal expected (amount discrepancy).',
+  prior_balance:
+    'Manually held because the member owes a prior balance.',
+  dmi:
+    'An open data-matching / verification issue (DMI) on the enrollment for an unpaid month. Expired DMIs appear here as a sub-state.',
+  manual_review:
+    'Signals are inconclusive and need a human — e.g., expired DMIs or member-count conflicts.',
+  satisfied:
+    'Already resolved — paid correctly or satisfied cross-entity. No action needed; FYI flags are shown for awareness.',
+};
+
 interface OperatorReviewPageProps {
   /** Test seam — defaults to the real explainCell. */
   explainCellFn?: typeof defaultExplainCell;
@@ -243,6 +266,10 @@ export default function OperatorReviewPage(props: OperatorReviewPageProps = {}) 
   const [dmiStatus, setDmiStatus] = useState<'all' | 'open' | 'expired' | 'in_progress'>('all');
   const [dmiGroupFilter, setDmiGroupFilter] = useState<Set<DmiGroup>>(new Set());
   const [dmiSortDeadline, setDmiSortDeadline] = useState(false);
+
+  // C2c slice 1 — member search + per-member expand.
+  const [search, setSearch] = useState('');
+  const [expandedMembers, setExpandedMembers] = useState<Set<string>>(new Set());
 
   const genRef = useRef(0);
 
@@ -428,6 +455,82 @@ export default function OperatorReviewPage(props: OperatorReviewPageProps = {}) 
     return ([...DMI_GROUPS, 'Other'] as DmiGroup[]).filter((g) => seen.has(g));
   }, [buckets, rowsByKey]);
 
+  // C2c slice 1 — apply member search AFTER bucket+DMI filtering, BEFORE grouping.
+  const searchActive = search.trim().length > 0;
+  const searchedRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return visibleRows;
+    return visibleRows.filter((r) => {
+      const name = nameByStableKey.get(r.stableMemberKey);
+      const id: any = r.identity ?? {};
+      const fields: Array<string | null | undefined> = [
+        name,
+        id.issuer_subscriber_id,
+        id.exchange_subscriber_id,
+        id.policy_number,
+        r.stableMemberKey,
+      ];
+      for (const f of fields) {
+        if (f != null && String(f).toLowerCase().includes(q)) return true;
+      }
+      return false;
+    });
+  }, [visibleRows, search, nameByStableKey]);
+
+  // Group searchedRows by stableMemberKey, preserving FIRST-APPEARANCE order.
+  // Within a member: sort by serviceMonth asc, then targetScope.
+  const memberGroups = useMemo(() => {
+    const order: string[] = [];
+    const map = new Map<string, RouteRowInput[]>();
+    for (const r of searchedRows) {
+      const k = r.stableMemberKey;
+      if (!map.has(k)) {
+        map.set(k, []);
+        order.push(k);
+      }
+      map.get(k)!.push(r);
+    }
+    for (const k of order) {
+      map.get(k)!.sort((a, b) => {
+        if (a.serviceMonth !== b.serviceMonth) {
+          return a.serviceMonth < b.serviceMonth ? -1 : 1;
+        }
+        return a.targetScope < b.targetScope ? -1 : a.targetScope > b.targetScope ? 1 : 0;
+      });
+    }
+    return order.map((k) => ({ stableMemberKey: k, rows: map.get(k)! }));
+  }, [searchedRows]);
+
+  const isMemberExpanded = useCallback(
+    (k: string) => searchActive || expandedMembers.has(k),
+    [searchActive, expandedMembers],
+  );
+  const toggleMember = useCallback((k: string) => {
+    setExpandedMembers((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  }, []);
+  const expandAllDisplayed = useCallback(() => {
+    setExpandedMembers((prev) => {
+      const next = new Set(prev);
+      for (const g of memberGroups) {
+        if (g.rows.length > 1) next.add(g.stableMemberKey);
+      }
+      return next;
+    });
+  }, [memberGroups]);
+  const collapseAllDisplayed = useCallback(() => {
+    setExpandedMembers((prev) => {
+      const next = new Set(prev);
+      for (const g of memberGroups) next.delete(g.stableMemberKey);
+      return next;
+    });
+  }, [memberGroups]);
+
+
   /** Re-project against the CURRENT decision index (no write). */
   const reproject = useCallback(async () => {
     const snap = rows;
@@ -605,24 +708,86 @@ export default function OperatorReviewPage(props: OperatorReviewPageProps = {}) 
               const count = buckets[c.key].size;
               const active = selectedFilter === c.key;
               return (
-                <Button
-                  key={c.key}
-                  size="sm"
-                  variant={active ? 'default' : 'outline'}
-                  onClick={() => setSelectedFilter(c.key)}
-                  data-testid={c.testid}
-                  data-count={count}
-                  data-active={active ? 'true' : 'false'}
-                >
-                  {c.label}
-                  <span className="ml-1.5 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-muted px-1.5 text-[10px] font-semibold text-foreground">
-                    {count}
-                  </span>
-                </Button>
+                <div key={c.key} className="inline-flex items-center">
+                  <Button
+                    size="sm"
+                    variant={active ? 'default' : 'outline'}
+                    onClick={() => setSelectedFilter(c.key)}
+                    data-testid={c.testid}
+                    data-count={count}
+                    data-active={active ? 'true' : 'false'}
+                    className="rounded-r-none"
+                  >
+                    {c.label}
+                    <span className="ml-1.5 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-muted px-1.5 text-[10px] font-semibold text-foreground">
+                      {count}
+                    </span>
+                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={`About ${c.label}`}
+                        data-testid={`chip-info-${c.key}`}
+                        className="inline-flex h-8 w-7 items-center justify-center rounded-r-md border border-l-0 border-input bg-background text-muted-foreground hover:text-foreground"
+                      >
+                        <Info className="h-3.5 w-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs text-xs leading-snug">
+                      {CHIP_TOOLTIPS[c.key]}
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
               );
             })}
           </div>
         )}
+
+        {/* C2c slice 1 — member search + expand/collapse all */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Input
+              data-testid="member-search"
+              type="text"
+              placeholder="Search by name, subscriber id, policy…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-8 w-72 text-xs pr-7"
+            />
+            {search.length > 0 && (
+              <button
+                type="button"
+                aria-label="Clear search"
+                data-testid="member-search-clear"
+                onClick={() => setSearch('')}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={expandAllDisplayed}
+            data-testid="expand-all"
+            disabled={searchActive}
+            title={searchActive ? 'Search auto-expands matching groups' : undefined}
+          >
+            Expand all
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={collapseAllDisplayed}
+            data-testid="collapse-all"
+            disabled={searchActive}
+          >
+            Collapse all
+          </Button>
+        </div>
+
 
         {selectedFilter === 'dmi' && (
           <div
@@ -697,6 +862,16 @@ export default function OperatorReviewPage(props: OperatorReviewPageProps = {}) 
             <Inbox className="h-4 w-4" />
             <span className="text-sm">No rows match the current filter.</span>
           </div>
+        ) : searchedRows.length === 0 ? (
+          <div
+            className="flex items-center gap-2 p-6 rounded-lg border bg-card text-muted-foreground"
+            data-testid="search-no-results"
+          >
+            <Inbox className="h-4 w-4" />
+            <span className="text-sm">
+              No rows match “{search}” within the current filter.
+            </span>
+          </div>
         ) : (
           <MirroredScrollTable>
             <Table>
@@ -716,89 +891,128 @@ export default function OperatorReviewPage(props: OperatorReviewPageProps = {}) 
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {visibleRows.map((r) => {
-                  const decision = projection!.routes.get(r.rowKey)!;
-                  const fyi = projection!.fyi.get(r.rowKey) ?? [];
-                  const name = nameByStableKey.get(r.stableMemberKey) ?? r.stableMemberKey;
-                  const actions = HOLD_ACTIONS_BY_ROUTE[decision.route] ?? [];
-                  const rowPending = pendingRowKey === r.rowKey;
-                  const anyPending = pendingRowKey !== null || cycleRunning;
-                  return (
-                    <TableRow
-                      key={r.rowKey}
-                      data-testid="op-row"
-                      data-route={decision.route}
-                      data-row-key={r.rowKey}
-                    >
-                      <TableCell className="text-xs">
-                        <div className="font-medium">{name}</div>
-                        <div className="text-muted-foreground">{r.carrier}</div>
-                      </TableCell>
-                      <TableCell className="text-xs">{r.targetScope}</TableCell>
-                      <TableCell className="text-xs">{r.serviceMonth}</TableCell>
-                      <TableCell className="text-xs">{r.population}</TableCell>
-                      <TableCell className="text-xs">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="inline-block">
-                              <Badge variant={ROUTE_VARIANT[decision.route]} data-testid="route-badge">
-                                {decision.route}
-                              </Badge>
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent>{decision.rationale}</TooltipContent>
-                        </Tooltip>
-                      </TableCell>
-                      <TableCell className="text-xs space-x-1">
-                        {actions.map((spec) => (
+                {memberGroups.map((group) => {
+                  const expanded = isMemberExpanded(group.stableMemberKey);
+                  const hiddenCount = group.rows.length - 1;
+                  const renderRow = (r: RouteRowInput, opts: { isFirst: boolean }) => {
+                    const decision = projection!.routes.get(r.rowKey)!;
+                    const fyi = projection!.fyi.get(r.rowKey) ?? [];
+                    const name = nameByStableKey.get(r.stableMemberKey) ?? r.stableMemberKey;
+                    const actions = HOLD_ACTIONS_BY_ROUTE[decision.route] ?? [];
+                    const rowPending = pendingRowKey === r.rowKey;
+                    const anyPending = pendingRowKey !== null || cycleRunning;
+                    return (
+                      <TableRow
+                        key={r.rowKey}
+                        data-testid="op-row"
+                        data-route={decision.route}
+                        data-row-key={r.rowKey}
+                        data-group-first={opts.isFirst ? 'true' : 'false'}
+                      >
+                        <TableCell className="text-xs">
+                          <div className="flex items-start gap-1.5">
+                            {opts.isFirst && group.rows.length > 1 ? (
+                              <button
+                                type="button"
+                                data-testid="member-toggle"
+                                data-member-key={group.stableMemberKey}
+                                aria-expanded={expanded}
+                                aria-label={expanded ? 'Collapse member' : 'Expand member'}
+                                onClick={() => toggleMember(group.stableMemberKey)}
+                                disabled={searchActive}
+                                title={searchActive ? 'Auto-expanded while searching' : undefined}
+                                className="mt-0.5 inline-flex h-5 items-center gap-1 rounded border border-input bg-background px-1.5 text-[10px] font-semibold text-foreground hover:bg-accent disabled:opacity-60"
+                              >
+                                {expanded ? (
+                                  <ChevronDown className="h-3 w-3" />
+                                ) : (
+                                  <ChevronRight className="h-3 w-3" />
+                                )}
+                                +{hiddenCount}
+                              </button>
+                            ) : !opts.isFirst ? (
+                              <span className="mt-0.5 inline-block w-4 border-l border-border" aria-hidden="true" />
+                            ) : null}
+                            <div>
+                              <div className="font-medium">{name}</div>
+                              <div className="text-muted-foreground">{r.carrier}</div>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-xs">{r.targetScope}</TableCell>
+                        <TableCell className="text-xs">{r.serviceMonth}</TableCell>
+                        <TableCell className="text-xs">{r.population}</TableCell>
+                        <TableCell className="text-xs">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="inline-block">
+                                <Badge variant={ROUTE_VARIANT[decision.route]} data-testid="route-badge">
+                                  {decision.route}
+                                </Badge>
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent>{decision.rationale}</TooltipContent>
+                          </Tooltip>
+                        </TableCell>
+                        <TableCell className="text-xs space-x-1">
+                          {actions.map((spec) => (
+                            <Button
+                              key={spec.decision_type}
+                              size="sm"
+                              variant="outline"
+                              data-testid={`action-${spec.decision_type}`}
+                              disabled={anyPending}
+                              onClick={() => openHoldPrompt(r, spec)}
+                            >
+                              {rowPending
+                                ? <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                : null}
+                              {spec.label}
+                            </Button>
+                          ))}
+                        </TableCell>
+                        <TableCell className="text-xs">
                           <Button
-                            key={spec.decision_type}
                             size="sm"
-                            variant="outline"
-                            data-testid={`action-${spec.decision_type}`}
-                            disabled={anyPending}
-                            onClick={() => openHoldPrompt(r, spec)}
+                            variant="ghost"
+                            data-testid="open-evidence"
+                            onClick={() => openEvidence(r)}
                           >
-                            {rowPending
-                              ? <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                              : null}
-                            {spec.label}
+                            <FileSearch className="h-3.5 w-3.5 mr-1" />
+                            Evidence
                           </Button>
-                        ))}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          data-testid="open-evidence"
-                          onClick={() => openEvidence(r)}
-                        >
-                          <FileSearch className="h-3.5 w-3.5 mr-1" />
-                          Evidence
-                        </Button>
-                      </TableCell>
-                      <TableCell className="text-xs space-x-1">
-                        {fyi.length === 0 ? <span className="text-muted-foreground">—</span> : null}
-                        {fyi.map((f) => (
-                          <Badge key={f} variant="outline" data-testid="fyi-badge">{f}</Badge>
-                        ))}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <AmountEvidence facts={r.facts} />
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <DmiEvidence facts={r.facts} />
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <PremiumCountEvidence facts={r.facts} />
-                      </TableCell>
-                    </TableRow>
+                        </TableCell>
+                        <TableCell className="text-xs space-x-1">
+                          {fyi.length === 0 ? <span className="text-muted-foreground">—</span> : null}
+                          {fyi.map((f) => (
+                            <Badge key={f} variant="outline" data-testid="fyi-badge">{f}</Badge>
+                          ))}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <AmountEvidence facts={r.facts} />
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <DmiEvidence facts={r.facts} />
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <PremiumCountEvidence facts={r.facts} />
+                        </TableCell>
+                      </TableRow>
+                    );
+                  };
+                  const [first, ...rest] = group.rows;
+                  return (
+                    <React.Fragment key={group.stableMemberKey}>
+                      {renderRow(first, { isFirst: true })}
+                      {expanded && rest.map((r) => renderRow(r, { isFirst: false }))}
+                    </React.Fragment>
                   );
                 })}
               </TableBody>
             </Table>
           </MirroredScrollTable>
         )}
+
 
         <Dialog open={prompt !== null} onOpenChange={(open) => { if (!open && !prompt?.submitting) setPrompt(null); }}>
           <DialogContent data-testid="hold-prompt">
