@@ -381,8 +381,6 @@ export async function assembleCommissionSubmission(
 
   for (const row of chaseRows) {
     setRelationship.chaseRows += 1;
-    const pol = derivePolicyKeyOrSentinel(row.identity, row.stableMemberKey);
-    const candKey = `${row.targetScope}|${row.serviceMonth}|${row.stableMemberKey}|${pol.policy_identity_key}`;
     const siblingCandidates = candidatesByScopeMonthStable.get(`${row.targetScope}|${row.serviceMonth}|${row.stableMemberKey}`) ?? [];
     const splitCandidates = siblingCandidates;
     if (splitCandidates.length > 0) setRelationship.chaseWithMceCandidate += 1;
