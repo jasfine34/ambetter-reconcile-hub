@@ -353,3 +353,365 @@ describe('OperatorReviewPage — Stage 3 hold actions + run-cycle', () => {
     expect(applyDecisionReductionSpy).not.toHaveBeenCalled();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// C2c — chip filter / DMI work-surface / evidence drawer tests.
+// ─────────────────────────────────────────────────────────────────────────
+
+function mkRow(over: Partial<any> & { rowKey: string; targetScope: 'Coverall' | 'Vix' }): any {
+  return {
+    rowKey: over.rowKey,
+    carrier: 'ambetter',
+    stableMemberKey: over.stableMemberKey ?? over.rowKey.split('|')[1],
+    identity: { carrier: 'Ambetter', issuer_subscriber_id: over.stableMemberKey ?? 'X' },
+    serviceMonth: over.serviceMonth ?? '2026-02',
+    targetScope: over.targetScope,
+    population: over.population ?? 1,
+    crFlag: over.crFlag ?? false,
+    facts: over.facts ?? {
+      premium: { kind: 'chase_candidate' },
+      dmi: { active: false, issueType: null, verificationEndDate: null, expired: false, inProgress: false, surfaceEligible: false },
+      crossEntitySatisfied: { satisfied: false, satisfyingEntity: null, actualPaid: null, expectedBasis: null, amountStatus: { kind: 'not_applicable' } },
+      amount: { kind: 'not_applicable' },
+    },
+  };
+}
+
+const chaseRow = mkRow({ rowKey: 'Coverall|isid:c1|2026-02', targetScope: 'Coverall' });
+const premiumRow = mkRow({
+  rowKey: 'Coverall|isid:p1|2026-02',
+  targetScope: 'Coverall',
+  facts: {
+    premium: { kind: 'premium_blocked' },
+    dmi: { active: false, issueType: null, verificationEndDate: null, expired: false, inProgress: false, surfaceEligible: false },
+    crossEntitySatisfied: { satisfied: false, satisfyingEntity: null, actualPaid: null, expectedBasis: null, amountStatus: { kind: 'not_applicable' } },
+    amount: { kind: 'not_applicable' },
+  },
+});
+const amountRow = mkRow({
+  rowKey: 'Coverall|isid:a1|2026-02',
+  targetScope: 'Coverall',
+  population: 2,
+  facts: {
+    premium: { kind: 'chase_candidate' },
+    dmi: { active: false, issueType: null, verificationEndDate: null, expired: false, inProgress: false, surfaceEligible: false },
+    crossEntitySatisfied: { satisfied: false, satisfyingEntity: null, actualPaid: null, expectedBasis: null, amountStatus: { kind: 'not_applicable' } },
+    amount: { kind: 'wrong_amount', actual: 10, expected: 25 },
+  },
+});
+const manualReviewRow = mkRow({
+  rowKey: 'Coverall|isid:mr1|2026-02',
+  targetScope: 'Coverall',
+  population: 2,
+  facts: {
+    premium: { kind: 'chase_candidate' },
+    dmi: { active: false, issueType: null, verificationEndDate: null, expired: false, inProgress: false, surfaceEligible: false },
+    crossEntitySatisfied: { satisfied: false, satisfyingEntity: null, actualPaid: null, expectedBasis: null, amountStatus: { kind: 'not_applicable' } },
+    amount: { kind: 'correct' },
+    memberCount: { status: 'manual_review', conflicts: [1, 3], reason: 'member_count_manual_review' },
+  },
+});
+// DMI open with multi-token issueType (tokenizes to NONESCMEC + ANNUAL_INCOME).
+const dmiOpenRow = mkRow({
+  rowKey: 'Coverall|isid:d1|2026-02',
+  targetScope: 'Coverall',
+  facts: {
+    premium: { kind: 'chase_candidate' },
+    dmi: {
+      active: true,
+      surfaceEligible: true,
+      expired: false,
+      inProgress: false,
+      issueType: 'NONESCMEC | ANNUAL_INCOME',
+      verificationEndDate: '2026-05-15',
+    },
+    crossEntitySatisfied: { satisfied: false, satisfyingEntity: null, actualPaid: null, expectedBasis: null, amountStatus: { kind: 'not_applicable' } },
+    amount: { kind: 'not_applicable' },
+  },
+});
+// DMI expired → manual_review + fyi dmi_expired (router emits the fyi).
+const dmiExpiredRow = mkRow({
+  rowKey: 'Coverall|isid:d2|2026-02',
+  targetScope: 'Coverall',
+  facts: {
+    premium: { kind: 'chase_candidate' },
+    dmi: {
+      active: true,
+      surfaceEligible: true,
+      expired: true,
+      inProgress: false,
+      issueType: 'CITIZENSHIP',
+      verificationEndDate: '2026-01-15',
+    },
+    crossEntitySatisfied: { satisfied: false, satisfyingEntity: null, actualPaid: null, expectedBasis: null, amountStatus: { kind: 'not_applicable' } },
+    amount: { kind: 'not_applicable' },
+  },
+});
+// DMI in-progress with EARLIER deadline (to verify sort order).
+const dmiInProgressRow = mkRow({
+  rowKey: 'Coverall|isid:d3|2026-02',
+  targetScope: 'Coverall',
+  facts: {
+    premium: { kind: 'chase_candidate' },
+    dmi: {
+      active: true,
+      surfaceEligible: true,
+      expired: false,
+      inProgress: true,
+      issueType: 'SSN',
+      verificationEndDate: '2026-03-10',
+    },
+    crossEntitySatisfied: { satisfied: false, satisfyingEntity: null, actualPaid: null, expectedBasis: null, amountStatus: { kind: 'not_applicable' } },
+    amount: { kind: 'not_applicable' },
+  },
+});
+// Paid + DMI (surfaceEligible=false because cohort='paid') → satisfied, NOT in DMI bucket.
+const paidDmiRow = mkRow({
+  rowKey: 'Coverall|isid:d4|2026-02',
+  targetScope: 'Coverall',
+  population: 2,
+  facts: {
+    premium: { kind: 'chase_candidate' },
+    dmi: {
+      active: true,
+      surfaceEligible: false,
+      expired: false,
+      inProgress: false,
+      issueType: 'CITIZENSHIP',
+      verificationEndDate: '2026-05-15',
+    },
+    crossEntitySatisfied: { satisfied: false, satisfyingEntity: null, actualPaid: null, expectedBasis: null, amountStatus: { kind: 'not_applicable' } },
+    amount: { kind: 'correct' },
+  },
+});
+
+function evidenceMapsFor(rows: any[]) {
+  const bindings = new Map();
+  const scopes = new Map();
+  const picker = new Map();
+  for (const r of rows) {
+    bindings.set(r.rowKey, {
+      rowKey: r.rowKey,
+      memberKey: `MK-${r.stableMemberKey}`,
+      serviceMonth: r.serviceMonth,
+      targetScope: r.targetScope,
+    });
+    picker.set(`MK-${r.stableMemberKey}`, new Map());
+    if (!scopes.has(r.targetScope)) {
+      scopes.set(r.targetScope, {
+        scopedRecordsByMemberKey: new Map(),
+        baseClassifierContext: { tag: `base-${r.targetScope}` },
+        mtRowsByMember: new Map(),
+        classificationByMember: new Map(),
+      });
+    }
+    scopes.get(r.targetScope).scopedRecordsByMemberKey.set(
+      `MK-${r.stableMemberKey}`,
+      [{ source_type: 'BACK_OFFICE', batch_id: 'b1', member_key: `MK-${r.stableMemberKey}` }],
+    );
+    scopes.get(r.targetScope).classificationByMember.set(`MK-${r.stableMemberKey}`, {});
+  }
+  return { evidenceBindingsByRowKey: bindings, pickerMapsByMemberKey: picker, traceContextByScope: scopes };
+}
+
+describe('OperatorReviewPage — C2c chip filter (disjoint counts)', () => {
+  it('chips compute disjoint bucket counts and selection filters visibleRows; satisfied chip retains legacy testid', async () => {
+    const allRows = [
+      chaseRow, premiumRow, amountRow, manualReviewRow,
+      dmiOpenRow, dmiExpiredRow, paidDmiRow, samCoverall,
+    ];
+    (assembleDiagnoseRouteRows as any).mockReturnValue({
+      rows: allRows,
+      diagnostics: {},
+      ...evidenceMapsFor(allRows),
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('filter-chips')).toBeInTheDocument());
+
+    const countOf = (testid: string) =>
+      Number(screen.getByTestId(testid).getAttribute('data-count'));
+
+    // Disjoint counts.
+    expect(countOf('filter-chase')).toBe(1);
+    expect(countOf('filter-premium')).toBe(1);
+    expect(countOf('filter-amount')).toBe(1);
+    expect(countOf('filter-prior_balance')).toBe(0);
+    // DMI = queues.dmi (dmiOpenRow) + (manual_review ∩ dmi_expired) (dmiExpiredRow) = 2.
+    expect(countOf('filter-dmi')).toBe(2);
+    // Manual review = manual_review minus dmi_expired = manualReviewRow only.
+    expect(countOf('filter-manual_review')).toBe(1);
+    // All actionable = disjoint union (no double-count of dmi_expired).
+    const allActionable = countOf('filter-all_actionable');
+    expect(allActionable).toBe(
+      countOf('filter-chase')
+      + countOf('filter-premium')
+      + countOf('filter-amount')
+      + countOf('filter-prior_balance')
+      + countOf('filter-dmi')
+      + countOf('filter-manual_review'),
+    );
+    expect(allActionable).toBe(6);
+    // Satisfied = sam + paidDmi = 2.
+    expect(countOf('filter-satisfied')).toBe(2);
+
+    // Default chip = all_actionable → 6 rows visible.
+    expect(screen.getAllByTestId('op-row').length).toBe(6);
+    // Clicking Satisfied (legacy testid) → 2 rows.
+    fireEvent.click(screen.getByTestId('filter-satisfied'));
+    await waitFor(() => expect(screen.getAllByTestId('op-row').length).toBe(2));
+    // Clicking DMI → 2 rows (dmiOpen + dmiExpired).
+    fireEvent.click(screen.getByTestId('filter-dmi'));
+    await waitFor(() => expect(screen.getAllByTestId('op-row').length).toBe(2));
+
+    // Selection wrote nothing.
+    expect(recordDecisionSpy).not.toHaveBeenCalled();
+    expect(applyDecisionReductionSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('OperatorReviewPage — C2c DMI work-surface', () => {
+  it('DMI view composition: includes route=dmi AND manual_review+dmi_expired; excludes paid+DMI (surfaceEligible=false)', async () => {
+    const allRows = [chaseRow, dmiOpenRow, dmiExpiredRow, paidDmiRow];
+    (assembleDiagnoseRouteRows as any).mockReturnValue({
+      rows: allRows, diagnostics: {}, ...evidenceMapsFor(allRows),
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('filter-dmi')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('filter-dmi'));
+    await waitFor(() => {
+      const keys = screen.getAllByTestId('op-row').map((tr) => tr.getAttribute('data-row-key'));
+      expect(keys.sort()).toEqual([dmiOpenRow.rowKey, dmiExpiredRow.rowKey].sort());
+      expect(keys).not.toContain(paidDmiRow.rowKey);
+      expect(keys).not.toContain(chaseRow.rowKey);
+    });
+  });
+
+  it('DMI tokenization: piped issueType renders multiple chips; raw preserved; Other fallback; no empty chip', async () => {
+    const otherRow = mkRow({
+      rowKey: 'Coverall|isid:other|2026-02',
+      targetScope: 'Coverall',
+      facts: {
+        premium: { kind: 'chase_candidate' },
+        dmi: { active: true, surfaceEligible: true, expired: false, inProgress: false, issueType: 'MYSTERY_ISSUE', verificationEndDate: '2026-04-01' },
+        crossEntitySatisfied: { satisfied: false, satisfyingEntity: null, actualPaid: null, expectedBasis: null, amountStatus: { kind: 'not_applicable' } },
+        amount: { kind: 'not_applicable' },
+      },
+    });
+    const allRows = [dmiOpenRow, otherRow];
+    (assembleDiagnoseRouteRows as any).mockReturnValue({
+      rows: allRows, diagnostics: {}, ...evidenceMapsFor(allRows),
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('filter-dmi')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('filter-dmi'));
+    await waitFor(() => expect(screen.getAllByTestId('op-row').length).toBe(2));
+
+    // dmiOpenRow ("NONESCMEC | ANNUAL_INCOME") → two chips in its DMI cell;
+    // raw preserved via title attribute on the cell wrapper.
+    const dmiRowEl = screen
+      .getAllByTestId('op-row')
+      .find((tr) => tr.getAttribute('data-row-key') === dmiOpenRow.rowKey)!;
+    const chips = within(dmiRowEl).getAllByTestId('dmi-issue-chip');
+    const labels = chips.map((c) => c.textContent);
+    expect(labels.sort()).toEqual(['ANNUAL_INCOME', 'NONESCMEC'].sort());
+    for (const c of chips) expect(c.textContent && c.textContent.length > 0).toBe(true);
+    // Raw preserved on the surrounding span title.
+    const titled = within(dmiRowEl).getByTitle('NONESCMEC | ANNUAL_INCOME');
+    expect(titled).toBeInTheDocument();
+
+    // otherRow → "Other" group chip from the controls bar.
+    expect(screen.getByTestId('dmi-group-Other')).toBeInTheDocument();
+  });
+
+  it('DMI deadline sort: expired first; ascending by verificationEndDate; missing date last', async () => {
+    const noDateRow = mkRow({
+      rowKey: 'Coverall|isid:nd|2026-02',
+      targetScope: 'Coverall',
+      facts: {
+        premium: { kind: 'chase_candidate' },
+        dmi: { active: true, surfaceEligible: true, expired: false, inProgress: false, issueType: 'SSN', verificationEndDate: null },
+        crossEntitySatisfied: { satisfied: false, satisfyingEntity: null, actualPaid: null, expectedBasis: null, amountStatus: { kind: 'not_applicable' } },
+        amount: { kind: 'not_applicable' },
+      },
+    });
+    // dmiExpiredRow date 2026-01-15 (expired); dmiInProgressRow 2026-03-10;
+    // dmiOpenRow 2026-05-15; noDateRow null. Expected order:
+    //   expired, 03-10, 05-15, null.
+    const allRows = [dmiOpenRow, dmiInProgressRow, dmiExpiredRow, noDateRow];
+    (assembleDiagnoseRouteRows as any).mockReturnValue({
+      rows: allRows, diagnostics: {}, ...evidenceMapsFor(allRows),
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('filter-dmi')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('filter-dmi'));
+    await waitFor(() => expect(screen.getAllByTestId('op-row').length).toBe(4));
+    fireEvent.click(screen.getByTestId('dmi-sort-deadline'));
+    await waitFor(() => {
+      const keys = screen.getAllByTestId('op-row').map((tr) => tr.getAttribute('data-row-key'));
+      expect(keys).toEqual([
+        dmiExpiredRow.rowKey,
+        dmiInProgressRow.rowKey,
+        dmiOpenRow.rowKey,
+        noDateRow.rowKey,
+      ]);
+    });
+  });
+});
+
+describe('OperatorReviewPage — C2c evidence drawer', () => {
+  it('opens drawer; calls explainCellFn with binding memberKey + scope + scope-keyed context (NOT minimal); shows trace + facts + rationale/FYI; writes nothing; no second loader fetch', async () => {
+    const allRows = [chaseRow];
+    (assembleDiagnoseRouteRows as any).mockReturnValue({
+      rows: allRows, diagnostics: {}, ...evidenceMapsFor(allRows),
+    });
+    const explainCellFn = vi.fn().mockResolvedValue({
+      member: { memberKey: 'MK-isid:c1', policyNumber: 'POL', name: 'Alice' },
+      cell: { month: '2026-02', scope: 'Coverall' },
+      final: {
+        state: 'unpaid',
+        reason: 'no_commission_yet',
+        chips: { in_ede: true, in_back_office: true, in_commission: false, paid_amount: 0 },
+        badges: {},
+      },
+      helpers: [{ name: 'h1', output: 1 }],
+      guards: [],
+      firingRule: { name: 'RULE_UNPAID', reason: 'no_commission' },
+      scopedRows: [{ source_type: 'EDE' }],
+    });
+
+    // Track loader calls to assert no SECOND all-batch fetch on drawer open.
+    const loaderModule = await import('@/lib/persistence');
+    const loaderSpy = loaderModule.getAllNormalizedRecordsForMemberTimeline as any;
+
+    renderPage({ explainCellFn });
+    await waitFor(() => expect(screen.getAllByTestId('op-row').length).toBe(1));
+    const loaderCallsBefore = loaderSpy.mock.calls.length;
+
+    fireEvent.click(screen.getByTestId('open-evidence'));
+    await waitFor(() => expect(explainCellFn).toHaveBeenCalledTimes(1));
+    const arg = explainCellFn.mock.calls[0][0];
+    // Exact-grain bindings (no reverse-derivation, no minimal context).
+    expect(arg.memberKey).toBe('MK-isid:c1');
+    expect(arg.monthKey).toBe('2026-02');
+    expect(arg.scope).toBe('Coverall');
+    expect(arg.preloadedRecords).toBeDefined();
+    expect(Array.isArray(arg.preloadedRecords)).toBe(true);
+    expect(arg.preloadedContext).toBeDefined();
+    // Scope-keyed base context (NOT a minimal classifier context).
+    expect(arg.preloadedContext.tag).toBe('base-Coverall');
+    // EDE picker overlay layered for that member.
+    expect(arg.preloadedContext.pickerEdeByMonth).toBeDefined();
+
+    await waitFor(() => expect(screen.getByTestId('evidence-drawer')).toBeInTheDocument());
+    // Trace + route facts + rationale visible.
+    expect(screen.getByTestId('drawer-firing-rule').textContent).toMatch(/RULE_UNPAID/);
+    expect(screen.getByTestId('drawer-facts').textContent).toMatch(/premium/);
+    expect(screen.getByTestId('drawer-route').textContent).toMatch(/chase_eligible|default_chase/);
+
+    // Opening the drawer wrote nothing AND triggered no new loader fetch.
+    expect(recordDecisionSpy).not.toHaveBeenCalled();
+    expect(applyDecisionReductionSpy).not.toHaveBeenCalled();
+    expect(loaderSpy.mock.calls.length).toBe(loaderCallsBefore);
+  });
+});
+
