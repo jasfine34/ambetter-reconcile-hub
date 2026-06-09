@@ -862,6 +862,16 @@ export default function OperatorReviewPage(props: OperatorReviewPageProps = {}) 
             <Inbox className="h-4 w-4" />
             <span className="text-sm">No rows match the current filter.</span>
           </div>
+        ) : searchedRows.length === 0 ? (
+          <div
+            className="flex items-center gap-2 p-6 rounded-lg border bg-card text-muted-foreground"
+            data-testid="search-no-results"
+          >
+            <Inbox className="h-4 w-4" />
+            <span className="text-sm">
+              No rows match “{search}” within the current filter.
+            </span>
+          </div>
         ) : (
           <MirroredScrollTable>
             <Table>
@@ -881,89 +891,128 @@ export default function OperatorReviewPage(props: OperatorReviewPageProps = {}) 
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {visibleRows.map((r) => {
-                  const decision = projection!.routes.get(r.rowKey)!;
-                  const fyi = projection!.fyi.get(r.rowKey) ?? [];
-                  const name = nameByStableKey.get(r.stableMemberKey) ?? r.stableMemberKey;
-                  const actions = HOLD_ACTIONS_BY_ROUTE[decision.route] ?? [];
-                  const rowPending = pendingRowKey === r.rowKey;
-                  const anyPending = pendingRowKey !== null || cycleRunning;
-                  return (
-                    <TableRow
-                      key={r.rowKey}
-                      data-testid="op-row"
-                      data-route={decision.route}
-                      data-row-key={r.rowKey}
-                    >
-                      <TableCell className="text-xs">
-                        <div className="font-medium">{name}</div>
-                        <div className="text-muted-foreground">{r.carrier}</div>
-                      </TableCell>
-                      <TableCell className="text-xs">{r.targetScope}</TableCell>
-                      <TableCell className="text-xs">{r.serviceMonth}</TableCell>
-                      <TableCell className="text-xs">{r.population}</TableCell>
-                      <TableCell className="text-xs">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="inline-block">
-                              <Badge variant={ROUTE_VARIANT[decision.route]} data-testid="route-badge">
-                                {decision.route}
-                              </Badge>
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent>{decision.rationale}</TooltipContent>
-                        </Tooltip>
-                      </TableCell>
-                      <TableCell className="text-xs space-x-1">
-                        {actions.map((spec) => (
+                {memberGroups.map((group) => {
+                  const expanded = isMemberExpanded(group.stableMemberKey);
+                  const hiddenCount = group.rows.length - 1;
+                  const renderRow = (r: RouteRowInput, opts: { isFirst: boolean }) => {
+                    const decision = projection!.routes.get(r.rowKey)!;
+                    const fyi = projection!.fyi.get(r.rowKey) ?? [];
+                    const name = nameByStableKey.get(r.stableMemberKey) ?? r.stableMemberKey;
+                    const actions = HOLD_ACTIONS_BY_ROUTE[decision.route] ?? [];
+                    const rowPending = pendingRowKey === r.rowKey;
+                    const anyPending = pendingRowKey !== null || cycleRunning;
+                    return (
+                      <TableRow
+                        key={r.rowKey}
+                        data-testid="op-row"
+                        data-route={decision.route}
+                        data-row-key={r.rowKey}
+                        data-group-first={opts.isFirst ? 'true' : 'false'}
+                      >
+                        <TableCell className="text-xs">
+                          <div className="flex items-start gap-1.5">
+                            {opts.isFirst && group.rows.length > 1 ? (
+                              <button
+                                type="button"
+                                data-testid="member-toggle"
+                                data-member-key={group.stableMemberKey}
+                                aria-expanded={expanded}
+                                aria-label={expanded ? 'Collapse member' : 'Expand member'}
+                                onClick={() => toggleMember(group.stableMemberKey)}
+                                disabled={searchActive}
+                                title={searchActive ? 'Auto-expanded while searching' : undefined}
+                                className="mt-0.5 inline-flex h-5 items-center gap-1 rounded border border-input bg-background px-1.5 text-[10px] font-semibold text-foreground hover:bg-accent disabled:opacity-60"
+                              >
+                                {expanded ? (
+                                  <ChevronDown className="h-3 w-3" />
+                                ) : (
+                                  <ChevronRight className="h-3 w-3" />
+                                )}
+                                +{hiddenCount}
+                              </button>
+                            ) : !opts.isFirst ? (
+                              <span className="mt-0.5 inline-block w-4 border-l border-border" aria-hidden="true" />
+                            ) : null}
+                            <div>
+                              <div className="font-medium">{name}</div>
+                              <div className="text-muted-foreground">{r.carrier}</div>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-xs">{r.targetScope}</TableCell>
+                        <TableCell className="text-xs">{r.serviceMonth}</TableCell>
+                        <TableCell className="text-xs">{r.population}</TableCell>
+                        <TableCell className="text-xs">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="inline-block">
+                                <Badge variant={ROUTE_VARIANT[decision.route]} data-testid="route-badge">
+                                  {decision.route}
+                                </Badge>
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent>{decision.rationale}</TooltipContent>
+                          </Tooltip>
+                        </TableCell>
+                        <TableCell className="text-xs space-x-1">
+                          {actions.map((spec) => (
+                            <Button
+                              key={spec.decision_type}
+                              size="sm"
+                              variant="outline"
+                              data-testid={`action-${spec.decision_type}`}
+                              disabled={anyPending}
+                              onClick={() => openHoldPrompt(r, spec)}
+                            >
+                              {rowPending
+                                ? <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                : null}
+                              {spec.label}
+                            </Button>
+                          ))}
+                        </TableCell>
+                        <TableCell className="text-xs">
                           <Button
-                            key={spec.decision_type}
                             size="sm"
-                            variant="outline"
-                            data-testid={`action-${spec.decision_type}`}
-                            disabled={anyPending}
-                            onClick={() => openHoldPrompt(r, spec)}
+                            variant="ghost"
+                            data-testid="open-evidence"
+                            onClick={() => openEvidence(r)}
                           >
-                            {rowPending
-                              ? <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                              : null}
-                            {spec.label}
+                            <FileSearch className="h-3.5 w-3.5 mr-1" />
+                            Evidence
                           </Button>
-                        ))}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          data-testid="open-evidence"
-                          onClick={() => openEvidence(r)}
-                        >
-                          <FileSearch className="h-3.5 w-3.5 mr-1" />
-                          Evidence
-                        </Button>
-                      </TableCell>
-                      <TableCell className="text-xs space-x-1">
-                        {fyi.length === 0 ? <span className="text-muted-foreground">—</span> : null}
-                        {fyi.map((f) => (
-                          <Badge key={f} variant="outline" data-testid="fyi-badge">{f}</Badge>
-                        ))}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <AmountEvidence facts={r.facts} />
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <DmiEvidence facts={r.facts} />
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <PremiumCountEvidence facts={r.facts} />
-                      </TableCell>
-                    </TableRow>
+                        </TableCell>
+                        <TableCell className="text-xs space-x-1">
+                          {fyi.length === 0 ? <span className="text-muted-foreground">—</span> : null}
+                          {fyi.map((f) => (
+                            <Badge key={f} variant="outline" data-testid="fyi-badge">{f}</Badge>
+                          ))}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <AmountEvidence facts={r.facts} />
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <DmiEvidence facts={r.facts} />
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <PremiumCountEvidence facts={r.facts} />
+                        </TableCell>
+                      </TableRow>
+                    );
+                  };
+                  const [first, ...rest] = group.rows;
+                  return (
+                    <React.Fragment key={group.stableMemberKey}>
+                      {renderRow(first, { isFirst: true })}
+                      {expanded && rest.map((r) => renderRow(r, { isFirst: false }))}
+                    </React.Fragment>
                   );
                 })}
               </TableBody>
             </Table>
           </MirroredScrollTable>
         )}
+
 
         <Dialog open={prompt !== null} onOpenChange={(open) => { if (!open && !prompt?.submitting) setPrompt(null); }}>
           <DialogContent data-testid="hold-prompt">
