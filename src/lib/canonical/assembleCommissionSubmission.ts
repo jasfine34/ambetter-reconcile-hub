@@ -383,13 +383,31 @@ export async function assembleCommissionSubmission(
     setRelationship.chaseRows += 1;
     const pol = derivePolicyKeyOrSentinel(row.identity, row.stableMemberKey);
     const candKey = `${row.targetScope}|${row.serviceMonth}|${row.stableMemberKey}|${pol.policy_identity_key}`;
-    const exactCandidate = candidateIndex.get(candKey) ?? null;
     const siblingCandidates = candidatesByScopeMonthStable.get(`${row.targetScope}|${row.serviceMonth}|${row.stableMemberKey}`) ?? [];
-    const splitCandidates = exactCandidate ? [exactCandidate] : siblingCandidates;
+    const splitCandidates = siblingCandidates;
     if (splitCandidates.length > 0) setRelationship.chaseWithMceCandidate += 1;
     else setRelationship.chaseWithoutMceCandidate += 1;
 
-    const grains = splitCandidates.length > 0
+    const rowMemberKey = assembled.evidenceBindingsByRowKey.get(row.rowKey)?.memberKey ?? stableToMemberKey.get(row.stableMemberKey) ?? row.stableMemberKey;
+    const scopedForRow = assembled.traceContextByScope.get(row.targetScope)?.scopedRecordsByMemberKey.get(rowMemberKey)
+      ?? recordsByMemberKey.get(rowMemberKey)
+      ?? [];
+    const policyIdentities = new Map<string, DecisionIdentityInput>();
+    for (const rec of scopedForRow) {
+      const identity: DecisionIdentityInput = {
+        carrier: rec.carrier ?? null,
+        issuer_subscriber_id: rec.issuer_subscriber_id ?? null,
+        exchange_subscriber_id: rec.exchange_subscriber_id ?? null,
+        policy_number: rec.policy_number ?? null,
+      };
+      if (deriveStableMemberKey(identity) !== row.stableMemberKey) continue;
+      const key = policyIdentityKeyForRecord(rec);
+      if (key && !policyIdentities.has(key)) policyIdentities.set(key, identity);
+    }
+
+    const grains = policyIdentities.size > 0
+      ? Array.from(policyIdentities.values()).map((identity) => ({ identity, memberKey: rowMemberKey }))
+      : splitCandidates.length > 0
       ? splitCandidates.map((c) => {
           const identity: DecisionIdentityInput = {
             carrier: c.carrier || row.identity.carrier,
@@ -399,7 +417,7 @@ export async function assembleCommissionSubmission(
           };
           return { identity, memberKey: c.member_key };
         })
-      : [{ identity: row.identity, memberKey: stableToMemberKey.get(row.stableMemberKey) ?? row.stableMemberKey }];
+      : [{ identity: row.identity, memberKey: rowMemberKey }];
 
     for (const grain of grains) {
       const grainPol = derivePolicyKeyOrSentinel(grain.identity, row.stableMemberKey);
