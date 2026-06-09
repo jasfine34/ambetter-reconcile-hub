@@ -332,8 +332,43 @@ export async function assembleCommissionSubmission(
   const chaseSet = new Set(projection.chaseEligible);
   const chaseRows: RouteRowInput[] = assembled.rows.filter((r) => chaseSet.has(r.rowKey));
 
+  // C3-grain-fix Pass 1: per (scope, stableMemberKey) collect the pn-form
+  // policy_identity_key set so a sub-form key on a sibling record can be
+  // remapped onto the same-value pn-form key (Pass 2).
+  const EMPTY_PN_SET: ReadonlySet<string> = new Set<string>();
+  const pnKeySetByScopeStable = new Map<string, Set<string>>();
+  for (const scope of args.targetScopes) {
+    const trace = assembled.traceContextByScope.get(scope);
+    if (!trace) continue;
+    for (const recs of trace.scopedRecordsByMemberKey.values()) {
+      for (const r of recs) {
+        const identity: DecisionIdentityInput = {
+          carrier: r.carrier ?? null,
+          issuer_subscriber_id: r.issuer_subscriber_id ?? null,
+          exchange_subscriber_id: r.exchange_subscriber_id ?? null,
+          policy_number: r.policy_number ?? null,
+        };
+        const stable = deriveStableMemberKey(identity);
+        if (!stable) continue;
+        const id = derivePolicyIdentityKey({
+          carrier: r.carrier ?? null,
+          policy_number: r.policy_number ?? null,
+          issuer_subscriber_id: r.issuer_subscriber_id ?? null,
+        });
+        if (id.status !== 'resolved') continue;
+        if (id.lineage.used !== 'policy_number' && id.lineage.used !== 'aliased') continue;
+        const mk = `${scope}|${stable}`;
+        let set = pnKeySetByScopeStable.get(mk);
+        if (!set) { set = new Set(); pnKeySetByScopeStable.set(mk, set); }
+        set.add(id.key);
+      }
+    }
+  }
+  const getPnSet = (scope: string, stable: string): Set<string> =>
+    (pnKeySetByScopeStable.get(`${scope}|${stable}`) ?? EMPTY_PN_SET) as Set<string>;
+
   // 3. Build MCE-candidate index per (scope, serviceMonth, stableMemberKey,
-  //    policy_identity_key) for the enrichment join.
+  //    CANONICAL policy_identity_key) for the enrichment join.
   type CandIdxKey = string;
   const candidateIndex = new Map<CandIdxKey, MtApprovedMceCandidate>();
   const candidatesByScopeMonthStable = new Map<string, MtApprovedMceCandidate[]>();
@@ -356,7 +391,8 @@ export async function assembleCommissionSubmission(
         const stable = deriveStableMemberKey(identity);
         if (!stable) continue;
         const pol = derivePolicyKeyOrSentinel(identity, stable);
-        const k = `${scope}|${serviceMonth}|${stable}|${pol.policy_identity_key}`;
+        const canonicalPolKey = canonicalizePolicyKey(pol.policy_identity_key, getPnSet(scope, stable));
+        const k = `${scope}|${serviceMonth}|${stable}|${canonicalPolKey}`;
         candidateIndex.set(k, c);
         const listKey = `${scope}|${serviceMonth}|${stable}`;
         const list = candidatesByScopeMonthStable.get(listKey);
