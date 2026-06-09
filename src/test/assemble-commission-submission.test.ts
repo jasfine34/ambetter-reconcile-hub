@@ -458,15 +458,15 @@ describe('assembleCommissionSubmission — C3a headless assembler', () => {
   it('fix-2: seeded comment uses scoped policy paid-through, not cross-policy member max', async () => {
     const recs: NormalizedRecord[] = [
       bo('MP', {
-        brokerName: 'Jason Fine', npn: JASON_NPN, issuer_subscriber_id: 'ISIDMP', policy_number: 'POL-A',
+        brokerName: 'Jason Fine', npn: JASON_NPN, issuer_subscriber_id: 'ISIDMP', policy_number: 'POLA',
         paid_through_date: '2026-02-28', client_state_full: 'FL', raw_json: { 'Number of Members': '1', plan_variant: 'standard' },
       } as any),
-      ede('MP', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, issuer_subscriber_id: 'ISIDMP', policy_number: 'POL-A' }),
+      ede('MP', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, issuer_subscriber_id: 'ISIDMP', policy_number: 'POLA' }),
       bo('MP', {
-        brokerName: 'Jason Fine', npn: JASON_NPN, issuer_subscriber_id: 'ISIDMP', policy_number: 'POL-B',
+        brokerName: 'Jason Fine', npn: JASON_NPN, issuer_subscriber_id: 'ISIDMP', policy_number: 'POLB',
         paid_through_date: '2026-04-30', client_state_full: 'FL', raw_json: { 'Number of Members': '1', plan_variant: 'standard' },
       } as any),
-      ede('MP', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, issuer_subscriber_id: 'ISIDMP', policy_number: 'POL-B' }),
+      ede('MP', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, issuer_subscriber_id: 'ISIDMP', policy_number: 'POLB' }),
       ...anchorRipeness(),
     ];
     const out = await assembleCommissionSubmission({ ...baseArgs, allBatchRecords: recs });
@@ -482,15 +482,15 @@ describe('assembleCommissionSubmission — C3a headless assembler', () => {
   it('fix-3: resolved policy rows use distinct policy-grain preview dollars and diagnostics', async () => {
     const recs: NormalizedRecord[] = [
       bo('PG', {
-        brokerName: 'Jason Fine', npn: JASON_NPN, issuer_subscriber_id: 'ISIDPG', policy_number: 'POL-FL',
+        brokerName: 'Jason Fine', npn: JASON_NPN, issuer_subscriber_id: 'ISIDPG', policy_number: 'POLFL',
         client_state_full: 'FL', raw_json: { 'Number of Members': '1', plan_variant: 'standard' },
       } as any),
-      ede('PG', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, issuer_subscriber_id: 'ISIDPG', policy_number: 'POL-FL', client_state_full: 'FL' } as any),
+      ede('PG', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, issuer_subscriber_id: 'ISIDPG', policy_number: 'POLFL', client_state_full: 'FL' } as any),
       bo('PG', {
-        brokerName: 'Jason Fine', npn: JASON_NPN, issuer_subscriber_id: 'ISIDPG', policy_number: 'POL-GA',
+        brokerName: 'Jason Fine', npn: JASON_NPN, issuer_subscriber_id: 'ISIDPG', policy_number: 'POLGA',
         client_state_full: 'GA', raw_json: { 'Number of Members': '3', plan_variant: 'standard' },
       } as any),
-      ede('PG', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, issuer_subscriber_id: 'ISIDPG', policy_number: 'POL-GA', client_state_full: 'GA' } as any),
+      ede('PG', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, issuer_subscriber_id: 'ISIDPG', policy_number: 'POLGA', client_state_full: 'GA' } as any),
       ...anchorRipeness(),
     ];
     const out = await assembleCommissionSubmission({
