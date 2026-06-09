@@ -182,6 +182,11 @@ export {
 import {
   resolveTargetPayEntity,
   enrichVendorFields,
+  resolveWritingAgentName,
+  resolveWritingAgentCarrierId,
+  resolveMemberId,
+  resolvePolicyEffectiveDate,
+  buildWritingAgentCarrierIdLookup,
 } from '@/lib/mce/vendorEnrichment';
 
 export function buildMesserCsvFilename(opts: {
