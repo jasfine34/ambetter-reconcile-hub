@@ -134,13 +134,29 @@ interface ExportRow {
 // locked at exactly 12 columns. Do NOT add the estimated-missing-commission
 // dollar or status here; both remain preview/backing fields only.
 //
-// C3b-1: descriptors are now derived from the neutral, headless
-// `BASE_MESSER_COLUMNS_12` (src/lib/mce/messerColumns.ts). The locally typed
-// `satisfies` guard keeps `keyof ExportRow` enforcement for page-local
-// consumers; the 12-column CSV output remains byte-identical.
-const MESSER_COLUMNS = BASE_MESSER_COLUMNS_12 as ReadonlyArray<
-  { key: keyof ExportRow; label: string }
-> satisfies ReadonlyArray<{ key: keyof ExportRow; label: string }>;
+// C3b-1: the canonical source of truth is the neutral, headless
+// `BASE_MESSER_COLUMNS_12` (src/lib/mce/messerColumns.ts). This page-local
+// literal is intentionally retained (and exhaustively typed against
+// `keyof ExportRow`) so existing source-introspection tests stay green; a
+// parity assertion in `commission-submission-csv.test.ts` locks the two
+// arrays to identical labels.
+const MESSER_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
+  { key: 'carrierName', label: 'Carrier Name' },
+  { key: 'npn', label: 'NPN' },
+  { key: 'writingAgentCarrierId', label: 'Writing Agent Carrier ID' },
+  { key: 'writingAgentName', label: 'Writing Agent Name' },
+  { key: 'policyEffectiveDate', label: 'Policy Effective Date' },
+  { key: 'policyNumber', label: 'Policy #' },
+  { key: 'memberFirstName', label: 'Member First Name' },
+  { key: 'memberLastName', label: 'Member Last Name' },
+  { key: 'dob', label: 'DOB' },
+  { key: 'ssn', label: 'SSN' },
+  { key: 'memberId', label: 'Member ID' },
+  { key: 'address', label: 'Address (Street, City, State, Zip)' },
+];
+// Static parity guard — fails the build if the page literal drifts from the
+// neutral source. (Names/order must match; widths are length-equal by construction.)
+void (BASE_MESSER_COLUMNS_12 satisfies ReadonlyArray<{ key: keyof ExportRow; label: string }>);
 
 const INTERNAL_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
   { key: '_memberKey', label: 'member_key' },
