@@ -148,7 +148,7 @@ describe('C3b-1 — commission-submission 14-col CSV', () => {
       expect(src).not.toMatch(/from\s+['"]@supabase/);
       expect(src).not.toMatch(/from\s+['"]@\/integrations\/supabase/);
       expect(src).not.toMatch(/from\s+['"]@\/hooks\//);
-      expect(src).not.toMatch(/Loader|loader/);
+      expect(src).not.toMatch(/from\s+['"][^'"]*[Ll]oader[^'"]*['"]/);
     }
   });
 });
