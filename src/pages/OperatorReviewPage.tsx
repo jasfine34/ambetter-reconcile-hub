@@ -455,6 +455,82 @@ export default function OperatorReviewPage(props: OperatorReviewPageProps = {}) 
     return ([...DMI_GROUPS, 'Other'] as DmiGroup[]).filter((g) => seen.has(g));
   }, [buckets, rowsByKey]);
 
+  // C2c slice 1 — apply member search AFTER bucket+DMI filtering, BEFORE grouping.
+  const searchActive = search.trim().length > 0;
+  const searchedRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return visibleRows;
+    return visibleRows.filter((r) => {
+      const name = nameByStableKey.get(r.stableMemberKey);
+      const id: any = r.identity ?? {};
+      const fields: Array<string | null | undefined> = [
+        name,
+        id.issuer_subscriber_id,
+        id.exchange_subscriber_id,
+        id.policy_number,
+        r.stableMemberKey,
+      ];
+      for (const f of fields) {
+        if (f != null && String(f).toLowerCase().includes(q)) return true;
+      }
+      return false;
+    });
+  }, [visibleRows, search, nameByStableKey]);
+
+  // Group searchedRows by stableMemberKey, preserving FIRST-APPEARANCE order.
+  // Within a member: sort by serviceMonth asc, then targetScope.
+  const memberGroups = useMemo(() => {
+    const order: string[] = [];
+    const map = new Map<string, RouteRowInput[]>();
+    for (const r of searchedRows) {
+      const k = r.stableMemberKey;
+      if (!map.has(k)) {
+        map.set(k, []);
+        order.push(k);
+      }
+      map.get(k)!.push(r);
+    }
+    for (const k of order) {
+      map.get(k)!.sort((a, b) => {
+        if (a.serviceMonth !== b.serviceMonth) {
+          return a.serviceMonth < b.serviceMonth ? -1 : 1;
+        }
+        return a.targetScope < b.targetScope ? -1 : a.targetScope > b.targetScope ? 1 : 0;
+      });
+    }
+    return order.map((k) => ({ stableMemberKey: k, rows: map.get(k)! }));
+  }, [searchedRows]);
+
+  const isMemberExpanded = useCallback(
+    (k: string) => searchActive || expandedMembers.has(k),
+    [searchActive, expandedMembers],
+  );
+  const toggleMember = useCallback((k: string) => {
+    setExpandedMembers((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  }, []);
+  const expandAllDisplayed = useCallback(() => {
+    setExpandedMembers((prev) => {
+      const next = new Set(prev);
+      for (const g of memberGroups) {
+        if (g.rows.length > 1) next.add(g.stableMemberKey);
+      }
+      return next;
+    });
+  }, [memberGroups]);
+  const collapseAllDisplayed = useCallback(() => {
+    setExpandedMembers((prev) => {
+      const next = new Set(prev);
+      for (const g of memberGroups) next.delete(g.stableMemberKey);
+      return next;
+    });
+  }, [memberGroups]);
+
+
   /** Re-project against the CURRENT decision index (no write). */
   const reproject = useCallback(async () => {
     const snap = rows;
