@@ -60,6 +60,7 @@ import {
   buildIsDueEligibleRecord,
   classifyMember,
   type CellClassification,
+  type ClassifierContext,
   type MemberClassification,
   type PayEntityScope,
 } from '../classifier';
