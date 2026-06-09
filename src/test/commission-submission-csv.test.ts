@@ -12,6 +12,7 @@ import {
   COMMISSION_SUBMISSION_COLUMNS_14,
   formatMissingMonths,
   buildCommissionSubmissionCsv,
+  toCommissionSubmissionCsvRow,
   type SubmissionRow,
 } from '@/lib/canonical/commissionSubmissionCsv';
 import { BASE_MESSER_COLUMNS_12 } from '@/lib/mce/messerColumns';
@@ -150,5 +151,65 @@ describe('C3b-1 — commission-submission 14-col CSV', () => {
       expect(src).not.toMatch(/from\s+['"]@\/hooks\//);
       expect(src).not.toMatch(/from\s+['"][^'"]*[Ll]oader[^'"]*['"]/);
     }
+  });
+
+  it('(9) toCommissionSubmissionCsvRow: maps a C3a top-level vendor-field row into the serializer-nested shape; preview-only fields dropped', () => {
+    const c3aRow: any = {
+      carrierName: 'Ambetter',
+      npn: '12345',
+      writingAgentCarrierId: "'CHG9852",
+      writingAgentName: 'Agent Smith',
+      policyEffectiveDate: '2026-01-01',
+      policyNumber: 'POL-Q',
+      memberFirstName: 'Jane',
+      memberLastName: 'Doe',
+      dob: '1990-01-01',
+      ssn: '',
+      memberId: 'MID-7',
+      address: '1 Main St, Austin, TX, 78701',
+      // preview-only / internal — must be dropped:
+      estimatedMissingCommission: 42.5,
+      estMissingStatus: 'OK',
+      previewEstimatedTotal: 42.5,
+      previewEstimatedStatus: 'OK',
+      grainKey: {},
+      rowMonthAnchors: [],
+      missingMonths: ['2026-02', '2026-01'],
+      seededComment: 'Verbatim comment',
+    };
+    const adapted = toCommissionSubmissionCsvRow(c3aRow);
+    // Vendor fields land NESTED under vendorFields (the serializer's shape).
+    expect(adapted.vendorFields.carrierName).toBe('Ambetter');
+    expect(adapted.vendorFields.memberId).toBe('MID-7');
+    expect(adapted.missingMonths).toEqual(['2026-02', '2026-01']);
+    expect(adapted.seededComment).toBe('Verbatim comment');
+    // Preview-only keys are NOT carried through.
+    expect((adapted as any).estimatedMissingCommission).toBeUndefined();
+    expect((adapted as any).previewEstimatedTotal).toBeUndefined();
+    expect((adapted as any).grainKey).toBeUndefined();
+
+    // End-to-end: feeding the adapter output through the serializer produces
+    // populated vendor cells + the appended cells (proving the adapter bridge).
+    const csv = buildCommissionSubmissionCsv([adapted]);
+    const [, body] = parseRows(csv);
+    expect(body[0]).toBe('Ambetter');
+    expect(body[2]).toBe('CHG9852'); // apostrophe stripped
+    expect(body[10]).toBe('MID-7');
+    expect(body[12]).toBe('Jan 2026; Feb 2026');
+    expect(body[13]).toBe('Verbatim comment');
+    // No preview leakage.
+    expect(csv).not.toMatch(/42\.5/);
+  });
+
+  it('(10) MESSER_COLUMNS-derive: the page-local literal is derived verbatim from BASE_MESSER_COLUMNS_12 (same keys + labels + order)', async () => {
+    // Source-level check — page literal is the derive expression.
+    const src = readFileSync(
+      resolve(process.cwd(), 'src/pages/MissingCommissionExportPage.tsx'),
+      'utf8',
+    );
+    expect(src).toMatch(/const\s+MESSER_COLUMNS[^=]*=\s*BASE_MESSER_COLUMNS_12\.map/);
+    // Behavioural check — header byte-identical to BASE labels.
+    const header = parseRows(buildMesserCsv([]))[0];
+    expect(header).toEqual(BASE_MESSER_COLUMNS_12.map((c) => c.label));
   });
 });

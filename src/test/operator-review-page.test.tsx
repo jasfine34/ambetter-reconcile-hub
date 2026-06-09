@@ -144,6 +144,13 @@ vi.mock('@/lib/canonical/diagnoseAndRoute', async (importOriginal) => {
   };
 });
 
+// C3b-2 — assembleCommissionSubmission is mocked so download tests can inject
+// a real C3a-shaped row (vendor fields TOP-LEVEL, no `vendorFields` nesting).
+const assembleCommissionSubmissionSpy = vi.fn();
+vi.mock('@/lib/canonical/assembleCommissionSubmission', () => ({
+  assembleCommissionSubmission: (...a: any[]) => assembleCommissionSubmissionSpy(...a),
+}));
+
 import OperatorReviewPage from '@/pages/OperatorReviewPage';
 import { assembleDiagnoseRouteRows } from '@/lib/canonical/assembleDiagnoseRouteRows';
 import {
@@ -166,6 +173,8 @@ beforeEach(() => {
     rows: [aliceCoverall, samCoverall],
     diagnostics: {},
   });
+  assembleCommissionSubmissionSpy.mockReset();
+  assembleCommissionSubmissionSpy.mockResolvedValue({ rows: [], diagnostics: {} });
 });
 
 function renderPage(props: any = {}) {
@@ -911,5 +920,154 @@ describe('OperatorReviewPage — C2c slice 1 member search + grouping', () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// C3b-2 — commission-submission download wiring.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('OperatorReviewPage — C3b-2 commission-submission download', () => {
+  // A REAL C3a-shaped row: vendor fields TOP-LEVEL on the row, NO `vendorFields`
+  // nesting. Includes preview-only / internal fields that must never leak to CSV.
+  const c3aRow = {
+    carrierName: 'Ambetter',
+    npn: '12345',
+    writingAgentCarrierId: "'CHG9852",
+    writingAgentName: 'Agent Smith',
+    policyEffectiveDate: '2026-01-01',
+    policyNumber: 'POL-X',
+    memberFirstName: 'Jane',
+    memberLastName: 'Doe',
+    dob: '1990-01-01',
+    ssn: '',
+    memberId: 'MID-77',
+    address: '1 Main St, Austin, TX, 78701',
+    estimatedMissingCommission: 9876.54,
+    estMissingStatus: 'OK',
+    previewEstimatedTotal: 9876.54,
+    previewEstimatedStatus: 'OK',
+    grainKey: { carrier: 'Ambetter', targetScope: 'Coverall', stableMemberKey: 'isid:u1', policy_identity_key: 'k', policy_identity_unresolved_reason: null },
+    rowMonthAnchors: [],
+    missingMonths: ['2026-02', '2026-01'],
+    seededComment: 'Seeded operator comment for download',
+  };
+
+  function installBlobCapture() {
+    const captured: { csv: string; filename: string }[] = [];
+    const origCreate = URL.createObjectURL;
+    const origRevoke = URL.revokeObjectURL;
+    const origClick = HTMLAnchorElement.prototype.click;
+    const origBlob = (globalThis as any).Blob;
+    let pendingCsv = '';
+    (globalThis as any).Blob = class FakeBlob {
+      constructor(parts: any[]) {
+        pendingCsv = (parts ?? []).map((p) => String(p)).join('');
+      }
+    };
+    URL.createObjectURL = vi.fn(() => {
+      captured.push({ csv: pendingCsv, filename: '' });
+      return 'blob:mock-url';
+    }) as any;
+    URL.revokeObjectURL = vi.fn() as any;
+    HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) {
+      if (captured.length > 0) captured[captured.length - 1].filename = this.download;
+    };
+    return {
+      captured,
+      restore: () => {
+        URL.createObjectURL = origCreate;
+        URL.revokeObjectURL = origRevoke;
+        HTMLAnchorElement.prototype.click = origClick;
+        (globalThis as any).Blob = origBlob;
+      },
+    };
+  }
+
+  it('(1+2+3) downloads CSV with 12 vendor cells + Missing Month(s) + Operator Comment for a REAL C3a-shaped row; uses retained REF (no new uncached fetch); writes nothing', async () => {
+    assembleCommissionSubmissionSpy.mockResolvedValueOnce({
+      rows: [c3aRow],
+      diagnostics: {},
+    });
+    const cap = installBlobCapture();
+    try {
+      const loaderModule = await import('@/lib/persistence');
+      const loaderSpy = loaderModule.getAllNormalizedRecordsForMemberTimeline as any;
+
+      renderPage();
+      await waitFor(() =>
+        expect((screen.getByTestId('download-commission-submission') as HTMLButtonElement).disabled).toBe(false),
+      );
+      const loaderCallsBefore = loaderSpy.mock.calls.length;
+
+      fireEvent.click(screen.getByTestId('download-commission-submission'));
+
+      await waitFor(() => expect(assembleCommissionSubmissionSpy).toHaveBeenCalledTimes(1));
+      // Inputs came from the retained REF — proven by NO new loader call.
+      expect(loaderSpy.mock.calls.length).toBe(loaderCallsBefore);
+
+      // Wait for the blob to be captured.
+      await waitFor(() => expect(cap.captured.length).toBe(1));
+      const { csv, filename } = cap.captured[0];
+
+      // 14-col header + populated vendor cells + appended cells.
+      expect(csv.split('\n')[0]).toMatch(/^Carrier Name,/);
+      expect(csv).toMatch(/Missing Month\(s\),Operator Comment/);
+      // The 12 vendor values must appear in the body — proves the adapter
+      // unwrapped TOP-LEVEL vendor fields (a nested-only serializer would
+      // emit 12 blanks here).
+      expect(csv).toMatch(/Ambetter/);
+      expect(csv).toMatch(/12345/);
+      expect(csv).toMatch(/CHG9852/); // apostrophe stripped at export boundary
+      expect(csv).toMatch(/Agent Smith/);
+      expect(csv).toMatch(/POL-X/);
+      expect(csv).toMatch(/Jane/);
+      expect(csv).toMatch(/Doe/);
+      expect(csv).toMatch(/MID-77/);
+      expect(csv).toMatch(/1 Main St/);
+      // Missing Month(s) sorted + formatted; Operator Comment verbatim.
+      expect(csv).toMatch(/Jan 2026; Feb 2026/);
+      expect(csv).toMatch(/Seeded operator comment for download/);
+
+      // Preview-only / internal fields MUST NOT leak.
+      expect(csv).not.toMatch(/9876\.54/);
+      expect(csv).not.toMatch(/estimatedMissingCommission/);
+      expect(csv).not.toMatch(/estMissingStatus/);
+      expect(csv).not.toMatch(/previewEstimatedTotal/);
+      expect(csv).not.toMatch(/grainKey/);
+      expect(csv).not.toMatch(/rowMonthAnchors/);
+
+      // Filename uses first_last batch months + YYYYMMDD stamp.
+      expect(filename).toMatch(/^commission-submission-ambetter-2026-02_2026-02-\d{8}\.csv$/);
+
+      // Download path writes nothing (no C0, no cycle).
+      expect(recordDecisionSpy).not.toHaveBeenCalled();
+      expect(applyDecisionReductionSpy).not.toHaveBeenCalled();
+      expect(runDiagnoseCycleSpy).not.toHaveBeenCalled();
+    } finally {
+      cap.restore();
+    }
+  });
+
+  it('(6) download control is disabled while cycle is running', async () => {
+    let resolveCycle: (v: unknown) => void = () => {};
+    runDiagnoseCycleSpy.mockImplementationOnce(
+      () => new Promise((res) => { resolveCycle = res; }),
+    );
+    renderPage();
+    await waitFor(() =>
+      expect((screen.getByTestId('download-commission-submission') as HTMLButtonElement).disabled).toBe(false),
+    );
+    fireEvent.click(screen.getByTestId('run-cycle'));
+    await waitFor(() =>
+      expect((screen.getByTestId('download-commission-submission') as HTMLButtonElement).disabled).toBe(true),
+    );
+    await act(async () => {
+      resolveCycle({
+        routes: new Map(), queues: {}, chaseEligible: [], satisfied: [], fyi: new Map(),
+        appliedReleases: [], observedNoopSignals: [],
+      });
+    });
+  });
+});
+
 
 

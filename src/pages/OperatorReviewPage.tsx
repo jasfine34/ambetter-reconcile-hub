@@ -61,9 +61,18 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import {
   Loader2, RefreshCw, AlertCircle, Inbox, Play, FileSearch, Info,
-  ChevronRight, ChevronDown, X,
+  ChevronRight, ChevronDown, X, Download,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  assembleCommissionSubmission,
+} from '@/lib/canonical/assembleCommissionSubmission';
+import {
+  buildCommissionSubmissionCsv,
+  toCommissionSubmissionCsvRow,
+} from '@/lib/canonical/commissionSubmissionCsv';
+import type { NormalizedRecord } from '@/lib/normalize';
+import type { CarrierCompRateRow } from '@/lib/canonical/compGrid';
 
 const ROUTE_VARIANT: Record<RouteName, 'default' | 'secondary' | 'destructive' | 'outline'> = {
   satisfied: 'outline',
@@ -272,6 +281,16 @@ export default function OperatorReviewPage(props: OperatorReviewPageProps = {}) 
   const [expandedMembers, setExpandedMembers] = useState<Set<string>>(new Set());
 
   const genRef = useRef(0);
+  // C3b-2 — REF-retained inputs for the commission-submission download.
+  // Populated by the load effect AFTER projRecords + rateRows + today are
+  // computed; the download path NEVER re-fetches the all-batch projection.
+  const submissionInputsRef = useRef<{
+    allBatchRecords: NormalizedRecord[];
+    rateRows: CarrierCompRateRow[];
+    today: string;
+  } | null>(null);
+  const [submissionInputsReady, setSubmissionInputsReady] = useState(false);
+  const [downloadingSubmission, setDownloadingSubmission] = useState(false);
 
   const { batchMonthByBatchIdObj, monthList, batchMonths } = useMemo(() => {
     const obj: Record<string, string> = {};
@@ -371,6 +390,15 @@ export default function OperatorReviewPage(props: OperatorReviewPageProps = {}) 
           traceContextByScope: assembled.traceContextByScope ?? new Map(),
         });
         setNameByStableKey(nameMap);
+        // C3b-2 — retain the load effect's inputs in a REF (not render state)
+        // so the download path can call assembleCommissionSubmission WITHOUT
+        // re-running getAllNormalizedRecordsForMemberTimeline.
+        submissionInputsRef.current = {
+          allBatchRecords: projRecords as NormalizedRecord[],
+          rateRows,
+          today,
+        };
+        setSubmissionInputsReady(true);
         setStatus('ready');
       } catch (err) {
         if (!isLatest()) return;
@@ -594,6 +622,59 @@ export default function OperatorReviewPage(props: OperatorReviewPageProps = {}) 
     }
   }, [rows, cycleRunning, pendingRowKey, reproject]);
 
+  // C3b-2 — Commission-submission CSV download.
+  // Uses the REF-retained load inputs ONLY — never triggers a fresh
+  // getAllNormalizedRecordsForMemberTimeline call. Writes nothing.
+  const downloadCommissionSubmission = useCallback(async () => {
+    const inputs = submissionInputsRef.current;
+    if (!inputs) return;
+    if (downloadingSubmission || cycleRunning || pendingRowKey) return;
+    setDownloadingSubmission(true);
+    try {
+      const preview = await assembleCommissionSubmission({
+        allBatchRecords: inputs.allBatchRecords,
+        monthList,
+        serviceMonths: batchMonths,
+        targetScopes: ['Coverall', 'Vix'],
+        batchMonthByBatchId: batchMonthByBatchIdObj,
+        today: inputs.today,
+        rateRows: inputs.rateRows,
+        clearingOverlay,
+      });
+      const csv = buildCommissionSubmissionCsv(
+        preview.rows.map(toCommissionSubmissionCsvRow),
+      );
+      const first = batchMonths[0] ?? '';
+      const last = batchMonths[batchMonths.length - 1] ?? first;
+      const stamp = (() => {
+        const d = new Date();
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}${m}${day}`;
+      })();
+      const filename = `commission-submission-ambetter-${first}_${last}-${stamp}.csv`;
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(`Downloaded ${preview.rows.length} submission row(s)`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`Download failed: ${msg}`);
+    } finally {
+      setDownloadingSubmission(false);
+    }
+  }, [
+    downloadingSubmission, cycleRunning, pendingRowKey,
+    monthList, batchMonths, batchMonthByBatchIdObj, clearingOverlay,
+  ]);
+
   const openEvidence = useCallback(
     async (row: RouteRowInput) => {
       if (!evidence) {
@@ -687,6 +768,28 @@ export default function OperatorReviewPage(props: OperatorReviewPageProps = {}) 
               disabled={cycleRunning || pendingRowKey !== null}
             >
               <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Refresh
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={downloadCommissionSubmission}
+              data-testid="download-commission-submission"
+              disabled={
+                !submissionInputsReady
+                || downloadingSubmission
+                || cycleRunning
+                || pendingRowKey !== null
+              }
+              title={
+                !submissionInputsReady
+                  ? 'Submission inputs still loading…'
+                  : 'Download Ambetter commission submission CSV (all batch months)'
+              }
+            >
+              {downloadingSubmission
+                ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                : <Download className="h-3.5 w-3.5 mr-1.5" />}
+              Download commission submission (CSV)
             </Button>
             <Button
               size="sm"

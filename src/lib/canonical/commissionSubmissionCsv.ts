@@ -121,3 +121,36 @@ export function buildCommissionSubmissionCsv(rows: SubmissionRow[]): string {
   });
   return Papa.unparse({ fields: labels, data });
 }
+
+/**
+ * C3b-2 — pure row-shape adapter bridging the C3a headless assembler output
+ * (vendor fields TOP-LEVEL on the row, via `VendorFieldsOutput`) into the
+ * shape this serializer expects (vendor fields NESTED under
+ * `row.vendorFields`). Only the 12 base Messer keys + `missingMonths` +
+ * `seededComment` are copied — preview-only / internal / grain fields
+ * (`estimatedMissingCommission`, `estMissingStatus`, `previewEstimatedTotal`,
+ * `previewEstimatedStatus`, `rowMonthAnchors`, `grainKey`, etc.) are
+ * intentionally dropped at this boundary so they can never leak into the
+ * 14-column CSV.
+ *
+ * Does NOT change `buildCommissionSubmissionCsv`'s row contract.
+ */
+export type C3aSubmissionRowLike =
+  & Partial<Pick<VendorFieldsOutput, MesserVendorKey>>
+  & {
+    missingMonths?: string[];
+    seededComment?: string | null;
+  };
+
+export function toCommissionSubmissionCsvRow(c3aRow: C3aSubmissionRowLike): SubmissionRow {
+  const vendorFields = {} as Record<MesserVendorKey, string>;
+  for (const col of BASE_MESSER_COLUMNS_12) {
+    const v = (c3aRow as Record<string, unknown>)[col.key];
+    vendorFields[col.key] = v == null ? '' : String(v);
+  }
+  return {
+    vendorFields: vendorFields as Pick<VendorFieldsOutput, MesserVendorKey>,
+    missingMonths: Array.isArray(c3aRow.missingMonths) ? c3aRow.missingMonths : [],
+    seededComment: typeof c3aRow.seededComment === 'string' ? c3aRow.seededComment : '',
+  };
+}
