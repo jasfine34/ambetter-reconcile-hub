@@ -55,8 +55,8 @@ import {
   createEstMissingResolver,
   type EstMissingStatus,
   type EstMissingResolution,
+  type EstMissingInputEvidence,
 } from './estMissingResolver';
-import { buildSourceEvidenceMap } from './estMissingEvidenceAdapter';
 import {
   buildPolicyStateRecords,
   buildPolicyMemberCountRecords,
@@ -72,6 +72,7 @@ import {
   type VendorFieldsOutput,
 } from '../mce/vendorEnrichment';
 import { latestBoPaidThrough } from './latestBoPaidThrough';
+import { derivePolicyIdentityKey } from './policyIdentityKey';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Public types
@@ -131,6 +132,12 @@ export interface CommissionSubmissionDiagnostics {
   unresolvedPolicySplits: number;
   /** Rows where the enrichment helper could not resolve a dollar. */
   unresolvedEnrichment: number;
+  /** Row-month dollar resolutions using resolved policy-grain evidence. */
+  previewDollarPolicyGrainCount: number;
+  /** Row-month dollar resolutions using member fallback for unresolved policy identities. */
+  previewDollarMemberFallbackCount: number;
+  /** Output rows whose dollar evidence used the unresolved-policy member fallback. */
+  previewDollarUnresolvedPolicyRows: number;
   /** Set-relationship over (member,month,scope): chase ∩ MCE-candidate. */
   setRelationship: {
     chaseRows: number;
@@ -181,6 +188,65 @@ export function buildSeededComment(opts: {
 
 function chronoSort(months: string[]): string[] {
   return Array.from(new Set(months)).sort();
+}
+
+function policyIdentityKeyForRecord(r: NormalizedRecord): string | null {
+  const id = derivePolicyIdentityKey({
+    carrier: r.carrier ?? null,
+    policy_number: r.policy_number ?? null,
+    issuer_subscriber_id: r.issuer_subscriber_id ?? null,
+  });
+  return id.status === 'resolved' ? id.key : null;
+}
+
+function recordsForPolicyIdentity(recs: NormalizedRecord[], policyIdentityKey: string): NormalizedRecord[] {
+  return recs.filter((r) => policyIdentityKeyForRecord(r) === policyIdentityKey);
+}
+
+function buildEstMissingInputEvidence(opts: {
+  memberKey: string;
+  records: NormalizedRecord[];
+  serviceMonth: string;
+  scope: Extract<TargetScope, 'Coverall' | 'Vix'>;
+  batchMonthByBatchId: Record<string, string>;
+  policyIdentityKey: string;
+}): EstMissingInputEvidence {
+  const sample =
+    opts.records.find((r) => r.source_type === 'BACK_OFFICE') ??
+    opts.records.find((r) => r.source_type === 'EDE') ??
+    opts.records[0];
+  const stateRecords = buildPolicyStateRecords({
+    normalizedRecords: opts.records as any,
+    batchMonthById: opts.batchMonthByBatchId,
+  });
+  const countRecords = buildPolicyMemberCountRecords({
+    normalizedRecords: opts.records as any,
+    batchMonthById: opts.batchMonthByBatchId,
+  });
+  const stateRes = resolvePolicyStateForCompGrid({
+    records: stateRecords,
+    targetBatchMonth: opts.serviceMonth,
+    targetServiceMonths: [opts.serviceMonth],
+  });
+  const countRes = resolvePolicyMemberCountForCompGrid({
+    records: countRecords,
+    targetBatchMonth: opts.serviceMonth,
+    targetServiceMonths: [opts.serviceMonth],
+  });
+  const edeWithAor = opts.records.find((r) => r.source_type === 'EDE' && (r as any)?.raw_json?.currentPolicyAOR);
+  const policyYear = Number(opts.serviceMonth.substring(0, 4));
+  return {
+    carrier: canonicalCarrier(sample?.carrier ?? '') || null,
+    state: stateRes.status === 'resolved' ? stateRes.state : null,
+    member_count: countRes.status === 'resolved' ? countRes.memberCount : null,
+    months: 1,
+    policy_year: Number.isFinite(policyYear) ? policyYear : null,
+    plan_variant: ((sample as any)?.raw_json?.plan_variant as string | undefined) ?? null,
+    current_policy_aor: ((edeWithAor as any)?.raw_json?.currentPolicyAOR as string | undefined) ?? null,
+    matched_payee: opts.scope,
+    policy_identity_key: opts.policyIdentityKey,
+    target_service_month: opts.serviceMonth,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────
