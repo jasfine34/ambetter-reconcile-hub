@@ -425,7 +425,7 @@ export default function OperatorReviewPage(props: OperatorReviewPageProps = {}) 
       if (!r) continue;
       for (const g of groupsForRow(r)) seen.add(g);
     }
-    return [...DMI_GROUPS, 'Other'].filter((g) => seen.has(g as DmiGroup));
+    return ([...DMI_GROUPS, 'Other'] as DmiGroup[]).filter((g) => seen.has(g));
   }, [buckets, rowsByKey]);
 
   /** Re-project against the CURRENT decision index (no write). */
