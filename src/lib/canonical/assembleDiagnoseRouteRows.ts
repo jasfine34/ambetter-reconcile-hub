@@ -111,9 +111,32 @@ export interface AssembleDiagnoseRouteRowsDiagnostics {
   unsupportedResolverReasons: Record<string, number>;
 }
 
+export interface EvidenceBinding {
+  rowKey: string;
+  /** The exact MT member_key used at row emit time. Never reverse-derive. */
+  memberKey: string;
+  serviceMonth: string;
+  targetScope: 'Coverall' | 'Vix';
+}
+
+export interface ScopeTraceContext {
+  /** Per-member, scope-filtered records (what explainCell expects pre-scoped). */
+  scopedRecordsByMemberKey: Map<string, NormalizedRecord[]>;
+  /** Scope-level base classifier context (NO per-member picker overlay). */
+  baseClassifierContext: ClassifierContext;
+  mtRowsByMember: Map<string, MemberTimelineRow>;
+  classificationByMember: Map<string, MemberClassification>;
+}
+
 export interface AssembleDiagnoseRouteRowsResult {
   rows: RouteRowInput[];
   diagnostics: AssembleDiagnoseRouteRowsDiagnostics;
+  /** C2c additive — Evidence binding per emitted row (captured AT EMIT TIME). */
+  evidenceBindingsByRowKey: Map<string, EvidenceBinding>;
+  /** C2c additive — Per-member EDE month-picker map (shared across scopes). */
+  pickerMapsByMemberKey: Map<string, Map<string, NormalizedRecord | null>>;
+  /** C2c additive — Per-scope trace context (records + base classifier ctx). */
+  traceContextByScope: Map<TargetScope, ScopeTraceContext>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
