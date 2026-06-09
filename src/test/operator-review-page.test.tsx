@@ -246,6 +246,10 @@ describe('OperatorReviewPage — Stage 3 hold actions + run-cycle', () => {
       diagnostics: {},
     });
     renderPage();
+    // Same-member group now collapses by default — first row (Coverall sorts before Vix) renders;
+    // expand the group via the +N toggle to reveal Vix.
+    await waitFor(() => expect(screen.getAllByTestId('op-row').length).toBe(1));
+    fireEvent.click(screen.getByTestId('member-toggle'));
     await waitFor(() => expect(screen.getAllByTestId('op-row').length).toBe(2));
     const coverallRow = screen
       .getAllByTestId('op-row')
