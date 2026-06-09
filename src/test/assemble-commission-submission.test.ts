@@ -161,7 +161,7 @@ const EMPTY_IDX = {
 const baseArgs = {
   monthList: MONTH_LIST,
   serviceMonths: [STMT_MONTH],
-  targetScopes: ['Coverall'] as const,
+  targetScopes: ['Coverall'] as Array<'Coverall' | 'Vix'>,
   batchMonthByBatchId: { [BATCH]: STMT_MONTH },
   today: TODAY,
   rateRows: [RATE_AMBETTER_FL],
