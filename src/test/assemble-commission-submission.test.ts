@@ -277,6 +277,7 @@ describe('assembleCommissionSubmission — C3a headless assembler', () => {
         raw_json: { currentPolicyAOR: 'Jason Fine (21055210)', issuer: 'Ambetter' },
         ...({ batch_id: BATCH } as any),
       } as any),
+      ...anchorRipeness(),
     ];
     const out = await assembleCommissionSubmission({ ...baseArgs, allBatchRecords: recs });
     expect(out.rows.length).toBe(1);
@@ -320,6 +321,7 @@ describe('assembleCommissionSubmission — C3a headless assembler', () => {
     const recs: NormalizedRecord[] = [
       bo('M5', { brokerName: 'Jason Fine', npn: JASON_NPN }),
       ede('M5', { aor: 'Jason Fine (21055210)', npn: JASON_NPN }),
+      ...anchorRipeness(),
     ];
     const out = await assembleCommissionSubmission({ ...baseArgs, allBatchRecords: recs });
     const row = out.rows.find((r) => r.grainKey.stableMemberKey === 'isid:isidm5');
@@ -367,6 +369,7 @@ describe('assembleCommissionSubmission — C3a headless assembler', () => {
     const recs: NormalizedRecord[] = [
       bo('M6', { brokerName: 'Jason Fine', npn: JASON_NPN }),
       ede('M6', { aor: 'Jason Fine (21055210)', npn: JASON_NPN }),
+      ...anchorRipeness(),
     ];
     const out = await assembleCommissionSubmission({ ...baseArgs, allBatchRecords: recs });
     const row = out.rows.find((r) => r.grainKey.stableMemberKey === 'isid:isidm6');
@@ -399,6 +402,7 @@ describe('assembleCommissionSubmission — C3a headless assembler', () => {
     const recs: NormalizedRecord[] = [
       bo('M7', { brokerName: 'Jason Fine', npn: JASON_NPN }),
       ede('M7', { aor: 'Jason Fine (21055210)', npn: JASON_NPN }),
+      ...anchorRipeness(),
     ];
     const a = await assembleCommissionSubmission({ ...baseArgs, allBatchRecords: recs });
     const b = await assembleCommissionSubmission({ ...baseArgs, allBatchRecords: recs });
@@ -416,6 +420,7 @@ describe('assembleCommissionSubmission — C3a headless assembler', () => {
     const recs: NormalizedRecord[] = [
       bo('M8', { brokerName: 'Jason Fine', npn: JASON_NPN }),
       ede('M8', { aor: 'Jason Fine (21055210)', npn: JASON_NPN }),
+      ...anchorRipeness(),
     ];
     const out = await assembleCommissionSubmission({ ...baseArgs, allBatchRecords: recs });
     // The chase row count equals chaseWithMceCandidate + chaseWithoutMceCandidate.
