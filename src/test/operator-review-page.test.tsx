@@ -761,7 +761,7 @@ describe('OperatorReviewPage — C2c slice 1 member search + grouping', () => {
   });
   carolFeb.identity = { carrier: 'Ambetter', issuer_subscriber_id: 'U5', policy_number: 'POL-C' };
 
-  function mountAll() {
+  async function mountAll() {
     // Interleave member rows in the input to verify first-appearance grouping.
     const all = [aliceFeb, bobFeb, aliceMar, bobMar, carolFeb];
     // Provide a name map: applicant_name comes via the persistence loader mock.
@@ -770,8 +770,8 @@ describe('OperatorReviewPage — C2c slice 1 member search + grouping', () => {
       { issuer_subscriber_id: 'U9', applicant_name: 'Bob Bench', carrier: 'Ambetter' },
       { issuer_subscriber_id: 'U5', applicant_name: 'Carol Calm', carrier: 'Ambetter' },
     ];
-    (require('@/lib/persistence').getAllNormalizedRecordsForMemberTimeline as any)
-      .mockResolvedValueOnce(records);
+    const loader = await import('@/lib/persistence');
+    (loader.getAllNormalizedRecordsForMemberTimeline as any).mockResolvedValueOnce(records);
     (assembleDiagnoseRouteRows as any).mockReturnValue({
       rows: all, diagnostics: {}, ...evidenceMapsFor(all),
     });
