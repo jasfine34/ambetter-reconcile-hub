@@ -18,7 +18,14 @@ import * as path from 'path';
 import {
   buildMesserCsv,
   resolvePolicyEffectiveDate,
+  enrichVendorFields,
+  resolveMemberId,
+  resolveTargetPayEntity,
+  resolveWritingAgentCarrierId,
+  resolveWritingAgentName,
 } from '@/pages/MissingCommissionExportPage';
+import { buildMemberProfile, splitNameLastSpace, assembleAddressLine } from '@/lib/canonical/memberProfileView';
+import { extractNpnFromAorString } from '@/lib/agents';
 import {
   createEstMissingResolver,
   type EstMissingInputEvidence,
@@ -91,6 +98,103 @@ describe('MCE contract §7.2 — preview retains Est. missing commission dollar'
   it('INTERNAL_COLUMNS does NOT include _estMissingStatus as a standalone preview column', () => {
     const internalBlock = PAGE_SRC.match(/const INTERNAL_COLUMNS[\s\S]*?\];/)?.[0] ?? '';
     expect(internalBlock).not.toMatch(/_estMissingStatus/);
+  });
+
+  it('C3a fix-1: row-building path actually calls enrichVendorFields and keeps preview-only fields', () => {
+    const buildLoop = PAGE_SRC.match(/for \(const m of missingMembers\)[\s\S]*?allBeforeBucket\.push\(\{[\s\S]*?\}\);/)?.[0] ?? '';
+    expect(buildLoop).toMatch(/const\s+vendorFields\s*=\s*enrichVendorFields\(/);
+    expect(buildLoop).toMatch(/\.\.\.vendorFields/);
+    expect(buildLoop).toMatch(/_memberKey:/);
+    expect(buildLoop).toMatch(/_estimatedMissingCommission:\s*estMissing/);
+    expect(buildLoop).toMatch(/_estMissingStatus:\s*estMissingStatus/);
+  });
+
+  it('C3a fix-1: 12 vendor fields + dollar/status match legacy inline assembly, _ fields retained', () => {
+    const records: any[] = [
+      {
+        id: 'bo-1', source_type: 'BACK_OFFICE', member_key: 'mce-parity', carrier: 'Ambetter',
+        applicant_name: 'Ada Lovelace', first_name: 'Ada', last_name: 'Lovelace', dob: '1980-01-02',
+        policy_number: 'POL123', issuer_subscriber_id: 'IS123', exchange_subscriber_id: 'EX123',
+        agent_name: 'BO Broker', agent_npn: '21055210', effective_date: '2026-01-01',
+        client_address_1: '1 Main St', client_city: 'Tampa', client_state_full: 'FL', client_zip: '33602',
+        raw_json: { 'Broker Name': 'BO Broker', issuer: 'Ambetter', plan_variant: 'standard' },
+        batch_id: 'B-2026-03', writing_agent_carrier_id: '',
+      },
+      {
+        id: 'comm-1', source_type: 'COMMISSION', member_key: 'mce-parity', carrier: 'Ambetter',
+        pay_entity: 'Coverall', agent_npn: '21055210', agent_name: 'Commission Agent',
+        writing_agent_carrier_id: "'CHG9852", batch_id: 'B-2026-03',
+      },
+    ];
+    const candidate: any = {
+      member_key: 'mce-parity', applicant_name: 'Ada Lovelace', dob: '1980-01-02', policy_number: 'POL123',
+      issuer_subscriber_id: 'IS123', exchange_subscriber_id: 'EX123', current_policy_aor: 'Jason Fine (21055210)',
+      agent_npn: '21055210', expected_pay_entity: 'Coverall', actual_pay_entity: 'Coverall', effective_date: '2026-01-01',
+    };
+    const profile = buildMemberProfile('mce-parity', {
+      records,
+      referenceMonth: '2026-03',
+      batchMonthByBatchId: new Map([['B-2026-03', '2026-03']]),
+      fallbackFfmCandidates: [],
+    });
+    const lookup = new Map([['ambetter|coverall|21055210', { id: "'CHG9852", conflicts: [] }]]);
+    const resolveEstMissing = () => ({ amount: 25, status: 'RESOLVED' as const, evidence: {} as any });
+    const helperFields = enrichVendorFields({
+      candidate,
+      records,
+      profile,
+      commissionTripleRecords: records,
+      scope: 'Coverall',
+      writingAgentIdLookup: lookup,
+      resolveEstMissing,
+    });
+
+    const nameVal = profile.applicant_name.value || candidate.applicant_name || '';
+    const { first, last } = splitNameLastSpace(nameVal);
+    const aor = String(candidate.current_policy_aor ?? '').trim();
+    const npn = extractNpnFromAorString(aor) || String(candidate.agent_npn ?? '').trim();
+    const targetPayEntity = resolveTargetPayEntity({
+      expectedPayEntity: candidate.expected_pay_entity,
+      actualPayEntity: candidate.actual_pay_entity,
+      scope: 'Coverall',
+      agentNpn: npn,
+    });
+    const legacyInline = {
+      carrierName: 'Ambetter',
+      npn,
+      writingAgentCarrierId: resolveWritingAgentCarrierId({ records: [...records, ...records], carrier: 'Ambetter', payEntity: targetPayEntity, agentNpn: npn, lookup }),
+      writingAgentName: resolveWritingAgentName({ currentPolicyAor: aor, boBrokerName: 'BO Broker', commissionWritingAgentName: 'Commission Agent' }),
+      policyEffectiveDate: resolvePolicyEffectiveDate({ records, reconciledEffectiveDate: candidate.effective_date }),
+      policyNumber: 'POL123',
+      memberFirstName: first,
+      memberLastName: last,
+      dob: '1980-01-02',
+      ssn: '',
+      memberId: resolveMemberId({ issuerSubscriberId: 'IS123', policyNumber: 'POL123', exchangeSubscriberId: 'EX123' }),
+      address: assembleAddressLine({ address1: profile.address1.value, city: profile.city.value, state: profile.state.value, zip: profile.zip.value }),
+      estimatedMissingCommission: 25,
+      estMissingStatus: 'RESOLVED',
+    };
+    expect(helperFields).toEqual(legacyInline);
+    expect(buildMesserCsv([{ ...legacyInline, _memberKey: 'mce-parity' } as any])).toBe(
+      buildMesserCsv([{ ...helperFields, _memberKey: 'mce-parity' } as any]),
+    );
+    const pageRow = {
+      ...helperFields,
+      _memberKey: 'mce-parity',
+      _ffmId: profile.ffm_id,
+      _exchangeSubscriberId: 'EX123',
+      _issuerSubscriberId: 'IS123',
+      _aor: aor,
+      _netPremiumBucket: 'has_premium',
+      _missingReason: 'Missing from Commission',
+      _estimatedMissingCommission: helperFields.estimatedMissingCommission,
+      _estMissingStatus: helperFields.estMissingStatus,
+    };
+    expect(pageRow._memberKey).toBe('mce-parity');
+    expect(pageRow._estimatedMissingCommission).toBe(25);
+    expect(pageRow._estMissingStatus).toBe('RESOLVED');
+    expect(pageRow._aor).toBe('Jason Fine (21055210)');
   });
 });
 

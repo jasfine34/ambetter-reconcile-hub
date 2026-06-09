@@ -55,8 +55,8 @@ import {
   createEstMissingResolver,
   type EstMissingStatus,
   type EstMissingResolution,
+  type EstMissingInputEvidence,
 } from './estMissingResolver';
-import { buildSourceEvidenceMap } from './estMissingEvidenceAdapter';
 import {
   buildPolicyStateRecords,
   buildPolicyMemberCountRecords,
@@ -72,6 +72,7 @@ import {
   type VendorFieldsOutput,
 } from '../mce/vendorEnrichment';
 import { latestBoPaidThrough } from './latestBoPaidThrough';
+import { derivePolicyIdentityKey } from './policyIdentityKey';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Public types
@@ -131,6 +132,12 @@ export interface CommissionSubmissionDiagnostics {
   unresolvedPolicySplits: number;
   /** Rows where the enrichment helper could not resolve a dollar. */
   unresolvedEnrichment: number;
+  /** Row-month dollar resolutions using resolved policy-grain evidence. */
+  previewDollarPolicyGrainCount: number;
+  /** Row-month dollar resolutions using member fallback for unresolved policy identities. */
+  previewDollarMemberFallbackCount: number;
+  /** Output rows whose dollar evidence used the unresolved-policy member fallback. */
+  previewDollarUnresolvedPolicyRows: number;
   /** Set-relationship over (member,month,scope): chase ∩ MCE-candidate. */
   setRelationship: {
     chaseRows: number;
@@ -183,6 +190,65 @@ function chronoSort(months: string[]): string[] {
   return Array.from(new Set(months)).sort();
 }
 
+function policyIdentityKeyForRecord(r: NormalizedRecord): string | null {
+  const id = derivePolicyIdentityKey({
+    carrier: r.carrier ?? null,
+    policy_number: r.policy_number ?? null,
+    issuer_subscriber_id: r.issuer_subscriber_id ?? null,
+  });
+  return id.status === 'resolved' ? id.key : null;
+}
+
+function recordsForPolicyIdentity(recs: NormalizedRecord[], policyIdentityKey: string): NormalizedRecord[] {
+  return recs.filter((r) => policyIdentityKeyForRecord(r) === policyIdentityKey);
+}
+
+function buildEstMissingInputEvidence(opts: {
+  memberKey: string;
+  records: NormalizedRecord[];
+  serviceMonth: string;
+  scope: Extract<TargetScope, 'Coverall' | 'Vix'>;
+  batchMonthByBatchId: Record<string, string>;
+  policyIdentityKey: string;
+}): EstMissingInputEvidence {
+  const sample =
+    opts.records.find((r) => r.source_type === 'BACK_OFFICE') ??
+    opts.records.find((r) => r.source_type === 'EDE') ??
+    opts.records[0];
+  const stateRecords = buildPolicyStateRecords({
+    normalizedRecords: opts.records as any,
+    batchMonthById: opts.batchMonthByBatchId,
+  });
+  const countRecords = buildPolicyMemberCountRecords({
+    normalizedRecords: opts.records as any,
+    batchMonthById: opts.batchMonthByBatchId,
+  });
+  const stateRes = resolvePolicyStateForCompGrid({
+    records: stateRecords,
+    targetBatchMonth: opts.serviceMonth,
+    targetServiceMonths: [opts.serviceMonth],
+  });
+  const countRes = resolvePolicyMemberCountForCompGrid({
+    records: countRecords,
+    targetBatchMonth: opts.serviceMonth,
+    targetServiceMonths: [opts.serviceMonth],
+  });
+  const edeWithAor = opts.records.find((r) => r.source_type === 'EDE' && (r as any)?.raw_json?.currentPolicyAOR);
+  const policyYear = Number(opts.serviceMonth.substring(0, 4));
+  return {
+    carrier: canonicalCarrier(sample?.carrier ?? '') || null,
+    state: stateRes.status === 'resolved' ? stateRes.state : null,
+    member_count: countRes.status === 'resolved' ? countRes.memberCount : null,
+    months: 1,
+    policy_year: Number.isFinite(policyYear) ? policyYear : null,
+    plan_variant: ((sample as any)?.raw_json?.plan_variant as string | undefined) ?? null,
+    current_policy_aor: ((edeWithAor as any)?.raw_json?.currentPolicyAOR as string | undefined) ?? null,
+    matched_payee: opts.scope,
+    policy_identity_key: opts.policyIdentityKey,
+    target_service_month: opts.serviceMonth,
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Public entry
 // ─────────────────────────────────────────────────────────────────────────
@@ -218,6 +284,7 @@ export async function assembleCommissionSubmission(
   //    policy_identity_key) for the enrichment join.
   type CandIdxKey = string;
   const candidateIndex = new Map<CandIdxKey, MtApprovedMceCandidate>();
+  const candidatesByScopeMonthStable = new Map<string, MtApprovedMceCandidate[]>();
   for (const scope of args.targetScopes) {
     for (const serviceMonth of args.serviceMonths) {
       const candidates = buildMtApprovedMceCandidates({
@@ -239,6 +306,9 @@ export async function assembleCommissionSubmission(
         const pol = derivePolicyKeyOrSentinel(identity, stable);
         const k = `${scope}|${serviceMonth}|${stable}|${pol.policy_identity_key}`;
         candidateIndex.set(k, c);
+        const listKey = `${scope}|${serviceMonth}|${stable}`;
+        const list = candidatesByScopeMonthStable.get(listKey);
+        if (list) list.push(c); else candidatesByScopeMonthStable.set(listKey, [c]);
       }
     }
   }
@@ -259,60 +329,20 @@ export async function assembleCommissionSubmission(
       batchMonthByBatchId: batchMonthMap,
     });
 
-  // 6. Per (scope, serviceMonth) resolver — mirrors the diagnose-route
-  //    assembler's evidence synthesis so dollars match the route fact.
-  type ResolverFn = (memberKey: string) => EstMissingResolution | null;
+  // 6. Per (scope, serviceMonth) resolver shell. Submission rows pass explicit
+  //    row-grain evidence; no silent member-map fallback for resolved policies.
+  type ResolverFn = (memberKey: string, inputEvidence: EstMissingInputEvidence) => EstMissingResolution;
   const resolverByScopeMonth = new Map<string, ResolverFn>();
   for (const scope of args.targetScopes) {
     for (const serviceMonth of args.serviceMonths) {
-      const evidenceRows: Array<Record<string, unknown>> = [];
-      for (const [memberKey, recs] of recordsByMemberKey) {
-        const stateRecords = buildPolicyStateRecords({
-          normalizedRecords: recs as any,
-          batchMonthById: args.batchMonthByBatchId,
-        });
-        const countRecords = buildPolicyMemberCountRecords({
-          normalizedRecords: recs as any,
-          batchMonthById: args.batchMonthByBatchId,
-        });
-        const stateRes = resolvePolicyStateForCompGrid({
-          records: stateRecords,
-          targetBatchMonth: serviceMonth,
-          targetServiceMonths: [serviceMonth],
-        });
-        const countRes = resolvePolicyMemberCountForCompGrid({
-          records: countRecords,
-          targetBatchMonth: serviceMonth,
-          targetServiceMonths: [serviceMonth],
-        });
-        const sample = recs.find((r) => r.source_type === 'BACK_OFFICE') ?? recs[0];
-        evidenceRows.push({
-          member_key: memberKey,
-          carrier: canonicalCarrier(sample?.carrier ?? '') || null,
-          state: stateRes.status === 'resolved' ? stateRes.state : null,
-          member_count: countRes.status === 'resolved' ? countRes.memberCount : null,
-          target_service_month: serviceMonth,
-          expected_ede_effective_month: serviceMonth,
-          effective_date: sample?.effective_date ?? null,
-          current_policy_aor:
-            ((sample as any)?.raw_json?.['currentPolicyAOR'] as string | undefined) ?? null,
-          actual_pay_entity: scope,
-          matched_payee: scope,
-          policy_identity_key: null,
-          plan_variant:
-            ((sample as any)?.raw_json?.['plan_variant'] as string | undefined) ?? null,
-        });
-      }
-      const evidenceMap = buildSourceEvidenceMap(evidenceRows);
       const { resolve } = createEstMissingResolver({
         rateRows: args.rateRows,
         batchMonth: serviceMonth,
         scope,
         overlayMap: args.clearingOverlay,
-        sourceEvidenceByMemberKey: evidenceMap,
       });
-      resolverByScopeMonth.set(`${scope}|${serviceMonth}`, (memberKey) => {
-        return resolve({ row: { member_key: memberKey } });
+      resolverByScopeMonth.set(`${scope}|${serviceMonth}`, (memberKey, inputEvidence) => {
+        return resolve({ row: { member_key: memberKey }, inputEvidence });
       });
     }
   }
@@ -351,37 +381,69 @@ export async function assembleCommissionSubmission(
 
   for (const row of chaseRows) {
     setRelationship.chaseRows += 1;
-    const pol = derivePolicyKeyOrSentinel(row.identity, row.stableMemberKey);
-    const carrier = canonicalCarrier(row.identity.carrier ?? '') || row.carrier;
-    const grainKey: SubmissionRowGrainKey = {
-      carrier,
-      targetScope: row.targetScope as 'Coverall' | 'Vix',
-      stableMemberKey: row.stableMemberKey,
-      policy_identity_key: pol.policy_identity_key,
-      policy_identity_unresolved_reason: pol.unresolved_reason,
-    };
-    const groupKey = `${grainKey.carrier}|${grainKey.targetScope}|${grainKey.stableMemberKey}|${grainKey.policy_identity_key}`;
-    let group = groups.get(groupKey);
-    if (!group) {
-      const memberKey = stableToMemberKey.get(row.stableMemberKey) ?? row.stableMemberKey;
-      group = {
-        grainKey,
-        months: new Set(),
-        anchors: [],
-        identity: row.identity,
-        memberKey,
+    const siblingCandidates = candidatesByScopeMonthStable.get(`${row.targetScope}|${row.serviceMonth}|${row.stableMemberKey}`) ?? [];
+    const splitCandidates = siblingCandidates;
+    if (splitCandidates.length > 0) setRelationship.chaseWithMceCandidate += 1;
+    else setRelationship.chaseWithoutMceCandidate += 1;
+
+    const rowMemberKey = assembled.evidenceBindingsByRowKey.get(row.rowKey)?.memberKey ?? stableToMemberKey.get(row.stableMemberKey) ?? row.stableMemberKey;
+    const scopedForRow = assembled.traceContextByScope.get(row.targetScope)?.scopedRecordsByMemberKey.get(rowMemberKey)
+      ?? recordsByMemberKey.get(rowMemberKey)
+      ?? [];
+    const policyIdentities = new Map<string, DecisionIdentityInput>();
+    for (const rec of scopedForRow) {
+      const identity: DecisionIdentityInput = {
+        carrier: rec.carrier ?? null,
+        issuer_subscriber_id: rec.issuer_subscriber_id ?? null,
+        exchange_subscriber_id: rec.exchange_subscriber_id ?? null,
+        policy_number: rec.policy_number ?? null,
       };
-      groups.set(groupKey, group);
-    }
-    group.months.add(row.serviceMonth);
-    if (!group.anchors.some((a) => a.rowKey === row.rowKey)) {
-      group.anchors.push({ serviceMonth: row.serviceMonth, rowKey: row.rowKey });
+      if (deriveStableMemberKey(identity) !== row.stableMemberKey) continue;
+      const key = policyIdentityKeyForRecord(rec);
+      if (key && !policyIdentities.has(key)) policyIdentities.set(key, identity);
     }
 
-    // Set-relationship measure.
-    const candKey = `${row.targetScope}|${row.serviceMonth}|${row.stableMemberKey}|${pol.policy_identity_key}`;
-    if (candidateIndex.has(candKey)) setRelationship.chaseWithMceCandidate += 1;
-    else setRelationship.chaseWithoutMceCandidate += 1;
+    const grains = policyIdentities.size > 0
+      ? Array.from(policyIdentities.values()).map((identity) => ({ identity, memberKey: rowMemberKey }))
+      : splitCandidates.length > 0
+      ? splitCandidates.map((c) => {
+          const identity: DecisionIdentityInput = {
+            carrier: c.carrier || row.identity.carrier,
+            issuer_subscriber_id: c.issuer_subscriber_id || null,
+            exchange_subscriber_id: c.exchange_subscriber_id || null,
+            policy_number: c.policy_number || null,
+          };
+          return { identity, memberKey: c.member_key };
+        })
+      : [{ identity: row.identity, memberKey: rowMemberKey }];
+
+    for (const grain of grains) {
+      const grainPol = derivePolicyKeyOrSentinel(grain.identity, row.stableMemberKey);
+      const carrier = canonicalCarrier(grain.identity.carrier ?? '') || row.carrier;
+      const grainKey: SubmissionRowGrainKey = {
+        carrier,
+        targetScope: row.targetScope as 'Coverall' | 'Vix',
+        stableMemberKey: row.stableMemberKey,
+        policy_identity_key: grainPol.policy_identity_key,
+        policy_identity_unresolved_reason: grainPol.unresolved_reason,
+      };
+      const groupKey = `${grainKey.carrier}|${grainKey.targetScope}|${grainKey.stableMemberKey}|${grainKey.policy_identity_key}`;
+      let group = groups.get(groupKey);
+      if (!group) {
+        group = {
+          grainKey,
+          months: new Set(),
+          anchors: [],
+          identity: grain.identity,
+          memberKey: grain.memberKey,
+        };
+        groups.set(groupKey, group);
+      }
+      group.months.add(row.serviceMonth);
+      if (!group.anchors.some((a) => a.rowKey === row.rowKey)) {
+        group.anchors.push({ serviceMonth: row.serviceMonth, rowKey: row.rowKey });
+      }
+    }
   }
 
   // 8. Build submission rows.
@@ -393,6 +455,9 @@ export async function assembleCommissionSubmission(
     multiPolicySplits: 0,
     unresolvedPolicySplits: 0,
     unresolvedEnrichment: 0,
+    previewDollarPolicyGrainCount: 0,
+    previewDollarMemberFallbackCount: 0,
+    previewDollarUnresolvedPolicyRows: 0,
     setRelationship,
   };
 
@@ -444,15 +509,38 @@ export async function assembleCommissionSubmission(
       batch_id: null,
     };
 
+    const trace = traceByScope.get(group.grainKey.targetScope);
+    const scopedMemberRecords = trace?.scopedRecordsByMemberKey.get(memberKey) ?? memberRecords;
+    const baseEvidenceRecords = scopedMemberRecords.length > 0 ? scopedMemberRecords : memberRecords;
+    const isResolvedPolicyGrain = group.grainKey.policy_identity_unresolved_reason == null;
+    const seedPaidThroughRecords = isResolvedPolicyGrain
+      ? recordsForPolicyIdentity(baseEvidenceRecords, group.grainKey.policy_identity_key)
+      : baseEvidenceRecords;
+
     // Per-month resolver pass → sum.
     let runningTotal = 0;
     let anyResolved = false;
     let lastStatus: EstMissingStatus | null = null;
     let unresolvedThisRow = false;
+    const evidenceByMonth = new Map<string, EstMissingInputEvidence>();
     for (const sm of months) {
       const fn = resolverByScopeMonth.get(`${group.grainKey.targetScope}|${sm}`);
       if (!fn) { unresolvedThisRow = true; continue; }
-      const res = fn(memberKey);
+      const evidenceRecords = isResolvedPolicyGrain
+        ? recordsForPolicyIdentity(baseEvidenceRecords, group.grainKey.policy_identity_key)
+        : baseEvidenceRecords;
+      const inputEvidence = buildEstMissingInputEvidence({
+        memberKey,
+        records: evidenceRecords,
+        serviceMonth: sm,
+        scope: group.grainKey.targetScope,
+        batchMonthByBatchId: args.batchMonthByBatchId,
+        policyIdentityKey: group.grainKey.policy_identity_key,
+      });
+      evidenceByMonth.set(sm, inputEvidence);
+      if (isResolvedPolicyGrain) diagnostics.previewDollarPolicyGrainCount += 1;
+      else diagnostics.previewDollarMemberFallbackCount += 1;
+      const res = fn(memberKey, inputEvidence);
       if (!res) { unresolvedThisRow = true; continue; }
       lastStatus = res.status;
       if (typeof res.amount === 'number' && Number.isFinite(res.amount)) {
@@ -469,6 +557,7 @@ export async function assembleCommissionSubmission(
     const earliestFn = earliest
       ? resolverByScopeMonth.get(`${group.grainKey.targetScope}|${earliest}`)
       : null;
+    const earliestEvidence = earliest ? evidenceByMonth.get(earliest) : undefined;
     const fields = enrichVendorFields({
       candidate: candidateLike,
       records: memberRecords,
@@ -476,8 +565,8 @@ export async function assembleCommissionSubmission(
       commissionTripleRecords: [],
       scope: group.grainKey.targetScope,
       writingAgentIdLookup,
-      resolveEstMissing: earliestFn
-        ? (input) => earliestFn(memberKey) ?? ({ amount: null, status: 'UNSUPPORTED', evidence: {} as any } as EstMissingResolution)
+      resolveEstMissing: earliestFn && earliestEvidence
+        ? (input) => earliestFn(memberKey, earliestEvidence) ?? ({ amount: null, status: 'UNSUPPORTED', evidence: {} as any } as EstMissingResolution)
         : undefined,
     });
 
@@ -486,14 +575,13 @@ export async function assembleCommissionSubmission(
     }
 
     // Seeded comment from the classifier reason + shared paid-through.
-    const trace = traceByScope.get(group.grainKey.targetScope);
     const classification = trace?.classificationByMember.get(memberKey);
     const firstMonthCell = classification?.cells[earliest ?? ''];
     const reason = firstMonthCell?.reason ?? '';
     const isZero =
       pickedCandidate?._mtNetBucket === '0Net' ||
       (pickedCandidate?._mtNetBucket == null && /zero[- ]net/i.test(reason));
-    const paidThrough = latestBoPaidThrough(memberRecords);
+    const paidThrough = latestBoPaidThrough(seedPaidThroughRecords);
     const seededComment = buildSeededComment({
       reason,
       paidThrough,
@@ -515,6 +603,7 @@ export async function assembleCommissionSubmission(
 
     if (group.grainKey.policy_identity_unresolved_reason) {
       diagnostics.unresolvedPolicySplits += 1;
+      diagnostics.previewDollarUnresolvedPolicyRows += 1;
     }
   }
 

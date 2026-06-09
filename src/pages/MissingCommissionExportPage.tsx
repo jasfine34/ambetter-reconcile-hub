@@ -38,8 +38,6 @@ import { buildMonthList } from '@/lib/memberTimeline';
 import { useToast } from '@/hooks/use-toast';
 import {
   buildMemberProfile,
-  splitNameLastSpace,
-  assembleAddressLine,
   type MemberProfile,
   type EnrichedField,
 } from '@/lib/canonical/memberProfileView';
@@ -49,7 +47,6 @@ import {
 } from '@/lib/canonical/scope';
 import { extractNpnFromAorString } from '@/lib/agents';
 import { NPN_MAP, EBU_BATCH_SCOPE_DISCLAIMER } from '@/lib/constants';
-import { isZeroNetPremium } from '@/lib/canonical/metrics';
 // Phase B Item 4b — the old MCE inclusion stack has been deleted from this
 // page. MCE production inclusion = MT-approved selector
 // (`buildMtApprovedMceCandidates`) over the all-batch projection cache. The
@@ -182,10 +179,6 @@ export {
 import {
   resolveTargetPayEntity,
   enrichVendorFields,
-  resolveWritingAgentName,
-  resolveWritingAgentCarrierId,
-  resolveMemberId,
-  resolvePolicyEffectiveDate,
   buildWritingAgentCarrierIdLookup,
 } from '@/lib/mce/vendorEnrichment';
 
@@ -773,49 +766,7 @@ export default function MissingCommissionExportPage() {
           fallbackFfmCandidates,
         });
 
-        const nameVal = profile.applicant_name.value || m.applicant_name || '';
-        const { first, last } = splitNameLastSpace(nameVal);
-
         const aor = String(m.current_policy_aor ?? '').trim();
-        const aorNpn = extractNpnFromAorString(aor);
-        const npn = aorNpn || String(m.agent_npn ?? '').trim();
-
-        const commRec = records.find((r) => r.source_type === 'COMMISSION' && r.writing_agent_carrier_id);
-        const targetPayEntity = resolveTargetPayEntity({
-          expectedPayEntity: m.expected_pay_entity,
-          actualPayEntity: m.actual_pay_entity,
-          scope: f.scope,
-          agentNpn: npn,
-        });
-        // Pass commission-triple records too so Tier-1 direct lookup can hit
-        // a historical row when the member's enrichment set has none.
-        const writingAgentCarrierId = resolveWritingAgentCarrierId({
-          records: [...records, ...commissionTripleRecords],
-          carrier: 'Ambetter',
-          payEntity: targetPayEntity,
-          agentNpn: npn,
-          lookup: writingAgentIdLookup,
-        });
-
-        const boRec = records.find((r) => r.source_type === 'BACK_OFFICE' && r.agent_name);
-        const writingAgentName = resolveWritingAgentName({
-          currentPolicyAor: aor,
-          boBrokerName: boRec?.agent_name,
-          commissionWritingAgentName: commRec?.agent_name,
-        });
-
-        const memberId = resolveMemberId({
-          issuerSubscriberId: m.issuer_subscriber_id,
-          policyNumber: m.policy_number,
-          exchangeSubscriberId: m.exchange_subscriber_id,
-        });
-
-        const address = assembleAddressLine({
-          address1: profile.address1.value,
-          city: profile.city.value,
-          state: profile.state.value,
-          zip: profile.zip.value,
-        });
 
         // §4 — Net-premium bucket is cell-derived from the MT classifier
         // (m._mtNetBucket). '+Net' → has_premium; '0Net' / null → zero_premium.
@@ -826,12 +777,18 @@ export default function MissingCommissionExportPage() {
         // legacy $18 fallback). PARTIAL_CLEARED_REMAINDER is handled inside
         // the resolver via the AdjustedRow input.
         const adj = adjustedByRow.get(m);
-        const resolution = estMissingResolver.resolve({
-          row: m,
+        const vendorFields = enrichVendorFields({
+          candidate: m,
+          records,
+          profile,
+          commissionTripleRecords,
+          scope: f.scope,
+          writingAgentIdLookup,
           adjustedRow: adj,
+          resolveEstMissing: (input) => estMissingResolver.resolve(input),
         });
-        const estMissing = resolution.amount;
-        const estMissingStatus = resolution.status;
+        const estMissing = vendorFields.estimatedMissingCommission;
+        const estMissingStatus = vendorFields.estMissingStatus;
         let clearingStatus: ClearingState | null = null;
         if (adj && adj.adjustment.kind !== 'no_overlay') {
           if (adj.adjustment.kind === 'no_adjustment') {
@@ -853,23 +810,7 @@ export default function MissingCommissionExportPage() {
           profile.email.conflict;
 
         allBeforeBucket.push({
-          carrierName: 'Ambetter',
-          npn,
-          writingAgentCarrierId,
-          writingAgentName,
-          policyEffectiveDate: resolvePolicyEffectiveDate({
-            records,
-            reconciledEffectiveDate: m.effective_date,
-          }),
-          policyNumber: String(m.policy_number ?? '') || '',
-          memberFirstName: first,
-          memberLastName: last,
-          dob: profile.dob.value || (m.dob ? String(m.dob) : ''),
-          ssn: '',
-          memberId,
-          address,
-          estimatedMissingCommission: estMissing,
-          estMissingStatus,
+          ...vendorFields,
           _memberKey: memberKey,
           _ffmId: profile.ffm_id,
           _phone: profile.phone,
