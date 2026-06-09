@@ -13,7 +13,7 @@
  * header — all unchanged. Only write path remains the existing hold
  * recordDecision.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useBatch } from '@/contexts/BatchContext';
 import { useAllBatchesDataVersion } from '@/hooks/useBatchDataVersion';
 import { useCrossBatchOverlay } from '@/hooks/useCrossBatchOverlay';
