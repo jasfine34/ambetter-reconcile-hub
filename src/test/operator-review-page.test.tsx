@@ -779,7 +779,7 @@ describe('OperatorReviewPage — C2c slice 1 member search + grouping', () => {
   }
 
   it('groups same-member months contiguously; default collapsed; +N toggle on multi-row members only', async () => {
-    mountAll();
+    await mountAll();
     renderPage();
     // 3 members → 3 first rows by default (Alice, Bob, Carol).
     await waitFor(() => expect(screen.getAllByTestId('op-row').length).toBe(3));
@@ -813,7 +813,7 @@ describe('OperatorReviewPage — C2c slice 1 member search + grouping', () => {
   });
 
   it('search by name narrows rows + auto-expands matching groups; clearing restores manual expand state and writes nothing', async () => {
-    mountAll();
+    await mountAll();
     renderPage();
     await waitFor(() => expect(screen.getAllByTestId('op-row').length).toBe(3));
     const allActionableCountBefore = screen.getByTestId('filter-all_actionable').getAttribute('data-count');
@@ -837,7 +837,7 @@ describe('OperatorReviewPage — C2c slice 1 member search + grouping', () => {
   });
 
   it('search matches subscriber id and policy number; empty search returns full set', async () => {
-    mountAll();
+    await mountAll();
     renderPage();
     await waitFor(() => expect(screen.getAllByTestId('op-row').length).toBe(3));
 
@@ -861,7 +861,7 @@ describe('OperatorReviewPage — C2c slice 1 member search + grouping', () => {
   });
 
   it('expanded row binds by data-row-key: hold action targets the expanded row exactly', async () => {
-    mountAll();
+    await mountAll();
     renderPage();
     await waitFor(() => expect(screen.getAllByTestId('op-row').length).toBe(3));
     // Expand alice; pick the SECOND (March) row.
@@ -879,7 +879,7 @@ describe('OperatorReviewPage — C2c slice 1 member search + grouping', () => {
   });
 
   it('expanded row Evidence button binds by data-row-key', async () => {
-    mountAll();
+    await mountAll();
     const explainCellFn = vi.fn().mockResolvedValue({
       member: {}, cell: {}, final: { state: 'unpaid', chips: { in_ede: false, in_back_office: false, in_commission: false, paid_amount: 0 }, badges: {} },
       helpers: [], guards: [], firingRule: null, scopedRows: [],
@@ -899,7 +899,7 @@ describe('OperatorReviewPage — C2c slice 1 member search + grouping', () => {
   });
 
   it('bucket chips expose info affordances with the exact tooltip copy', async () => {
-    mountAll();
+    await mountAll();
     renderPage();
     await waitFor(() => expect(screen.getByTestId('filter-chips')).toBeInTheDocument());
     // Every chip has a sibling chip-info button.
