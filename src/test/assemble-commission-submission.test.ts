@@ -197,25 +197,25 @@ describe('assembleCommissionSubmission — C3a headless assembler', () => {
   });
 
   it('(2) multi-month grouping → one row, chronological de-duped', async () => {
+    const anchorComm = (sm: string) => rec({
+      source_type: 'COMMISSION',
+      member_key: 'ANCHOR',
+      issuer_subscriber_id: 'ISIDANCHOR',
+      policy_number: 'POLANCHOR',
+      pay_entity: 'Coverall',
+      commission_amount: 1,
+      paid_to_date: `${sm}-28`,
+      months_paid: 1,
+      agent_npn: JASON_NPN,
+      ...({ batch_id: BATCH } as any),
+    } as any);
     const recs: NormalizedRecord[] = [
       bo('M1', { brokerName: 'Jason Fine', npn: JASON_NPN }),
       ede('M1', { aor: 'Jason Fine (21055210)', npn: JASON_NPN }),
-      // A commission row to anchor commissionServiceMonths on Mar so the
-      // classifier's ripeness gates open for Jan/Feb chase eligibility.
-      rec({
-        source_type: 'COMMISSION',
-        member_key: 'ANCHOR',
-        issuer_subscriber_id: 'ISIDANCHOR',
-        policy_number: 'POLANCHOR',
-        pay_entity: 'Coverall',
-        commission_amount: 1,
-        paid_to_date: '2026-03-31',
-        months_paid: 1,
-        agent_npn: JASON_NPN,
-        ...({ batch_id: BATCH } as any),
-      } as any),
       bo('ANCHOR', { brokerName: 'Jason Fine', npn: JASON_NPN }),
       ede('ANCHOR', { aor: 'Jason Fine (21055210)', npn: JASON_NPN }),
+      anchorComm('2026-02'),
+      anchorComm('2026-03'),
     ];
     const out = await assembleCommissionSubmission({
       ...baseArgs,
