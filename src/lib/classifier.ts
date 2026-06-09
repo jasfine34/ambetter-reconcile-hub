@@ -302,16 +302,12 @@ function memberBelongsToUs(records: NormalizedRecord[]): boolean {
   });
 }
 
-/** Most recent BO paid-through date across all snapshots, as MonthKey. */
-function latestBoPaidThrough(records: NormalizedRecord[]): MonthKey {
-  let latest = '';
-  for (const r of records) {
-    if (r.source_type !== 'BACK_OFFICE') continue;
-    const pt = dateToMonthKey(r.paid_through_date);
-    if (pt && pt > latest) latest = pt;
-  }
-  return latest;
-}
+/** Most recent BO paid-through date across all snapshots, as MonthKey.
+ *  C3a Extraction B — the shared implementation lives in
+ *  `./canonical/latestBoPaidThrough.ts` so the commission-submission
+ *  assembler can call the same byte-for-byte helper. */
+export { latestBoPaidThrough } from './canonical/latestBoPaidThrough';
+import { latestBoPaidThrough as _latestBoPaidThrough } from './canonical/latestBoPaidThrough';
 
 /** Highest net_premium ever observed for this member across EDE snapshots. */
 function latestEdeNetPremium(records: NormalizedRecord[]): number {
