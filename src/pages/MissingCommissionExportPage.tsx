@@ -131,20 +131,14 @@ interface ExportRow {
 // MCE export contract (docs/mce-export-contract.md) — vendor Messer CSV is
 // locked at exactly 12 columns. Do NOT add the estimated-missing-commission
 // dollar or status here; both remain preview/backing fields only.
-const MESSER_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
-  { key: 'carrierName', label: 'Carrier Name' },
-  { key: 'npn', label: 'NPN' },
-  { key: 'writingAgentCarrierId', label: 'Writing Agent Carrier ID' },
-  { key: 'writingAgentName', label: 'Writing Agent Name' },
-  { key: 'policyEffectiveDate', label: 'Policy Effective Date' },
-  { key: 'policyNumber', label: 'Policy #' },
-  { key: 'memberFirstName', label: 'Member First Name' },
-  { key: 'memberLastName', label: 'Member Last Name' },
-  { key: 'dob', label: 'DOB' },
-  { key: 'ssn', label: 'SSN' },
-  { key: 'memberId', label: 'Member ID' },
-  { key: 'address', label: 'Address (Street, City, State, Zip)' },
-];
+//
+// C3b-1: descriptors are now derived from the neutral, headless
+// `BASE_MESSER_COLUMNS_12` (src/lib/mce/messerColumns.ts). The locally typed
+// `satisfies` guard keeps `keyof ExportRow` enforcement for page-local
+// consumers; the 12-column CSV output remains byte-identical.
+const MESSER_COLUMNS = BASE_MESSER_COLUMNS_12 as ReadonlyArray<
+  { key: keyof ExportRow; label: string }
+> satisfies ReadonlyArray<{ key: keyof ExportRow; label: string }>;
 
 const INTERNAL_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
   { key: '_memberKey', label: 'member_key' },
