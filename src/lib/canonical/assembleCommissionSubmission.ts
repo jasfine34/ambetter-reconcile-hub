@@ -284,6 +284,7 @@ export async function assembleCommissionSubmission(
   //    policy_identity_key) for the enrichment join.
   type CandIdxKey = string;
   const candidateIndex = new Map<CandIdxKey, MtApprovedMceCandidate>();
+  const candidatesByScopeMonthStable = new Map<string, MtApprovedMceCandidate[]>();
   for (const scope of args.targetScopes) {
     for (const serviceMonth of args.serviceMonths) {
       const candidates = buildMtApprovedMceCandidates({
@@ -305,6 +306,9 @@ export async function assembleCommissionSubmission(
         const pol = derivePolicyKeyOrSentinel(identity, stable);
         const k = `${scope}|${serviceMonth}|${stable}|${pol.policy_identity_key}`;
         candidateIndex.set(k, c);
+        const listKey = `${scope}|${serviceMonth}|${stable}`;
+        const list = candidatesByScopeMonthStable.get(listKey);
+        if (list) list.push(c); else candidatesByScopeMonthStable.set(listKey, [c]);
       }
     }
   }
@@ -378,36 +382,52 @@ export async function assembleCommissionSubmission(
   for (const row of chaseRows) {
     setRelationship.chaseRows += 1;
     const pol = derivePolicyKeyOrSentinel(row.identity, row.stableMemberKey);
-    const carrier = canonicalCarrier(row.identity.carrier ?? '') || row.carrier;
-    const grainKey: SubmissionRowGrainKey = {
-      carrier,
-      targetScope: row.targetScope as 'Coverall' | 'Vix',
-      stableMemberKey: row.stableMemberKey,
-      policy_identity_key: pol.policy_identity_key,
-      policy_identity_unresolved_reason: pol.unresolved_reason,
-    };
-    const groupKey = `${grainKey.carrier}|${grainKey.targetScope}|${grainKey.stableMemberKey}|${grainKey.policy_identity_key}`;
-    let group = groups.get(groupKey);
-    if (!group) {
-      const memberKey = stableToMemberKey.get(row.stableMemberKey) ?? row.stableMemberKey;
-      group = {
-        grainKey,
-        months: new Set(),
-        anchors: [],
-        identity: row.identity,
-        memberKey,
-      };
-      groups.set(groupKey, group);
-    }
-    group.months.add(row.serviceMonth);
-    if (!group.anchors.some((a) => a.rowKey === row.rowKey)) {
-      group.anchors.push({ serviceMonth: row.serviceMonth, rowKey: row.rowKey });
-    }
-
-    // Set-relationship measure.
     const candKey = `${row.targetScope}|${row.serviceMonth}|${row.stableMemberKey}|${pol.policy_identity_key}`;
-    if (candidateIndex.has(candKey)) setRelationship.chaseWithMceCandidate += 1;
+    const exactCandidate = candidateIndex.get(candKey) ?? null;
+    const siblingCandidates = candidatesByScopeMonthStable.get(`${row.targetScope}|${row.serviceMonth}|${row.stableMemberKey}`) ?? [];
+    const splitCandidates = exactCandidate ? [exactCandidate] : siblingCandidates;
+    if (splitCandidates.length > 0) setRelationship.chaseWithMceCandidate += 1;
     else setRelationship.chaseWithoutMceCandidate += 1;
+
+    const grains = splitCandidates.length > 0
+      ? splitCandidates.map((c) => {
+          const identity: DecisionIdentityInput = {
+            carrier: c.carrier || row.identity.carrier,
+            issuer_subscriber_id: c.issuer_subscriber_id || null,
+            exchange_subscriber_id: c.exchange_subscriber_id || null,
+            policy_number: c.policy_number || null,
+          };
+          return { identity, memberKey: c.member_key };
+        })
+      : [{ identity: row.identity, memberKey: stableToMemberKey.get(row.stableMemberKey) ?? row.stableMemberKey }];
+
+    for (const grain of grains) {
+      const grainPol = derivePolicyKeyOrSentinel(grain.identity, row.stableMemberKey);
+      const carrier = canonicalCarrier(grain.identity.carrier ?? '') || row.carrier;
+      const grainKey: SubmissionRowGrainKey = {
+        carrier,
+        targetScope: row.targetScope as 'Coverall' | 'Vix',
+        stableMemberKey: row.stableMemberKey,
+        policy_identity_key: grainPol.policy_identity_key,
+        policy_identity_unresolved_reason: grainPol.unresolved_reason,
+      };
+      const groupKey = `${grainKey.carrier}|${grainKey.targetScope}|${grainKey.stableMemberKey}|${grainKey.policy_identity_key}`;
+      let group = groups.get(groupKey);
+      if (!group) {
+        group = {
+          grainKey,
+          months: new Set(),
+          anchors: [],
+          identity: grain.identity,
+          memberKey: grain.memberKey,
+        };
+        groups.set(groupKey, group);
+      }
+      group.months.add(row.serviceMonth);
+      if (!group.anchors.some((a) => a.rowKey === row.rowKey)) {
+        group.anchors.push({ serviceMonth: row.serviceMonth, rowKey: row.rowKey });
+      }
+    }
   }
 
   // 8. Build submission rows.
