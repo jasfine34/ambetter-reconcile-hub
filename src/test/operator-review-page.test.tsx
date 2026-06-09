@@ -168,10 +168,10 @@ beforeEach(() => {
   });
 });
 
-function renderPage() {
+function renderPage(props: any = {}) {
   return render(
     <MemoryRouter>
-      <OperatorReviewPage />
+      <OperatorReviewPage {...props} />
     </MemoryRouter>,
   );
 }
