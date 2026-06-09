@@ -79,6 +79,7 @@ import {
 } from '@/lib/sweep/resolverRecordAdapters';
 import { resolvePolicyStateForCompGrid } from '@/lib/canonical/policyState';
 import { resolvePolicyMemberCountForCompGrid } from '@/lib/canonical/policyMemberCount';
+import { isZeroNetPremium } from '@/lib/canonical/metrics';
 
 
 type PremiumBucket = 'all' | 'zero_premium' | 'has_premium';
@@ -173,7 +174,6 @@ export {
   buildWritingAgentCarrierIdLookup,
   resolveTargetPayEntity,
   resolveWritingAgentCarrierId,
-  classifyNetPremium,
   enrichVendorFields,
   type WritingAgentIdEntry,
 } from '@/lib/mce/vendorEnrichment';
@@ -182,6 +182,10 @@ import {
   enrichVendorFields,
   buildWritingAgentCarrierIdLookup,
 } from '@/lib/mce/vendorEnrichment';
+
+export function classifyNetPremium(row: any): PremiumBucket {
+  return isZeroNetPremium(row) ? 'zero_premium' : 'has_premium';
+}
 
 export function buildMesserCsvFilename(opts: {
   scope: CanonicalScope;
