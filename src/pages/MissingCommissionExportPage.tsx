@@ -161,7 +161,8 @@ const INTERNAL_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
 
 // ---------------------------------------------------------------------------
 // C3a Extraction A — pure vendor-field helpers + enrichVendorFields now live
-// in `src/lib/mce/vendorEnrichment.ts`. They are re-exported here so existing
+// in `src/lib/mce/vendorEnrichment.ts`. classifyNetPremium still delegates to
+// canonical isZeroNetPremium there. They are re-exported here so existing
 // tests + agent-summary imports continue to resolve unchanged.
 // ---------------------------------------------------------------------------
 
@@ -785,7 +786,10 @@ export default function MissingCommissionExportPage() {
           scope: f.scope,
           writingAgentIdLookup,
           adjustedRow: adj,
-          resolveEstMissing: (input) => estMissingResolver.resolve(input),
+          resolveEstMissing: ({ row }) => estMissingResolver.resolve({
+            row,
+            adjustedRow: adj,
+          }),
         });
         const estMissing = vendorFields.estimatedMissingCommission;
         const estMissingStatus = vendorFields.estMissingStatus;
