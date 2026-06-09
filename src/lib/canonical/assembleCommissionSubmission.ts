@@ -325,60 +325,20 @@ export async function assembleCommissionSubmission(
       batchMonthByBatchId: batchMonthMap,
     });
 
-  // 6. Per (scope, serviceMonth) resolver — mirrors the diagnose-route
-  //    assembler's evidence synthesis so dollars match the route fact.
-  type ResolverFn = (memberKey: string) => EstMissingResolution | null;
+  // 6. Per (scope, serviceMonth) resolver shell. Submission rows pass explicit
+  //    row-grain evidence; no silent member-map fallback for resolved policies.
+  type ResolverFn = (memberKey: string, inputEvidence: EstMissingInputEvidence) => EstMissingResolution;
   const resolverByScopeMonth = new Map<string, ResolverFn>();
   for (const scope of args.targetScopes) {
     for (const serviceMonth of args.serviceMonths) {
-      const evidenceRows: Array<Record<string, unknown>> = [];
-      for (const [memberKey, recs] of recordsByMemberKey) {
-        const stateRecords = buildPolicyStateRecords({
-          normalizedRecords: recs as any,
-          batchMonthById: args.batchMonthByBatchId,
-        });
-        const countRecords = buildPolicyMemberCountRecords({
-          normalizedRecords: recs as any,
-          batchMonthById: args.batchMonthByBatchId,
-        });
-        const stateRes = resolvePolicyStateForCompGrid({
-          records: stateRecords,
-          targetBatchMonth: serviceMonth,
-          targetServiceMonths: [serviceMonth],
-        });
-        const countRes = resolvePolicyMemberCountForCompGrid({
-          records: countRecords,
-          targetBatchMonth: serviceMonth,
-          targetServiceMonths: [serviceMonth],
-        });
-        const sample = recs.find((r) => r.source_type === 'BACK_OFFICE') ?? recs[0];
-        evidenceRows.push({
-          member_key: memberKey,
-          carrier: canonicalCarrier(sample?.carrier ?? '') || null,
-          state: stateRes.status === 'resolved' ? stateRes.state : null,
-          member_count: countRes.status === 'resolved' ? countRes.memberCount : null,
-          target_service_month: serviceMonth,
-          expected_ede_effective_month: serviceMonth,
-          effective_date: sample?.effective_date ?? null,
-          current_policy_aor:
-            ((sample as any)?.raw_json?.['currentPolicyAOR'] as string | undefined) ?? null,
-          actual_pay_entity: scope,
-          matched_payee: scope,
-          policy_identity_key: null,
-          plan_variant:
-            ((sample as any)?.raw_json?.['plan_variant'] as string | undefined) ?? null,
-        });
-      }
-      const evidenceMap = buildSourceEvidenceMap(evidenceRows);
       const { resolve } = createEstMissingResolver({
         rateRows: args.rateRows,
         batchMonth: serviceMonth,
         scope,
         overlayMap: args.clearingOverlay,
-        sourceEvidenceByMemberKey: evidenceMap,
       });
-      resolverByScopeMonth.set(`${scope}|${serviceMonth}`, (memberKey) => {
-        return resolve({ row: { member_key: memberKey } });
+      resolverByScopeMonth.set(`${scope}|${serviceMonth}`, (memberKey, inputEvidence) => {
+        return resolve({ row: { member_key: memberKey }, inputEvidence });
       });
     }
   }
@@ -459,6 +419,9 @@ export async function assembleCommissionSubmission(
     multiPolicySplits: 0,
     unresolvedPolicySplits: 0,
     unresolvedEnrichment: 0,
+    previewDollarPolicyGrainCount: 0,
+    previewDollarMemberFallbackCount: 0,
+    previewDollarUnresolvedPolicyRows: 0,
     setRelationship,
   };
 
