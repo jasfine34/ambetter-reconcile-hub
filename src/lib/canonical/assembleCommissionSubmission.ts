@@ -199,8 +199,60 @@ function policyIdentityKeyForRecord(r: NormalizedRecord): string | null {
   return id.status === 'resolved' ? id.key : null;
 }
 
+/**
+ * C3-grain-fix: Two-pass canonicalization helper.
+ *
+ * Given a raw policy_identity_key (possibly the sub-form `cc|sub:<sid>`) and
+ * a precomputed set of pn-form keys (`cc|<pn>`) seen across the same
+ * (member, scope), remap the sub-form key onto its same-value pn-form key
+ * when present. Otherwise return the raw key unchanged (preserves legitimate
+ * sub-only / unresolved / pn keys).
+ */
+function canonicalizePolicyKey(rawKey: string, pnKeySet: Set<string>): string {
+  if (!rawKey) return rawKey;
+  // Match `<carrier>|sub:<sid>`; require a non-empty carrier segment.
+  const idx = rawKey.indexOf('|sub:');
+  if (idx <= 0) return rawKey;
+  const cc = rawKey.slice(0, idx);
+  const sid = rawKey.slice(idx + '|sub:'.length);
+  if (!cc || !sid) return rawKey;
+  const pnForm = `${cc}|${sid}`;
+  return pnKeySet.has(pnForm) ? pnForm : rawKey;
+}
+
+/** Pn-form keys (`cc|<pn>`) derived from records whose policy identity used
+ *  `policy_number` or `aliased` lineage. Used by canonicalizePolicyKey. */
+function collectPnFormKeys(recs: Iterable<NormalizedRecord>): Set<string> {
+  const out = new Set<string>();
+  for (const r of recs) {
+    const id = derivePolicyIdentityKey({
+      carrier: r.carrier ?? null,
+      policy_number: r.policy_number ?? null,
+      issuer_subscriber_id: r.issuer_subscriber_id ?? null,
+    });
+    if (id.status !== 'resolved') continue;
+    if (id.lineage.used === 'policy_number' || id.lineage.used === 'aliased') {
+      out.add(id.key);
+    }
+  }
+  return out;
+}
+
 function recordsForPolicyIdentity(recs: NormalizedRecord[], policyIdentityKey: string): NormalizedRecord[] {
   return recs.filter((r) => policyIdentityKeyForRecord(r) === policyIdentityKey);
+}
+
+/** C3-grain-fix R2: record membership honors the CANONICAL key. */
+function recordsForCanonicalPolicyIdentity(
+  recs: NormalizedRecord[],
+  canonicalKey: string,
+  pnKeySet: Set<string>,
+): NormalizedRecord[] {
+  return recs.filter((r) => {
+    const raw = policyIdentityKeyForRecord(r);
+    if (!raw) return false;
+    return canonicalizePolicyKey(raw, pnKeySet) === canonicalKey;
+  });
 }
 
 function buildEstMissingInputEvidence(opts: {
