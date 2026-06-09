@@ -77,21 +77,23 @@ describe('C3b-1 — commission-submission 14-col CSV', () => {
     // Build a row with EXTRA fields beyond SubmissionRow to simulate accidental leakage.
     const dirtyRow: any = {
       ...submissionRow({}, ['2026-01'], 'note'),
-      estimatedMissingCommission: 9999,
-      estMissingStatus: 'OK',
-      previewEstimatedTotal: 12345,
-      previewEstimatedStatus: 'COMPUTED',
-      grainKey: 'gk-1',
-      rowMonthAnchors: ['2026-01'],
-      _sourceType: 'Matched',
-      _clearingStatus: 'CLEAR',
-      _memberKey: 'mk-1',
+      estimatedMissingCommission: 987654321,
+      estMissingStatus: 'LEAK_STATUS_SENTINEL',
+      previewEstimatedTotal: 123456789,
+      previewEstimatedStatus: 'LEAK_PREV_SENTINEL',
+      grainKey: 'LEAK_GRAIN_SENTINEL',
+      rowMonthAnchors: ['LEAK_ANCHOR_SENTINEL'],
+      _sourceType: 'LEAK_SRC_SENTINEL',
+      _clearingStatus: 'LEAK_CLEAR_SENTINEL',
+      _memberKey: 'LEAK_MK_SENTINEL',
     };
     const csv = buildCommissionSubmissionCsv([dirtyRow]);
     const [header, body] = parseRows(csv);
 
     for (const leaked of [
-      '9999', '12345', 'COMPUTED', 'gk-1', 'mk-1',
+      '987654321', '123456789',
+      'LEAK_STATUS_SENTINEL', 'LEAK_PREV_SENTINEL', 'LEAK_GRAIN_SENTINEL',
+      'LEAK_ANCHOR_SENTINEL', 'LEAK_SRC_SENTINEL', 'LEAK_CLEAR_SENTINEL', 'LEAK_MK_SENTINEL',
       'estimatedMissingCommission', 'estMissingStatus',
       'previewEstimatedTotal', 'previewEstimatedStatus',
       'grainKey', 'rowMonthAnchors',
