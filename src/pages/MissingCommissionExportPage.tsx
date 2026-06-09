@@ -25,6 +25,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Download, Info, AlertTriangle, Play, Loader2, RefreshCw, AlertCircle, Inbox } from 'lucide-react';
 import Papa from 'papaparse';
+import { BASE_MESSER_COLUMNS_12 } from '@/lib/mce/messerColumns';
+import { stripExcelTextMarker as stripExcelTextMarkerNeutral } from '@/lib/mce/csvExportSanitizers';
 import {
   getNormalizedRecords,
   getNormalizedRecordsByMemberKeys,
@@ -131,6 +133,13 @@ interface ExportRow {
 // MCE export contract (docs/mce-export-contract.md) — vendor Messer CSV is
 // locked at exactly 12 columns. Do NOT add the estimated-missing-commission
 // dollar or status here; both remain preview/backing fields only.
+//
+// C3b-1: the canonical source of truth is the neutral, headless
+// `BASE_MESSER_COLUMNS_12` (src/lib/mce/messerColumns.ts). This page-local
+// literal is intentionally retained (and exhaustively typed against
+// `keyof ExportRow`) so existing source-introspection tests stay green; a
+// parity assertion in `commission-submission-csv.test.ts` locks the two
+// arrays to identical labels.
 const MESSER_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
   { key: 'carrierName', label: 'Carrier Name' },
   { key: 'npn', label: 'NPN' },
@@ -145,6 +154,9 @@ const MESSER_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
   { key: 'memberId', label: 'Member ID' },
   { key: 'address', label: 'Address (Street, City, State, Zip)' },
 ];
+// Static parity guard — fails the build if the page literal drifts from the
+// neutral source. (Names/order must match; widths are length-equal by construction.)
+void (BASE_MESSER_COLUMNS_12 satisfies ReadonlyArray<{ key: keyof ExportRow; label: string }>);
 
 const INTERNAL_COLUMNS: Array<{ key: keyof ExportRow; label: string }> = [
   { key: '_memberKey', label: 'member_key' },
@@ -209,11 +221,14 @@ export function buildMesserCsvFilename(opts: {
 
 /**
  * #109 finishing touch — strip a single leading apostrophe (Excel text-format
- * marker) from a value at the CSV-render boundary only. Source data, the
- * derived lookup, and the in-memory preview remain untouched.
+ * marker) from a value at the CSV-render boundary only.
+ *
+ * C3b-1: the implementation now lives in the neutral
+ * `src/lib/mce/csvExportSanitizers.ts`; this is a behavior-preserving
+ * re-export so existing imports of `@/pages/MissingCommissionExportPage`
+ * continue to resolve unchanged.
  */
-export const stripExcelTextMarker = (value: unknown): string =>
-  (value == null ? '' : String(value)).replace(/^'/, '');
+export const stripExcelTextMarker = stripExcelTextMarkerNeutral;
 
 /**
  * Serialize an unknown caught value into a human-readable message string so
