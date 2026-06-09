@@ -614,8 +614,11 @@ export async function assembleCommissionSubmission(
     const scopedMemberRecords = trace?.scopedRecordsByMemberKey.get(memberKey) ?? memberRecords;
     const baseEvidenceRecords = scopedMemberRecords.length > 0 ? scopedMemberRecords : memberRecords;
     const isResolvedPolicyGrain = group.grainKey.policy_identity_unresolved_reason == null;
+    // C3-grain-fix R2: membership uses the CANONICAL key so both pn-form and
+    // sub-form records belonging to the same real policy are retained.
+    const groupPnKeySet = getPnSet(group.grainKey.targetScope, group.grainKey.stableMemberKey);
     const seedPaidThroughRecords = isResolvedPolicyGrain
-      ? recordsForPolicyIdentity(baseEvidenceRecords, group.grainKey.policy_identity_key)
+      ? recordsForCanonicalPolicyIdentity(baseEvidenceRecords, group.grainKey.policy_identity_key, groupPnKeySet)
       : baseEvidenceRecords;
 
     // Per-month resolver pass → sum.
@@ -628,7 +631,7 @@ export async function assembleCommissionSubmission(
       const fn = resolverByScopeMonth.get(`${group.grainKey.targetScope}|${sm}`);
       if (!fn) { unresolvedThisRow = true; continue; }
       const evidenceRecords = isResolvedPolicyGrain
-        ? recordsForPolicyIdentity(baseEvidenceRecords, group.grainKey.policy_identity_key)
+        ? recordsForCanonicalPolicyIdentity(baseEvidenceRecords, group.grainKey.policy_identity_key, groupPnKeySet)
         : baseEvidenceRecords;
       const inputEvidence = buildEstMissingInputEvidence({
         memberKey,
