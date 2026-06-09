@@ -473,15 +473,38 @@ export async function assembleCommissionSubmission(
       batch_id: null,
     };
 
+    const trace = traceByScope.get(group.grainKey.targetScope);
+    const scopedMemberRecords = trace?.scopedRecordsByMemberKey.get(memberKey) ?? memberRecords;
+    const baseEvidenceRecords = scopedMemberRecords.length > 0 ? scopedMemberRecords : memberRecords;
+    const isResolvedPolicyGrain = group.grainKey.policy_identity_unresolved_reason == null;
+    const seedPaidThroughRecords = isResolvedPolicyGrain
+      ? recordsForPolicyIdentity(baseEvidenceRecords, group.grainKey.policy_identity_key)
+      : baseEvidenceRecords;
+
     // Per-month resolver pass → sum.
     let runningTotal = 0;
     let anyResolved = false;
     let lastStatus: EstMissingStatus | null = null;
     let unresolvedThisRow = false;
+    const evidenceByMonth = new Map<string, EstMissingInputEvidence>();
     for (const sm of months) {
       const fn = resolverByScopeMonth.get(`${group.grainKey.targetScope}|${sm}`);
       if (!fn) { unresolvedThisRow = true; continue; }
-      const res = fn(memberKey);
+      const evidenceRecords = isResolvedPolicyGrain
+        ? recordsForPolicyIdentity(baseEvidenceRecords, group.grainKey.policy_identity_key)
+        : baseEvidenceRecords;
+      const inputEvidence = buildEstMissingInputEvidence({
+        memberKey,
+        records: evidenceRecords,
+        serviceMonth: sm,
+        scope: group.grainKey.targetScope,
+        batchMonthByBatchId: args.batchMonthByBatchId,
+        policyIdentityKey: group.grainKey.policy_identity_key,
+      });
+      evidenceByMonth.set(sm, inputEvidence);
+      if (isResolvedPolicyGrain) diagnostics.previewDollarPolicyGrainCount += 1;
+      else diagnostics.previewDollarMemberFallbackCount += 1;
+      const res = fn(memberKey, inputEvidence);
       if (!res) { unresolvedThisRow = true; continue; }
       lastStatus = res.status;
       if (typeof res.amount === 'number' && Number.isFinite(res.amount)) {
@@ -498,6 +521,7 @@ export async function assembleCommissionSubmission(
     const earliestFn = earliest
       ? resolverByScopeMonth.get(`${group.grainKey.targetScope}|${earliest}`)
       : null;
+    const earliestEvidence = earliest ? evidenceByMonth.get(earliest) : undefined;
     const fields = enrichVendorFields({
       candidate: candidateLike,
       records: memberRecords,
@@ -505,8 +529,8 @@ export async function assembleCommissionSubmission(
       commissionTripleRecords: [],
       scope: group.grainKey.targetScope,
       writingAgentIdLookup,
-      resolveEstMissing: earliestFn
-        ? (input) => earliestFn(memberKey) ?? ({ amount: null, status: 'UNSUPPORTED', evidence: {} as any } as EstMissingResolution)
+      resolveEstMissing: earliestFn && earliestEvidence
+        ? (input) => earliestFn(memberKey, earliestEvidence) ?? ({ amount: null, status: 'UNSUPPORTED', evidence: {} as any } as EstMissingResolution)
         : undefined,
     });
 
@@ -515,14 +539,13 @@ export async function assembleCommissionSubmission(
     }
 
     // Seeded comment from the classifier reason + shared paid-through.
-    const trace = traceByScope.get(group.grainKey.targetScope);
     const classification = trace?.classificationByMember.get(memberKey);
     const firstMonthCell = classification?.cells[earliest ?? ''];
     const reason = firstMonthCell?.reason ?? '';
     const isZero =
       pickedCandidate?._mtNetBucket === '0Net' ||
       (pickedCandidate?._mtNetBucket == null && /zero[- ]net/i.test(reason));
-    const paidThrough = latestBoPaidThrough(memberRecords);
+    const paidThrough = latestBoPaidThrough(seedPaidThroughRecords);
     const seededComment = buildSeededComment({
       reason,
       paidThrough,
@@ -544,6 +567,7 @@ export async function assembleCommissionSubmission(
 
     if (group.grainKey.policy_identity_unresolved_reason) {
       diagnostics.unresolvedPolicySplits += 1;
+      diagnostics.previewDollarUnresolvedPolicyRows += 1;
     }
   }
 
