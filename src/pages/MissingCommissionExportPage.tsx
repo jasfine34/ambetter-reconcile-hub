@@ -205,11 +205,14 @@ export function buildMesserCsvFilename(opts: {
 
 /**
  * #109 finishing touch — strip a single leading apostrophe (Excel text-format
- * marker) from a value at the CSV-render boundary only. Source data, the
- * derived lookup, and the in-memory preview remain untouched.
+ * marker) from a value at the CSV-render boundary only.
+ *
+ * C3b-1: the implementation now lives in the neutral
+ * `src/lib/mce/csvExportSanitizers.ts`; this is a behavior-preserving
+ * re-export so existing imports of `@/pages/MissingCommissionExportPage`
+ * continue to resolve unchanged.
  */
-export const stripExcelTextMarker = (value: unknown): string =>
-  (value == null ? '' : String(value)).replace(/^'/, '');
+export const stripExcelTextMarker = stripExcelTextMarkerNeutral;
 
 /**
  * Serialize an unknown caught value into a human-readable message string so
