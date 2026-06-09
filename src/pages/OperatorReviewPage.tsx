@@ -212,6 +212,25 @@ const CHIP_DEFS: Array<{ key: FilterKey; label: string; testid: string }> = [
   { key: 'satisfied', label: 'Satisfied / FYI', testid: 'filter-satisfied' },
 ];
 
+const CHIP_TOOLTIPS: Record<FilterKey, string> = {
+  all_actionable:
+    'Every member-month that still needs a decision — all buckets except Satisfied.',
+  chase:
+    "Unpaid commission that's owed and ready to chase — premium is satisfied (or it's a $0 net-premium / fully-subsidized plan) and nothing is blocking it. Zero-net-premium plans appear here as dispute candidates.",
+  premium:
+    "Held because the member owes a positive premium that hasn't been paid yet (net premium > 0 and back-office paid-through is before the service month). Not chaseable until premium is paid. This is NOT zero-net-premium — those are chaseable and appear under Chase.",
+  amount:
+    'A payment exists but the amount is wrong — actual does not equal expected (amount discrepancy).',
+  prior_balance:
+    'Manually held because the member owes a prior balance.',
+  dmi:
+    'An open data-matching / verification issue (DMI) on the enrollment for an unpaid month. Expired DMIs appear here as a sub-state.',
+  manual_review:
+    'Signals are inconclusive and need a human — e.g., expired DMIs or member-count conflicts.',
+  satisfied:
+    'Already resolved — paid correctly or satisfied cross-entity. No action needed; FYI flags are shown for awareness.',
+};
+
 interface OperatorReviewPageProps {
   /** Test seam — defaults to the real explainCell. */
   explainCellFn?: typeof defaultExplainCell;
