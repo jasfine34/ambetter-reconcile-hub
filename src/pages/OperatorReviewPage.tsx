@@ -58,7 +58,11 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Loader2, RefreshCw, AlertCircle, Inbox, Play, FileSearch } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import {
+  Loader2, RefreshCw, AlertCircle, Inbox, Play, FileSearch, Info,
+  ChevronRight, ChevronDown, X,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 const ROUTE_VARIANT: Record<RouteName, 'default' | 'secondary' | 'destructive' | 'outline'> = {
