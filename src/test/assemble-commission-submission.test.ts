@@ -56,6 +56,14 @@ const RATE_AMBETTER_FL: CarrierCompRateRow = {
   unsupported_reason: null,
 };
 
+const RATE_AMBETTER_GA: CarrierCompRateRow = {
+  ...RATE_AMBETTER_FL,
+  id: 'rate-ga-pmpm-2026',
+  rate_key: 'ambetter|GA|standard|2026',
+  state_code: 'GA',
+  rate_value: 10,
+};
+
 function rec(over: Partial<NormalizedRecord> & { raw_json?: Record<string, any> }): NormalizedRecord {
   return {
     source_type: '',
@@ -284,6 +292,8 @@ describe('assembleCommissionSubmission — C3a headless assembler', () => {
     expect(out.rows[0].grainKey.policy_identity_unresolved_reason).not.toBeNull();
     expect(out.rows[0].grainKey.policy_identity_key.startsWith('unresolved:')).toBe(true);
     expect(out.diagnostics.unresolvedPolicySplits).toBe(1);
+    expect(out.diagnostics.previewDollarMemberFallbackCount).toBe(1);
+    expect(out.diagnostics.previewDollarUnresolvedPolicyRows).toBe(1);
   });
 
   it('(4) seed comment templates — premium-satisfied + zero-net; no internal_note; no date-parse', () => {
@@ -443,5 +453,58 @@ describe('assembleCommissionSubmission — C3a headless assembler', () => {
     expect(
       latestBoPaidThrough([rec({ source_type: 'BACK_OFFICE', paid_through_date: null })]),
     ).toBe('');
+  });
+
+  it('fix-2: seeded comment uses scoped policy paid-through, not cross-policy member max', async () => {
+    const recs: NormalizedRecord[] = [
+      bo('MP', {
+        brokerName: 'Jason Fine', npn: JASON_NPN, issuer_subscriber_id: 'ISIDMP', policy_number: 'POL-A',
+        paid_through_date: '2026-02-28', client_state_full: 'FL', raw_json: { 'Number of Members': '1', plan_variant: 'standard' },
+      } as any),
+      ede('MP', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, issuer_subscriber_id: 'ISIDMP', policy_number: 'POL-A' }),
+      bo('MP', {
+        brokerName: 'Jason Fine', npn: JASON_NPN, issuer_subscriber_id: 'ISIDMP', policy_number: 'POL-B',
+        paid_through_date: '2026-04-30', client_state_full: 'FL', raw_json: { 'Number of Members': '1', plan_variant: 'standard' },
+      } as any),
+      ede('MP', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, issuer_subscriber_id: 'ISIDMP', policy_number: 'POL-B' }),
+      ...anchorRipeness(),
+    ];
+    const out = await assembleCommissionSubmission({ ...baseArgs, allBatchRecords: recs });
+    const polA = out.rows.find((r) => r.grainKey.policy_identity_key === 'ambetter|pola');
+    const polB = out.rows.find((r) => r.grainKey.policy_identity_key === 'ambetter|polb');
+    expect(polA).toBeDefined();
+    expect(polB).toBeDefined();
+    expect(polA!.seededComment).toContain('paid-through February 2026');
+    expect(polA!.seededComment).not.toContain('April 2026');
+    expect(polB!.seededComment).toContain('paid-through April 2026');
+  });
+
+  it('fix-3: resolved policy rows use distinct policy-grain preview dollars and diagnostics', async () => {
+    const recs: NormalizedRecord[] = [
+      bo('PG', {
+        brokerName: 'Jason Fine', npn: JASON_NPN, issuer_subscriber_id: 'ISIDPG', policy_number: 'POL-FL',
+        client_state_full: 'FL', raw_json: { 'Number of Members': '1', plan_variant: 'standard' },
+      } as any),
+      ede('PG', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, issuer_subscriber_id: 'ISIDPG', policy_number: 'POL-FL', client_state_full: 'FL' } as any),
+      bo('PG', {
+        brokerName: 'Jason Fine', npn: JASON_NPN, issuer_subscriber_id: 'ISIDPG', policy_number: 'POL-GA',
+        client_state_full: 'GA', raw_json: { 'Number of Members': '3', plan_variant: 'standard' },
+      } as any),
+      ede('PG', { aor: 'Jason Fine (21055210)', npn: JASON_NPN, issuer_subscriber_id: 'ISIDPG', policy_number: 'POL-GA', client_state_full: 'GA' } as any),
+      ...anchorRipeness(),
+    ];
+    const out = await assembleCommissionSubmission({
+      ...baseArgs,
+      allBatchRecords: recs,
+      rateRows: [RATE_AMBETTER_FL, RATE_AMBETTER_GA],
+    });
+    const fl = out.rows.find((r) => r.grainKey.policy_identity_key === 'ambetter|polfl');
+    const ga = out.rows.find((r) => r.grainKey.policy_identity_key === 'ambetter|polga');
+    expect(fl?.previewEstimatedTotal).toBe(25);
+    expect(fl?.previewEstimatedStatus).toBe('RESOLVED');
+    expect(ga?.previewEstimatedTotal).toBe(30);
+    expect(ga?.previewEstimatedStatus).toBe('RESOLVED');
+    expect(out.diagnostics.previewDollarPolicyGrainCount).toBe(2);
+    expect(out.diagnostics.previewDollarMemberFallbackCount).toBe(0);
   });
 });
