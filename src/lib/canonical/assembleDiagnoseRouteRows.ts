@@ -359,13 +359,16 @@ export function assembleDiagnoseRouteRows(
     unsupportedResolverReasons: {},
   };
   const rows: RouteRowInput[] = [];
+  const evidenceBindingsByRowKey = new Map<string, EvidenceBinding>();
+  const pickerMapsByMemberKey = new Map<string, Map<string, NormalizedRecord | null>>();
+  const traceContextByScope = new Map<TargetScope, ScopeTraceContext>();
 
   if (
     args.allBatchRecords.length === 0 ||
     args.serviceMonths.length === 0 ||
     args.targetScopes.length === 0
   ) {
-    return { rows, diagnostics };
+    return { rows, diagnostics, evidenceBindingsByRowKey, pickerMapsByMemberKey, traceContextByScope };
   }
 
   const serviceMonthSet = new Set(args.serviceMonths);
