@@ -46,6 +46,8 @@ export interface EstMissingInputEvidence {
   matched_payee: 'Coverall' | 'Vix' | null;
   policy_identity_key?: string | null;
   target_service_month?: string | null;
+  member_count_status?: 'resolved' | 'manual_review' | 'unresolved' | null;
+  member_count_conflicts?: number[];
 }
 
 export interface ResolveEstMissingInput {
