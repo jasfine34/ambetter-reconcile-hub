@@ -327,6 +327,42 @@ describe('assembleCommissionSubmission — C3a headless assembler', () => {
     expect(same).not.toMatch(/2099/);
   });
 
+  it('(4a) seed comment — blank paidThrough emits exact locked sentence, no "unknown", no "affirmed"', () => {
+    const out = buildSeededComment({
+      reason: 'BO silent',
+      paidThrough: '',
+      missingMonths: ['2026-03'],
+      isZeroNetPremium: false,
+    });
+    expect(out).toBe('Commission not received for March 2026.');
+    expect(out).not.toContain('unknown');
+    expect(out).not.toContain('affirmed');
+  });
+
+  it('(4b) seed comment — populated paid-through remains byte-identical to affirmed template', () => {
+    const out = buildSeededComment({
+      reason: 'BO paid_through covers Jan',
+      paidThrough: '2026-01',
+      missingMonths: ['2026-02'],
+      isZeroNetPremium: false,
+    });
+    expect(out).toBe(
+      'Back office affirmed paid-through January 2026 covering the service month; commission not received for February 2026.',
+    );
+  });
+
+  it('(4c) seed comment — zero-net branch remains byte-identical', () => {
+    const out = buildSeededComment({
+      reason: 'Rule 3',
+      paidThrough: '',
+      missingMonths: ['2026-04'],
+      isZeroNetPremium: true,
+    });
+    expect(out).toBe(
+      'Zero-net-premium / fully-subsidized plan; commission not received for April 2026.',
+    );
+  });
+
   it('(5) enrichment parity: assembler row matches a direct enrichVendorFields call', async () => {
     const recs: NormalizedRecord[] = [
       bo('M5', { brokerName: 'Jason Fine', npn: JASON_NPN }),
