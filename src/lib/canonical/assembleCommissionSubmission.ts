@@ -617,7 +617,7 @@ export async function assembleCommissionSubmission(
   // missing month (deterministic).
   const traceByScope = assembled.traceContextByScope;
 
-  for (const group of groups.values()) {
+  for (const group of emittedGroups.values()) {
     const months = chronoSort(Array.from(group.months));
     // Pick the candidate from the earliest month if present, else any.
     let pickedCandidate: MtApprovedMceCandidate | null = null;
