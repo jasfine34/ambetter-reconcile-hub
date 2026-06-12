@@ -182,6 +182,20 @@ describe('Bundle 13e — each UnsupportedReason value triggered', () => {
     expect(out.status).toBe('UNSUPPORTED');
     expect(out.unsupported_reason).toBe('NO_RATE_ROW');
   });
+
+  it('member_count null + member_count_status=manual_review → MEMBER_COUNT_CONFLICT', () => {
+    const ev = baseEvidence({ member_count: null, member_count_status: 'manual_review', member_count_conflicts: [1, 4] } as any);
+    const out = resolver.resolve({ row: { member_key: 'm' }, inputEvidence: ev });
+    expect(out.status).toBe('UNSUPPORTED');
+    expect(out.unsupported_reason).toBe('MEMBER_COUNT_CONFLICT');
+  });
+
+  it('member_count null + member_count_status=unresolved → MISSING_MEMBER_COUNT (byte-identical)', () => {
+    const ev = baseEvidence({ member_count: null, member_count_status: 'unresolved' } as any);
+    const out = resolver.resolve({ row: { member_key: 'm' }, inputEvidence: ev });
+    expect(out.status).toBe('UNSUPPORTED');
+    expect(out.unsupported_reason).toBe('MISSING_MEMBER_COUNT');
+  });
 });
 
 // ---------- Category 4: plan_variant null happy path ----------
