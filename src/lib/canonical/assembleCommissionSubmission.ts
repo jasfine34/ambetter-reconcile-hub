@@ -553,6 +553,40 @@ export async function assembleCommissionSubmission(
     }
   }
 
+  // C3 Vix statement-leg guard: a member may appear in the Vix section ONLY
+  // if they have ≥1 record with source_type === 'COMMISSION' && pay_entity
+  // === 'Vix' anywhere in args.allBatchRecords. NO AOR logic here.
+  const vixStatementMembers = new Set<string>();
+  for (const r of args.allBatchRecords) {
+    if (r.source_type !== 'COMMISSION') continue;
+    if (((r as any).pay_entity ?? '') !== 'Vix') continue;
+    const identity: DecisionIdentityInput = {
+      carrier: r.carrier ?? null,
+      issuer_subscriber_id: r.issuer_subscriber_id ?? null,
+      exchange_subscriber_id: r.exchange_subscriber_id ?? null,
+      policy_number: r.policy_number ?? null,
+    };
+    const stable = deriveStableMemberKey(identity);
+    if (stable) vixStatementMembers.add(stable);
+  }
+
+  // Filter Vix-scoped groups for members lacking Vix statement history BEFORE
+  // diagnostics aggregation. Coverall/non-Vix groups untouched.
+  const emittedGroups = new Map<string, Group>();
+  const vixExcludedMembers = new Set<string>();
+  let vixExcludedRowsCount = 0;
+  for (const [k, g] of groups) {
+    if (
+      g.grainKey.targetScope === 'Vix' &&
+      !vixStatementMembers.has(g.grainKey.stableMemberKey)
+    ) {
+      vixExcludedRowsCount += 1;
+      vixExcludedMembers.add(g.grainKey.stableMemberKey);
+      continue;
+    }
+    emittedGroups.set(k, g);
+  }
+
   // 8. Build submission rows.
   const submissionRows: SubmissionRow[] = [];
   const diagnostics: CommissionSubmissionDiagnostics = {
@@ -566,10 +600,13 @@ export async function assembleCommissionSubmission(
     previewDollarMemberFallbackCount: 0,
     previewDollarUnresolvedPolicyRows: 0,
     setRelationship,
+    vixScopeExcludedRows: vixExcludedRowsCount,
+    vixScopeExcludedMembers: vixExcludedMembers.size,
+    vixScopeExcludedMemberList: Array.from(vixExcludedMembers).sort(),
   };
 
   const groupsByStableMember = new Map<string, number>();
-  for (const g of groups.values()) {
+  for (const g of emittedGroups.values()) {
     groupsByStableMember.set(
       g.grainKey.stableMemberKey,
       (groupsByStableMember.get(g.grainKey.stableMemberKey) ?? 0) + 1,
