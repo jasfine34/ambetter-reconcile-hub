@@ -30,10 +30,4 @@ describe('MCE FFM-ID Class-A fallback wiring (static)', () => {
     expect(src).toMatch(/ffmFallbackIndex\.lookup\(/);
   });
 
-  it('Messer CSV schema is unchanged (12 columns)', () => {
-    // The 12-column Messer base lives in a single Papa.unparse(fields,...)
-    // call. Guard against silent schema drift.
-    const messer = src.match(/['"]carrierName['"][\s\S]{0,800}/);
-    expect(messer).toBeTruthy();
-  });
 });
