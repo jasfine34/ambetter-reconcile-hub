@@ -672,6 +672,17 @@ function vixCommission(member: string, opts: Partial<NormalizedRecord> = {}): No
   } as any);
 }
 
+/** A different member already paid Vix in STMT_MONTH — anchors the Vix
+ *  scope so the assembler's Vix routing actually generates rows for the
+ *  leak/keep members under test. NOT under test itself. */
+function vixAnchor(): NormalizedRecord[] {
+  return [
+    bo('VANCH', { brokerName: 'Erica Fine', npn: ERICA_NPN }),
+    ede('VANCH', { aor: ERICA_AOR, npn: ERICA_NPN }),
+    vixCommission('VANCH'),
+  ];
+}
+
 const vixArgs = {
   ...baseArgs,
   targetScopes: ['Coverall', 'Vix'] as Array<'Coverall' | 'Vix'>,
