@@ -769,27 +769,29 @@ describe('assembleCommissionSubmission — C3 Vix statement-leg guard', () => {
     }
   });
 
-  it('(V5) Coverall unaffected: Coverall rows are byte-equal with/without the Vix guard fixture', async () => {
-    const coverallRecs: NormalizedRecord[] = [
+  it('(V5) Coverall unaffected: Coverall rows byte-equal across (Vix-anchor-only) vs (Vix-anchor + Vix-leak member)', async () => {
+    const baseRecs: NormalizedRecord[] = [
       bo('C1', { brokerName: 'Jason Fine', npn: JASON_NPN }),
       ede('C1', { aor: 'Jason Fine (21055210)', npn: JASON_NPN }),
       ...anchorRipeness(),
+      ...vixAnchor(),
     ];
     const withLeak: NormalizedRecord[] = [
-      ...coverallRecs,
-      bo('VLEAK', { brokerName: 'Erica Fine', npn: ERICA_NPN }),
-      ede('VLEAK', { aor: ERICA_AOR, npn: ERICA_NPN }),
+      ...baseRecs,
+      // A Vix-leak member — Erica AOR only, no Vix commission. This must
+      // affect the Vix scope ONLY. Coverall scope rows must be byte-equal.
+      bo('VLEAK2', { brokerName: 'Erica Fine', npn: ERICA_NPN, issuer_subscriber_id: 'ISIDVLEAK2', policy_number: 'POLVLEAK2' } as any),
+      ede('VLEAK2', { aor: ERICA_AOR, npn: ERICA_NPN, issuer_subscriber_id: 'ISIDVLEAK2', policy_number: 'POLVLEAK2' } as any),
     ];
-    const a = await assembleCommissionSubmission({ ...vixArgs, allBatchRecords: coverallRecs });
+    const a = await assembleCommissionSubmission({ ...vixArgs, allBatchRecords: baseRecs });
     const b = await assembleCommissionSubmission({ ...vixArgs, allBatchRecords: withLeak });
 
-    const coverallA = a.rows
-      .filter((r) => r.grainKey.targetScope === 'Coverall')
-      .map((r) => ({ k: r.grainKey, mm: r.missingMonths, npn: r.npn, pn: r.policyNumber, wac: r.writingAgentCarrierId }));
-    const coverallB = b.rows
-      .filter((r) => r.grainKey.targetScope === 'Coverall')
-      .map((r) => ({ k: r.grainKey, mm: r.missingMonths, npn: r.npn, pn: r.policyNumber, wac: r.writingAgentCarrierId }));
-    expect(coverallB).toEqual(coverallA);
+    const project = (rows: typeof a.rows) =>
+      rows
+        .filter((r) => r.grainKey.targetScope === 'Coverall')
+        .map((r) => ({ k: r.grainKey, mm: r.missingMonths, npn: r.npn, pn: r.policyNumber, wac: r.writingAgentCarrierId }))
+        .sort((x, y) => (x.k.stableMemberKey < y.k.stableMemberKey ? -1 : 1));
+    expect(project(b.rows)).toEqual(project(a.rows));
   });
 
   it('(V6) diagnostics discipline: memberCount / multiPolicySplits count only POST-exclusion emitted rows', async () => {
