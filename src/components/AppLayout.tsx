@@ -22,8 +22,11 @@ const links = [
 ];
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
+  const { pathname } = useLocation();
+  const isFullWidth = FULL_WIDTH_ROUTES.has(pathname);
   return (
     <div className="min-h-screen bg-background flex">
+
       <aside className="w-60 border-r border-border bg-card flex flex-col shrink-0">
         <div className="p-5 border-b border-border">
           <h1 className="text-base font-bold text-foreground tracking-tight">Coverall</h1>
