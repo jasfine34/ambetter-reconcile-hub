@@ -769,23 +769,18 @@ describe('assembleCommissionSubmission — C3 Vix statement-leg guard', () => {
     }
   });
 
-  it('(V5) Coverall unaffected: Coverall rows byte-equal across (Vix-anchor-only) vs (Vix-anchor + Vix-leak member)', async () => {
-    const baseRecs: NormalizedRecord[] = [
+  it('(V5) Coverall unaffected: Coverall rows byte-equal with vs. without the Vix-anchor that activates Vix routing', async () => {
+    const coverallOnly: NormalizedRecord[] = [
       bo('C1', { brokerName: 'Jason Fine', npn: JASON_NPN }),
       ede('C1', { aor: 'Jason Fine (21055210)', npn: JASON_NPN }),
       ...anchorRipeness(),
+    ];
+    const plusVixAnchor: NormalizedRecord[] = [
+      ...coverallOnly,
       ...vixAnchor(),
     ];
-    const withLeak: NormalizedRecord[] = [
-      ...baseRecs,
-      // A Vix-leak member — Erica AOR only, no Vix commission. This must
-      // affect the Vix scope ONLY. Coverall scope rows must be byte-equal.
-      bo('VLEAK2', { brokerName: 'Erica Fine', npn: ERICA_NPN, issuer_subscriber_id: 'ISIDVLEAK2', policy_number: 'POLVLEAK2' } as any),
-      ede('VLEAK2', { aor: ERICA_AOR, npn: ERICA_NPN, issuer_subscriber_id: 'ISIDVLEAK2', policy_number: 'POLVLEAK2' } as any),
-    ];
-    const a = await assembleCommissionSubmission({ ...vixArgs, allBatchRecords: baseRecs });
-    const b = await assembleCommissionSubmission({ ...vixArgs, allBatchRecords: withLeak });
-
+    const a = await assembleCommissionSubmission({ ...vixArgs, allBatchRecords: coverallOnly });
+    const b = await assembleCommissionSubmission({ ...vixArgs, allBatchRecords: plusVixAnchor });
     const project = (rows: typeof a.rows) =>
       rows
         .filter((r) => r.grainKey.targetScope === 'Coverall')
