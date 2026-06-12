@@ -73,6 +73,7 @@ export type UnsupportedReason =
   | 'MISSING_CARRIER'
   | 'MISSING_STATE'
   | 'MISSING_MEMBER_COUNT'
+  | 'MEMBER_COUNT_CONFLICT'
   | 'MISSING_MONTHS'
   | 'MISSING_POLICY_YEAR';
 
