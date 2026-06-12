@@ -144,6 +144,12 @@ export interface CommissionSubmissionDiagnostics {
     chaseWithMceCandidate: number;
     chaseWithoutMceCandidate: number;
   };
+  /** C3 Vix statement-leg guard: groups dropped because the member has no
+   *  Vix commission statement appearance in args.allBatchRecords. */
+  vixScopeExcludedRows: number;
+  vixScopeExcludedMembers: number;
+  /** Sorted list of stable member keys excluded by the Vix statement-leg guard. */
+  vixScopeExcludedMemberList: string[];
 }
 
 export interface CommissionSubmissionPreview {
