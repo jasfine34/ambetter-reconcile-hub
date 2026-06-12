@@ -132,7 +132,11 @@ function buildBaseEvidence(ev: EstMissingInputEvidence | undefined): EstMissingE
 function checkRequiredInputs(ev: EstMissingInputEvidence): UnsupportedReason | null {
   if (ev.carrier == null) return 'MISSING_CARRIER';
   if (ev.state == null) return 'MISSING_STATE';
-  if (ev.member_count == null) return 'MISSING_MEMBER_COUNT';
+  if (ev.member_count == null) {
+    return ev.member_count_status === 'manual_review'
+      ? 'MEMBER_COUNT_CONFLICT'
+      : 'MISSING_MEMBER_COUNT';
+  }
   if (ev.months == null) return 'MISSING_MONTHS';
   if (ev.policy_year == null) return 'MISSING_POLICY_YEAR';
   return null;
