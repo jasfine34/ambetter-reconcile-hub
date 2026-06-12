@@ -203,8 +203,8 @@ describe('Bundle 13c — MESSER_COLUMNS stability + CSV-only export', () => {
     ]);
   });
 
-  it('source: MESSER_COLUMNS array is unchanged + lacks _clearingStatus', () => {
-    expect(page).toMatch(/const MESSER_COLUMNS[\s\S]*?'Address[\s\S]*?\];/);
+  it('source: MESSER_COLUMNS derived from BASE_MESSER_COLUMNS_12 + lacks _clearingStatus', () => {
+    expect(page).toMatch(/const MESSER_COLUMNS[\s\S]*?BASE_MESSER_COLUMNS_12\.map/);
     const messerBlock = page.match(/const MESSER_COLUMNS[\s\S]*?\];/)?.[0] ?? '';
     expect(messerBlock).not.toMatch(/_clearingStatus/);
   });
