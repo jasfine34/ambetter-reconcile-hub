@@ -143,22 +143,33 @@ export async function runCrossBatchClearingSweep(opts: SweepOptions): Promise<Sw
   }
 
   // A3 — load unpaid reconciled members across all uploaded batches.
-  // Rows whose batch statement_month failed normalization are kept long enough
-  // to become batch_statement_month_unresolved inputErrors in A6.
+  // docs/timeout-risk-register.md "fix on next sweep touch": keyset
+  // pagination by id (no offset .range), server-side unpaid filter where
+  // null-safe, and explicit column projection — only fields consumed
+  // downstream to build Surfacing.
+  const RECONCILED_COLS = [
+    'id', 'batch_id', 'in_commission', 'expected_ede_effective_month',
+    'carrier', 'policy_number', 'issuer_subscriber_id',
+    'expected_pay_entity', 'actual_pay_entity', 'agent_npn',
+    'current_policy_aor',
+  ].join(', ');
   const unpaidRows: any[] = [];
   for (const batchId of batchData.map((b: any) => b.id).filter(Boolean)) {
-    let from = 0;
+    let lastId: string | null = null;
     while (true) {
-      const { data, error } = await (supabase as any)
+      let q: any = (supabase as any)
         .from('reconciled_members')
-        .select('*')
+        .select(RECONCILED_COLS)
         .eq('batch_id', batchId)
-        .range(from, from + 999);
+        .order('id', { ascending: true })
+        .limit(PAGE_SIZE);
+      if (lastId) q = q.gt('id', lastId);
+      const { data, error } = await q;
       if (error) throw error;
       if (!data || data.length === 0) break;
       for (const r of data) if (!r.in_commission) unpaidRows.push(r);
-      if (data.length < 1000) break;
-      from += 1000;
+      if (data.length < PAGE_SIZE) break;
+      lastId = data[data.length - 1].id;
     }
   }
 
@@ -229,6 +240,28 @@ export async function runCrossBatchClearingSweep(opts: SweepOptions): Promise<Sw
       actual_pay_entity: r.actual_pay_entity ?? null,
       raw: r,
     });
+  }
+
+  // A6.5 — write-time canonicalization of policy-identity keys.
+  // A real policy can surface as both <cc>|X (pn-form) and <cc>|sub:X
+  // (sub-form) on different members. Without this merge the sweep emits
+  // two clearing grains per real policy+month. Carrier + same-value
+  // collapse only — sub-only policies (no pn-form sibling anywhere)
+  // legitimately keep their `sub:` grain. This is the FIX, not ambiguity,
+  // so it runs BEFORE the A8 ambiguity check; payment evidence then
+  // computes over the full merged set (no first-wins).
+  const pnFormKeys = new Set<string>();
+  for (const s of surfacing) {
+    if (!/^[^|]+\|sub:/.test(s.policy_identity_key)) pnFormKeys.add(s.policy_identity_key);
+  }
+  for (const s of surfacing) {
+    const m = /^([^|]+)\|sub:(.+)$/.exec(s.policy_identity_key);
+    if (!m) continue;
+    const canonical = `${m[1]}|${m[2]}`;
+    if (pnFormKeys.has(canonical)) {
+      s.policy_identity_key = canonical;
+      if (!s.policy_number_clean) s.policy_number_clean = m[2];
+    }
   }
 
   // A7 group

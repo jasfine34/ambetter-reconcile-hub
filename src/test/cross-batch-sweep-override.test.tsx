@@ -70,12 +70,15 @@ function setup(fx: Fix) {
     if (table === 'upload_batches') return { select: () => Promise.resolve({ data: fx.batches, error: null }) };
     if (table === 'reconciled_members') {
       const chain: any = {
-        _b: null,
+        _b: null, _gt: false,
         select() { return chain; },
         eq(_c: string, v: string) { chain._b = v; return chain; },
-        range(from: number) {
-          if (from > 0) return Promise.resolve({ data: [], error: null });
-          return Promise.resolve({ data: (fx.reconciled ?? []).filter(r => r.batch_id === chain._b), error: null });
+        order() { return chain; },
+        limit() { return chain; },
+        gt() { chain._gt = true; return chain; },
+        then(resolve: any) {
+          if (chain._gt) return resolve({ data: [], error: null });
+          resolve({ data: (fx.reconciled ?? []).filter(r => r.batch_id === chain._b), error: null });
         },
       };
       return chain;

@@ -38,10 +38,16 @@ export interface ClearingOverlay {
   manual_review_reason: string | null;
 }
 
+export interface ClearingOverlayMapDiagnostics {
+  aliasSiblingProbeHitCount: number;
+  aliasSiblingDualHitCount: number;
+}
+
 export interface ClearingOverlayMap {
   byGrain: Map<string, ClearingOverlay>;
   lastEvaluatedAt: string | null;
   totalActiveCount: number;
+  diagnostics: ClearingOverlayMapDiagnostics;
 }
 
 export function coerceStringArray(value: unknown): string[] {
@@ -104,13 +110,19 @@ export function buildClearingOverlayMap(rows: any[]): ClearingOverlayMap {
       lastEvaluatedAt = r.evaluated_at;
     }
   }
-  return { byGrain, lastEvaluatedAt, totalActiveCount: byGrain.size };
+  return {
+    byGrain,
+    lastEvaluatedAt,
+    totalActiveCount: byGrain.size,
+    diagnostics: { aliasSiblingProbeHitCount: 0, aliasSiblingDualHitCount: 0 },
+  };
 }
 
 export const EMPTY_CLEARING_OVERLAY_MAP: ClearingOverlayMap = {
   byGrain: new Map(),
   lastEvaluatedAt: null,
   totalActiveCount: 0,
+  diagnostics: { aliasSiblingProbeHitCount: 0, aliasSiblingDualHitCount: 0 },
 };
 
 export function deriveGrainKeyForReconciledRow(row: {
@@ -128,6 +140,20 @@ export function deriveGrainKeyForReconciledRow(row: {
   const targetServiceMonth = row.expected_ede_effective_month ?? null;
   if (!targetServiceMonth || !isValidMonthKey(targetServiceMonth)) return null;
   return `${identity.key}|${targetServiceMonth}`;
+}
+
+/**
+ * Transform ONLY the policy segment of a grain key between pn-form and
+ * sub-form: `<carrier>|X|<month>` ↔ `<carrier>|sub:X|<month>`. The month
+ * segment is NEVER altered. Returns null for keys that don't match the
+ * policy-grain shape.
+ */
+export function siblingPolicyGrainKey(grainKey: string): string | null {
+  const subForm = /^([^|]+)\|sub:([^|]+)\|([0-9]{4}-[0-9]{2})$/.exec(grainKey);
+  if (subForm) return `${subForm[1]}|${subForm[2]}|${subForm[3]}`;
+  const pnForm = /^([^|]+)\|([^|][^|]*?)\|([0-9]{4}-[0-9]{2})$/.exec(grainKey);
+  if (pnForm && !pnForm[2].startsWith('sub:')) return `${pnForm[1]}|sub:${pnForm[2]}|${pnForm[3]}`;
+  return null;
 }
 
 export type RowAdjustment =
@@ -164,6 +190,11 @@ export function classifyOverlay(overlay: ClearingOverlay | undefined): RowAdjust
 
 /**
  * Convenience: derive a row's grain key + adjustment in one call.
+ *
+ * Alias-safe lookup (defense-in-depth, NOT the semantic fix — the persisted
+ * sidecar rebuild is). Exact key wins; on miss only, probe the sibling
+ * policy-form key. Sidecar diagnostics track probe hits and dual-hits
+ * (both exact and sibling resolve — must be 0 after a fresh rebuild).
  */
 export function adjustmentForReconciledRow(
   row: any,
@@ -171,7 +202,23 @@ export function adjustmentForReconciledRow(
 ): { grainKey: string | null; adjustment: RowAdjustment } {
   const grainKey = deriveGrainKeyForReconciledRow(row);
   if (!grainKey) return { grainKey: null, adjustment: { kind: 'no_overlay' } };
-  return { grainKey, adjustment: classifyOverlay(overlayMap.byGrain.get(grainKey)) };
+  const exact = overlayMap.byGrain.get(grainKey);
+  if (exact) {
+    const sibling = siblingPolicyGrainKey(grainKey);
+    if (sibling && overlayMap.byGrain.has(sibling)) {
+      overlayMap.diagnostics.aliasSiblingDualHitCount += 1;
+    }
+    return { grainKey, adjustment: classifyOverlay(exact) };
+  }
+  const sibling = siblingPolicyGrainKey(grainKey);
+  if (sibling) {
+    const sib = overlayMap.byGrain.get(sibling);
+    if (sib) {
+      overlayMap.diagnostics.aliasSiblingProbeHitCount += 1;
+      return { grainKey, adjustment: classifyOverlay(sib) };
+    }
+  }
+  return { grainKey, adjustment: { kind: 'no_overlay' } };
 }
 
 // ---------------------------------------------------------------------------
