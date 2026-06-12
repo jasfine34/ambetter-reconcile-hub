@@ -586,6 +586,14 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
         expect(r!.facts.memberCount!.reason).toBe('member_count_manual_review');
         expect(r!.facts.memberCount!.conflicts?.sort()).toEqual([1, 3]);
       }
+      // Member-count-conflict reason plumbing: amount/cross-entity reason
+      // must surface MEMBER_COUNT_CONFLICT (contested, not missing).
+      if (r!.facts.amount.kind === 'indeterminate') {
+        expect(r!.facts.amount.reason).toBe('MEMBER_COUNT_CONFLICT');
+      }
+      if (r!.facts.crossEntitySatisfied.amountStatus.kind === 'indeterminate') {
+        expect(r!.facts.crossEntitySatisfied.amountStatus.reason).toBe('MEMBER_COUNT_CONFLICT');
+      }
   });
 
   // ── C2b-1 NO_RATE_ROW corrective (canonical state resolver wiring) ──
