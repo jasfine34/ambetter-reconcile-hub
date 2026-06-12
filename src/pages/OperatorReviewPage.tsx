@@ -73,6 +73,7 @@ import {
 } from '@/lib/canonical/commissionSubmissionCsv';
 import type { NormalizedRecord } from '@/lib/normalize';
 import type { CarrierCompRateRow } from '@/lib/canonical/compGrid';
+import { WideDataTable } from '@/components/WideDataTable';
 
 const ROUTE_VARIANT: Record<RouteName, 'default' | 'secondary' | 'destructive' | 'outline'> = {
   satisfied: 'outline',
