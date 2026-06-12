@@ -88,6 +88,15 @@ export function buildSourceEvidenceMap(
       target_service_month:
         nonBlankString(r.target_service_month) ??
         nonBlankString(r.expected_ede_effective_month),
+      member_count_status:
+        r.member_count_status === 'resolved' ||
+        r.member_count_status === 'manual_review' ||
+        r.member_count_status === 'unresolved'
+          ? r.member_count_status
+          : null,
+      member_count_conflicts: Array.isArray(r.member_count_conflicts)
+        ? (r.member_count_conflicts as number[])
+        : undefined,
     };
     out.set(r.member_key, ev);
   }
