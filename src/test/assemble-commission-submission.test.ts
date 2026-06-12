@@ -833,6 +833,7 @@ describe('assembleCommissionSubmission — C3 Vix statement-leg guard', () => {
         ...({ batch_id: BATCH, manual_review_required: true } as any),
       } as any),
       ...anchorRipeness(),
+      ...vixAnchor(),
     ];
     const out = await assembleCommissionSubmission({ ...vixArgs, allBatchRecords: recs });
     const revVix = out.rows.filter((r) => r.grainKey.targetScope === 'Vix' && r.grainKey.stableMemberKey === 'isid:isidrev');
