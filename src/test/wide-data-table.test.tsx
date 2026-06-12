@@ -62,11 +62,17 @@ describe('WideDataTable', () => {
     // top → bottom
     top.scrollLeft = 75;
     fireEvent.scroll(top);
+    // In a real browser, the programmatic scrollLeft assignment on bottom
+    // fires a scroll event that the handler swallows via the guard. jsdom
+    // doesn't auto-fire that scroll, so we fire it manually to exercise
+    // both directions of the sync.
+    fireEvent.scroll(bottom);
     expect(bottom.scrollLeft).toBe(75);
 
     // bottom → top
     bottom.scrollLeft = 130;
     fireEvent.scroll(bottom);
+    fireEvent.scroll(top);
     expect(top.scrollLeft).toBe(130);
   });
 
