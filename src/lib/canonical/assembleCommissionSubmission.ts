@@ -264,7 +264,7 @@ function recordsForCanonicalPolicyIdentity(
   });
 }
 
-function buildEstMissingInputEvidence(opts: {
+export function buildEstMissingInputEvidence(opts: {
   memberKey: string;
   records: NormalizedRecord[];
   serviceMonth: string;
