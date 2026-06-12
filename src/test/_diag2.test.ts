@@ -9,12 +9,16 @@ function r(o:any){return {source_type:'',source_file_label:'',carrier:'Ambetter'
 
 describe('diag2', () => { it('inspect',async()=>{
   const recs=[
+    // Vix anchor: a DIFFERENT member with Vix commission to enable Vix scope.
+    r({source_type:'BACK_OFFICE',member_key:'VANCH',issuer_subscriber_id:'ISIDVANCH',policy_number:'POLVANCH',agent_npn:ERICA,agent_name:'Erica Fine',net_premium:100,paid_through_date:'2026-04-30',raw_json:{'Broker Name':'Erica Fine',issuer:'Ambetter','Number of Members':'1',plan_variant:'standard'},batch_id:BATCH}),
+    r({source_type:'EDE',member_key:'VANCH',issuer_subscriber_id:'ISIDVANCH',policy_number:'POLVANCH',agent_npn:ERICA,net_premium:100,status:'effectuated',raw_json:{currentPolicyAOR:`Erica Fine (${ERICA})`,policyStatus:'effectuated',issuer:'Ambetter',plan_variant:'standard'},batch_id:BATCH}),
+    r({source_type:'COMMISSION',member_key:'VANCH',issuer_subscriber_id:'ISIDVANCH',policy_number:'POLVANCH',pay_entity:'Vix',commission_amount:5,paid_to_date:'2026-03-31',months_paid:1,agent_npn:ERICA,batch_id:BATCH}),
+    // Leak: Erica AOR, no Vix commission ever
     r({source_type:'BACK_OFFICE',member_key:'LEAK',issuer_subscriber_id:'ISIDLEAK',policy_number:'POLLEAK',agent_npn:ERICA,agent_name:'Erica Fine',net_premium:100,paid_through_date:'2026-04-30',raw_json:{'Broker Name':'Erica Fine',issuer:'Ambetter','Number of Members':'1',plan_variant:'standard'},batch_id:BATCH}),
     r({source_type:'EDE',member_key:'LEAK',issuer_subscriber_id:'ISIDLEAK',policy_number:'POLLEAK',agent_npn:ERICA,net_premium:100,status:'effectuated',raw_json:{currentPolicyAOR:`Erica Fine (${ERICA})`,policyStatus:'effectuated',issuer:'Ambetter',plan_variant:'standard'},batch_id:BATCH}),
   ];
   const out = assembleDiagnoseRouteRows({allBatchRecords:recs as any,monthList:ML,serviceMonths:[STMT],targetScopes:['Coverall','Vix'],batchMonthByBatchId:{[BATCH]:STMT},today:T,rateRows:[] as any});
-  console.log('ASSEMBLED ROWS:',JSON.stringify(out.rows.map(r=>({scope:r.targetScope,month:r.serviceMonth,mk:r.stableMemberKey})),null,2));
+  console.log('ROWS:',JSON.stringify(out.rows.map(r=>({scope:r.targetScope,month:r.serviceMonth,mk:r.stableMemberKey,key:r.rowKey})),null,2));
   const proj = await projectDiagnoseRoutes({rows: out.rows, loadDecisionIndex: async()=>({all:[],byMemberMonth:new Map(),byCarrierMember:new Map(),byPolicyMonth:new Map(),loadedAt:0} as any), forceDecisionIndex:true});
   console.log('CHASE:',JSON.stringify(proj.chaseEligible));
-  console.log('ROUTES:', JSON.stringify(proj.routesByRowKey ? Array.from((proj.routesByRowKey as any).entries()) : 'n/a'));
 });});
