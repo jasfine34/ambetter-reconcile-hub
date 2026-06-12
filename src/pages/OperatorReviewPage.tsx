@@ -1114,7 +1114,7 @@ export default function OperatorReviewPage(props: OperatorReviewPageProps = {}) 
                 })}
               </TableBody>
             </Table>
-          </MirroredScrollTable>
+          </WideDataTable>
         )}
 
 
