@@ -188,7 +188,10 @@ export function buildSeededComment(opts: {
   if (opts.isZeroNetPremium) {
     return `Zero-net-premium / fully-subsidized plan; commission not received for ${monthsLabel}.`;
   }
-  const ptLabel = opts.paidThrough ? MONTH_LABEL(opts.paidThrough) : 'unknown';
+  if (!opts.paidThrough) {
+    return `Commission not received for ${monthsLabel}.`;
+  }
+  const ptLabel = MONTH_LABEL(opts.paidThrough);
   return `Back office affirmed paid-through ${ptLabel} covering the service month; commission not received for ${monthsLabel}.`;
 }
 
