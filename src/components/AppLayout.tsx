@@ -1,5 +1,11 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Upload, AlertTriangle, Users, Building2, Link2, FileText, CalendarRange, FileDown, Inbox, ClipboardCheck } from 'lucide-react';
+
+/**
+ * Routes that opt into a full-width main wrapper (no centered 1280px cap).
+ * Every other route keeps the byte-identical default `max-w-7xl mx-auto p-6`.
+ */
+const FULL_WIDTH_ROUTES = new Set<string>(['/operator-review']);
 
 const links = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
