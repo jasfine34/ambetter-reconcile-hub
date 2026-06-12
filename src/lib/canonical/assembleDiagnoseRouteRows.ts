@@ -256,6 +256,8 @@ function synthesizeEvidenceRow(
       policy_identity_key: null,
       plan_variant:
         ((sample as any)?.raw_json?.['plan_variant'] as string | undefined) ?? null,
+      member_count_status: memberCountRes.status,
+      member_count_conflicts: memberCountRes.conflicts,
     },
     memberCountResolution: {
       status: memberCountRes.status,
