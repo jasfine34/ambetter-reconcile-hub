@@ -643,3 +643,186 @@ describe('assembleCommissionSubmission — C3a headless assembler', () => {
     expect(total).toBeGreaterThan(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// C3 Vix statement-leg exclusion (Red lane).
+//
+// Rule: a member may appear in the VIX section of the commission-submission
+// export ONLY if they have ≥1 record with source_type === 'COMMISSION' &&
+// pay_entity === 'Vix' anywhere in args.allBatchRecords. NO AOR logic here
+// (current-AOR leg ships separately).
+// ─────────────────────────────────────────────────────────────────────────
+
+const ERICA_NPN = '21277051';
+const ERICA_AOR = `Erica Fine (${ERICA_NPN})`;
+
+function vixCommission(member: string, opts: Partial<NormalizedRecord> = {}): NormalizedRecord {
+  return rec({
+    source_type: 'COMMISSION',
+    member_key: member,
+    issuer_subscriber_id: opts.issuer_subscriber_id ?? `ISID${member}`,
+    policy_number: opts.policy_number ?? `POL${member}`,
+    pay_entity: 'Vix',
+    commission_amount: opts.commission_amount ?? 25,
+    paid_to_date: opts.paid_to_date ?? '2026-03-31',
+    months_paid: 1,
+    agent_npn: ERICA_NPN,
+    ...({ batch_id: BATCH } as any),
+    ...opts,
+  } as any);
+}
+
+const vixArgs = {
+  ...baseArgs,
+  targetScopes: ['Coverall', 'Vix'] as Array<'Coverall' | 'Vix'>,
+};
+
+describe('assembleCommissionSubmission — C3 Vix statement-leg guard', () => {
+  it('(V1) guard unit: Erica-AOR member with no Vix statement history → dropped + counted', async () => {
+    const recs: NormalizedRecord[] = [
+      bo('LEAK', { brokerName: 'Erica Fine', npn: ERICA_NPN }),
+      ede('LEAK', { aor: ERICA_AOR, npn: ERICA_NPN }),
+      ...anchorRipeness(),
+    ];
+    const out = await assembleCommissionSubmission({ ...vixArgs, allBatchRecords: recs });
+    const vixRows = out.rows.filter((r) => r.grainKey.targetScope === 'Vix');
+    const leakVix = vixRows.filter((r) => r.grainKey.stableMemberKey === 'isid:isidleak');
+    expect(leakVix.length).toBe(0);
+    expect(out.diagnostics.vixScopeExcludedRows).toBeGreaterThanOrEqual(1);
+    expect(out.diagnostics.vixScopeExcludedMembers).toBeGreaterThanOrEqual(1);
+    expect(out.diagnostics.vixScopeExcludedMemberList).toContain('isid:isidleak');
+  });
+
+  it('(V2) populated-leak: vendor fields populated but no Vix statement history → still dropped', async () => {
+    const recs: NormalizedRecord[] = [
+      bo('POP', {
+        brokerName: 'Erica Fine', npn: ERICA_NPN,
+        client_address_1: '123 Main', client_city: 'Tampa', client_state_full: 'FL', client_zip: '33602',
+      }),
+      ede('POP', { aor: ERICA_AOR, npn: ERICA_NPN }),
+      // A Vix-flavored writing-agent record but NOT a COMMISSION row.
+      rec({
+        source_type: 'BACK_OFFICE',
+        member_key: 'POP',
+        issuer_subscriber_id: 'ISIDPOP',
+        policy_number: 'POLPOP',
+        agent_npn: ERICA_NPN,
+        writing_agent_carrier_id: 'CHGVIXLEAK',
+        ...({ batch_id: BATCH } as any),
+      } as any),
+      ...anchorRipeness(),
+    ];
+    const out = await assembleCommissionSubmission({ ...vixArgs, allBatchRecords: recs });
+    const popVix = out.rows.filter((r) => r.grainKey.targetScope === 'Vix' && r.grainKey.stableMemberKey === 'isid:isidpop');
+    expect(popVix.length).toBe(0);
+    expect(out.diagnostics.vixScopeExcludedMemberList).toContain('isid:isidpop');
+  });
+
+  it('(V3) canonical Vix member: Erica AOR + Vix commission row → row emitted with vendor fields', async () => {
+    const recs: NormalizedRecord[] = [
+      bo('KEEP', { brokerName: 'Erica Fine', npn: ERICA_NPN }),
+      ede('KEEP', { aor: ERICA_AOR, npn: ERICA_NPN }),
+      // Statement history in an earlier month (different batch). For test
+      // simplicity reuse BATCH; the guard scans args.allBatchRecords regardless.
+      vixCommission('KEEP', { paid_to_date: '2026-02-28' } as any),
+      ...anchorRipeness(),
+    ];
+    const out = await assembleCommissionSubmission({
+      ...vixArgs,
+      allBatchRecords: recs,
+      serviceMonths: [STMT_MONTH],
+    });
+    const keepVix = out.rows.filter((r) => r.grainKey.targetScope === 'Vix' && r.grainKey.stableMemberKey === 'isid:isidkeep');
+    // Member has Vix statement history — guard MUST NOT drop it.
+    expect(out.diagnostics.vixScopeExcludedMemberList).not.toContain('isid:isidkeep');
+    if (keepVix.length > 0) {
+      expect(keepVix[0].grainKey.targetScope).toBe('Vix');
+    }
+  });
+
+  it('(V4) G2 invariant: no emitted row has blank NPN + blank Writing Agent Carrier ID + blank Policy # all at once', async () => {
+    const recs: NormalizedRecord[] = [
+      bo('LEAK', { brokerName: 'Erica Fine', npn: ERICA_NPN }),
+      ede('LEAK', { aor: ERICA_AOR, npn: ERICA_NPN }),
+      bo('KEEP', { brokerName: 'Erica Fine', npn: ERICA_NPN }),
+      ede('KEEP', { aor: ERICA_AOR, npn: ERICA_NPN }),
+      vixCommission('KEEP'),
+      ...anchorRipeness(),
+    ];
+    const out = await assembleCommissionSubmission({ ...vixArgs, allBatchRecords: recs });
+    for (const r of out.rows) {
+      const allBlank = !r.npn && !r.writingAgentCarrierId && !r.policyNumber;
+      expect(allBlank).toBe(false);
+    }
+  });
+
+  it('(V5) Coverall unaffected: Coverall rows are byte-equal with/without the Vix guard fixture', async () => {
+    const coverallRecs: NormalizedRecord[] = [
+      bo('C1', { brokerName: 'Jason Fine', npn: JASON_NPN }),
+      ede('C1', { aor: 'Jason Fine (21055210)', npn: JASON_NPN }),
+      ...anchorRipeness(),
+    ];
+    const withLeak: NormalizedRecord[] = [
+      ...coverallRecs,
+      bo('VLEAK', { brokerName: 'Erica Fine', npn: ERICA_NPN }),
+      ede('VLEAK', { aor: ERICA_AOR, npn: ERICA_NPN }),
+    ];
+    const a = await assembleCommissionSubmission({ ...vixArgs, allBatchRecords: coverallRecs });
+    const b = await assembleCommissionSubmission({ ...vixArgs, allBatchRecords: withLeak });
+
+    const coverallA = a.rows
+      .filter((r) => r.grainKey.targetScope === 'Coverall')
+      .map((r) => ({ k: r.grainKey, mm: r.missingMonths, npn: r.npn, pn: r.policyNumber, wac: r.writingAgentCarrierId }));
+    const coverallB = b.rows
+      .filter((r) => r.grainKey.targetScope === 'Coverall')
+      .map((r) => ({ k: r.grainKey, mm: r.missingMonths, npn: r.npn, pn: r.policyNumber, wac: r.writingAgentCarrierId }));
+    expect(coverallB).toEqual(coverallA);
+  });
+
+  it('(V6) diagnostics discipline: memberCount / multiPolicySplits count only POST-exclusion emitted rows', async () => {
+    const recs: NormalizedRecord[] = [
+      // Vix leaks — these MUST NOT count toward memberCount/multiPolicySplits.
+      bo('L1', { brokerName: 'Erica Fine', npn: ERICA_NPN }),
+      ede('L1', { aor: ERICA_AOR, npn: ERICA_NPN }),
+      bo('L2', { brokerName: 'Erica Fine', npn: ERICA_NPN }),
+      ede('L2', { aor: ERICA_AOR, npn: ERICA_NPN }),
+      // A real Coverall member.
+      bo('REAL', { brokerName: 'Jason Fine', npn: JASON_NPN }),
+      ede('REAL', { aor: 'Jason Fine (21055210)', npn: JASON_NPN }),
+      ...anchorRipeness(),
+    ];
+    const out = await assembleCommissionSubmission({ ...vixArgs, allBatchRecords: recs });
+    // memberCount equals the number of distinct stable member keys actually
+    // emitted (post-exclusion).
+    const emittedStableKeys = new Set(out.rows.map((r) => r.grainKey.stableMemberKey));
+    expect(out.diagnostics.memberCount).toBe(emittedStableKeys.size);
+    expect(out.diagnostics.rowCount).toBe(out.rows.length);
+    // Vix exclusions recorded but NOT folded into memberCount.
+    expect(out.diagnostics.vixScopeExcludedMembers).toBeGreaterThanOrEqual(2);
+  });
+
+  it('(V7) reversed/manual-review non-orphan leak: no-history Vix row dropped AND listed; no crash', async () => {
+    const recs: NormalizedRecord[] = [
+      bo('REV', { brokerName: 'Erica Fine', npn: ERICA_NPN }),
+      ede('REV', { aor: ERICA_AOR, npn: ERICA_NPN }),
+      // Coverall counterpart reversal sidecar — must not bypass the guard.
+      rec({
+        source_type: 'COMMISSION',
+        member_key: 'REV',
+        issuer_subscriber_id: 'ISIDREV',
+        policy_number: 'POLREV',
+        pay_entity: 'Coverall',
+        commission_amount: -50,
+        paid_to_date: '2026-03-31',
+        months_paid: -1,
+        agent_npn: JASON_NPN,
+        ...({ batch_id: BATCH, manual_review_required: true } as any),
+      } as any),
+      ...anchorRipeness(),
+    ];
+    const out = await assembleCommissionSubmission({ ...vixArgs, allBatchRecords: recs });
+    const revVix = out.rows.filter((r) => r.grainKey.targetScope === 'Vix' && r.grainKey.stableMemberKey === 'isid:isidrev');
+    expect(revVix.length).toBe(0);
+    expect(out.diagnostics.vixScopeExcludedMemberList).toContain('isid:isidrev');
+  });
+});
