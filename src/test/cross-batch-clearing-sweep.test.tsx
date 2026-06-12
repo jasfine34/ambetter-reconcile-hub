@@ -53,13 +53,16 @@ function setupFixture(fx: Fixture): Counters {
     }
     if (table === 'reconciled_members') {
       const chain: any = {
-        _batch: null,
+        _batch: null, _gt: false,
         select() { return chain; },
         eq(_c: string, v: string) { chain._batch = v; return chain; },
-        range(from: number) {
-          if (from > 0) return Promise.resolve({ data: [], error: null });
+        order() { return chain; },
+        limit() { return chain; },
+        gt() { chain._gt = true; return chain; },
+        then(resolve: any) {
+          if (chain._gt) return resolve({ data: [], error: null });
           const rows = (fx.reconciled ?? []).filter(r => r.batch_id === chain._batch);
-          return Promise.resolve({ data: rows, error: null });
+          resolve({ data: rows, error: null });
         },
       };
       return chain;
@@ -604,16 +607,19 @@ describe('crossBatchClearingSweep — v12 branch coverage', () => {
       }
       if (table === 'reconciled_members') {
         const chain: any = {
-          _batch: null,
+          _batch: null, _gt: false,
           select() { return chain; },
           eq(_c: string, v: string) { chain._batch = v; queriedBatchIds.push(v); return chain; },
-          range(from: number) {
-            if (from > 0) return Promise.resolve({ data: [], error: null });
+          order() { return chain; },
+          limit() { return chain; },
+          gt() { chain._gt = true; return chain; },
+          then(resolve: any) {
+            if (chain._gt) return resolve({ data: [], error: null });
             const rowsByBatch: Record<string, RM[]> = {
               B_VALID: [makeUnpaidRM('M_VALID', 'B_VALID')],
               B_INVALID: [makeUnpaidRM('M_STRAY', 'B_INVALID', { policy_number: 'pStray' })],
             };
-            return Promise.resolve({ data: rowsByBatch[chain._batch] ?? [], error: null });
+            resolve({ data: rowsByBatch[chain._batch] ?? [], error: null });
           },
         };
         return chain;
@@ -897,5 +903,71 @@ describe('crossBatchClearingSweep — client-side chunked supersede + insert', (
     });
     await expect(runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true }))
       .rejects.toThrow(/insert_clearing_rows/);
+  });
+});
+
+// ---------- Group: write-time policy-identity-key canonicalization (A6.5) ----------
+describe('crossBatchClearingSweep — canonical grain (alias same-value collapse)', () => {
+  it('pn-form + sub-form on same identity → ONE grain at canonical pn-form key', async () => {
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01'), baseBatch('B2', '2026-03-01')],
+      reconciled: [
+        makeUnpaidRM('M1', 'B1', { policy_number: 'u123', issuer_subscriber_id: null }),
+        makeUnpaidRM('M2', 'B1', { policy_number: null,  issuer_subscriber_id: 'u123' }),
+      ],
+      boEde: [ambetterBoEde('E1', 'B1', 'u123')],
+      commission: [commissionRow('C1', 'B2', 'u123', 100)],
+    });
+    const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    expect(r.aborted).toBe(false);
+    const rows = insertedRows();
+    expect(rows.length).toBe(1);
+    expect(rows[0].policy_identity_key).toBe('ambetter|u123');
+    expect(rows[0].unpaid_batch_ids).toEqual(['B1']);
+  });
+
+  it('sub-only with no pn-form sibling → grain stays sub-form', async () => {
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01'), baseBatch('B2', '2026-03-01')],
+      reconciled: [makeUnpaidRM('M1', 'B1', { policy_number: null, issuer_subscriber_id: 'u999' })],
+      boEde: [ambetterBoEde('E1', 'B1', 'u999')],
+      commission: [commissionRow('C1', 'B2', 'u999', 100)],
+    });
+    const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    const rows = insertedRows();
+    expect(rows.length).toBe(1);
+    expect(rows[0].policy_identity_key).toBe('ambetter|sub:u999');
+  });
+
+  it('two different policies remain two grains', async () => {
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01'), baseBatch('B2', '2026-03-01')],
+      reconciled: [
+        makeUnpaidRM('M1', 'B1', { policy_number: 'aaa' }),
+        makeUnpaidRM('M2', 'B1', { policy_number: 'bbb' }),
+      ],
+      boEde: [ambetterBoEde('E1', 'B1', 'aaa'), ambetterBoEde('E2', 'B1', 'bbb')],
+      commission: [commissionRow('C1', 'B2', 'aaa', 100), commissionRow('C2', 'B2', 'bbb', 100)],
+    });
+    const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    const rows = insertedRows();
+    expect(rows.length).toBe(2);
+    expect(new Set(rows.map((r: any) => r.policy_identity_key)))
+      .toEqual(new Set(['ambetter|aaa', 'ambetter|bbb']));
+  });
+
+  it('canonical merge does NOT fire ambiguous_policy_identity_key_before_grain', async () => {
+    setupFixture({
+      batches: [baseBatch('B1', '2026-02-01'), baseBatch('B2', '2026-03-01')],
+      reconciled: [
+        makeUnpaidRM('M1', 'B1', { policy_number: 'u555', issuer_subscriber_id: null }),
+        makeUnpaidRM('M2', 'B1', { policy_number: null,  issuer_subscriber_id: 'u555' }),
+      ],
+      boEde: [ambetterBoEde('E1', 'B1', 'u555')],
+      commission: [commissionRow('C1', 'B2', 'u555', 100)],
+    });
+    const r = await runCrossBatchClearingSweep({ generationId: 1, shouldContinue: () => true });
+    expect(r.inputErrors.find(e => e.reason === 'ambiguous_policy_identity_key_before_grain'))
+      .toBeFalsy();
   });
 });
