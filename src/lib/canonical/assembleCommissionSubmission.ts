@@ -307,6 +307,8 @@ function buildEstMissingInputEvidence(opts: {
     matched_payee: opts.scope,
     policy_identity_key: opts.policyIdentityKey,
     target_service_month: opts.serviceMonth,
+    member_count_status: countRes.status,
+    member_count_conflicts: countRes.conflicts,
   };
 }
 
