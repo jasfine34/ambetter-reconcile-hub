@@ -694,6 +694,7 @@ describe('assembleCommissionSubmission — C3 Vix statement-leg guard', () => {
       bo('LEAK', { brokerName: 'Erica Fine', npn: ERICA_NPN }),
       ede('LEAK', { aor: ERICA_AOR, npn: ERICA_NPN }),
       ...anchorRipeness(),
+      ...vixAnchor(),
     ];
     const out = await assembleCommissionSubmission({ ...vixArgs, allBatchRecords: recs });
     const vixRows = out.rows.filter((r) => r.grainKey.targetScope === 'Vix');
