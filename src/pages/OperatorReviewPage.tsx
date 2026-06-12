@@ -977,7 +977,7 @@ export default function OperatorReviewPage(props: OperatorReviewPageProps = {}) 
             </span>
           </div>
         ) : (
-          <MirroredScrollTable>
+          <WideDataTable>
             <Table>
               <TableHeader className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_hsl(var(--border))]">
                 <TableRow>
