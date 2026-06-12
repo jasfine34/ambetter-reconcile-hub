@@ -73,6 +73,7 @@ import {
 } from '@/lib/canonical/commissionSubmissionCsv';
 import type { NormalizedRecord } from '@/lib/normalize';
 import type { CarrierCompRateRow } from '@/lib/canonical/compGrid';
+import { WideDataTable } from '@/components/WideDataTable';
 
 const ROUTE_VARIANT: Record<RouteName, 'default' | 'secondary' | 'destructive' | 'outline'> = {
   satisfied: 'outline',
@@ -976,7 +977,7 @@ export default function OperatorReviewPage(props: OperatorReviewPageProps = {}) 
             </span>
           </div>
         ) : (
-          <MirroredScrollTable>
+          <WideDataTable>
             <Table>
               <TableHeader className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_hsl(var(--border))]">
                 <TableRow>
@@ -1113,7 +1114,7 @@ export default function OperatorReviewPage(props: OperatorReviewPageProps = {}) 
                 })}
               </TableBody>
             </Table>
-          </MirroredScrollTable>
+          </WideDataTable>
         )}
 
 
@@ -1342,56 +1343,3 @@ function PremiumCountEvidence({ facts }: { facts: any }) {
     : <span>{parts.join(' · ')}</span>;
 }
 
-function MirroredScrollTable({ children }: { children: React.ReactNode }) {
-  const topRef = useRef<HTMLDivElement | null>(null);
-  const bottomRef = useRef<HTMLDivElement | null>(null);
-  const [innerWidth, setInnerWidth] = useState(0);
-  const syncing = useRef<'top' | 'bottom' | null>(null);
-
-  useEffect(() => {
-    const el = bottomRef.current;
-    if (!el) return;
-    const measure = () => setInnerWidth(el.scrollWidth);
-    measure();
-    if (typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    if (el.firstElementChild) ro.observe(el.firstElementChild as Element);
-    return () => ro.disconnect();
-  }, [children]);
-
-  const onTopScroll = () => {
-    if (syncing.current === 'bottom') { syncing.current = null; return; }
-    if (!topRef.current || !bottomRef.current) return;
-    syncing.current = 'top';
-    bottomRef.current.scrollLeft = topRef.current.scrollLeft;
-  };
-  const onBottomScroll = () => {
-    if (syncing.current === 'top') { syncing.current = null; return; }
-    if (!topRef.current || !bottomRef.current) return;
-    syncing.current = 'bottom';
-    topRef.current.scrollLeft = bottomRef.current.scrollLeft;
-  };
-
-  return (
-    <div className="border rounded-lg bg-card">
-      <div
-        ref={topRef}
-        onScroll={onTopScroll}
-        className="overflow-x-auto overflow-y-hidden"
-        aria-hidden="true"
-        data-testid="op-top-scrollbar"
-      >
-        <div style={{ width: innerWidth || 1, height: 1 }} />
-      </div>
-      <div
-        ref={bottomRef}
-        onScroll={onBottomScroll}
-        className="overflow-x-auto max-h-[70vh] overflow-y-auto"
-        data-testid="op-table-scroll"
-      >
-        {children}
-      </div>
-    </div>
-  );
-}

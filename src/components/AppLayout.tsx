@@ -1,5 +1,11 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Upload, AlertTriangle, Users, Building2, Link2, FileText, CalendarRange, FileDown, Inbox, ClipboardCheck } from 'lucide-react';
+
+/**
+ * Routes that opt into a full-width main wrapper (no centered 1280px cap).
+ * Every other route keeps the byte-identical default `max-w-7xl mx-auto p-6`.
+ */
+const FULL_WIDTH_ROUTES = new Set<string>(['/operator-review']);
 
 const links = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -16,8 +22,11 @@ const links = [
 ];
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
+  const { pathname } = useLocation();
+  const isFullWidth = FULL_WIDTH_ROUTES.has(pathname);
   return (
     <div className="min-h-screen bg-background flex">
+
       <aside className="w-60 border-r border-border bg-card flex flex-col shrink-0">
         <div className="p-5 border-b border-border">
           <h1 className="text-base font-bold text-foreground tracking-tight">Coverall</h1>
@@ -43,7 +52,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
       <main className="flex-1 overflow-auto">
-        <div className="max-w-7xl mx-auto p-6">
+        <div className={isFullWidth ? 'w-full p-6' : 'max-w-7xl mx-auto p-6'}>
           {children}
         </div>
       </main>
