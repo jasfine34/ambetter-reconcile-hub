@@ -803,6 +803,7 @@ describe('assembleCommissionSubmission — C3 Vix statement-leg guard', () => {
       bo('REAL', { brokerName: 'Jason Fine', npn: JASON_NPN }),
       ede('REAL', { aor: 'Jason Fine (21055210)', npn: JASON_NPN }),
       ...anchorRipeness(),
+      ...vixAnchor(),
     ];
     const out = await assembleCommissionSubmission({ ...vixArgs, allBatchRecords: recs });
     // memberCount equals the number of distinct stable member keys actually
