@@ -46,6 +46,8 @@ export interface EstMissingInputEvidence {
   matched_payee: 'Coverall' | 'Vix' | null;
   policy_identity_key?: string | null;
   target_service_month?: string | null;
+  member_count_status?: 'resolved' | 'manual_review' | 'unresolved' | null;
+  member_count_conflicts?: number[];
 }
 
 export interface ResolveEstMissingInput {
@@ -73,6 +75,7 @@ export type UnsupportedReason =
   | 'MISSING_CARRIER'
   | 'MISSING_STATE'
   | 'MISSING_MEMBER_COUNT'
+  | 'MEMBER_COUNT_CONFLICT'
   | 'MISSING_MONTHS'
   | 'MISSING_POLICY_YEAR';
 
@@ -129,7 +132,11 @@ function buildBaseEvidence(ev: EstMissingInputEvidence | undefined): EstMissingE
 function checkRequiredInputs(ev: EstMissingInputEvidence): UnsupportedReason | null {
   if (ev.carrier == null) return 'MISSING_CARRIER';
   if (ev.state == null) return 'MISSING_STATE';
-  if (ev.member_count == null) return 'MISSING_MEMBER_COUNT';
+  if (ev.member_count == null) {
+    return ev.member_count_status === 'manual_review'
+      ? 'MEMBER_COUNT_CONFLICT'
+      : 'MISSING_MEMBER_COUNT';
+  }
   if (ev.months == null) return 'MISSING_MONTHS';
   if (ev.policy_year == null) return 'MISSING_POLICY_YEAR';
   return null;

@@ -23,7 +23,9 @@ import path from 'node:path';
 import {
   assembleCommissionSubmission,
   buildSeededComment,
+  buildEstMissingInputEvidence,
 } from '@/lib/canonical/assembleCommissionSubmission';
+import { createEstMissingResolver } from '@/lib/canonical/estMissingResolver';
 import { latestBoPaidThrough } from '@/lib/canonical/latestBoPaidThrough';
 import { enrichVendorFields, buildWritingAgentCarrierIdLookup } from '@/lib/mce/vendorEnrichment';
 import { buildMemberProfile } from '@/lib/canonical/memberProfileView';
@@ -872,5 +874,57 @@ describe('assembleCommissionSubmission — C3 Vix statement-leg guard', () => {
     const revVix = out.rows.filter((r) => r.grainKey.targetScope === 'Vix' && r.grainKey.stableMemberKey === 'isid:isidrev');
     expect(revVix.length).toBe(0);
     expect(out.diagnostics.vixScopeExcludedMemberList).toContain('isid:isidrev');
+  });
+
+  it('member-count conflict lockstep: C3 buildEstMissingInputEvidence populates status/conflicts → resolver returns MEMBER_COUNT_CONFLICT', () => {
+    const BATCH_A = 'B-2026-03-a';
+    const BATCH_B = 'B-2026-03-b';
+    const boA = rec({
+      source_type: 'BACK_OFFICE',
+      member_key: 'MCC',
+      issuer_subscriber_id: 'ISIDMCC',
+      policy_number: 'POLMCC',
+      agent_npn: JASON_NPN,
+      agent_name: 'Jason Fine',
+      net_premium: 100,
+      paid_through_date: '2026-04-30',
+      effective_date: '2026-03-15',
+      client_state_full: 'FL',
+      raw_json: { 'Broker Name': 'Jason Fine', issuer: 'Ambetter', 'Number of Members': '1', plan_variant: 'standard' },
+      ...({ batch_id: BATCH_A } as any),
+    } as any);
+    const boB = rec({
+      source_type: 'BACK_OFFICE',
+      member_key: 'MCC',
+      issuer_subscriber_id: 'ISIDMCC',
+      policy_number: 'POLMCC',
+      agent_npn: JASON_NPN,
+      agent_name: 'Jason Fine',
+      net_premium: 100,
+      paid_through_date: '2026-04-30',
+      effective_date: '2026-03-15',
+      client_state_full: 'FL',
+      raw_json: { 'Broker Name': 'Jason Fine', issuer: 'Ambetter', 'Number of Members': '4', plan_variant: 'standard' },
+      ...({ batch_id: BATCH_B } as any),
+    } as any);
+    const ev = buildEstMissingInputEvidence({
+      memberKey: 'MCC',
+      records: [boA, boB],
+      serviceMonth: STMT_MONTH,
+      scope: 'Coverall',
+      batchMonthByBatchId: { [BATCH_A]: STMT_MONTH, [BATCH_B]: STMT_MONTH },
+      policyIdentityKey: 'ambetter|polmcc',
+    });
+    expect(ev.member_count).toBeNull();
+    expect(ev.member_count_status).toBe('manual_review');
+    expect(ev.member_count_conflicts?.slice().sort()).toEqual([1, 4]);
+    const resolver = createEstMissingResolver({
+      rateRows: [RATE_AMBETTER_FL],
+      batchMonth: STMT_MONTH,
+      scope: 'Coverall',
+    });
+    const res = resolver.resolve({ row: { member_key: 'MCC' }, inputEvidence: ev });
+    expect(res.status).toBe('UNSUPPORTED');
+    expect(res.unsupported_reason).toBe('MEMBER_COUNT_CONFLICT');
   });
 });
