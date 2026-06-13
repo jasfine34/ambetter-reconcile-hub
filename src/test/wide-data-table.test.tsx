@@ -101,6 +101,7 @@ describe('WideDataTable', () => {
 
     fireEvent.keyDown(button, { key: 'ArrowLeft' });
     expect(bottom.scrollLeft).toBe(50);
+  });
 
   it('top scrollbar spacer width === mocked content scrollWidth (mocked dims)', () => {
     const { getByTestId } = renderTable();
