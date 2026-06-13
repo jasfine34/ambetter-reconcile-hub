@@ -14,6 +14,13 @@
  * focused element is an interactive control inside the scroll region
  * (input/textarea/select/button/contenteditable). The scroll region itself
  * is keyboard-focusable via tabIndex={0}.
+ *
+ * CONTRACT: Callers MUST pass a bare <table> (and bare table sections like
+ * <thead>/<tbody>) as children — never a wrapper component (e.g. shadcn's
+ * <Table>) that introduces its own overflow container. Any intermediate
+ * overflow-auto/scroll ancestor between the <table> and the bottomRef
+ * region steals the horizontal scroll, leaving the top mirrored scrollbar
+ * empty and arrow-key navigation a no-op.
  */
 import React, { useEffect, useRef, useState } from 'react';
 

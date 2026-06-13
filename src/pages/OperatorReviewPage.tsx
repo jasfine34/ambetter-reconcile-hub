@@ -9,7 +9,7 @@
  *   - Per-row evidence DRAWER (lean explainCell trace + route facts).
  *
  * Hold action handlers, the hold Dialog, OR1/OR3/OR4 guards, runCycle,
- * reproject, the read-only-load contract, MirroredScrollTable + sticky
+ * reproject, the read-only-load contract, WideDataTable + sticky
  * header — all unchanged. Only write path remains the existing hold
  * recordDecision.
  */
@@ -45,7 +45,7 @@ import { explainCell as defaultExplainCell } from '@/lib/explainCell';
 import type { CellTrace } from '@/lib/explainCellTypes';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -978,7 +978,8 @@ export default function OperatorReviewPage(props: OperatorReviewPageProps = {}) 
           </div>
         ) : (
           <WideDataTable>
-            <Table>
+            {/* Bare <table>: WideDataTable requires no inner overflow wrapper. */}
+            <table className="w-full caption-bottom text-sm">
               <TableHeader className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_hsl(var(--border))]">
                 <TableRow>
                   <TableHead className="bg-card">Member</TableHead>
@@ -1113,7 +1114,7 @@ export default function OperatorReviewPage(props: OperatorReviewPageProps = {}) 
                   );
                 })}
               </TableBody>
-            </Table>
+            </table>
           </WideDataTable>
         )}
 
