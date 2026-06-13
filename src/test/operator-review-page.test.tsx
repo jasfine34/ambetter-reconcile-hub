@@ -1069,5 +1069,30 @@ describe('OperatorReviewPage — C3b-2 commission-submission download', () => {
   });
 });
 
+describe('OperatorReviewPage — single-scroll-container root invariant', () => {
+  it('rendered <table> sits directly inside op-table-scroll with NO intermediate overflow-auto/scroll ancestor', async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByText('Alice Actionable')).toBeInTheDocument());
+    const scrollRegion = screen.getByTestId('op-table-scroll');
+    const table = scrollRegion.querySelector('table');
+    expect(table).not.toBeNull();
+
+    // Walk ancestors from <table> up to op-table-scroll. None of the
+    // intermediate elements may introduce horizontal overflow scrolling
+    // — that would steal the scroll from WideDataTable's bottomRef and
+    // break the mirrored top scrollbar + arrow-key nav.
+    let cur: HTMLElement | null = table!.parentElement;
+    while (cur && cur !== scrollRegion) {
+      // shadcn Table wraps in <div class="relative w-full overflow-auto">.
+      // Forbid that exact regression and any overflow-x scroller.
+      expect(cur.className).not.toMatch(/\boverflow-auto\b/);
+      expect(cur.className).not.toMatch(/\boverflow-x-(auto|scroll)\b/);
+      cur = cur.parentElement;
+    }
+    expect(cur).toBe(scrollRegion);
+  });
+});
+
+
 
 
