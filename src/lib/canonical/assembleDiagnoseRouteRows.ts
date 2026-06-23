@@ -66,6 +66,7 @@ import {
 } from '../classifier';
 import { buildMemberTimeline, type MemberTimelineRow } from '../memberTimeline';
 import { canonicalCarrier } from '../carrierCanonical';
+import { deriveAmbetterTxPlanVariant } from './planVariant';
 import {
   deriveStableMemberKey,
   type DecisionIdentityInput,
