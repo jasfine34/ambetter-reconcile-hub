@@ -43,6 +43,11 @@ export interface EstMissingInputEvidence {
   months: number | null;
   policy_year: number | null;
   plan_variant?: string | null;
+  /** TX-Ambetter tier derivation status. 'conflict' = full-union evidence
+   *  carried BOTH a Value and a Premier signal at the same precedence tier
+   *  and the resolver must HOLD (PLAN_TIER_UNRECOVERABLE) instead of
+   *  silently picking one. 'ok'/'unrecoverable'/null = informational. */
+  plan_variant_status?: 'ok' | 'conflict' | 'unrecoverable' | null;
   current_policy_aor: string | null;
   matched_payee: 'Coverall' | 'Vix' | null;
   policy_identity_key?: string | null;
