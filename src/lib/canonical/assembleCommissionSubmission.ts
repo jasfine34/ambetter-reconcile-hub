@@ -64,6 +64,7 @@ import {
 import { resolvePolicyStateForCompGrid } from './policyState';
 import { resolvePolicyMemberCountForCompGrid } from './policyMemberCount';
 import { canonicalCarrier } from '../carrierCanonical';
+import { deriveAmbetterTxPlanVariant } from './planVariant';
 import { buildMemberProfile } from './memberProfileView';
 import {
   enrichVendorFields,
