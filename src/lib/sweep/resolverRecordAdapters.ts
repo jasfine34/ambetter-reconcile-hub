@@ -83,6 +83,19 @@ function asOfMonthFor(row: NormalizedRecordShape, batchMonthById: Record<string,
   return null;
 }
 
+/**
+ * Member-count as-of stamping uses ONLY the batch (snapshot) month.
+ * Each monthly back-office file IS the certified evidence of the member count
+ * for that month. Falling back to effective_date collapses every monthly snapshot
+ * onto a single effective month and produces false MEMBER_COUNT_CONFLICTs when
+ * counts legitimately change month-over-month. A missing/unmapped batch month
+ * is a data-integrity gap, not a timing signal — omit the record.
+ */
+function asOfMonthForMemberCount(row: NormalizedRecordShape, batchMonthById: Record<string, string>): string | null {
+  const key = statementMonthKey(batchMonthById[row.batch_id] ?? '');
+  return isValidMonthKey(key) ? key : null;
+}
+
 export function buildPolicyStateRecords(args: {
   normalizedRecords: NormalizedRecordShape[];
   batchMonthById: Record<string, string>;
