@@ -14,6 +14,7 @@
  *   4. null (→ MISSING_POLICY_YEAR)
  */
 import type { EstMissingInputEvidence } from './estMissingResolver';
+import { deriveAmbetterTxPlanVariant } from './planVariant';
 
 export interface BuildSourceEvidenceOptions {
   /** Default carrier when reconciled row's carrier is missing (Ambetter today). */
