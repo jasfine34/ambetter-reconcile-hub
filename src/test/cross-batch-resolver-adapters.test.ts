@@ -251,3 +251,61 @@ describe('resolvePolicyMemberCountForCompGrid — BO-first authority across sepa
     expect(r.conflicts).toEqual(expect.arrayContaining([2, 3]));
   });
 });
+
+describe('member-count as-of stamping uses batch (snapshot) month only', () => {
+  it('Sandra-style collapse resolves: monthly snapshots with one effective_date stamp distinct as-of months', async () => {
+    const { resolvePolicyMemberCountForCompGrid } = await import('@/lib/canonical/policyMemberCount');
+    const rows = [
+      row({ id: 'jan', batch_id: 'BJAN', source_type: 'BACK_OFFICE', raw_json: { 'Number of Members': 1 }, effective_date: '2025-05-01' }),
+      row({ id: 'feb', batch_id: 'BFEB', source_type: 'BACK_OFFICE', raw_json: { 'Number of Members': 2 }, effective_date: '2025-05-01' }),
+      row({ id: 'mar', batch_id: 'BMAR', source_type: 'BACK_OFFICE', raw_json: { 'Number of Members': 2 }, effective_date: '2025-05-01' }),
+    ];
+    const bm = { BJAN: '2026-01', BFEB: '2026-02', BMAR: '2026-03' };
+    const records = buildPolicyMemberCountRecords({ normalizedRecords: rows, batchMonthById: bm });
+    expect(records.map(r => r.asOfMonth).sort()).toEqual(['2026-01', '2026-02', '2026-03']);
+
+    const jan = resolvePolicyMemberCountForCompGrid({ records, targetBatchMonth: '2026-01', targetServiceMonths: ['2026-01'] });
+    expect(jan).toMatchObject({ status: 'resolved', memberCount: 1, source: 'bo' });
+
+    const feb = resolvePolicyMemberCountForCompGrid({ records, targetBatchMonth: '2026-02', targetServiceMonths: ['2026-02'] });
+    expect(feb).toMatchObject({ status: 'resolved', memberCount: 2, source: 'bo' });
+  });
+
+  it('same-batch-month disagreement still flags manual_review (future guard)', async () => {
+    const { resolvePolicyMemberCountForCompGrid } = await import('@/lib/canonical/policyMemberCount');
+    const records = buildPolicyMemberCountRecords({
+      normalizedRecords: [
+        row({ id: 'a', batch_id: 'BJ', source_type: 'BACK_OFFICE', raw_json: { 'Number of Members': 1 } }),
+        row({ id: 'b', batch_id: 'BJ', source_type: 'BACK_OFFICE', raw_json: { 'Number of Members': 2 } }),
+      ],
+      batchMonthById: { BJ: '2026-01' },
+    });
+    const r = resolvePolicyMemberCountForCompGrid({ records, targetBatchMonth: '2026-01', targetServiceMonths: ['2026-01'] });
+    expect(r.status).toBe('manual_review');
+    expect(r.conflicts).toEqual(expect.arrayContaining([1, 2]));
+  });
+
+  it('missing batch month → record omitted (not stamped via effective_date)', () => {
+    const out = buildPolicyMemberCountRecords({
+      normalizedRecords: [
+        row({ id: 'x', batch_id: 'BUNMAPPED', source_type: 'BACK_OFFICE', raw_json: { 'Number of Members': 3 }, effective_date: '2026-02-15' }),
+      ],
+      batchMonthById: { BOTHER: '2026-02' },
+    });
+    expect(out).toHaveLength(0);
+  });
+
+  it('policy-state guard: buildPolicyStateRecords still honors effective_date/broker_effective_date fallback (untouched)', () => {
+    const mixed = [
+      row({ id: 's1', batch_id: 'B1', effective_date: '2026-02-15', client_state_full: 'FL' }),
+      row({ id: 's2', batch_id: 'B1', effective_date: null, broker_effective_date: '2026-01-15', client_state_full: 'TX' }),
+      row({ id: 's3', batch_id: 'B1', effective_date: null, broker_effective_date: null, client_state_full: 'CA' }),
+    ];
+    const out = buildPolicyStateRecords({ normalizedRecords: mixed, batchMonthById });
+    expect(out).toEqual([
+      { source: 'bo', asOfMonth: '2026-02', state: 'FL' },
+      { source: 'bo', asOfMonth: '2026-01', state: 'TX' },
+      { source: 'bo', asOfMonth: '2026-02', state: 'CA' },
+    ]);
+  });
+});
