@@ -66,6 +66,7 @@ import {
 } from '../classifier';
 import { buildMemberTimeline, type MemberTimelineRow } from '../memberTimeline';
 import { canonicalCarrier } from '../carrierCanonical';
+import { deriveAmbetterTxPlanVariant } from './planVariant';
 import {
   deriveStableMemberKey,
   type DecisionIdentityInput,
@@ -255,7 +256,16 @@ function synthesizeEvidenceRow(
       matched_payee: scope === 'All' ? null : scope,
       policy_identity_key: null,
       plan_variant:
-        ((sample as any)?.raw_json?.['plan_variant'] as string | undefined) ?? null,
+        deriveAmbetterTxPlanVariant({
+          carrier: carrierCanonicalEvidence,
+          state,
+          sources: recs.map((r) => ({
+            raw_json: (r as any)?.raw_json,
+            source_type: r.source_type,
+          })),
+        }) ??
+        ((sample as any)?.raw_json?.['plan_variant'] as string | undefined) ??
+        null,
       member_count_status: memberCountRes.status,
       member_count_conflicts: memberCountRes.conflicts,
     },

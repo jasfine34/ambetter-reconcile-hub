@@ -14,6 +14,7 @@
  *   4. null (→ MISSING_POLICY_YEAR)
  */
 import type { EstMissingInputEvidence } from './estMissingResolver';
+import { deriveAmbetterTxPlanVariant } from './planVariant';
 
 export interface BuildSourceEvidenceOptions {
   /** Default carrier when reconciled row's carrier is missing (Ambetter today). */
@@ -75,13 +76,20 @@ export function buildSourceEvidenceMap(
   const out = new Map<string, EstMissingInputEvidence>();
   for (const r of reconciled ?? []) {
     if (!r || !r.member_key) continue;
+    const carrierVal = nonBlankString(r.carrier) ?? defaultCarrier ?? null;
+    const stateVal = nonBlankString(r.state) ?? nonBlankString(r.bo_state) ?? null;
     const ev: EstMissingInputEvidence = {
-      carrier: nonBlankString(r.carrier) ?? defaultCarrier ?? null,
-      state: nonBlankString(r.state) ?? nonBlankString(r.bo_state) ?? null,
+      carrier: carrierVal,
+      state: stateVal,
       member_count: nonNullNumber(r.member_count) ?? nonNullNumber(r.covered_member_count) ?? null,
       months: defaultMonths,
       policy_year: derivePolicyYear(r),
-      plan_variant: nonBlankString(r.plan_variant),
+      plan_variant:
+        deriveAmbetterTxPlanVariant({
+          carrier: carrierVal,
+          state: stateVal,
+          sources: [{ raw_json: (r as any)?.raw_json }],
+        }) ?? nonBlankString(r.plan_variant),
       current_policy_aor: nonBlankString(r.current_policy_aor),
       matched_payee: parseMatchedPayee(r.actual_pay_entity) ?? parseMatchedPayee(r.matched_payee),
       policy_identity_key: nonBlankString(r.policy_identity_key),

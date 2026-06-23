@@ -26,6 +26,7 @@ import type { CarrierCompRateRow } from './compGrid';
 import type { CanonicalScope } from './scope';
 import type { AdjustedRow, ClearingOverlayMap } from './crossBatchOverlay';
 import { classifyPolicyOwnerFromCurrentAor } from './policyOwner';
+import { canonicalCarrier } from '../carrierCanonical';
 
 export interface EstMissingResolverContext {
   rateRows: CarrierCompRateRow[];
@@ -77,7 +78,8 @@ export type UnsupportedReason =
   | 'MISSING_MEMBER_COUNT'
   | 'MEMBER_COUNT_CONFLICT'
   | 'MISSING_MONTHS'
-  | 'MISSING_POLICY_YEAR';
+  | 'MISSING_POLICY_YEAR'
+  | 'PLAN_TIER_UNRECOVERABLE';
 
 export interface EstMissingEvidence {
   carrier: string | null;
@@ -214,6 +216,34 @@ export function createEstMissingResolver(ctx: EstMissingResolverContext): {
         evidence: baseEvidence,
         unsupported_reason: missing,
       };
+    }
+
+    // 2b. TX Ambetter plan-tier safety net: when both 'value' and 'premier'
+    //     rows exist for TX Ambetter in the policy year and we cannot derive
+    //     the tier, refuse to fall through to comp-grid (which would silently
+    //     pick the highest-rate row). Route to manual_review via the engine.
+    if (
+      ev.plan_variant == null &&
+      canonicalCarrier(ev.carrier) === 'ambetter' &&
+      String(ev.state).toUpperCase() === 'TX'
+    ) {
+      const txAmbetterRows = ctx.rateRows.filter(
+        (r) =>
+          r.carrier_key === 'ambetter' &&
+          r.state_code === 'TX' &&
+          r.effective_year === ev.policy_year &&
+          r.support_status === 'supported',
+      );
+      const hasValue = txAmbetterRows.some((r) => r.plan_variant === 'value');
+      const hasPremier = txAmbetterRows.some((r) => r.plan_variant === 'premier');
+      if (hasValue && hasPremier) {
+        return {
+          amount: null,
+          status: 'UNSUPPORTED',
+          evidence: baseEvidence,
+          unsupported_reason: 'PLAN_TIER_UNRECOVERABLE',
+        };
+      }
     }
 
     const owner = classifyPolicyOwnerFromCurrentAor(ev.current_policy_aor);

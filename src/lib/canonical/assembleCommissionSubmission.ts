@@ -64,6 +64,7 @@ import {
 import { resolvePolicyStateForCompGrid } from './policyState';
 import { resolvePolicyMemberCountForCompGrid } from './policyMemberCount';
 import { canonicalCarrier } from '../carrierCanonical';
+import { deriveAmbetterTxPlanVariant } from './planVariant';
 import { buildMemberProfile } from './memberProfileView';
 import {
   enrichVendorFields,
@@ -296,13 +297,25 @@ export function buildEstMissingInputEvidence(opts: {
   });
   const edeWithAor = opts.records.find((r) => r.source_type === 'EDE' && (r as any)?.raw_json?.currentPolicyAOR);
   const policyYear = Number(opts.serviceMonth.substring(0, 4));
+  const carrierCanonical = canonicalCarrier(sample?.carrier ?? '') || null;
+  const stateVal = stateRes.status === 'resolved' ? stateRes.state : null;
   return {
-    carrier: canonicalCarrier(sample?.carrier ?? '') || null,
-    state: stateRes.status === 'resolved' ? stateRes.state : null,
+    carrier: carrierCanonical,
+    state: stateVal,
     member_count: countRes.status === 'resolved' ? countRes.memberCount : null,
     months: 1,
     policy_year: Number.isFinite(policyYear) ? policyYear : null,
-    plan_variant: ((sample as any)?.raw_json?.plan_variant as string | undefined) ?? null,
+    plan_variant:
+      deriveAmbetterTxPlanVariant({
+        carrier: carrierCanonical,
+        state: stateVal,
+        sources: opts.records.map((r) => ({
+          raw_json: (r as any)?.raw_json,
+          source_type: r.source_type,
+        })),
+      }) ??
+      ((sample as any)?.raw_json?.plan_variant as string | undefined) ??
+      null,
     current_policy_aor: ((edeWithAor as any)?.raw_json?.currentPolicyAOR as string | undefined) ?? null,
     matched_payee: opts.scope,
     policy_identity_key: opts.policyIdentityKey,
