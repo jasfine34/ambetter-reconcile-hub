@@ -223,31 +223,47 @@ export function createEstMissingResolver(ctx: EstMissingResolverContext): {
       };
     }
 
-    // 2b. TX Ambetter plan-tier safety net: when both 'value' and 'premier'
-    //     rows exist for TX Ambetter in the policy year and we cannot derive
-    //     the tier, refuse to fall through to comp-grid (which would silently
-    //     pick the highest-rate row). Route to manual_review via the engine.
+    // 2b. TX Ambetter plan-tier safety net.
+    //   - plan_variant_status === 'conflict': full-union evidence carried
+    //     BOTH a Value and a Premier signal at the same precedence tier →
+    //     HOLD instead of guessing.
+    //   - plan_variant null AND both rate rows exist: tier unrecoverable.
+    //   A literal 'conflict' string MUST NEVER reach the comp-grid lookup;
+    //   evidence builders are responsible for mapping derivation==='conflict'
+    //   to plan_variant=null + plan_variant_status='conflict', but we also
+    //   defensively intercept the raw string here.
     if (
-      ev.plan_variant == null &&
       canonicalCarrier(ev.carrier) === 'ambetter' &&
       String(ev.state).toUpperCase() === 'TX'
     ) {
-      const txAmbetterRows = ctx.rateRows.filter(
-        (r) =>
-          r.carrier_key === 'ambetter' &&
-          r.state_code === 'TX' &&
-          r.effective_year === ev.policy_year &&
-          r.support_status === 'supported',
-      );
-      const hasValue = txAmbetterRows.some((r) => r.plan_variant === 'value');
-      const hasPremier = txAmbetterRows.some((r) => r.plan_variant === 'premier');
-      if (hasValue && hasPremier) {
+      const conflictFlagged =
+        ev.plan_variant_status === 'conflict' || ev.plan_variant === 'conflict';
+      if (conflictFlagged) {
         return {
           amount: null,
           status: 'UNSUPPORTED',
           evidence: baseEvidence,
           unsupported_reason: 'PLAN_TIER_UNRECOVERABLE',
         };
+      }
+      if (ev.plan_variant == null) {
+        const txAmbetterRows = ctx.rateRows.filter(
+          (r) =>
+            r.carrier_key === 'ambetter' &&
+            r.state_code === 'TX' &&
+            r.effective_year === ev.policy_year &&
+            r.support_status === 'supported',
+        );
+        const hasValue = txAmbetterRows.some((r) => r.plan_variant === 'value');
+        const hasPremier = txAmbetterRows.some((r) => r.plan_variant === 'premier');
+        if (hasValue && hasPremier) {
+          return {
+            amount: null,
+            status: 'UNSUPPORTED',
+            evidence: baseEvidence,
+            unsupported_reason: 'PLAN_TIER_UNRECOVERABLE',
+          };
+        }
       }
     }
 
