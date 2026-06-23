@@ -479,9 +479,11 @@ export function assembleDiagnoseRouteRows(
         if (!cell) continue;
         if (cell.state !== 'unpaid' && cell.state !== 'paid') continue;
         const recs = ctx.scopedByMember.get(memberKey) ?? [];
+        // Tier source = full member-union (scope-invariant); see helper docs.
+        const tierSourceRecs = rawRecordsByMemberKey.get(memberKey) ?? recs;
         const pickedEdeForMonth =
           pickerMapsByMemberKey.get(memberKey)?.get(serviceMonth) ?? null;
-        const synth = synthesizeEvidenceRow(memberKey, recs, serviceMonth, scope, args.batchMonthByBatchId, pickedEdeForMonth);
+        const synth = synthesizeEvidenceRow(memberKey, recs, serviceMonth, scope, args.batchMonthByBatchId, pickedEdeForMonth, tierSourceRecs);
         monthEvidenceRows.push(synth.row);
         memberCountResByMember.set(memberKey, synth.memberCountResolution);
       }
