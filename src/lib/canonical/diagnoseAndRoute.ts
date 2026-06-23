@@ -165,6 +165,10 @@ export function routeMemberMonth(args: {
       return { route: 'amount_discrepancy', fyi, rationale: 'target_scope_paid_wrong_amount' };
     }
     if (f.amount.kind === 'indeterminate') {
+      // PLAN_TIER_UNRECOVERABLE is a visible hold (do NOT default to a tier).
+      if (f.amount.reason === 'PLAN_TIER_UNRECOVERABLE') {
+        return { route: 'manual_review', fyi, rationale: 'plan_tier_unrecoverable' };
+      }
       fyi.push('amount_indeterminate');
       return { route: 'satisfied', fyi, rationale: 'paid_amount_indeterminate_fyi' };
     }
