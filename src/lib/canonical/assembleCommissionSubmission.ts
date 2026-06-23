@@ -272,6 +272,11 @@ export function buildEstMissingInputEvidence(opts: {
   scope: Extract<TargetScope, 'Coverall' | 'Vix'>;
   batchMonthByBatchId: Record<string, string>;
   policyIdentityKey: string;
+  /** Tier source = full member-union (or policy-identity union when the
+   *  grain is resolved). Plan tier is scope-invariant; reading it from the
+   *  same scope-filtered `records` would starve the helper of BO/commission
+   *  Plan Name / Product evidence. Defaults to `records` for back-compat. */
+  tierSourceRecords?: NormalizedRecord[];
 }): EstMissingInputEvidence {
   const sample =
     opts.records.find((r) => r.source_type === 'BACK_OFFICE') ??
@@ -299,23 +304,37 @@ export function buildEstMissingInputEvidence(opts: {
   const policyYear = Number(opts.serviceMonth.substring(0, 4));
   const carrierCanonical = canonicalCarrier(sample?.carrier ?? '') || null;
   const stateVal = stateRes.status === 'resolved' ? stateRes.state : null;
+  const tierSources = opts.tierSourceRecords ?? opts.records;
+  const tierDerivation = deriveAmbetterTxPlanVariant({
+    carrier: carrierCanonical,
+    state: stateVal,
+    sources: tierSources.map((r) => ({
+      raw_json: (r as any)?.raw_json,
+      source_type: r.source_type,
+    })),
+  });
+  const rawJsonPlanVariant =
+    ((sample as any)?.raw_json?.plan_variant as string | undefined) ?? null;
+  let planVariantOut: string | null;
+  let planVariantStatus: 'ok' | 'conflict' | 'unrecoverable' | null;
+  if (tierDerivation === 'conflict') {
+    planVariantOut = null;
+    planVariantStatus = 'conflict';
+  } else if (tierDerivation === 'value' || tierDerivation === 'premier') {
+    planVariantOut = tierDerivation;
+    planVariantStatus = 'ok';
+  } else {
+    planVariantOut = rawJsonPlanVariant;
+    planVariantStatus = null;
+  }
   return {
     carrier: carrierCanonical,
     state: stateVal,
     member_count: countRes.status === 'resolved' ? countRes.memberCount : null,
     months: 1,
     policy_year: Number.isFinite(policyYear) ? policyYear : null,
-    plan_variant:
-      deriveAmbetterTxPlanVariant({
-        carrier: carrierCanonical,
-        state: stateVal,
-        sources: opts.records.map((r) => ({
-          raw_json: (r as any)?.raw_json,
-          source_type: r.source_type,
-        })),
-      }) ??
-      ((sample as any)?.raw_json?.plan_variant as string | undefined) ??
-      null,
+    plan_variant: planVariantOut,
+    plan_variant_status: planVariantStatus,
     current_policy_aor: ((edeWithAor as any)?.raw_json?.currentPolicyAOR as string | undefined) ?? null,
     matched_payee: opts.scope,
     policy_identity_key: opts.policyIdentityKey,
