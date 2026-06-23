@@ -193,6 +193,9 @@ export function routeMemberMonth(args: {
       };
     }
     if (f.crossEntitySatisfied.amountStatus.kind === 'indeterminate') {
+      if (f.crossEntitySatisfied.amountStatus.reason === 'PLAN_TIER_UNRECOVERABLE') {
+        return { route: 'manual_review', fyi, rationale: 'plan_tier_unrecoverable' };
+      }
       fyi.push('amount_indeterminate');
       return { route: 'satisfied', fyi, rationale: 'cross_entity_satisfied_amount_indet_fyi' };
     }
