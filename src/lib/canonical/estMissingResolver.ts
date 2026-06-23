@@ -26,6 +26,7 @@ import type { CarrierCompRateRow } from './compGrid';
 import type { CanonicalScope } from './scope';
 import type { AdjustedRow, ClearingOverlayMap } from './crossBatchOverlay';
 import { classifyPolicyOwnerFromCurrentAor } from './policyOwner';
+import { canonicalCarrier } from '../carrierCanonical';
 
 export interface EstMissingResolverContext {
   rateRows: CarrierCompRateRow[];
