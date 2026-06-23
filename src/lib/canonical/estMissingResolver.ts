@@ -77,7 +77,8 @@ export type UnsupportedReason =
   | 'MISSING_MEMBER_COUNT'
   | 'MEMBER_COUNT_CONFLICT'
   | 'MISSING_MONTHS'
-  | 'MISSING_POLICY_YEAR';
+  | 'MISSING_POLICY_YEAR'
+  | 'PLAN_TIER_UNRECOVERABLE';
 
 export interface EstMissingEvidence {
   carrier: string | null;
