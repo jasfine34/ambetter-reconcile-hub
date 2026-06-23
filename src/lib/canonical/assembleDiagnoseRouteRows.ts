@@ -243,6 +243,34 @@ function synthesizeEvidenceRow(
       }
     }
   }
+  // Tier derivation reads the FULL member-union (tierSourceRecs) because
+  // plan tier is scope-invariant — Plan Name / Product evidence lives in
+  // BO / commission records that the scope filter (often EDE-only) drops.
+  // A 'conflict' derivation maps to plan_variant=null +
+  // plan_variant_status='conflict' so the resolver holds the row as
+  // PLAN_TIER_UNRECOVERABLE instead of silently picking one tier.
+  const tierDerivation = deriveAmbetterTxPlanVariant({
+    carrier: carrierCanonicalEvidence,
+    state,
+    sources: tierSourceRecs.map((r) => ({
+      raw_json: (r as any)?.raw_json,
+      source_type: r.source_type,
+    })),
+  });
+  const rawJsonPlanVariant =
+    ((sample as any)?.raw_json?.['plan_variant'] as string | undefined) ?? null;
+  let planVariantOut: string | null;
+  let planVariantStatus: 'ok' | 'conflict' | 'unrecoverable' | null;
+  if (tierDerivation === 'conflict') {
+    planVariantOut = null;
+    planVariantStatus = 'conflict';
+  } else if (tierDerivation === 'value' || tierDerivation === 'premier') {
+    planVariantOut = tierDerivation;
+    planVariantStatus = 'ok';
+  } else {
+    planVariantOut = rawJsonPlanVariant;
+    planVariantStatus = null;
+  }
   return {
     row: {
       member_key: memberKey,
@@ -258,17 +286,8 @@ function synthesizeEvidenceRow(
         (scope === 'All' ? null : scope),
       matched_payee: scope === 'All' ? null : scope,
       policy_identity_key: null,
-      plan_variant:
-        deriveAmbetterTxPlanVariant({
-          carrier: carrierCanonicalEvidence,
-          state,
-          sources: recs.map((r) => ({
-            raw_json: (r as any)?.raw_json,
-            source_type: r.source_type,
-          })),
-        }) ??
-        ((sample as any)?.raw_json?.['plan_variant'] as string | undefined) ??
-        null,
+      plan_variant: planVariantOut,
+      plan_variant_status: planVariantStatus,
       member_count_status: memberCountRes.status,
       member_count_conflicts: memberCountRes.conflicts,
     },
