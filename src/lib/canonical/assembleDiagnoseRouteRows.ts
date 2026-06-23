@@ -173,6 +173,9 @@ function synthesizeEvidenceRow(
   scope: TargetScope,
   batchMonthByBatchId: Record<string, string>,
   pickedEdeForMonth: NormalizedRecord | null,
+  /** Full member-union records used ONLY for tier derivation (scope-invariant
+   *  property of the policy). Every other field continues to use `recs`. */
+  tierSourceRecs: NormalizedRecord[] = recs,
 ): { row: Record<string, unknown>; memberCountResolution: { status: 'resolved' | 'unresolved' | 'manual_review'; conflicts?: number[] } } {
   const sample =
     recs.find((r) => r.source_type === 'BACK_OFFICE') ??
