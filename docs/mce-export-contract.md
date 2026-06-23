@@ -15,9 +15,11 @@ If a code change makes the visible output disagree with this contract, either th
 
 Current shipped schema: vendor CSV is exactly the 12 R-MCE-002 columns. Estimated missing commission and `_estMissingStatus` are preview/backing only and are not exported.
 
-Authorized future C3 schema change (not yet shipped): Jason authorized a deliberate 12 -> 14 transition: append "Missing Month(s)" plus one carrier-facing operator-comment column. This is distinct from the reverted unauthorized dollar/status columns. Until C3 lands, this contract remains the 12-column shipped contract.
+The single-month vendor Messer CSV (`buildMesserCsv`) remains exactly the 12 R-MCE-002 columns and is UNCHANGED by C3.
 
-The estimated missing commission dollar is computed and shown INTERNALLY in the preview only. It is NOT included in the vendor Messer CSV. Jason's authorized C3 vendor-schema unlock is limited to "Missing Month(s)" plus one carrier-facing operator-comment column; it does not authorize exporting dollar/status fields.
+The C3 multi-month commission-submission CSV is a distinct carrier download, now authorized as 15 columns: the 12 base Messer columns + "Missing Month(s)" + "Operator Comment" + "Pay Entity". The Pay Entity column disambiguates dual-scope members emitted as two rows (same vendor fields, different pay entity).
+
+The estimated missing commission dollar is computed and shown INTERNALLY in the preview only. It is NOT included in EITHER carrier CSV. The C3 vendor-schema unlock is limited to "Missing Month(s)" + "Operator Comment" + "Pay Entity"; it does not authorize exporting dollar/status/preview/internal fields in either CSV.
 
 ## Row-scope semantics
 
@@ -86,7 +88,7 @@ The contract is satisfied only when all of these pass.
 
 ### AC-1 - Current vendor Messer CSV emits the 12 shipped columns
 
-`MESSER_COLUMNS` contains exactly the 12 labels listed above, in order. `buildMesserCsv` emits exactly those 12 columns; `Estimated Missing Commission` and `Est_Missing_Status` are NOT present in the vendor CSV. The dollar remains as the preview-only `Est. missing commission`; the status remains a backing field on `ExportRow` (`_estMissingStatus`) and is NOT re-added as a standalone preview column. Future C3 will intentionally revise this to 14 columns after the multi-month/operator-comment export ships.
+`MESSER_COLUMNS` contains exactly the 12 labels listed above, in order. `buildMesserCsv` emits exactly those 12 columns; `Estimated Missing Commission` and `Est_Missing_Status` are NOT present in the vendor CSV. The dollar remains as the preview-only `Est. missing commission`; the status remains a backing field on `ExportRow` (`_estMissingStatus`) and is NOT re-added as a standalone preview column. The separate C3 multi-month commission-submission CSV is 15 columns (12 base + Missing Month(s) + Operator Comment + Pay Entity); the single-month vendor Messer CSV's 12-column lock is unaffected by that.
 
 ### AC-2 — Blank-dollar resolution in the preview
 
@@ -117,4 +119,4 @@ State + member-count are necessary but not sufficient. The following remain legi
 - All-AOR audit export variant
 - Reversed-recovery export
 - Adding estimated missing commission or status fields to the vendor CSV
-- Phase C3 14-column multi-month submission export until the C3 directive ships
+- Further additions to the C3 15-column multi-month submission export beyond Missing Month(s) / Operator Comment / Pay Entity

@@ -1,12 +1,12 @@
 /**
- * C3b-1 — headless 14-column commission-submission CSV serializer.
+ * C3b-1 — headless 15-column commission-submission CSV serializer.
  *
  * Pure / headless: imports NO page module, NO React, NO Supabase, NO loader.
  * The existing single-month 12-column MCE carrier CSV
  * (`buildMesserCsv` in `MissingCommissionExportPage.tsx`) is unchanged and
  * stays byte-identical. This serializer is the new multi-month surface; it
- * appends two columns (Missing Month(s), Operator Comment) after the locked
- * 12 base columns.
+ * appends three columns (Missing Month(s), Operator Comment, Pay Entity)
+ * after the locked 12 base columns.
  *
  * Download wiring is intentionally NOT done here — that lands in C3b-2.
  */
@@ -19,10 +19,13 @@ import {
 import { stripExcelTextMarker } from '@/lib/mce/csvExportSanitizers';
 import type { VendorFieldsOutput } from '@/lib/mce/vendorEnrichment';
 
-/** Synthetic keys for the two appended columns. Live OUTSIDE MesserVendorKey
+/** Synthetic keys for the appended columns. Live OUTSIDE MesserVendorKey
  *  so the locked 12-key base type does NOT widen.
  */
-export type CommissionSubmissionAppendedKey = 'missingMonths' | 'operatorComment';
+export type CommissionSubmissionAppendedKey =
+  | 'missingMonths'
+  | 'operatorComment'
+  | 'payEntity';
 
 export interface CommissionSubmissionAppendedDescriptor {
   key: CommissionSubmissionAppendedKey;
@@ -33,24 +36,26 @@ export type CommissionSubmissionColumnDescriptor =
   | MesserColumnDescriptor
   | CommissionSubmissionAppendedDescriptor;
 
-const APPENDED_COLUMNS_2: ReadonlyArray<CommissionSubmissionAppendedDescriptor> = [
+const APPENDED_COLUMNS: ReadonlyArray<CommissionSubmissionAppendedDescriptor> = [
   { key: 'missingMonths', label: 'Missing Month(s)' },
   { key: 'operatorComment', label: 'Operator Comment' },
+  { key: 'payEntity', label: 'Pay Entity' },
 ];
 
 /**
- * The 14 commission-submission columns in vendor-required order: the 12
- * locked base Messer columns followed by Missing Month(s) and Operator
- * Comment. Append-only — do NOT reorder.
+ * The 15 commission-submission columns in vendor-required order: the 12
+ * locked base Messer columns followed by Missing Month(s), Operator
+ * Comment, and Pay Entity. Append-only — do NOT reorder.
  */
-export const COMMISSION_SUBMISSION_COLUMNS_14: ReadonlyArray<CommissionSubmissionColumnDescriptor> = [
+export const COMMISSION_SUBMISSION_COLUMNS: ReadonlyArray<CommissionSubmissionColumnDescriptor> = [
   ...BASE_MESSER_COLUMNS_12,
-  ...APPENDED_COLUMNS_2,
+  ...APPENDED_COLUMNS,
 ];
 
 /** One submission row = the 12 vendor fields + a list of missing months + the
- *  operator-seeded comment text. Caller (commission-submission assembler)
- *  produces this shape. Preview/dollar/internal fields are NEVER included.
+ *  operator-seeded comment text + the row's pay-entity scope. Caller
+ *  (commission-submission assembler) produces this shape. Preview/dollar/
+ *  internal fields are NEVER included.
  */
 export interface SubmissionRow {
   /** The 12 vendor fields produced by `enrichVendorFields`. */
@@ -59,6 +64,9 @@ export interface SubmissionRow {
   missingMonths: string[];
   /** Operator-seeded comment (already built upstream); written verbatim. */
   seededComment: string;
+  /** Pay-entity scope for this row (Coverall/Vix); disambiguates dual-scope
+   *  members emitted as two rows with otherwise-identical vendor fields. */
+  payEntity: string;
 }
 
 const MONTH_LABELS = [
@@ -95,17 +103,17 @@ export function formatMissingMonths(months: string[]): string {
 }
 
 /**
- * Convert SubmissionRow[] → CSV with EXACTLY the 14 commission-submission
+ * Convert SubmissionRow[] → CSV with EXACTLY the 15 commission-submission
  * columns. Cols 1-12 come from `row.vendorFields` (same value mapping as the
  * 12-col `buildMesserCsv`, applying `stripExcelTextMarker` to the Writing
  * Agent Carrier ID column only). Col 13 = formatted missing months. Col 14
- * = operator comment verbatim.
+ * = operator comment verbatim. Col 15 = pay-entity scope.
  *
- * Only the 12 vendor fields + 2 appended cells are selected — the whole row
+ * Only the 12 vendor fields + 3 appended cells are selected — the whole row
  * is NEVER spread, so preview/dollar/status/internal fields cannot leak.
  */
 export function buildCommissionSubmissionCsv(rows: SubmissionRow[]): string {
-  const labels = COMMISSION_SUBMISSION_COLUMNS_14.map((c) => c.label);
+  const labels = COMMISSION_SUBMISSION_COLUMNS.map((c) => c.label);
   const data = rows.map((row) => {
     const obj: Record<string, string> = {};
     for (const col of BASE_MESSER_COLUMNS_12) {
@@ -117,6 +125,7 @@ export function buildCommissionSubmissionCsv(rows: SubmissionRow[]): string {
     }
     obj['Missing Month(s)'] = formatMissingMonths(row.missingMonths || []);
     obj['Operator Comment'] = row.seededComment == null ? '' : String(row.seededComment);
+    obj['Pay Entity'] = row.payEntity == null ? '' : String(row.payEntity);
     return obj;
   });
   return Papa.unparse({ fields: labels, data });
@@ -127,11 +136,12 @@ export function buildCommissionSubmissionCsv(rows: SubmissionRow[]): string {
  * (vendor fields TOP-LEVEL on the row, via `VendorFieldsOutput`) into the
  * shape this serializer expects (vendor fields NESTED under
  * `row.vendorFields`). Only the 12 base Messer keys + `missingMonths` +
- * `seededComment` are copied — preview-only / internal / grain fields
+ * `seededComment` + the single `grainKey.targetScope` field (-> `payEntity`)
+ * are copied — preview-only / internal / grain fields
  * (`estimatedMissingCommission`, `estMissingStatus`, `previewEstimatedTotal`,
- * `previewEstimatedStatus`, `rowMonthAnchors`, `grainKey`, etc.) are
- * intentionally dropped at this boundary so they can never leak into the
- * 14-column CSV.
+ * `previewEstimatedStatus`, `rowMonthAnchors`, the rest of `grainKey`, etc.)
+ * are intentionally dropped at this boundary so they can never leak into the
+ * 15-column CSV.
  *
  * Does NOT change `buildCommissionSubmissionCsv`'s row contract.
  */
@@ -140,6 +150,7 @@ export type C3aSubmissionRowLike =
   & {
     missingMonths?: string[];
     seededComment?: string | null;
+    grainKey?: { targetScope?: 'Coverall' | 'Vix' };
   };
 
 export function toCommissionSubmissionCsvRow(c3aRow: C3aSubmissionRowLike): SubmissionRow {
@@ -148,9 +159,12 @@ export function toCommissionSubmissionCsvRow(c3aRow: C3aSubmissionRowLike): Subm
     const v = (c3aRow as Record<string, unknown>)[col.key];
     vendorFields[col.key] = v == null ? '' : String(v);
   }
+  // Read only the single allowed scope field — never spread grainKey.
+  const payEntity = c3aRow.grainKey?.targetScope ?? '';
   return {
     vendorFields: vendorFields as Pick<VendorFieldsOutput, MesserVendorKey>,
     missingMonths: Array.isArray(c3aRow.missingMonths) ? c3aRow.missingMonths : [],
     seededComment: typeof c3aRow.seededComment === 'string' ? c3aRow.seededComment : '',
+    payEntity: typeof payEntity === 'string' ? payEntity : '',
   };
 }
