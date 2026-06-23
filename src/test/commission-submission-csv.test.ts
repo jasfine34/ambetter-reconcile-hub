@@ -1,5 +1,5 @@
 /**
- * C3b-1 — tests for the new headless 14-column commission-submission CSV
+ * C3b-1 — tests for the headless 15-column commission-submission CSV
  * serializer. The existing 12-column MCE carrier CSV is unchanged and
  * tested elsewhere (those tests are NOT rewritten here).
  */
@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import {
-  COMMISSION_SUBMISSION_COLUMNS_14,
+  COMMISSION_SUBMISSION_COLUMNS,
   formatMissingMonths,
   buildCommissionSubmissionCsv,
   toCommissionSubmissionCsvRow,
@@ -42,10 +42,12 @@ const submissionRow = (
   vendorOverrides: Partial<SubmissionRow['vendorFields']> = {},
   missingMonths: string[] = [],
   seededComment = '',
+  payEntity: string = 'Coverall',
 ): SubmissionRow => ({
   vendorFields: vendor(vendorOverrides),
   missingMonths,
   seededComment,
+  payEntity,
 });
 
 const parseRows = (csv: string): string[][] =>
@@ -55,13 +57,14 @@ const parseRows = (csv: string): string[][] =>
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('C3b-1 — commission-submission 14-col CSV', () => {
-  it('(1) 14 headers; cols 13-14 are exactly Missing Month(s) + Operator Comment (append-only)', () => {
+describe('C3b-1 — commission-submission 15-col CSV', () => {
+  it('(1) 15 headers; cols 13-15 are exactly Missing Month(s) + Operator Comment + Pay Entity (append-only)', () => {
     const csv = buildCommissionSubmissionCsv([]);
     const header = parseRows(csv)[0];
-    expect(header).toHaveLength(14);
+    expect(header).toHaveLength(15);
     expect(header[12]).toBe('Missing Month(s)');
     expect(header[13]).toBe('Operator Comment');
+    expect(header[14]).toBe('Pay Entity');
   });
 
   it('(2) first-12 parity via the serializer boundary: BASE labels === buildMesserCsv header === COMMISSION_SUBMISSION first 12', () => {
@@ -71,13 +74,13 @@ describe('C3b-1 — commission-submission 14-col CSV', () => {
 
     const submissionHeader = parseRows(buildCommissionSubmissionCsv([]))[0];
     expect(submissionHeader.slice(0, 12)).toEqual(mceHeader);
-    expect(COMMISSION_SUBMISSION_COLUMNS_14.slice(0, 12).map((c) => c.label)).toEqual(mceHeader);
+    expect(COMMISSION_SUBMISSION_COLUMNS.slice(0, 12).map((c) => c.label)).toEqual(mceHeader);
   });
 
-  it('(3) no leak: preview/internal fields never appear in header or body even if attached to the source row', () => {
+  it('(3) no leak: preview/internal/grain fields never appear in header or body even if attached to the source row (only allowed scope passes through)', () => {
     // Build a row with EXTRA fields beyond SubmissionRow to simulate accidental leakage.
     const dirtyRow: any = {
-      ...submissionRow({}, ['2026-01'], 'note'),
+      ...submissionRow({}, ['2026-01'], 'note', 'Coverall'),
       estimatedMissingCommission: 987654321,
       estMissingStatus: 'LEAK_STATUS_SENTINEL',
       previewEstimatedTotal: 123456789,
@@ -113,7 +116,9 @@ describe('C3b-1 — commission-submission 14-col CSV', () => {
   });
 
   it('(5) seededComment maps verbatim to the Operator Comment cell', () => {
-    const csv = buildCommissionSubmissionCsv([submissionRow({}, ['2026-01'], 'Paid through 2025-12; missing Jan 2026')]);
+    const csv = buildCommissionSubmissionCsv([
+      submissionRow({}, ['2026-01'], 'Paid through 2025-12; missing Jan 2026', 'Coverall'),
+    ]);
     const [, body] = parseRows(csv);
     expect(body[13]).toBe('Paid through 2025-12; missing Jan 2026');
   });
@@ -129,12 +134,37 @@ describe('C3b-1 — commission-submission 14-col CSV', () => {
       } as any]);
       const mceCell = parseRows(mceCsv)[1][wacIdHeaderIdx];
 
-      // 14-col submission
+      // 15-col submission
       const subCsv = buildCommissionSubmissionCsv([submissionRow({ writingAgentCarrierId: wac })]);
       const subCell = parseRows(subCsv)[1][wacIdHeaderIdx];
 
       expect(subCell).toBe(mceCell);
     }
+  });
+
+  it('(7) Pay Entity written on every row from row.payEntity (Coverall and Vix)', () => {
+    const csv = buildCommissionSubmissionCsv([
+      submissionRow({ policyNumber: 'POL-A' }, ['2026-01'], '', 'Coverall'),
+      submissionRow({ policyNumber: 'POL-B' }, ['2026-02'], '', 'Vix'),
+    ]);
+    const rows = parseRows(csv);
+    expect(rows[1][14]).toBe('Coverall');
+    expect(rows[2][14]).toBe('Vix');
+  });
+
+  it('(7b) dual-scope synthetic pair: identical 12 vendor cells, disambiguated ONLY by Pay Entity', () => {
+    const v = { policyNumber: 'POL-DUAL', memberId: 'MID-DUAL' };
+    const csv = buildCommissionSubmissionCsv([
+      submissionRow(v, ['2026-01'], 'note', 'Coverall'),
+      submissionRow(v, ['2026-01'], 'note', 'Vix'),
+    ]);
+    const rows = parseRows(csv);
+    // Cols 0..13 identical between the two rows; only col 14 differs.
+    for (let c = 0; c < 14; c++) {
+      expect(rows[1][c]).toBe(rows[2][c]);
+    }
+    expect(rows[1][14]).toBe('Coverall');
+    expect(rows[2][14]).toBe('Vix');
   });
 
   it('(8) dependency direction: the two new lib modules import no page/React/Supabase/loader', () => {
@@ -153,7 +183,7 @@ describe('C3b-1 — commission-submission 14-col CSV', () => {
     }
   });
 
-  it('(9) toCommissionSubmissionCsvRow: maps a C3a top-level vendor-field row into the serializer-nested shape; preview-only fields dropped', () => {
+  it('(9) toCommissionSubmissionCsvRow: maps a C3a top-level vendor-field row into the serializer-nested shape; preview-only fields dropped; ONLY grainKey.targetScope -> payEntity passes through', () => {
     const c3aRow: any = {
       carrierName: 'Ambetter',
       npn: '12345',
@@ -172,7 +202,12 @@ describe('C3b-1 — commission-submission 14-col CSV', () => {
       estMissingStatus: 'OK',
       previewEstimatedTotal: 42.5,
       previewEstimatedStatus: 'OK',
-      grainKey: {},
+      grainKey: {
+        carrier: 'LEAK_CARRIER_SENTINEL',
+        targetScope: 'Vix',
+        stableMemberKey: 'LEAK_SMK_SENTINEL',
+        policy_identity_key: 'LEAK_PIK_SENTINEL',
+      },
       rowMonthAnchors: [],
       missingMonths: ['2026-02', '2026-01'],
       seededComment: 'Verbatim comment',
@@ -183,6 +218,7 @@ describe('C3b-1 — commission-submission 14-col CSV', () => {
     expect(adapted.vendorFields.memberId).toBe('MID-7');
     expect(adapted.missingMonths).toEqual(['2026-02', '2026-01']);
     expect(adapted.seededComment).toBe('Verbatim comment');
+    expect(adapted.payEntity).toBe('Vix');
     // Preview-only keys are NOT carried through.
     expect((adapted as any).estimatedMissingCommission).toBeUndefined();
     expect((adapted as any).previewEstimatedTotal).toBeUndefined();
@@ -197,8 +233,12 @@ describe('C3b-1 — commission-submission 14-col CSV', () => {
     expect(body[10]).toBe('MID-7');
     expect(body[12]).toBe('Jan 2026; Feb 2026');
     expect(body[13]).toBe('Verbatim comment');
-    // No preview leakage.
+    expect(body[14]).toBe('Vix');
+    // No preview leakage and no other grainKey fields leaked.
     expect(csv).not.toMatch(/42\.5/);
+    expect(csv).not.toMatch(/LEAK_CARRIER_SENTINEL/);
+    expect(csv).not.toMatch(/LEAK_SMK_SENTINEL/);
+    expect(csv).not.toMatch(/LEAK_PIK_SENTINEL/);
   });
 
   it('(10) MESSER_COLUMNS-derive: the page-local literal is derived verbatim from BASE_MESSER_COLUMNS_12 (same keys + labels + order)', async () => {

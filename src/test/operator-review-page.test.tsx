@@ -982,7 +982,7 @@ describe('OperatorReviewPage — C3b-2 commission-submission download', () => {
     };
   }
 
-  it('(1+2+3) downloads CSV with 12 vendor cells + Missing Month(s) + Operator Comment for a REAL C3a-shaped row; uses retained REF (no new uncached fetch); writes nothing', async () => {
+  it('(1+2+3) downloads CSV with 12 vendor cells + Missing Month(s) + Operator Comment + Pay Entity for a REAL C3a-shaped row; uses retained REF (no new uncached fetch); writes nothing', async () => {
     assembleCommissionSubmissionSpy.mockResolvedValueOnce({
       rows: [c3aRow],
       diagnostics: {},
@@ -1008,9 +1008,11 @@ describe('OperatorReviewPage — C3b-2 commission-submission download', () => {
       await waitFor(() => expect(cap.captured.length).toBe(1));
       const { csv, filename } = cap.captured[0];
 
-      // 14-col header + populated vendor cells + appended cells.
+      // 15-col header + populated vendor cells + appended cells.
       expect(csv.split('\n')[0]).toMatch(/^Carrier Name,/);
-      expect(csv).toMatch(/Missing Month\(s\),Operator Comment/);
+      expect(csv).toMatch(/Missing Month\(s\),Operator Comment,Pay Entity/);
+      // Pay Entity sourced from grainKey.targetScope.
+      expect(csv).toMatch(/Coverall/);
       // The 12 vendor values must appear in the body — proves the adapter
       // unwrapped TOP-LEVEL vendor fields (a nested-only serializer would
       // emit 12 blanks here).

@@ -1,6 +1,6 @@
 /**
  * C3b-1 — neutral CSV export sanitizers shared by the existing single-month
- * MCE (12-col) export and the new multi-month commission-submission (14-col)
+ * MCE (12-col) export and the new multi-month commission-submission (15-col)
  * serializer. Pure / headless: no React, no Supabase, no page imports.
  *
  * `stripExcelTextMarker` was moved verbatim from

@@ -5,7 +5,7 @@
  * `BASE_MESSER_COLUMNS_12` is the single source of truth for the locked
  * 12-column carrier-facing schema. The existing page-local `MESSER_COLUMNS`
  * derives from this; the new multi-month commission-submission serializer
- * builds its 14-column header on top of these 12 (append-only).
+ * builds its 15-column header on top of these 12 (append-only).
  */
 import type { VendorFieldsOutput } from '@/lib/mce/vendorEnrichment';
 
