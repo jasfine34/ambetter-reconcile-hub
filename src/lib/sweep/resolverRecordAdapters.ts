@@ -144,7 +144,7 @@ export function buildPolicyMemberCountRecords(args: {
   for (const row of args.normalizedRecords) {
     const src = sourceLetter(row.source_type);
     if (!src) continue;
-    const asOf = asOfMonthFor(row, args.batchMonthById);
+    const asOf = asOfMonthForMemberCount(row, args.batchMonthById);
     if (!asOf) continue;
     const count = parseMemberCountFromRow(row);
     if (count == null) continue;
