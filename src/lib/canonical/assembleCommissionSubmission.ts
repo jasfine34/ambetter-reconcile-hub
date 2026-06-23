@@ -707,6 +707,13 @@ export async function assembleCommissionSubmission(
     let lastStatus: EstMissingStatus | null = null;
     let unresolvedThisRow = false;
     const evidenceByMonth = new Map<string, EstMissingInputEvidence>();
+    // Tier source = policy-identity union from the FULL member-union (crosses
+    // the pay-entity boundary that caused starvation, while staying scoped
+    // to this policy so two policies of different tiers don't bleed).
+    const tierSourcePolicyRecords = isResolvedPolicyGrain
+      ? recordsForCanonicalPolicyIdentity(memberRecords, group.grainKey.policy_identity_key, groupPnKeySet)
+      : memberRecords;
+    const tierSourceRecords = tierSourcePolicyRecords.length ? tierSourcePolicyRecords : memberRecords;
     for (const sm of months) {
       const fn = resolverByScopeMonth.get(`${group.grainKey.targetScope}|${sm}`);
       if (!fn) { unresolvedThisRow = true; continue; }
@@ -720,6 +727,7 @@ export async function assembleCommissionSubmission(
         scope: group.grainKey.targetScope,
         batchMonthByBatchId: args.batchMonthByBatchId,
         policyIdentityKey: group.grainKey.policy_identity_key,
+        tierSourceRecords,
       });
       evidenceByMonth.set(sm, inputEvidence);
       if (isResolvedPolicyGrain) diagnostics.previewDollarPolicyGrainCount += 1;
