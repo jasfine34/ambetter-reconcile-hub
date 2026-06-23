@@ -78,18 +78,41 @@ export function buildSourceEvidenceMap(
     if (!r || !r.member_key) continue;
     const carrierVal = nonBlankString(r.carrier) ?? defaultCarrier ?? null;
     const stateVal = nonBlankString(r.state) ?? nonBlankString(r.bo_state) ?? null;
+    // Precedence (Site 3 fix): prefer an upstream-populated plan_variant
+    // FIRST (Sites 1–2 derive from full union), then fall back to a
+    // single-record derivation here. A 'conflict' derivation maps to
+    // plan_variant=null + plan_variant_status='conflict' so it never
+    // reaches comp-grid. Preserve upstream plan_variant_status if present.
+    const upstreamPlanVariant = nonBlankString(r.plan_variant);
+    let planVariant: string | null = upstreamPlanVariant;
+    let planVariantStatus: 'ok' | 'conflict' | 'unrecoverable' | null =
+      (r.plan_variant_status === 'ok' ||
+        r.plan_variant_status === 'conflict' ||
+        r.plan_variant_status === 'unrecoverable')
+        ? r.plan_variant_status
+        : null;
+    if (planVariant == null) {
+      const derived = deriveAmbetterTxPlanVariant({
+        carrier: carrierVal,
+        state: stateVal,
+        sources: [{ raw_json: (r as any)?.raw_json }],
+      });
+      if (derived === 'conflict') {
+        planVariant = null;
+        if (planVariantStatus == null) planVariantStatus = 'conflict';
+      } else if (derived === 'value' || derived === 'premier') {
+        planVariant = derived;
+        if (planVariantStatus == null) planVariantStatus = 'ok';
+      }
+    }
     const ev: EstMissingInputEvidence = {
       carrier: carrierVal,
       state: stateVal,
       member_count: nonNullNumber(r.member_count) ?? nonNullNumber(r.covered_member_count) ?? null,
       months: defaultMonths,
       policy_year: derivePolicyYear(r),
-      plan_variant:
-        deriveAmbetterTxPlanVariant({
-          carrier: carrierVal,
-          state: stateVal,
-          sources: [{ raw_json: (r as any)?.raw_json }],
-        }) ?? nonBlankString(r.plan_variant),
+      plan_variant: planVariant,
+      plan_variant_status: planVariantStatus,
       current_policy_aor: nonBlankString(r.current_policy_aor),
       matched_payee: parseMatchedPayee(r.actual_pay_entity) ?? parseMatchedPayee(r.matched_payee),
       policy_identity_key: nonBlankString(r.policy_identity_key),

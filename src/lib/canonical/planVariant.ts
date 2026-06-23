@@ -2,28 +2,34 @@
  * TX Ambetter plan-tier expected-basis fix (Yellow lane).
  *
  * Derive the canonical LOWERCASE plan_variant ('value' | 'premier') for
- * TX Ambetter members from the raw evidence we already carry. The live
- * carrier_comp_rates table has both TX rows (value=$24, premier=$29);
- * the historical miss was read-side — evidence only set plan_variant from
- * raw_json.plan_variant which is absent in production data, so the comp-grid
- * lookup with plan_variant=null defaulted to the highest TX rate ($29).
+ * TX Ambetter members from the raw evidence we already carry, with bounded
+ * conflict detection. Conflict detection prevents a silent, array-order-
+ * dependent pick when the member's full-union records carry BOTH a Value
+ * and a Premier signal at the SAME winning precedence tier (mid-year tier
+ * change, data error, or multi-policy bleed). A 'conflict' result is
+ * mapped by the evidence builders to plan_variant=null +
+ * plan_variant_status='conflict', and the resolver holds the row as
+ * PLAN_TIER_UNRECOVERABLE rather than guessing.
  *
- * Precedence (first non-null wins):
+ * Precedence (first tier that produces ANY signal wins; lower tiers are
+ * NOT consulted once a higher tier produces a signal):
  *   1. raw_json.plan_variant canonicalized lowercase, if recognized
  *      ('value' | 'premier').
  *   2. Commission raw_json.Product explicitly containing 'TX-Value' or
  *      'TX-Premier' (case-insensitive).
  *   3. BO / EDE raw_json['Plan Name'] containing 'VALUE' (case-insensitive)
  *      → 'value'. Absence of VALUE is NOT proof of Premier — return null.
- *   4. null.
+ *
+ * Within the winning tier: one distinct value → return it; two distinct
+ * values (value AND premier) → 'conflict'.
  *
  * Applied ONLY when carrier canonicalizes to 'ambetter' AND state is 'TX'.
- * All other rows: helper returns null without inspection. Callers MUST fall
- * back to their existing plan_variant resolution path in that case.
+ * All other rows: helper returns null without inspection.
  */
 import { canonicalCarrier } from '../carrierCanonical';
 
 export type AmbetterTxPlanVariant = 'value' | 'premier';
+export type AmbetterTxPlanVariantDerivation = AmbetterTxPlanVariant | 'conflict' | null;
 
 export interface PlanVariantSource {
   raw_json?: any;
@@ -57,28 +63,46 @@ function fromPlanName(raw: any): AmbetterTxPlanVariant | null {
   return null;
 }
 
+/** Collapse a list of within-tier signals to a single derivation. */
+function collapseTier(
+  signals: ReadonlyArray<AmbetterTxPlanVariant>,
+): AmbetterTxPlanVariantDerivation {
+  if (signals.length === 0) return null;
+  const distinct = new Set<AmbetterTxPlanVariant>(signals);
+  if (distinct.size === 1) return signals[0];
+  return 'conflict';
+}
+
 export function deriveAmbetterTxPlanVariant(args: {
   carrier: string | null | undefined;
   state: string | null | undefined;
   sources: ReadonlyArray<PlanVariantSource | null | undefined>;
-}): AmbetterTxPlanVariant | null {
+}): AmbetterTxPlanVariantDerivation {
   if (canonicalCarrier(args.carrier) !== 'ambetter') return null;
   if (canonState(args.state) !== 'TX') return null;
 
+  const tier1: AmbetterTxPlanVariant[] = [];
+  const tier2: AmbetterTxPlanVariant[] = [];
+  const tier3: AmbetterTxPlanVariant[] = [];
+
   for (const s of args.sources) {
     if (!s || !s.raw_json) continue;
-    const direct = recognizeLowercase(s.raw_json.plan_variant);
-    if (direct) return direct;
+    const v = recognizeLowercase(s.raw_json.plan_variant);
+    if (v) tier1.push(v);
   }
+  if (tier1.length > 0) return collapseTier(tier1);
+
   for (const s of args.sources) {
     if (!s || !s.raw_json) continue;
-    const fromProd = fromProduct(s.raw_json);
-    if (fromProd) return fromProd;
+    const v = fromProduct(s.raw_json);
+    if (v) tier2.push(v);
   }
+  if (tier2.length > 0) return collapseTier(tier2);
+
   for (const s of args.sources) {
     if (!s || !s.raw_json) continue;
-    const fromPlan = fromPlanName(s.raw_json);
-    if (fromPlan) return fromPlan;
+    const v = fromPlanName(s.raw_json);
+    if (v) tier3.push(v);
   }
-  return null;
+  return collapseTier(tier3);
 }

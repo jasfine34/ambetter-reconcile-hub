@@ -195,3 +195,71 @@ describe('estMissingResolver — TX Ambetter plan-tier guard', () => {
     expect(r.amount).toBe(25);
   });
 });
+
+describe('deriveAmbetterTxPlanVariant — conflict detection (full-source corrective)', () => {
+  it('Conflict within winning tier (Product) → "conflict", order-independent', () => {
+    const sourcesA = [
+      { raw_json: { Product: '2026 Ambetter TX-Value' } },
+      { raw_json: { Product: '2026 Ambetter TX-Premier' } },
+    ];
+    const sourcesB = [...sourcesA].reverse();
+    const a = deriveAmbetterTxPlanVariant({ carrier: 'Ambetter', state: 'TX', sources: sourcesA });
+    const b = deriveAmbetterTxPlanVariant({ carrier: 'Ambetter', state: 'TX', sources: sourcesB });
+    expect(a).toBe('conflict');
+    expect(b).toBe('conflict');
+  });
+
+  it('Higher-precedence winner suppresses lower-precedence (no false conflict)', () => {
+    // raw_json.plan_variant=value wins; stale Product=TX-Premier is NOT consulted.
+    const out = deriveAmbetterTxPlanVariant({
+      carrier: 'Ambetter',
+      state: 'TX',
+      sources: [
+        { raw_json: { plan_variant: 'value' } },
+        { raw_json: { Product: '2026 Ambetter TX-Premier' } },
+      ],
+    });
+    expect(out).toBe('value');
+  });
+
+  it('Clean single-tier (many Value signals) → "value", no false conflict', () => {
+    const out = deriveAmbetterTxPlanVariant({
+      carrier: 'Ambetter',
+      state: 'TX',
+      sources: [
+        { raw_json: { Product: 'TX-Value 2026' } },
+        { raw_json: { Product: 'Ambetter TX-Value' } },
+        { raw_json: { 'Plan Name': 'Standard Silver VALUE' } },
+      ],
+    });
+    expect(out).toBe('value');
+  });
+});
+
+describe('estMissingResolver — plan_variant_status=conflict guard', () => {
+  const ctx = {
+    rateRows: TX_RATES,
+    batchMonth: '2026-03',
+    scope: 'Coverall' as const,
+  };
+  const resolver = createEstMissingResolver(ctx);
+
+  it('plan_variant_status=conflict → PLAN_TIER_UNRECOVERABLE (never silent pick)', () => {
+    const r = resolver.resolve({
+      row: { member_key: 'm1' },
+      inputEvidence: ev({ plan_variant: null, plan_variant_status: 'conflict' }),
+    });
+    expect(r.status).toBe('UNSUPPORTED');
+    expect(r.unsupported_reason).toBe('PLAN_TIER_UNRECOVERABLE');
+    expect(r.amount).toBeNull();
+  });
+
+  it('defensive: literal "conflict" string never reaches comp-grid', () => {
+    const r = resolver.resolve({
+      row: { member_key: 'm1' },
+      inputEvidence: ev({ plan_variant: 'conflict' as any }),
+    });
+    expect(r.status).toBe('UNSUPPORTED');
+    expect(r.unsupported_reason).toBe('PLAN_TIER_UNRECOVERABLE');
+  });
+});

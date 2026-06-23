@@ -173,6 +173,9 @@ function synthesizeEvidenceRow(
   scope: TargetScope,
   batchMonthByBatchId: Record<string, string>,
   pickedEdeForMonth: NormalizedRecord | null,
+  /** Full member-union records used ONLY for tier derivation (scope-invariant
+   *  property of the policy). Every other field continues to use `recs`. */
+  tierSourceRecs: NormalizedRecord[] = recs,
 ): { row: Record<string, unknown>; memberCountResolution: { status: 'resolved' | 'unresolved' | 'manual_review'; conflicts?: number[] } } {
   const sample =
     recs.find((r) => r.source_type === 'BACK_OFFICE') ??
@@ -240,6 +243,34 @@ function synthesizeEvidenceRow(
       }
     }
   }
+  // Tier derivation reads the FULL member-union (tierSourceRecs) because
+  // plan tier is scope-invariant — Plan Name / Product evidence lives in
+  // BO / commission records that the scope filter (often EDE-only) drops.
+  // A 'conflict' derivation maps to plan_variant=null +
+  // plan_variant_status='conflict' so the resolver holds the row as
+  // PLAN_TIER_UNRECOVERABLE instead of silently picking one tier.
+  const tierDerivation = deriveAmbetterTxPlanVariant({
+    carrier: carrierCanonicalEvidence,
+    state,
+    sources: tierSourceRecs.map((r) => ({
+      raw_json: (r as any)?.raw_json,
+      source_type: r.source_type,
+    })),
+  });
+  const rawJsonPlanVariant =
+    ((sample as any)?.raw_json?.['plan_variant'] as string | undefined) ?? null;
+  let planVariantOut: string | null;
+  let planVariantStatus: 'ok' | 'conflict' | 'unrecoverable' | null;
+  if (tierDerivation === 'conflict') {
+    planVariantOut = null;
+    planVariantStatus = 'conflict';
+  } else if (tierDerivation === 'value' || tierDerivation === 'premier') {
+    planVariantOut = tierDerivation;
+    planVariantStatus = 'ok';
+  } else {
+    planVariantOut = rawJsonPlanVariant;
+    planVariantStatus = null;
+  }
   return {
     row: {
       member_key: memberKey,
@@ -255,17 +286,8 @@ function synthesizeEvidenceRow(
         (scope === 'All' ? null : scope),
       matched_payee: scope === 'All' ? null : scope,
       policy_identity_key: null,
-      plan_variant:
-        deriveAmbetterTxPlanVariant({
-          carrier: carrierCanonicalEvidence,
-          state,
-          sources: recs.map((r) => ({
-            raw_json: (r as any)?.raw_json,
-            source_type: r.source_type,
-          })),
-        }) ??
-        ((sample as any)?.raw_json?.['plan_variant'] as string | undefined) ??
-        null,
+      plan_variant: planVariantOut,
+      plan_variant_status: planVariantStatus,
       member_count_status: memberCountRes.status,
       member_count_conflicts: memberCountRes.conflicts,
     },
@@ -457,9 +479,11 @@ export function assembleDiagnoseRouteRows(
         if (!cell) continue;
         if (cell.state !== 'unpaid' && cell.state !== 'paid') continue;
         const recs = ctx.scopedByMember.get(memberKey) ?? [];
+        // Tier source = full member-union (scope-invariant); see helper docs.
+        const tierSourceRecs = rawRecordsByMemberKey.get(memberKey) ?? recs;
         const pickedEdeForMonth =
           pickerMapsByMemberKey.get(memberKey)?.get(serviceMonth) ?? null;
-        const synth = synthesizeEvidenceRow(memberKey, recs, serviceMonth, scope, args.batchMonthByBatchId, pickedEdeForMonth);
+        const synth = synthesizeEvidenceRow(memberKey, recs, serviceMonth, scope, args.batchMonthByBatchId, pickedEdeForMonth, tierSourceRecs);
         monthEvidenceRows.push(synth.row);
         memberCountResByMember.set(memberKey, synth.memberCountResolution);
       }
