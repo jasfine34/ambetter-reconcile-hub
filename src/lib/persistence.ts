@@ -616,6 +616,15 @@ export const MEMBER_TIMELINE_RAW_JSON_PROJECTION = [
   'raw_covered_member_count:raw_json->>coveredMemberCount',
   'raw_covered_member_count_cap:raw_json->>CoveredMemberCount',
   'raw_covered_member_count_snake:raw_json->>covered_member_count',
+  // TX Ambetter plan-tier projection-starvation corrective — project all
+  // five spellings the deriveAmbetterTxPlanVariant helper checks
+  // (raw.Product ?? raw.product; raw['Plan Name'] ?? raw.plan_name ??
+  // raw.planName). Narrowing to one would silently re-starve a subset.
+  'raw_product:raw_json->>Product',
+  'raw_product_lower:raw_json->>product',
+  'raw_plan_name:raw_json->>"Plan Name"',
+  'raw_plan_name_snake:raw_json->>plan_name',
+  'raw_plan_name_camel:raw_json->>planName',
 ].join(',');
 
 export const MEMBER_TIMELINE_ALL_BATCH_COLUMNS =
@@ -645,6 +654,12 @@ function reconstructRawJson(row: any): any {
   if (row.raw_covered_member_count != null) raw.coveredMemberCount = row.raw_covered_member_count;
   if (row.raw_covered_member_count_cap != null) raw.CoveredMemberCount = row.raw_covered_member_count_cap;
   if (row.raw_covered_member_count_snake != null) raw.covered_member_count = row.raw_covered_member_count_snake;
+  // TX Ambetter plan-tier — restore tier fields under their ORIGINAL keys.
+  if (row.raw_product != null) raw.Product = row.raw_product;
+  if (row.raw_product_lower != null) raw.product = row.raw_product_lower;
+  if (row.raw_plan_name != null) raw['Plan Name'] = row.raw_plan_name;
+  if (row.raw_plan_name_snake != null) raw.plan_name = row.raw_plan_name_snake;
+  if (row.raw_plan_name_camel != null) raw.planName = row.raw_plan_name_camel;
   const cleaned = { ...row, raw_json: raw };
   delete cleaned.raw_ffm_app_id;
   delete cleaned.raw_current_policy_aor;
@@ -662,6 +677,11 @@ function reconstructRawJson(row: any): any {
   delete cleaned.raw_covered_member_count;
   delete cleaned.raw_covered_member_count_cap;
   delete cleaned.raw_covered_member_count_snake;
+  delete cleaned.raw_product;
+  delete cleaned.raw_product_lower;
+  delete cleaned.raw_plan_name;
+  delete cleaned.raw_plan_name_snake;
+  delete cleaned.raw_plan_name_camel;
   return cleaned;
 }
 
