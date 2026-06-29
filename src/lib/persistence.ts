@@ -654,6 +654,12 @@ function reconstructRawJson(row: any): any {
   if (row.raw_covered_member_count != null) raw.coveredMemberCount = row.raw_covered_member_count;
   if (row.raw_covered_member_count_cap != null) raw.CoveredMemberCount = row.raw_covered_member_count_cap;
   if (row.raw_covered_member_count_snake != null) raw.covered_member_count = row.raw_covered_member_count_snake;
+  // TX Ambetter plan-tier — restore tier fields under their ORIGINAL keys.
+  if (row.raw_product != null) raw.Product = row.raw_product;
+  if (row.raw_product_lower != null) raw.product = row.raw_product_lower;
+  if (row.raw_plan_name != null) raw['Plan Name'] = row.raw_plan_name;
+  if (row.raw_plan_name_snake != null) raw.plan_name = row.raw_plan_name_snake;
+  if (row.raw_plan_name_camel != null) raw.planName = row.raw_plan_name_camel;
   const cleaned = { ...row, raw_json: raw };
   delete cleaned.raw_ffm_app_id;
   delete cleaned.raw_current_policy_aor;
