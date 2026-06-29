@@ -395,4 +395,62 @@ describe('getAllNormalizedRecordsForMemberTimeline — query shape', () => {
     expect(row.raw_covered_member_count_cap).toBeUndefined();
     expect(row.raw_covered_member_count_snake).toBeUndefined();
   });
+
+  // ── TX Ambetter plan-tier projection-starvation corrective ──────────
+  it('TX-tier: MEMBER_TIMELINE_ALL_BATCH_COLUMNS contains all five plan-tier aliases', async () => {
+    allRows = [makeRow(1)];
+    await getAllNormalizedRecordsForMemberTimeline();
+    const cols = MEMBER_TIMELINE_ALL_BATCH_COLUMNS;
+    expect(cols).toContain('raw_product:raw_json->>Product');
+    expect(cols).toContain('raw_product_lower:raw_json->>product');
+    expect(cols).toContain('raw_plan_name:raw_json->>"Plan Name"');
+    expect(cols).toContain('raw_plan_name_snake:raw_json->>plan_name');
+    expect(cols).toContain('raw_plan_name_camel:raw_json->>planName');
+    expect(queryLog[0].selectCols).toBe(cols);
+  });
+
+  it('TX-tier: projected row reconstructs all five original tier raw_json keys with aliases stripped', async () => {
+    allRows = [makeRow(1, {
+      raw_product: 'TX-Value',
+      raw_product_lower: 'tx-value',
+      raw_plan_name: 'Standard Gold VALUE',
+      raw_plan_name_snake: 'standard_gold_value',
+      raw_plan_name_camel: 'standardGoldValue',
+    })];
+    const [row] = await getAllNormalizedRecordsForMemberTimeline();
+    expect(row.raw_json.Product).toBe('TX-Value');
+    expect(row.raw_json.product).toBe('tx-value');
+    expect(row.raw_json['Plan Name']).toBe('Standard Gold VALUE');
+    expect(row.raw_json.plan_name).toBe('standard_gold_value');
+    expect(row.raw_json.planName).toBe('standardGoldValue');
+    expect(row.raw_product).toBeUndefined();
+    expect(row.raw_product_lower).toBeUndefined();
+    expect(row.raw_plan_name).toBeUndefined();
+    expect(row.raw_plan_name_snake).toBeUndefined();
+    expect(row.raw_plan_name_camel).toBeUndefined();
+  });
+
+  it('TX-tier end-to-end: loader-shaped Ambetter-TX rows resolve tier=value via deriveAmbetterTxPlanVariant', async () => {
+    const { deriveAmbetterTxPlanVariant } = await import('@/lib/canonical/planVariant');
+    allRows = [
+      makeRow(1, {
+        source_type: 'BACK_OFFICE',
+        raw_plan_name: 'Standard Gold VALUE',
+      }),
+      makeRow(2, {
+        source_type: 'COMMISSION',
+        raw_product: 'Ambetter TX-Value',
+      }),
+    ];
+    const rows = await getAllNormalizedRecordsForMemberTimeline();
+    // Precondition: tier fields actually arrive (the bug being fixed).
+    expect(rows.some(r => r.raw_json?.['Plan Name'])).toBe(true);
+    expect(rows.some(r => r.raw_json?.Product)).toBe(true);
+    const tier = deriveAmbetterTxPlanVariant({
+      carrier: 'Ambetter',
+      state: 'TX',
+      sources: rows.map(r => ({ raw_json: r.raw_json, source_type: r.source_type })),
+    });
+    expect(tier).toBe('value');
+  });
 });
