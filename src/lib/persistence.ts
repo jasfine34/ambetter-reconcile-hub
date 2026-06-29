@@ -616,6 +616,15 @@ export const MEMBER_TIMELINE_RAW_JSON_PROJECTION = [
   'raw_covered_member_count:raw_json->>coveredMemberCount',
   'raw_covered_member_count_cap:raw_json->>CoveredMemberCount',
   'raw_covered_member_count_snake:raw_json->>covered_member_count',
+  // TX Ambetter plan-tier projection-starvation corrective — project all
+  // five spellings the deriveAmbetterTxPlanVariant helper checks
+  // (raw.Product ?? raw.product; raw['Plan Name'] ?? raw.plan_name ??
+  // raw.planName). Narrowing to one would silently re-starve a subset.
+  'raw_product:raw_json->>Product',
+  'raw_product_lower:raw_json->>product',
+  'raw_plan_name:raw_json->>"Plan Name"',
+  'raw_plan_name_snake:raw_json->>plan_name',
+  'raw_plan_name_camel:raw_json->>planName',
 ].join(',');
 
 export const MEMBER_TIMELINE_ALL_BATCH_COLUMNS =
