@@ -93,6 +93,12 @@ function makeRow(n: number, overrides: Partial<ProjectedRow> = {}): ProjectedRow
     raw_covered_member_count: null,
     raw_covered_member_count_cap: null,
     raw_covered_member_count_snake: null,
+    // TX Ambetter plan-tier projection-starvation corrective — five aliases.
+    raw_product: null,
+    raw_product_lower: null,
+    raw_plan_name: null,
+    raw_plan_name_snake: null,
+    raw_plan_name_camel: null,
     ...overrides,
   };
 }
