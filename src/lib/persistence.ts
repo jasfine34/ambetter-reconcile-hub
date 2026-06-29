@@ -677,6 +677,11 @@ function reconstructRawJson(row: any): any {
   delete cleaned.raw_covered_member_count;
   delete cleaned.raw_covered_member_count_cap;
   delete cleaned.raw_covered_member_count_snake;
+  delete cleaned.raw_product;
+  delete cleaned.raw_product_lower;
+  delete cleaned.raw_plan_name;
+  delete cleaned.raw_plan_name_snake;
+  delete cleaned.raw_plan_name_camel;
   return cleaned;
 }
 
