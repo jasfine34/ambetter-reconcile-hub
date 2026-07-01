@@ -776,10 +776,13 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
       const { rows } = assembleDiagnoseRouteRows(aeBaseArgs(recs, [STMT_MONTH], BATCH_MONTH, ['Coverall', 'Vix']) as any);
       const row = rows.find((r) => r.targetScope === 'Vix' && r.serviceMonth === STMT_MONTH && r.stableMemberKey === 'isid:isideo2');
       expect(row).toBeDefined();
-      expect(row!.facts.amount.kind).toBe('wrong_amount');
-      if (row!.facts.amount.kind === 'wrong_amount') {
+      // Step 2 (Erica-AOR corrective): $25 matches full PMPM vs $4.50
+      // override → typed_review.
+      expect(row!.facts.amount.kind).toBe('typed_review');
+      if (row!.facts.amount.kind === 'typed_review') {
+        expect(row!.facts.amount.reason).toBe('ERICA_OVERRIDE_SCOPE_PAID_FULL_PMPM');
         expect(row!.facts.amount.expected).toBe(4.50);
-        expect(row!.facts.amount.expected).not.toBe(25);
+        expect(row!.facts.amount.alt_expected).toBe(25);
       }
     });
 
