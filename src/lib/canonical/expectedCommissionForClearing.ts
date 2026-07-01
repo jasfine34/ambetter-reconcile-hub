@@ -100,3 +100,21 @@ export function getExpectedCommissionForClearing(
 
   return getExpectedCommission(args, rateRows);
 }
+
+/**
+ * Step 2 — Erica-AOR typed-review support.
+ *
+ * Returns the RAW full-PMPM expected (bypassing the Erica override wrapper)
+ * for the given clearing args. Used exclusively by the typed-review detector
+ * in `blockerFacts.detectTypedReview` to compare actual paid amount against
+ * the alternative (non-override) basis. Never used for money resolution.
+ *
+ * Kept here — rather than in a caller — so the Fix 7 static guard (only
+ * this wrapper may import `getExpectedCommission`) remains intact.
+ */
+export function getFullPmpmExpectedForTypedReview(
+  args: GetExpectedCommissionArgs,
+  rateRows: CarrierCompRateRow[],
+): number | null {
+  return getExpectedCommission(args, rateRows).expectedAmount;
+}
