@@ -161,6 +161,15 @@ export function routeMemberMonth(args: {
     if (f.memberCount?.status === 'manual_review') {
       return { route: 'manual_review', fyi, rationale: 'member_count_manual_review' };
     }
+    if (f.amount.kind === 'typed_review') {
+      return {
+        route: 'manual_review',
+        fyi,
+        rationale: f.amount.reason === 'ERICA_OVERRIDE_SCOPE_PAID_FULL_PMPM'
+          ? 'erica_override_scope_paid_full_pmpm'
+          : 'nonerica_aor_override_amount',
+      };
+    }
     if (f.amount.kind === 'wrong_amount') {
       return { route: 'amount_discrepancy', fyi, rationale: 'target_scope_paid_wrong_amount' };
     }
@@ -183,6 +192,15 @@ export function routeMemberMonth(args: {
     // a cross-entity-satisfied unpaid row computes an expected dollar.
     if (f.memberCount?.status === 'manual_review') {
       return { route: 'manual_review', fyi, rationale: 'member_count_manual_review' };
+    }
+    if (f.crossEntitySatisfied.amountStatus.kind === 'typed_review') {
+      return {
+        route: 'manual_review',
+        fyi,
+        rationale: f.crossEntitySatisfied.amountStatus.reason === 'ERICA_OVERRIDE_SCOPE_PAID_FULL_PMPM'
+          ? 'erica_override_scope_paid_full_pmpm'
+          : 'nonerica_aor_override_amount',
+      };
     }
     if (f.crossEntitySatisfied.amountStatus.kind === 'wrong_amount') {
       fyi.push('cross_entity_wrong_amount');
