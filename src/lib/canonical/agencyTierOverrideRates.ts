@@ -42,7 +42,7 @@ export const AGENCY_TIER_OVERRIDE_RATES: readonly AgencyTierOverrideRate[] = [
     carrier_display: 'Ambetter',
     policy_year: 2026,
     state_code: null,
-    rate_basis: 'per_policy_month',
+    rate_basis: 'per_member_per_month',
     rate_amount: 0.50,
     confidence: 'observed_single_row_plus_business_rule',
     evidence: {
@@ -61,7 +61,7 @@ export const AGENCY_TIER_OVERRIDE_RATES: readonly AgencyTierOverrideRate[] = [
     carrier_display: 'Ambetter',
     policy_year: 2026,
     state_code: null,
-    rate_basis: 'per_policy_month',
+    rate_basis: 'per_member_per_month',
     rate_amount: 4.50,
     confidence: 'observed_single_row_plus_business_rule',
     evidence: {

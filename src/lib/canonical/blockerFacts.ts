@@ -41,6 +41,16 @@ import type {
   EstMissingInputEvidence,
   UnsupportedReason,
 } from './estMissingResolver';
+import { classifyPolicyOwnerFromCurrentAor } from './policyOwner';
+
+// Erica override per-member rates (Ambetter 2026). MUST match the seed in
+// agencyTierOverrideRates.ts — kept as literal constants here so the typed
+// exception detector for non-Erica AORs remains a pure module (no seed
+// import cycle). If the seed ever changes rates or basis, update both.
+const ERICA_OVERRIDE_PER_MEMBER_BY_PAYEE: Readonly<Record<'Coverall' | 'Vix', number>> = {
+  Coverall: 0.5,
+  Vix: 4.5,
+};
 
 // ----- Per-fact output types ------------------------------------------------
 
@@ -64,12 +74,40 @@ export type AmountStatus =
   | { kind: 'correct' }
   | { kind: 'wrong_amount'; actual: number; expected: number }
   | { kind: 'indeterminate'; reason: AmountIndeterminateReason }
+  | {
+      kind: 'typed_review';
+      reason: TypedReviewReason;
+      actual: number;
+      expected: number | null;
+      alt_expected?: number | null;
+    }
   | { kind: 'not_applicable' };
 
 export type AmountIndeterminateReason =
   | UnsupportedReason
   | 'TBD_AMBIGUOUS_PAYEE'
   | 'NO_EXPECTED_BASIS';
+
+/**
+ * Step 2 typed exception reasons — surfaced instead of a generic
+ * `wrong_amount` route so the two Erica-override-adjacent classes are
+ * distinguishable in downstream counts and manual-review triage.
+ *
+ *   ERICA_OVERRIDE_SCOPE_PAID_FULL_PMPM
+ *     AOR == Erica, target scope Coverall/Vix. Override-aware expected is
+ *     the per-member override amount ($0.50/$4.50 × members). Actual paid
+ *     matches the full carrier PMPM instead → flag for adjudication
+ *     rather than posting a $0.50-vs-$34 wrong-amount.
+ *
+ *   NONERICA_AOR_OVERRIDE_AMOUNT
+ *     AOR != Erica, target scope Coverall/Vix. Expected is full PMPM.
+ *     Actual paid matches an Erica-shaped override amount ($0.50 or $4.50
+ *     × members) instead → flag for adjudication (includes the
+ *     Unknown-AOR subset as an AOR-resolution FYI).
+ */
+export type TypedReviewReason =
+  | 'ERICA_OVERRIDE_SCOPE_PAID_FULL_PMPM'
+  | 'NONERICA_AOR_OVERRIDE_AMOUNT';
 
 export interface CrossEntitySatisfiedFact {
   satisfied: boolean;
@@ -141,6 +179,18 @@ export interface BlockerFactsInputs {
     status: 'resolved' | 'unresolved' | 'manual_review';
     conflicts?: number[];
   };
+  /** Step 2 (Erica AOR override): optional callback returning the FULL
+   *  PMPM expected (non-override) for a given pay entity scope for this
+   *  member-month. When present, `buildBlockerFacts` uses it to emit a
+   *  typed_review AmountStatus for the two Erica-adjacent classes:
+   *
+   *    - ERICA_OVERRIDE_SCOPE_PAID_FULL_PMPM   (Erica AOR, actual == fullPMPM)
+   *    - NONERICA_AOR_OVERRIDE_AMOUNT          (non-Erica AOR, actual == override)
+   *
+   *  When absent, no typed_review is ever emitted and legacy wrong_amount
+   *  behavior is preserved byte-for-byte.
+   */
+  computeFullPmpmExpected?: (payee: 'Coverall' | 'Vix') => number | null;
 }
 
 // ----- premium passthrough --------------------------------------------------
@@ -218,6 +268,65 @@ function compareAmount(actual: number, expected: number | null): AmountStatus {
   return { kind: 'wrong_amount', actual, expected };
 }
 
+function amountsEqualCents(a: number, b: number): boolean {
+  return Math.round(a * 100) === Math.round(b * 100);
+}
+
+/**
+ * Step 2 — typed-review upgrade on `wrong_amount` for Erica-adjacent
+ * override anomalies. Returns null when no typed_review applies (caller
+ * keeps the original AmountStatus).
+ *
+ *   - Requires scope ∈ {Coverall,Vix} (overrides only exist there).
+ *   - Requires member_count known (per-member basis is undefined otherwise).
+ *   - Never fabricates a new expected; caller's expected is preserved.
+ */
+function detectTypedReview(args: {
+  scope: 'Coverall' | 'Vix';
+  actual: number;
+  expected: number | null;
+  resolution: EstMissingResolution | undefined;
+  evidence: EstMissingInputEvidence | undefined;
+  computeFullPmpm: ((payee: 'Coverall' | 'Vix') => number | null) | undefined;
+}): AmountStatus | null {
+  const { scope, actual, expected, resolution, evidence, computeFullPmpm } = args;
+  if (!evidence) return null;
+  const memberCount = evidence.member_count;
+  if (memberCount == null || memberCount <= 0) return null;
+  const owner = classifyPolicyOwnerFromCurrentAor(evidence.current_policy_aor ?? null);
+
+  // Erica-full-PMPM: override-aware expected was used, actual matches raw PMPM.
+  if (owner === 'EF' && resolution?.status === 'RESOLVED_WITH_OVERRIDE') {
+    const fullPmpm = computeFullPmpm ? computeFullPmpm(scope) : null;
+    if (fullPmpm != null && amountsEqualCents(actual, fullPmpm)) {
+      return {
+        kind: 'typed_review',
+        reason: 'ERICA_OVERRIDE_SCOPE_PAID_FULL_PMPM',
+        actual,
+        expected,
+        alt_expected: fullPmpm,
+      };
+    }
+    return null;
+  }
+
+  // Non-Erica AOR receiving an Erica-shaped per-member override amount.
+  if (owner !== 'EF') {
+    const perMember = ERICA_OVERRIDE_PER_MEMBER_BY_PAYEE[scope];
+    const overrideExpected = perMember * memberCount;
+    if (amountsEqualCents(actual, overrideExpected)) {
+      return {
+        kind: 'typed_review',
+        reason: 'NONERICA_AOR_OVERRIDE_AMOUNT',
+        actual,
+        expected,
+        alt_expected: overrideExpected,
+      };
+    }
+  }
+  return null;
+}
+
 function resolveExpectedForTarget(inputs: BlockerFactsInputs): EstMissingResolution | undefined {
   if (inputs.preResolvedTarget) return inputs.preResolvedTarget;
   if (!inputs.resolve || !inputs.evidenceForResolver) return undefined;
@@ -272,9 +381,23 @@ function buildCrossEntitySatisfied(
   }
   const otherRes = resolveExpectedForOther(inputs);
   const { expected, failureReason } = resolutionToExpected(otherRes);
-  const amountStatus: AmountStatus = failureReason
+  let amountStatus: AmountStatus = failureReason
     ? { kind: 'indeterminate', reason: failureReason }
     : compareAmount(other.paid_amount, expected);
+  if (amountStatus.kind === 'wrong_amount') {
+    // Cross-entity satisfying scope is the OTHER pay entity.
+    const typed = detectTypedReview({
+      scope: other.payEntity,
+      actual: other.paid_amount,
+      expected,
+      resolution: otherRes,
+      evidence: inputs.evidenceForResolver
+        ? { ...inputs.evidenceForResolver, matched_payee: other.payEntity }
+        : undefined,
+      computeFullPmpm: inputs.computeFullPmpmExpected,
+    });
+    if (typed) amountStatus = typed;
+  }
   return {
     satisfied: true,
     satisfyingEntity: other.payEntity,
@@ -305,6 +428,20 @@ export function buildBlockerFacts(inputs: BlockerFactsInputs): BlockerFacts {
     amount = failureReason
       ? { kind: 'indeterminate', reason: failureReason }
       : compareAmount(inputs.targetCell.paid_amount, expected);
+    if (
+      amount.kind === 'wrong_amount' &&
+      (inputs.targetScope === 'Coverall' || inputs.targetScope === 'Vix')
+    ) {
+      const typed = detectTypedReview({
+        scope: inputs.targetScope,
+        actual: inputs.targetCell.paid_amount,
+        expected,
+        resolution: targetRes,
+        evidence: inputs.evidenceForResolver,
+        computeFullPmpm: inputs.computeFullPmpmExpected,
+      });
+      if (typed) amount = typed;
+    }
   } else if (crossEntitySatisfied.satisfied) {
     amount = crossEntitySatisfied.amountStatus;
   }

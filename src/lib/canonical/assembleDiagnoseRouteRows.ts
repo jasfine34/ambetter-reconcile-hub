@@ -47,6 +47,7 @@ import {
   createEstMissingResolver,
   type EstMissingInputEvidence,
 } from './estMissingResolver';
+import { getExpectedCommission } from './compGrid';
 import {
   buildMonthPickerMapForMember,
 } from './edeMonthPicker';
@@ -554,6 +555,32 @@ export function assembleDiagnoseRouteRows(
           resolve: (call) => resolve({ row: { member_key: call.member_key }, inputEvidence: call.inputEvidence }),
           memberKey,
           memberCountResolution,
+          // Step 2 typed-review support: raw full-PMPM expected (NOT the
+          // override wrapper) for the given payee, computed from the same
+          // evidence row. Returns null when required inputs are missing.
+          computeFullPmpmExpected: (_payee) => {
+            const ev = evidenceForResolver;
+            if (
+              !ev ||
+              ev.carrier == null ||
+              ev.state == null ||
+              ev.member_count == null ||
+              ev.months == null ||
+              ev.policy_year == null
+            ) return null;
+            const r = getExpectedCommission(
+              {
+                carrier: ev.carrier,
+                state: ev.state,
+                members: ev.member_count,
+                months: ev.months,
+                planVariant: ev.plan_variant ?? null,
+                policyYear: ev.policy_year,
+              },
+              args.rateRows,
+            );
+            return r.expectedAmount ?? null;
+          },
         });
 
 
