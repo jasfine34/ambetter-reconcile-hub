@@ -754,12 +754,14 @@ describe('assembleDiagnoseRouteRows — headless production assembler', () => {
       const { rows } = assembleDiagnoseRouteRows(aeBaseArgs(recs, [STMT_MONTH], BATCH_MONTH, ['Coverall', 'Vix']) as any);
       const row = rows.find((r) => r.targetScope === 'Coverall' && r.serviceMonth === STMT_MONTH && r.stableMemberKey === 'isid:isideo1');
       expect(row).toBeDefined();
-      // amount fact must NOT be the regular grid ($25 = correct). It MUST
-      // reflect the override expected ($0.50).
-      expect(row!.facts.amount.kind).toBe('wrong_amount');
-      if (row!.facts.amount.kind === 'wrong_amount') {
+      // Step 2 (Erica-AOR corrective): actual $25 matches full PMPM while
+      // override expected is $0.50 → upgraded to typed_review, NOT a
+      // generic wrong_amount vs $0.50.
+      expect(row!.facts.amount.kind).toBe('typed_review');
+      if (row!.facts.amount.kind === 'typed_review') {
+        expect(row!.facts.amount.reason).toBe('ERICA_OVERRIDE_SCOPE_PAID_FULL_PMPM');
         expect(row!.facts.amount.expected).toBe(0.50);
-        expect(row!.facts.amount.expected).not.toBe(25);
+        expect(row!.facts.amount.alt_expected).toBe(25);
       }
     });
 
