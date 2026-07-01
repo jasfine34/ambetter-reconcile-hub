@@ -47,7 +47,7 @@ import {
   createEstMissingResolver,
   type EstMissingInputEvidence,
 } from './estMissingResolver';
-import { getExpectedCommission } from './compGrid';
+import { getFullPmpmExpectedForTypedReview } from './expectedCommissionForClearing';
 import {
   buildMonthPickerMapForMember,
 } from './edeMonthPicker';
@@ -568,7 +568,7 @@ export function assembleDiagnoseRouteRows(
               ev.months == null ||
               ev.policy_year == null
             ) return null;
-            const r = getExpectedCommission(
+            return getFullPmpmExpectedForTypedReview(
               {
                 carrier: ev.carrier,
                 state: ev.state,
@@ -579,7 +579,6 @@ export function assembleDiagnoseRouteRows(
               },
               args.rateRows,
             );
-            return r.expectedAmount ?? null;
           },
         });
 
