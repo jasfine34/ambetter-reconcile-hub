@@ -47,7 +47,7 @@ import {
   createEstMissingResolver,
   type EstMissingInputEvidence,
 } from './estMissingResolver';
-import { getExpectedCommission } from './compGrid';
+import { getFullPmpmExpectedForTypedReview } from './expectedCommissionForClearing';
 import {
   buildMonthPickerMapForMember,
 } from './edeMonthPicker';
