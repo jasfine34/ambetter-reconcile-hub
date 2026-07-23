@@ -8,7 +8,7 @@
   "mcp": {
     "server": {
       "name": "ambetter-reconcile-hub-mcp",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "title": "Ambetter Reconcile Hub MCP"
     },
     "tools": [
@@ -32,6 +32,137 @@
           },
           "required": [
             "text"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_batches",
+        "title": "List upload batches",
+        "description": "List commission upload batches (carrier, statement month, notes) most recent first.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "carrier": {
+              "type": "string",
+              "description": "Filter by carrier (e.g. 'Ambetter')."
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "Max batches."
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_batch_summary",
+        "title": "Get batch summary",
+        "description": "Return aggregate counts and totals for a batch: reconciled members, actual vs estimated-missing commission.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "batch_id": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Upload batch id."
+            }
+          },
+          "required": [
+            "batch_id"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_members",
+        "title": "List reconciled members",
+        "description": "List reconciled members for a batch with optional filters (agent NPN, issue type, name substring).",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "batch_id": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Upload batch id."
+            },
+            "agent_npn": {
+              "type": "string",
+              "description": "Filter by agent NPN."
+            },
+            "issue_type": {
+              "type": "string",
+              "description": "Filter by issue_type."
+            },
+            "name_contains": {
+              "type": "string",
+              "description": "Case-insensitive applicant name match."
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 100
+            }
+          },
+          "required": [
+            "batch_id"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_member_timeline",
+        "title": "Get member timeline",
+        "description": "Return all normalized records (BO, EDE, commission) for a member_key across batches, newest first.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "member_key": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Stable member key."
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 200
+            }
+          },
+          "required": [
+            "member_key"
           ],
           "additionalProperties": false,
           "$schema": "http://json-schema.org/draft-07/schema#"

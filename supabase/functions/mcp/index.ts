@@ -17,13 +17,186 @@ var echo_default = defineTool({
   handler: ({ text }) => ({ content: [{ type: "text", text }] })
 });
 
+// src/lib/mcp/tools/listBatches.ts
+import { defineTool as defineTool2 } from "npm:@lovable.dev/mcp-js@0.24.0";
+import { createClient } from "npm:@supabase/supabase-js@^2.103.0";
+import { z as z2 } from "npm:zod@^3.25.76";
+function db() {
+  return createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_PUBLISHABLE_KEY,
+    { auth: { persistSession: false, autoRefreshToken: false } }
+  );
+}
+var listBatches_default = defineTool2({
+  name: "list_batches",
+  title: "List upload batches",
+  description: "List commission upload batches (carrier, statement month, notes) most recent first.",
+  inputSchema: {
+    carrier: z2.string().optional().describe("Filter by carrier (e.g. 'Ambetter')."),
+    limit: z2.number().int().min(1).max(200).default(50).describe("Max batches.")
+  },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  handler: async ({ carrier, limit }) => {
+    let q = db().from("upload_batches").select("id, carrier, statement_month, notes, created_at, last_full_rebuild_at").order("statement_month", { ascending: false }).limit(limit);
+    if (carrier) q = q.eq("carrier", carrier);
+    const { data, error } = await q;
+    if (error)
+      return { content: [{ type: "text", text: error.message }], isError: true };
+    return {
+      content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+      structuredContent: { batches: data ?? [] }
+    };
+  }
+});
+
+// src/lib/mcp/tools/getBatchSummary.ts
+import { defineTool as defineTool3 } from "npm:@lovable.dev/mcp-js@0.24.0";
+import { createClient as createClient2 } from "npm:@supabase/supabase-js@^2.103.0";
+import { z as z3 } from "npm:zod@^3.25.76";
+function db2() {
+  return createClient2(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_PUBLISHABLE_KEY,
+    { auth: { persistSession: false, autoRefreshToken: false } }
+  );
+}
+var getBatchSummary_default = defineTool3({
+  name: "get_batch_summary",
+  title: "Get batch summary",
+  description: "Return aggregate counts and totals for a batch: reconciled members, actual vs estimated-missing commission.",
+  inputSchema: {
+    batch_id: z3.string().uuid().describe("Upload batch id.")
+  },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  handler: async ({ batch_id }) => {
+    const supabase = db2();
+    const [batchRes, membersRes] = await Promise.all([
+      supabase.from("upload_batches").select("id, carrier, statement_month, notes").eq("id", batch_id).maybeSingle(),
+      supabase.from("reconciled_members").select(
+        "actual_commission, estimated_missing_commission, in_ede, in_back_office, in_commission, issue_type"
+      ).eq("batch_id", batch_id)
+    ]);
+    if (batchRes.error)
+      return { content: [{ type: "text", text: batchRes.error.message }], isError: true };
+    if (membersRes.error)
+      return { content: [{ type: "text", text: membersRes.error.message }], isError: true };
+    const rows = membersRes.data ?? [];
+    const num = (v) => typeof v === "number" ? v : v ? Number(v) : 0;
+    const summary = {
+      batch: batchRes.data,
+      member_count: rows.length,
+      totals: {
+        actual_commission: rows.reduce((s, r) => s + num(r.actual_commission), 0),
+        estimated_missing_commission: rows.reduce(
+          (s, r) => s + num(r.estimated_missing_commission),
+          0
+        )
+      },
+      presence: {
+        in_ede: rows.filter((r) => r.in_ede).length,
+        in_back_office: rows.filter((r) => r.in_back_office).length,
+        in_commission: rows.filter((r) => r.in_commission).length
+      },
+      by_issue_type: rows.reduce((acc, r) => {
+        const k = r.issue_type ?? "none";
+        acc[k] = (acc[k] ?? 0) + 1;
+        return acc;
+      }, {})
+    };
+    return {
+      content: [{ type: "text", text: JSON.stringify(summary, null, 2) }],
+      structuredContent: summary
+    };
+  }
+});
+
+// src/lib/mcp/tools/listMembers.ts
+import { defineTool as defineTool4 } from "npm:@lovable.dev/mcp-js@0.24.0";
+import { createClient as createClient3 } from "npm:@supabase/supabase-js@^2.103.0";
+import { z as z4 } from "npm:zod@^3.25.76";
+function db3() {
+  return createClient3(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_PUBLISHABLE_KEY,
+    { auth: { persistSession: false, autoRefreshToken: false } }
+  );
+}
+var listMembers_default = defineTool4({
+  name: "list_members",
+  title: "List reconciled members",
+  description: "List reconciled members for a batch with optional filters (agent NPN, issue type, name substring).",
+  inputSchema: {
+    batch_id: z4.string().uuid().describe("Upload batch id."),
+    agent_npn: z4.string().optional().describe("Filter by agent NPN."),
+    issue_type: z4.string().optional().describe("Filter by issue_type."),
+    name_contains: z4.string().optional().describe("Case-insensitive applicant name match."),
+    limit: z4.number().int().min(1).max(500).default(100)
+  },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  handler: async ({ batch_id, agent_npn, issue_type, name_contains, limit }) => {
+    let q = db3().from("reconciled_members").select(
+      "member_key, applicant_name, agent_name, agent_npn, policy_number, issuer_subscriber_id, expected_pay_entity, actual_pay_entity, actual_commission, estimated_missing_commission, issue_type, issue_notes"
+    ).eq("batch_id", batch_id).limit(limit);
+    if (agent_npn) q = q.eq("agent_npn", agent_npn);
+    if (issue_type) q = q.eq("issue_type", issue_type);
+    if (name_contains) q = q.ilike("applicant_name", `%${name_contains}%`);
+    const { data, error } = await q;
+    if (error)
+      return { content: [{ type: "text", text: error.message }], isError: true };
+    return {
+      content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+      structuredContent: { members: data ?? [] }
+    };
+  }
+});
+
+// src/lib/mcp/tools/getMemberTimeline.ts
+import { defineTool as defineTool5 } from "npm:@lovable.dev/mcp-js@0.24.0";
+import { createClient as createClient4 } from "npm:@supabase/supabase-js@^2.103.0";
+import { z as z5 } from "npm:zod@^3.25.76";
+function db4() {
+  return createClient4(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_PUBLISHABLE_KEY,
+    { auth: { persistSession: false, autoRefreshToken: false } }
+  );
+}
+var getMemberTimeline_default = defineTool5({
+  name: "get_member_timeline",
+  title: "Get member timeline",
+  description: "Return all normalized records (BO, EDE, commission) for a member_key across batches, newest first.",
+  inputSchema: {
+    member_key: z5.string().min(1).describe("Stable member key."),
+    limit: z5.number().int().min(1).max(500).default(200)
+  },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  handler: async ({ member_key, limit }) => {
+    const { data, error } = await db4().from("normalized_records").select(
+      "id, batch_id, source_type, source_file_label, carrier, applicant_name, policy_number, issuer_subscriber_id, agent_name, agent_npn, pay_entity, status, effective_date, paid_through_date, premium, net_premium, commission_amount, months_paid, created_at"
+    ).eq("member_key", member_key).is("superseded_at", null).order("created_at", { ascending: false }).limit(limit);
+    if (error)
+      return { content: [{ type: "text", text: error.message }], isError: true };
+    return {
+      content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+      structuredContent: { records: data ?? [] }
+    };
+  }
+});
+
 // src/lib/mcp/index.ts
 var mcp_default = defineMcp({
   name: "ambetter-reconcile-hub-mcp",
   title: "Ambetter Reconcile Hub MCP",
-  version: "0.1.0",
-  instructions: "Public MCP server for Ambetter Reconcile Hub. Use `echo` to verify connectivity. No authentication required.",
-  tools: [echo_default]
+  version: "0.2.0",
+  instructions: "Public MCP server for Ambetter Reconcile Hub. Read-only tools over commission upload batches and reconciled members. Start with `list_batches`, then `get_batch_summary` or `list_members` for a batch, and `get_member_timeline` to trace a single member. No authentication required.",
+  tools: [
+    echo_default,
+    listBatches_default,
+    getBatchSummary_default,
+    listMembers_default,
+    getMemberTimeline_default
+  ]
 });
 
 // lovable-mcp-supabase-entry.ts
