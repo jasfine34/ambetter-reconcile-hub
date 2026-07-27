@@ -37,6 +37,98 @@ export class ReconcileAfterPromoteError extends Error {
 }
 
 /**
+ * Distinct error class for the "promote left mixed durable state" case:
+ * the promote RPC call threw a transport-class error, and post-hoc
+ * inspection of normalized_records for the same (batch, session) found
+ * counts that match neither the fully-committed nor fully-rolled-back
+ * shape. Operator must inspect before retrying.
+ */
+export class PromoteMixedStateError extends Error {
+  readonly kind = 'promote-mixed-state';
+  constructor(
+    message: string,
+    public readonly batchId: string,
+    public readonly sessionId: string,
+    public readonly activeCount: number,
+    public readonly stagedCount: number,
+    public readonly expectedTotal: number,
+  ) {
+    super(message);
+    this.name = 'PromoteMixedStateError';
+  }
+}
+
+/**
+ * A promote call is "transport-class" (recoverable via durable-state
+ * inspection) when supabase-js surfaces it without a Postgres SQLSTATE
+ * code — typically fetch-failed / network / gateway timeouts where the
+ * server may have committed but the response never reached us. Errors
+ * carrying a definitive Postgres code (57014, 55P03, 23xxx, ...) are
+ * NOT recoverable this way and keep today's failure semantics.
+ */
+export function isTransportClassPromoteError(err: unknown): boolean {
+  const anyErr = err as any;
+  const code = anyErr?.code;
+  if (code && String(code).trim().length > 0) return false;
+  const text = String(anyErr?.message ?? err ?? '').toLowerCase();
+  if (!text) return true;
+  return /fetch failed|failed to fetch|networkerror|network error|load failed|timeout|timed out|gateway|socket|econnreset|abort/i.test(text);
+}
+
+/**
+ * Flatten an arbitrary thrown value into a serializable log record.
+ * Replaces the collapsed-`Object` output that hid the true February
+ * error from diagnosis.
+ */
+export function flattenErrorForLog(err: unknown, ctx: Record<string, unknown> = {}): Record<string, unknown> {
+  const anyErr = err as any;
+  return {
+    ...ctx,
+    name: anyErr?.name ?? (err instanceof Error ? err.name : typeof err),
+    message: typeof anyErr?.message === 'string' ? anyErr.message : extractErrorMessage(err),
+    code: anyErr?.code ?? null,
+    details: anyErr?.details ?? null,
+    hint: anyErr?.hint ?? null,
+    status: anyErr?.status ?? anyErr?.statusCode ?? null,
+  };
+}
+
+/**
+ * Query durable state for the promoted session and classify.
+ *   committed   — active session rows == expectedTotal AND staged == 0
+ *   rolled-back — active == 0 AND staged == expectedTotal (or ≥ expected)
+ *   mixed       — anything else
+ */
+export async function inspectPromoteOutcome(
+  batchId: string,
+  sessionId: string,
+  expectedTotal: number,
+): Promise<{ outcome: 'committed' | 'rolled-back' | 'mixed'; activeCount: number; stagedCount: number }> {
+  const client: any = supabase;
+  const [activeRes, stagedRes] = await Promise.all([
+    client
+      .from('normalized_records')
+      .select('id', { count: 'exact', head: true })
+      .eq('batch_id', batchId)
+      .eq('rebuild_session_id', sessionId)
+      .eq('staging_status', 'active'),
+    client
+      .from('normalized_records')
+      .select('id', { count: 'exact', head: true })
+      .eq('batch_id', batchId)
+      .eq('rebuild_session_id', sessionId)
+      .eq('staging_status', 'staged'),
+  ]);
+  const activeCount = Number(activeRes?.count ?? 0);
+  const stagedCount = Number(stagedRes?.count ?? 0);
+  let outcome: 'committed' | 'rolled-back' | 'mixed';
+  if (activeCount === expectedTotal && stagedCount === 0) outcome = 'committed';
+  else if (activeCount === 0 && stagedCount >= expectedTotal) outcome = 'rolled-back';
+  else outcome = 'mixed';
+  return { outcome, activeCount, stagedCount };
+}
+
+/**
  * Bumped whenever normalization or reconciliation logic changes in a way that
  * could produce different results from the same source files. The dashboard
  * compares this to `upload_batches.last_rebuild_logic_version` and shows a
