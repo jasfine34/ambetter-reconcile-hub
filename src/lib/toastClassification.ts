@@ -26,7 +26,7 @@
  * runtime — so it can be unit-tested in isolation.
  */
 
-import { ReconcileAfterPromoteError } from './rebuild';
+import { ReconcileAfterPromoteError, PromoteMixedStateError } from './rebuild';
 
 export type ToastVariant = 'destructive' | 'warning' | 'info' | 'default';
 
@@ -43,6 +43,7 @@ export interface ClassifiedToast {
     | 'rebuild-count-mismatch'
     | 'rebuild-lock-cross-check'
     | 'rebuild-promoted-reconcile-failed'
+    | 'rebuild-promote-mixed-state'
     | 'rebuild-lock-contention'
     | 'unexpected';
 }
@@ -111,6 +112,19 @@ export function classifyRebuildError(
 ): ClassifiedToast {
   const batchSuffix = opts.batchLabel ? ` — ${opts.batchLabel}` : '';
   const msg = lower(err);
+
+  // Class 5b — promote left mixed durable state after a transport-class
+  // error. Distinct from generic "unexpected" so the operator knows NOT
+  // to blindly retry.
+  if (err instanceof PromoteMixedStateError) {
+    return {
+      variant: 'destructive',
+      classId: 'rebuild-promote-mixed-state',
+      title: `Rebuild left mixed state${batchSuffix}`,
+      description:
+        'Promote result is indeterminate. Do NOT retry blindly — inspect normalized_records for this session before rebuilding.',
+    };
+  }
 
   // Class 5 — promote committed, reconcile/stamp failed.
   // Identified by class instance, NOT message text, because rebuild.ts wraps
