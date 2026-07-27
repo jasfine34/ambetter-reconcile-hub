@@ -397,13 +397,75 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
       totalFiles: files.length,
       recordsNormalized: totalNormalized,
     });
-    await replaceNormalizedForFileSet({
-      batchId,
-      sessionId,
-      expectedCounts,
-      requiredSourceTypes,
-    });
-    promoted = true;
+    const promoteStart = performance.now();
+    try {
+      await replaceNormalizedForFileSet({
+        batchId,
+        sessionId,
+        expectedCounts,
+        requiredSourceTypes,
+      });
+      promoted = true;
+    } catch (promoteErr) {
+      const elapsedMs = Math.round(performance.now() - promoteStart);
+      const flat = flattenErrorForLog(promoteErr, {
+        phase: 'promote',
+        batchId,
+        sessionId,
+        elapsedMs,
+      });
+      console.error('[rebuild-diag] promote call threw', flat);
+
+      // Definitive Postgres errors (with a SQLSTATE code) keep today's
+      // behavior — rethrow so the caller / classifier handles them.
+      if (!isTransportClassPromoteError(promoteErr)) {
+        throw promoteErr;
+      }
+
+      // Transport-class error: the server may have committed while the
+      // response never reached us (the February case). Query durable
+      // state for this (batch, session) and branch on the outcome.
+      const inspection = await inspectPromoteOutcome(batchId, sessionId, totalNormalized);
+      console.info('[rebuild-diag] promote-outcome recovery inspection', {
+        batchId,
+        sessionId,
+        expectedTotal: totalNormalized,
+        ...inspection,
+      });
+
+      if (inspection.outcome === 'committed') {
+        // Recovery path — the RPC succeeded server-side. Continue into
+        // reconciliation and metadata stamping instead of failing the run.
+        promoted = true;
+        try {
+          toast.info('Normalized promote completed', {
+            description: 'Continuing reconciliation.',
+          });
+        } catch { /* toast is best-effort */ }
+      } else if (inspection.outcome === 'rolled-back') {
+        // Genuine rollback — preserve existing failed-promote behavior.
+        throw promoteErr;
+      } else {
+        // Mixed: refuse to guess.
+        try {
+          toast.error('Rebuild left mixed durable state', {
+            description:
+              'Do NOT retry blindly. Inspect normalized_records for this rebuild session before rebuilding.',
+          });
+        } catch { /* toast is best-effort */ }
+        throw new PromoteMixedStateError(
+          `Promote left mixed durable state for batch ${batchId} (session ${sessionId}): ` +
+            `active=${inspection.activeCount}, staged=${inspection.stagedCount}, expected=${totalNormalized}. ` +
+            `Do NOT retry blindly — inspect normalized_records for this session before rebuilding. ` +
+            `Underlying: ${flat.message}`,
+          batchId,
+          sessionId,
+          inspection.activeCount,
+          inspection.stagedCount,
+          totalNormalized,
+        );
+      }
+    }
 
     // Sanity assertion: if any source file produced normalized rows, the
     // active count must be > 0 after promote.
