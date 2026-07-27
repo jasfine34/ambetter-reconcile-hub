@@ -270,28 +270,64 @@ async function fetchAllBatchesWithMonth(): Promise<Array<{ id: string; statement
   return (data || []).map((b: any) => ({ id: b.id, statement_month: b.statement_month }));
 }
 
-/** Page through every non-superseded normalized record across all batches. */
+const RESOLVER_COLUMNS = [
+  'id',
+  'batch_id',
+  'uploaded_file_id',
+  'source_type',
+  'issuer_subscriber_id',
+  'issuer_policy_id',
+  'exchange_subscriber_id',
+  'exchange_policy_id',
+  'raw_ffm_app_id:raw_json->>ffmAppId',
+  'raw_exchange_subscriber_id:raw_json->>exchangeSubscriberId',
+  'created_at',
+].join(',');
+
+/**
+ * Page through every canonical-active, non-superseded normalized record using
+ * keyset pagination on `id`. The predicate (`staging_status='active'` +
+ * `superseded_at IS NULL`) matches the shipped partial index
+ * `idx_normalized_active_id`, and excluding staged rebuild-residue rows is
+ * required for correctness — staged evidence must not influence resolution.
+ * Slim two-key projection avoids transferring full `raw_json` when the
+ * resolver only reads `ffmAppId` / `exchangeSubscriberId`.
+ */
 async function fetchAllNormalizedRecordsForResolver(): Promise<any[]> {
   const all: any[] = [];
-  let from = 0;
   const pageSize = 1000;
-  // Trim payload — we only need the columns the resolver looks at.
-  const cols = 'id,batch_id,uploaded_file_id,source_type,issuer_subscriber_id,issuer_policy_id,exchange_subscriber_id,exchange_policy_id,raw_json,created_at';
+  let lastId: string | null = null;
+
   while (true) {
-    const { data, error } = await supabase
+    let query = (supabase as any)
       .from('normalized_records')
-      .select(cols)
+      .select(RESOLVER_COLUMNS)
+      .eq('staging_status', 'active')
       .is('superseded_at', null)
       .order('id', { ascending: true })
-      .range(from, from + pageSize - 1);
+      .limit(pageSize);
+
+    if (lastId !== null) query = query.gt('id', lastId);
+
+    const { data, error } = await query;
     if (error) throw error;
     if (!data || data.length === 0) break;
-    all.push(...data);
+
+    all.push(...data.map((row: any) => ({
+      ...row,
+      raw_json: {
+        ffmAppId: row.raw_ffm_app_id ?? null,
+        exchangeSubscriberId: row.raw_exchange_subscriber_id ?? null,
+      },
+    })));
+
     if (data.length < pageSize) break;
-    from += pageSize;
+    lastId = data[data.length - 1].id;
   }
+
   return all;
 }
+
 
 // ============================================================================
 // Read-through API: load the sidecar table and apply it to records on demand.
