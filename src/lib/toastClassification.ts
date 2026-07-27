@@ -43,6 +43,7 @@ export interface ClassifiedToast {
     | 'rebuild-count-mismatch'
     | 'rebuild-lock-cross-check'
     | 'rebuild-promoted-reconcile-failed'
+    | 'rebuild-promote-mixed-state'
     | 'rebuild-lock-contention'
     | 'unexpected';
 }
