@@ -12,7 +12,7 @@ import {
   classifyUploadError,
   classifyRebuildError,
 } from '@/lib/toastClassification';
-import { ReconcileAfterPromoteError } from '@/lib/rebuild';
+import { ReconcileAfterPromoteError, PromoteInspectionFailedError } from '@/lib/rebuild';
 
 describe('classifyUploadError', () => {
   it('class 1: upload RPC failure → destructive "Upload failed. Data was not saved."', () => {
