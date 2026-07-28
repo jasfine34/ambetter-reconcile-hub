@@ -457,9 +457,9 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
       const elapsedMs = Math.round(performance.now() - promoteStart);
       const flat = flattenErrorForLog(promoteErr, {
         phase: 'promote',
-        batchId,
-        sessionId,
-        elapsedMs,
+        batch_id: batchId,
+        rebuild_session_id: sessionId,
+        elapsed_ms: elapsedMs,
       });
       console.error('[rebuild-diag] promote call threw', flat);
 
@@ -472,13 +472,51 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
       // Transport-class error: the server may have committed while the
       // response never reached us (the February case). Query durable
       // state for this (batch, session) and branch on the outcome.
-      const inspection = await inspectPromoteOutcome(batchId, sessionId, totalNormalized);
+      let inspection: { outcome: 'committed' | 'rolled-back' | 'mixed'; activeCount: number; stagedCount: number };
+      try {
+        inspection = await inspectPromoteOutcome(batchId, sessionId, totalNormalized);
+      } catch (inspectErr) {
+        console.error(
+          '[rebuild-diag] promote-outcome inspection failed',
+          flattenErrorForLog(inspectErr, {
+            phase: 'promote-inspection',
+            batch_id: batchId,
+            rebuild_session_id: sessionId,
+            elapsed_ms: Math.round(performance.now() - promoteStart),
+          }),
+        );
+        try {
+          toast.error('Rebuild outcome unknown', {
+            description:
+              'Could not verify whether the promote committed. Do NOT retry blindly — inspect normalized_records for this rebuild session.',
+          });
+        } catch { /* toast is best-effort */ }
+        if (inspectErr instanceof PromoteInspectionFailedError) {
+          throw new PromoteInspectionFailedError(
+            `${inspectErr.message} Underlying promote error: ${flat.message}`,
+            batchId,
+            sessionId,
+            inspectErr.inspectionError,
+            promoteErr,
+          );
+        }
+        throw new PromoteInspectionFailedError(
+          `Promote-outcome inspection failed for batch ${batchId} (session ${sessionId}). ` +
+            `Promote outcome is UNKNOWN — do NOT retry blindly; inspect normalized_records for this session before rebuilding. ` +
+            `Underlying promote error: ${flat.message}`,
+          batchId,
+          sessionId,
+          inspectErr,
+          promoteErr,
+        );
+      }
       console.info('[rebuild-diag] promote-outcome recovery inspection', {
-        batchId,
-        sessionId,
+        batch_id: batchId,
+        rebuild_session_id: sessionId,
         expectedTotal: totalNormalized,
         ...inspection,
       });
+
 
       if (inspection.outcome === 'committed') {
         // Recovery path — the RPC succeeded server-side. Continue into
