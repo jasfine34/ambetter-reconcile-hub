@@ -44,6 +44,8 @@ export interface ClassifiedToast {
     | 'rebuild-lock-cross-check'
     | 'rebuild-promoted-reconcile-failed'
     | 'rebuild-promote-mixed-state'
+    | 'rebuild-promote-inspection-failed'
+
     | 'rebuild-lock-contention'
     | 'unexpected';
 }
