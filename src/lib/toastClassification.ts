@@ -115,10 +115,24 @@ export function classifyRebuildError(
   const batchSuffix = opts.batchLabel ? ` — ${opts.batchLabel}` : '';
   const msg = lower(err);
 
+  // Class 5c — durable-state inspection failed after a transport-class
+  // promote error. Outcome is UNKNOWN. Must be classified ahead of the
+  // generic bucket so the operator does not retry blindly.
+  if (err instanceof PromoteInspectionFailedError) {
+    return {
+      variant: 'destructive',
+      classId: 'rebuild-promote-inspection-failed',
+      title: `Rebuild outcome unknown${batchSuffix}`,
+      description:
+        'Could not verify whether the promote committed. Do NOT retry blindly — inspect normalized_records for this rebuild session before rebuilding.',
+    };
+  }
+
   // Class 5b — promote left mixed durable state after a transport-class
   // error. Distinct from generic "unexpected" so the operator knows NOT
   // to blindly retry.
   if (err instanceof PromoteMixedStateError) {
+
     return {
       variant: 'destructive',
       classId: 'rebuild-promote-mixed-state',
