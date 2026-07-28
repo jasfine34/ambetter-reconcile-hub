@@ -118,7 +118,12 @@ export function classifyRebuildError(
   // Class 5c — durable-state inspection failed after a transport-class
   // promote error. Outcome is UNKNOWN. Must be classified ahead of the
   // generic bucket so the operator does not retry blindly.
-  if (err instanceof PromoteInspectionFailedError) {
+  // (defensive `typeof` guard: some test surfaces mock '@/lib/rebuild'
+  // partially, leaving the class binding undefined at runtime.)
+  if (
+    (typeof PromoteInspectionFailedError === 'function' && err instanceof PromoteInspectionFailedError) ||
+    (err as any)?.kind === 'promote-inspection-failed'
+  ) {
     return {
       variant: 'destructive',
       classId: 'rebuild-promote-inspection-failed',
