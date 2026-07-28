@@ -26,7 +26,7 @@
  * runtime — so it can be unit-tested in isolation.
  */
 
-import { ReconcileAfterPromoteError, PromoteMixedStateError } from './rebuild';
+import { ReconcileAfterPromoteError, PromoteMixedStateError, PromoteInspectionFailedError } from './rebuild';
 
 export type ToastVariant = 'destructive' | 'warning' | 'info' | 'default';
 
