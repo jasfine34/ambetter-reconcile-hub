@@ -27,7 +27,7 @@
  */
 
 import { ReconcileAfterPromoteError } from './rebuild';
-import type { PromoteMixedStateError, PromoteInspectionFailedError } from './rebuild';
+
 
 export type ToastVariant = 'destructive' | 'warning' | 'info' | 'default';
 
