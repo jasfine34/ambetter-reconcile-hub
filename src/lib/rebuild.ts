@@ -94,10 +94,34 @@ export function flattenErrorForLog(err: unknown, ctx: Record<string, unknown> = 
 }
 
 /**
+ * Distinct error class for "durable-state inspection itself failed".
+ * Raised when either count query used by `inspectPromoteOutcome` errors.
+ * We must NOT coerce a failed count to zero — doing so could falsely
+ * classify a promote as committed and stamp the batch without ever
+ * establishing staged === 0. Fail closed instead.
+ */
+export class PromoteInspectionFailedError extends Error {
+  readonly kind = 'promote-inspection-failed';
+  constructor(
+    message: string,
+    public readonly batchId: string,
+    public readonly sessionId: string,
+    public readonly inspectionError: unknown,
+    public readonly underlying: unknown,
+  ) {
+    super(message);
+    this.name = 'PromoteInspectionFailedError';
+  }
+}
+
+/**
  * Query durable state for the promoted session and classify.
  *   committed   — active session rows == expectedTotal AND staged == 0
  *   rolled-back — active == 0 AND staged == expectedTotal (or ≥ expected)
  *   mixed       — anything else
+ *
+ * Fail-closed: if either count query errors, we throw rather than
+ * classify from missing counts.
  */
 export async function inspectPromoteOutcome(
   batchId: string,
@@ -119,14 +143,37 @@ export async function inspectPromoteOutcome(
       .eq('rebuild_session_id', sessionId)
       .eq('staging_status', 'staged'),
   ]);
-  const activeCount = Number(activeRes?.count ?? 0);
-  const stagedCount = Number(stagedRes?.count ?? 0);
+
+  const inspectionError = (activeRes as any)?.error ?? (stagedRes as any)?.error ?? null;
+  const activeCountRaw = (activeRes as any)?.count;
+  const stagedCountRaw = (stagedRes as any)?.count;
+  if (
+    inspectionError ||
+    activeCountRaw == null ||
+    stagedCountRaw == null ||
+    !Number.isFinite(Number(activeCountRaw)) ||
+    !Number.isFinite(Number(stagedCountRaw))
+  ) {
+    const which = (activeRes as any)?.error || activeCountRaw == null ? 'active' : 'staged';
+    throw new PromoteInspectionFailedError(
+      `Promote-outcome inspection failed for batch ${batchId} (session ${sessionId}): the ${which} row-count query did not return a usable count. ` +
+        `Promote outcome is UNKNOWN — do NOT retry blindly; inspect normalized_records for this session before rebuilding.`,
+      batchId,
+      sessionId,
+      inspectionError,
+      null,
+    );
+  }
+
+  const activeCount = Number(activeCountRaw);
+  const stagedCount = Number(stagedCountRaw);
   let outcome: 'committed' | 'rolled-back' | 'mixed';
   if (activeCount === expectedTotal && stagedCount === 0) outcome = 'committed';
   else if (activeCount === 0 && stagedCount >= expectedTotal) outcome = 'rolled-back';
   else outcome = 'mixed';
   return { outcome, activeCount, stagedCount };
 }
+
 
 /**
  * Bumped whenever normalization or reconciliation logic changes in a way that
@@ -410,9 +457,9 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
       const elapsedMs = Math.round(performance.now() - promoteStart);
       const flat = flattenErrorForLog(promoteErr, {
         phase: 'promote',
-        batchId,
-        sessionId,
-        elapsedMs,
+        batch_id: batchId,
+        rebuild_session_id: sessionId,
+        elapsed_ms: elapsedMs,
       });
       console.error('[rebuild-diag] promote call threw', flat);
 
@@ -425,13 +472,51 @@ export async function rebuildBatch(batchId: string, onProgress?: ProgressCb): Pr
       // Transport-class error: the server may have committed while the
       // response never reached us (the February case). Query durable
       // state for this (batch, session) and branch on the outcome.
-      const inspection = await inspectPromoteOutcome(batchId, sessionId, totalNormalized);
+      let inspection: { outcome: 'committed' | 'rolled-back' | 'mixed'; activeCount: number; stagedCount: number };
+      try {
+        inspection = await inspectPromoteOutcome(batchId, sessionId, totalNormalized);
+      } catch (inspectErr) {
+        console.error(
+          '[rebuild-diag] promote-outcome inspection failed',
+          flattenErrorForLog(inspectErr, {
+            phase: 'promote-inspection',
+            batch_id: batchId,
+            rebuild_session_id: sessionId,
+            elapsed_ms: Math.round(performance.now() - promoteStart),
+          }),
+        );
+        try {
+          toast.error('Rebuild outcome unknown', {
+            description:
+              'Could not verify whether the promote committed. Do NOT retry blindly — inspect normalized_records for this rebuild session.',
+          });
+        } catch { /* toast is best-effort */ }
+        if (inspectErr instanceof PromoteInspectionFailedError) {
+          throw new PromoteInspectionFailedError(
+            `${inspectErr.message} Underlying promote error: ${flat.message}`,
+            batchId,
+            sessionId,
+            inspectErr.inspectionError,
+            promoteErr,
+          );
+        }
+        throw new PromoteInspectionFailedError(
+          `Promote-outcome inspection failed for batch ${batchId} (session ${sessionId}). ` +
+            `Promote outcome is UNKNOWN — do NOT retry blindly; inspect normalized_records for this session before rebuilding. ` +
+            `Underlying promote error: ${flat.message}`,
+          batchId,
+          sessionId,
+          inspectErr,
+          promoteErr,
+        );
+      }
       console.info('[rebuild-diag] promote-outcome recovery inspection', {
-        batchId,
-        sessionId,
+        batch_id: batchId,
+        rebuild_session_id: sessionId,
         expectedTotal: totalNormalized,
         ...inspection,
       });
+
 
       if (inspection.outcome === 'committed') {
         // Recovery path — the RPC succeeded server-side. Continue into

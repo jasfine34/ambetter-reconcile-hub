@@ -26,7 +26,8 @@
  * runtime — so it can be unit-tested in isolation.
  */
 
-import { ReconcileAfterPromoteError, PromoteMixedStateError } from './rebuild';
+import { ReconcileAfterPromoteError } from './rebuild';
+
 
 export type ToastVariant = 'destructive' | 'warning' | 'info' | 'default';
 
@@ -44,6 +45,8 @@ export interface ClassifiedToast {
     | 'rebuild-lock-cross-check'
     | 'rebuild-promoted-reconcile-failed'
     | 'rebuild-promote-mixed-state'
+    | 'rebuild-promote-inspection-failed'
+
     | 'rebuild-lock-contention'
     | 'unexpected';
 }
@@ -113,10 +116,27 @@ export function classifyRebuildError(
   const batchSuffix = opts.batchLabel ? ` — ${opts.batchLabel}` : '';
   const msg = lower(err);
 
+  // Class 5c — durable-state inspection failed after a transport-class
+  // promote error. Outcome is UNKNOWN. Must be classified ahead of the
+  // generic bucket so the operator does not retry blindly.
+  // (defensive `typeof` guard: some test surfaces mock '@/lib/rebuild'
+  // partially, leaving the class binding undefined at runtime.)
+  if ((err as any)?.kind === 'promote-inspection-failed') {
+    return {
+      variant: 'destructive',
+      classId: 'rebuild-promote-inspection-failed',
+      title: `Rebuild outcome unknown${batchSuffix}`,
+      description:
+        'Could not verify whether the promote committed. Do NOT retry blindly — inspect normalized_records for this rebuild session before rebuilding.',
+    };
+  }
+
   // Class 5b — promote left mixed durable state after a transport-class
   // error. Distinct from generic "unexpected" so the operator knows NOT
   // to blindly retry.
-  if (err instanceof PromoteMixedStateError) {
+  if ((err as any)?.kind === 'promote-mixed-state') {
+
+
     return {
       variant: 'destructive',
       classId: 'rebuild-promote-mixed-state',

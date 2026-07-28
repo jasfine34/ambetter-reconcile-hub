@@ -12,7 +12,7 @@ import {
   classifyUploadError,
   classifyRebuildError,
 } from '@/lib/toastClassification';
-import { ReconcileAfterPromoteError } from '@/lib/rebuild';
+import { ReconcileAfterPromoteError, PromoteInspectionFailedError } from '@/lib/rebuild';
 
 describe('classifyUploadError', () => {
   it('class 1: upload RPC failure → destructive "Upload failed. Data was not saved."', () => {
@@ -164,7 +164,23 @@ describe('classifyRebuildError', () => {
     expect(t.classId).toBe('rebuild-promoted-reconcile-failed');
     expect(t.variant).toBe('warning');
   });
+
+  it('class 5c: PromoteInspectionFailedError → destructive "outcome unknown", ahead of the generic bucket', () => {
+    const err = new PromoteInspectionFailedError(
+      'inspection failed',
+      'b1',
+      's1',
+      new Error('count query failed'),
+      new Error('TypeError: fetch failed'),
+    );
+    const t = classifyRebuildError(err);
+    expect(t.classId).toBe('rebuild-promote-inspection-failed');
+    expect(t.classId).not.toBe('unexpected');
+    expect(t.variant).toBe('destructive');
+    expect(t.description).toMatch(/do NOT retry blindly/i);
+  });
 });
+
 
 describe('variant-to-severity contract', () => {
   it('every "data not saved / rolled back" class is destructive', () => {
