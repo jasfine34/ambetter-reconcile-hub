@@ -136,7 +136,11 @@ export function classifyRebuildError(
   // Class 5b — promote left mixed durable state after a transport-class
   // error. Distinct from generic "unexpected" so the operator knows NOT
   // to blindly retry.
-  if (err instanceof PromoteMixedStateError) {
+  if (
+    (typeof PromoteMixedStateError === 'function' && err instanceof PromoteMixedStateError) ||
+    (err as any)?.kind === 'promote-mixed-state'
+  ) {
+
 
     return {
       variant: 'destructive',
