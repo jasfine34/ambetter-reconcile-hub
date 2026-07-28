@@ -26,7 +26,8 @@
  * runtime — so it can be unit-tested in isolation.
  */
 
-import { ReconcileAfterPromoteError, PromoteMixedStateError, PromoteInspectionFailedError } from './rebuild';
+import { ReconcileAfterPromoteError } from './rebuild';
+import type { PromoteMixedStateError, PromoteInspectionFailedError } from './rebuild';
 
 export type ToastVariant = 'destructive' | 'warning' | 'info' | 'default';
 
@@ -120,10 +121,7 @@ export function classifyRebuildError(
   // generic bucket so the operator does not retry blindly.
   // (defensive `typeof` guard: some test surfaces mock '@/lib/rebuild'
   // partially, leaving the class binding undefined at runtime.)
-  if (
-    (typeof PromoteInspectionFailedError === 'function' && err instanceof PromoteInspectionFailedError) ||
-    (err as any)?.kind === 'promote-inspection-failed'
-  ) {
+  if ((err as any)?.kind === 'promote-inspection-failed') {
     return {
       variant: 'destructive',
       classId: 'rebuild-promote-inspection-failed',
@@ -136,10 +134,7 @@ export function classifyRebuildError(
   // Class 5b — promote left mixed durable state after a transport-class
   // error. Distinct from generic "unexpected" so the operator knows NOT
   // to blindly retry.
-  if (
-    (typeof PromoteMixedStateError === 'function' && err instanceof PromoteMixedStateError) ||
-    (err as any)?.kind === 'promote-mixed-state'
-  ) {
+  if ((err as any)?.kind === 'promote-mixed-state') {
 
 
     return {
