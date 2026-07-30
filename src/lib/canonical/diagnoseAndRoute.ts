@@ -20,6 +20,7 @@
  * and NEVER touches tables directly.
  */
 import type { BlockerFacts } from './blockerFacts';
+import type { BoPresence } from './boSnapshotCoverage';
 import {
   HOLD_DECISION_TYPES,
   applyDecisionReduction,
@@ -52,7 +53,9 @@ export type FyiTag =
   | 'carrier_recognition'
   | 'dmi_expired'
   | 'amount_indeterminate'
-  | 'cross_entity_wrong_amount';
+  | 'cross_entity_wrong_amount'
+  /** L1 — Branch B typed fact: policy absent from the governing BO snapshot. */
+  | 'missing_from_carrier_bo';
 
 export interface RouteDecision {
   route: RouteName;
@@ -71,6 +74,11 @@ export interface RouteRowInput {
   targetScope: TargetScope;
   facts: BlockerFacts;
   crFlag: boolean;
+  /** L1 — canonical BO snapshot presence for this policy-month (observational). */
+  boPresence?: BoPresence;
+  /** L1 Branch B typed fact, copied verbatim from the classifier/MonthCell. */
+  missingFromCarrierBo?: boolean;
+
   /** 1 = unpaid (chase candidate); 2 = paid (amount-discrepancy only). */
   population: 1 | 2;
 }
@@ -253,11 +261,13 @@ export function routeMemberMonth(args: {
   const addToChase = activeOfType(idx, row, 'add_to_chase');
   if (addToChase.length > 0) {
     if (row.crFlag) fyi.push('carrier_recognition');
+    if (row.missingFromCarrierBo) fyi.push('missing_from_carrier_bo');
     return { route: 'chase_eligible', fyi, rationale: 'add_to_chase_grant' };
   }
 
   // 7 + 8. Default: chase-eligible; CR FYI annotation.
   if (row.crFlag) fyi.push('carrier_recognition');
+  if (row.missingFromCarrierBo) fyi.push('missing_from_carrier_bo');
   // isChaseEligible guards: it MUST be true here (no holds) but assert for paranoia.
   if (
     !isChaseEligible(idx, {

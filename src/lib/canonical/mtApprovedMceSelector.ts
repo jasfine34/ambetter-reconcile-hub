@@ -29,6 +29,7 @@
  *  - No React hooks; unit-testable.
  */
 import type { NormalizedRecord } from '../normalize';
+import type { BoPresence, BoSnapshotCoverageIndex } from './boSnapshotCoverage';
 import {
   buildIsDueEligibleRecord,
   buildClassifierContext,
@@ -76,6 +77,10 @@ export interface MtApprovedMceCandidate {
   // ----- Flags retained for transparency in tests / debugging -----
   in_back_office: boolean;
   in_ede: boolean;
+  /** L1 — canonical BO snapshot presence for this policy-month. */
+  bo_presence?: BoPresence;
+  /** L1 Branch B typed fact (classification evidence, copied verbatim). */
+  missing_from_carrier_bo?: boolean;
 }
 
 export interface MtApprovedMceSelectorArgs {
@@ -92,6 +97,8 @@ export interface MtApprovedMceSelectorArgs {
   /** batch_id → 'YYYY-MM' map; feeds the classifier's per-service-month
    *  net premium picker. */
   batchMonthByBatchId: Record<string, string>;
+  /** L1 — BO snapshot coverage contract (read-side). Absent ⇒ unchanged. */
+  boSnapshotCoverage?: BoSnapshotCoverageIndex;
 }
 
 const STRING = (v: unknown): string => (v == null ? '' : String(v));
@@ -196,12 +203,14 @@ export function buildMtApprovedMceCandidates(
     selectedAorScope: 'official',
     payEntity: scope,
     latestAuthoritativeBoOverlay,
+    boSnapshotCoverage: args.boSnapshotCoverage,
   });
 
   // Classifier per member — same setup as MemberTimelinePage.
   const baseContext = buildClassifierContext(scopedRecords as any, monthList, [], {
     batchMonthByBatchId: batchMonthMap,
     latestAuthoritativeBoOverlay,
+    boSnapshotCoverage: args.boSnapshotCoverage,
   });
 
   const scopedByMember = new Map<string, NormalizedRecord[]>();
@@ -283,6 +292,9 @@ export function buildMtApprovedMceCandidates(
       _mtSourceType: sourceType,
       in_back_office: !!cls.in_back_office,
       in_ede: !!cls.in_ede,
+      // L1 — identical BoPresence value as classifier / MonthCell / route rows.
+      ...(cls.bo_presence ? { bo_presence: cls.bo_presence as BoPresence } : {}),
+      ...(cls.missing_from_carrier_bo ? { missing_from_carrier_bo: true } : {}),
     };
     out.push(candidate);
   }
