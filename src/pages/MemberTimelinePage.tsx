@@ -1,3 +1,5 @@
+import { loadBoSnapshotCoverage } from '@/lib/canonical/boSnapshotCoverageLoader';
+import type { BoSnapshotCoverageIndex } from '@/lib/canonical/boSnapshotCoverage';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useBatch } from '@/contexts/BatchContext';
@@ -294,6 +296,18 @@ export default function MemberTimelinePage() {
     return latestAuthoritativeBoTermDates(records as any, recency);
   }, [records, batchMonthByBatchId]);
 
+  // L1 — BO snapshot coverage contract. Read-side loader; failure or missing
+  // metadata leaves coverage undefined ⇒ every cell is `unknown` ⇒ today's
+  // behavior exactly (absence semantics require proof).
+  const [boSnapshotCoverage, setBoSnapshotCoverage] = useState<BoSnapshotCoverageIndex | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    loadBoSnapshotCoverage()
+      .then((idx) => { if (!cancelled) setBoSnapshotCoverage(idx); })
+      .catch(() => { if (!cancelled) setBoSnapshotCoverage(undefined); });
+    return () => { cancelled = true; };
+  }, [allBatchesVersion]);
+
   const filteredRecords = useMemo(() => {
     let out = records;
     if (carrier !== 'all') out = out.filter(r => carrierFamily(r.carrier || '') === carrier);
@@ -333,8 +347,9 @@ export default function MemberTimelinePage() {
       selectedAorScope: aorScope === 'official' ? 'official' : 'all',
       payEntity,
       latestAuthoritativeBoOverlay,
+      boSnapshotCoverage,
     }),
-    [filteredRecords, monthList, isDueEligibleRecord, rawRecordsByMemberKey, pickerMapsByMemberKey, aorScope, payEntity, latestAuthoritativeBoOverlay]
+    [filteredRecords, monthList, isDueEligibleRecord, rawRecordsByMemberKey, pickerMapsByMemberKey, aorScope, payEntity, latestAuthoritativeBoOverlay, boSnapshotCoverage]
   );
 
   // Phase 2c — enrich each row's cells with the classifier's per-cell state
@@ -350,8 +365,9 @@ export default function MemberTimelinePage() {
     () => buildClassifierContext(classifierEligibleRecords as any, monthList, [], {
       batchMonthByBatchId,
       latestAuthoritativeBoOverlay,
+      boSnapshotCoverage,
     }),
-    [classifierEligibleRecords, monthList, batchMonthByBatchId, latestAuthoritativeBoOverlay],
+    [classifierEligibleRecords, monthList, batchMonthByBatchId, latestAuthoritativeBoOverlay, boSnapshotCoverage],
   );
 
   const classifiedRows = useMemo(() => {
@@ -385,6 +401,9 @@ export default function MemberTimelinePage() {
           state: c.state,
           state_reason: c.reason,
           reversal_evidence: c.reversal_evidence,
+          // L1 — typed fact + canonical presence copied verbatim onto MonthCell.
+          ...(c.bo_presence ? { bo_presence: c.bo_presence } : {}),
+          ...(c.missing_from_carrier_bo ? { missing_from_carrier_bo: true } : {}),
         });
         let netBucket: '+Net' | '0Net' | null = null;
         if (stamped.state === 'unpaid') {

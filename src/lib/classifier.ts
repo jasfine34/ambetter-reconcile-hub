@@ -21,6 +21,12 @@ import {
   SUPERSESSION_REASON_PREFIX,
   type LatestAuthoritativeBoOverlay,
 } from './canonical/latestAuthoritativeBo';
+import {
+  memberBoPresenceForMonth,
+  type BoPresence,
+  type BoSnapshotCoverageIndex,
+} from './canonical/boSnapshotCoverage';
+import { pickEdeForServiceMonth } from './canonical/edeMonthPicker';
 import { NPN_MAP } from './constants';
 import type { TraceContext } from './explainCellTypes';
 
@@ -82,7 +88,19 @@ export interface CellClassification {
   in_commission: boolean;
   /** R-PAY-012 — populated only when state === 'reversed'. */
   reversal_evidence?: ReversalEvidence;
+  /**
+   * L1 — canonical BO snapshot presence for this policy-month. Identical
+   * value is copied into MonthCell / MCE selector / Operator Review facts.
+   */
+  bo_presence?: BoPresence;
+  /**
+   * L1 typed fact — emitted ONLY on Branch B (in-roster qualified EDE
+   * coverage while the governing carrier BO snapshot authoritatively omits
+   * the policy). Classification evidence owned by the classifier.
+   */
+  missing_from_carrier_bo?: boolean;
 }
+
 
 
 export interface MemberClassification {
@@ -140,6 +158,14 @@ export interface ClassifierContext {
    * src/lib/canonical/latestAuthoritativeBo.ts.
    */
   latestAuthoritativeBoOverlay?: LatestAuthoritativeBoOverlay;
+  /**
+   * L1 — BO snapshot coverage contract. When present, per-policy-month BO
+   * presence is PROVEN against the governing (same carrier + agent bucket,
+   * promoted, snapshotMonth <= serviceMonth, greatest) snapshot. Absent /
+   * `unknown` ⇒ today's behavior exactly.
+   * See src/lib/canonical/boSnapshotCoverage.ts.
+   */
+  boSnapshotCoverage?: BoSnapshotCoverageIndex;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -701,19 +727,58 @@ export function classifyCell(
   trace?: TraceContext,
 ): CellClassification {
   const overlay = context.latestAuthoritativeBoOverlay;
-  if (!overlay) {
+  const coverage = context.boSnapshotCoverage;
+  if (!overlay && !coverage) {
     return classifyCellInternal(records, month, firstEligible, context, trace);
   }
-  // Baseline pass — overlay forced undefined. No trace (kept clean).
-  const baselineCtx: ClassifierContext = { ...context, latestAuthoritativeBoOverlay: undefined };
+  // Baseline pass — overlay + coverage forced undefined. No trace (kept clean).
+  const baselineCtx: ClassifierContext = {
+    ...context,
+    latestAuthoritativeBoOverlay: undefined,
+    boSnapshotCoverage: undefined,
+  };
   const baseline = classifyCellInternal(records, month, firstEligible, baselineCtx);
   if (baseline.state === 'unpaid' || baseline.state === 'not_expected_premium_unpaid') {
     return classifyCellInternal(records, month, firstEligible, context, trace);
   }
-  // Baseline outside allowlist — preserve it. Re-run with trace for
+  // Baseline outside allowlist — preserve it (paid / reversed / pending /
+  // pre-eligibility and friends are protected). Re-run with trace for
   // observability if trace was requested.
-  if (trace) return classifyCellInternal(records, month, firstEligible, baselineCtx, trace);
-  return baseline;
+  const preserved = trace
+    ? classifyCellInternal(records, month, firstEligible, baselineCtx, trace)
+    : baseline;
+  // BoPresence is observational — stamp it even on preserved cells so every
+  // surface reads the identical value for the same policy-month.
+  if (coverage) {
+    return { ...preserved, bo_presence: memberBoPresenceForMonth(records, month, coverage) };
+  }
+  return preserved;
+}
+
+/**
+ * L1 — the EDE record that governs a service month (picker-aware), used only
+ * for the Branch A / B split under an authoritatively-absent BO snapshot.
+ */
+function pickedEdeForMonth(
+  records: NormalizedRecord[],
+  month: MonthKey,
+  context: ClassifierContext,
+): NormalizedRecord | null {
+  const picker = context.pickerEdeByMonth;
+  if (picker) return picker.get(month) ?? null;
+  const qualified = records.filter(r => r.source_type === 'EDE' && isEDEQualified(r));
+  return pickEdeForServiceMonth(qualified, month);
+}
+
+function edeCoversMonth(r: NormalizedRecord, month: MonthKey): boolean {
+  if (r.source_type !== 'EDE' || !isEDEQualified(r)) return false;
+  const eff = dateToMonthKey(r.effective_date);
+  if (!eff || eff > month) return false;
+  if (r.policy_term_date) {
+    const lastActive = lastActiveMonthForTermDate(r.policy_term_date);
+    if (lastActive && month > lastActive) return false;
+  }
+  return true;
 }
 
 function classifyCellInternal(
@@ -724,9 +789,10 @@ function classifyCellInternal(
   trace?: TraceContext,
 ): CellClassification {
   let in_ede = hasEdeForMonth(records, month, context);
-  const in_back_office = hasActiveBoForMonth(records, month, context);
+  let in_back_office = hasActiveBoForMonth(records, month, context);
   const in_commission = hasCommissionForMonth(records, month);
   const paid_amount = paidForMonth(records, month);
+
 
   // Cross-batch BO termination supersession (Phase B). If the latest carrier
   // file authoritatively terminated the policy identity by this month, gate
@@ -768,10 +834,48 @@ function classifyCellInternal(
     }
   }
 
+  // ── L1 — BO snapshot coverage contract ────────────────────────────────
+  // Absence must be PROVEN by the governing snapshot. `unknown` ⇒ today's
+  // behavior exactly.
+  const coverage = context.boSnapshotCoverage;
+  const bo_presence: BoPresence = coverage
+    ? memberBoPresenceForMonth(records, month, coverage)
+    : 'unknown';
+  let missing_from_carrier_bo = false;
+  let absenceNotOurs: string | null = null;
+  if (bo_presence === 'authoritatively_absent') {
+    // Historical-BO-only support cannot keep the month in the BO universe.
+    in_back_office = false;
+    const picked = pickedEdeForMonth(records, month, context);
+    const pickedCovers = !!picked && edeCoversMonth(picked, month);
+    if (pickedCovers) {
+      if (isEdeRecordOurs(picked!)) {
+        // Branch B (Darrell) — chase classification UNCHANGED + typed fact.
+        missing_from_carrier_bo = true;
+      } else {
+        // Branch A (Yolanda) — affirmative out-of-scope evidence.
+        absenceNotOurs =
+          "Policy absent from the governing carrier Back Office snapshot and the month's EDE shows an out-of-roster current AOR.";
+      }
+    }
+    // Branch C — no qualified current evidence: existing certified
+    // no-source handling (stale-source guard) applies unchanged.
+  }
+  trace?.recordHelper('boSnapshotCoverage', { bo_presence, missing_from_carrier_bo });
+
   trace?.recordHelper('sourceFlags', { in_ede, in_back_office, in_commission, paid_amount });
   if (supersessionReason) trace?.recordHelper('supersession', { reason: supersessionReason });
 
-  const base = { month, paid_amount, in_ede, in_back_office, in_commission };
+  const base = {
+    month,
+    paid_amount,
+    in_ede,
+    in_back_office,
+    in_commission,
+    ...(coverage ? { bo_presence } : {}),
+    ...(missing_from_carrier_bo ? { missing_from_carrier_bo: true } : {}),
+  };
+
 
   // Rule 1: Paid
   // Empirical payment must override all a-priori eligibility predictions.
@@ -809,6 +913,13 @@ function classifyCellInternal(
     }
   }
 
+  // L1 Branch A — authoritatively absent from the governing BO snapshot AND
+  // affirmative out-of-scope evidence (month-picked EDE's currentPolicyAOR is
+  // out-of-roster). Absence ALONE can never emit this label.
+  if (absenceNotOurs) {
+    trace?.recordFiringRule('L1 Branch A: not_expected_not_ours', absenceNotOurs);
+    return { ...base, state: 'not_expected_not_ours', reason: absenceNotOurs };
+  }
 
 
   // Rule 3 (non-eligible): not ours at all
@@ -1037,6 +1148,7 @@ export function buildClassifierContext(
   options?: {
     batchMonthByBatchId?: Map<string, string>;
     latestAuthoritativeBoOverlay?: LatestAuthoritativeBoOverlay;
+    boSnapshotCoverage?: BoSnapshotCoverageIndex;
   },
 ): ClassifierContext {
   const commissionStatementMonths = new Set<MonthKey>();
@@ -1052,6 +1164,7 @@ export function buildClassifierContext(
     boSnapshotDates,
     batchMonthByBatchId: options?.batchMonthByBatchId,
     latestAuthoritativeBoOverlay: options?.latestAuthoritativeBoOverlay,
+    boSnapshotCoverage: options?.boSnapshotCoverage,
   };
 }
 

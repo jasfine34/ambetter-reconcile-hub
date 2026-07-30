@@ -13,6 +13,11 @@ import {
   isPolicyIdentityTerminatedForMonth,
   type LatestAuthoritativeBoOverlay,
 } from './canonical/latestAuthoritativeBo';
+import {
+  memberBoPresenceForMonth,
+  type BoPresence,
+  type BoSnapshotCoverageIndex,
+} from './canonical/boSnapshotCoverage';
 
 /** Months in the selected range that fall outside the selected statement batch's month. */
 export function monthsOutsideSelectedStatement(monthList: string[], statementMonth: string | null | undefined): string[] {
@@ -63,8 +68,16 @@ export interface MonthCell {
    * MemberTimelinePage when copying classifier output into the page's cell map.
    */
   reversal_evidence?: ReversalEvidence;
+  /**
+   * L1 — canonical BO snapshot presence for this policy-month. Same value the
+   * classifier, MCE selector and Operator Review see.
+   */
+  bo_presence?: BoPresence;
+  /** L1 typed fact — copied verbatim from the classifier (Branch B only). */
+  missing_from_carrier_bo?: boolean;
 
 }
+
 
 export interface MemberTimelineRow {
   member_key: string;
@@ -225,6 +238,10 @@ type PayEntityScopeMT = 'Coverall' | 'Vix' | 'All';
  * R-AOR-008 BO arm under the selected pay-entity scope, but the picked EDE
  * for the service month has a non-scope `currentPolicyAOR`. Returns the
  * preserved EDE net premium so the page can stamp Option A netBucket.
+ *
+ * L1 — DISPLAY CONSUMER ONLY. This helper may surface evidence; it owns no
+ * classification state decision. BO presence/absence is decided by the
+ * canonical BO snapshot coverage contract (`BoPresence`).
  */
 function detectCarrierRecognition(
   rawMemberRecs: NormalizedRecord[],
@@ -292,6 +309,12 @@ export function buildMemberTimeline(
     payEntity?: PayEntityScopeMT;
     /** Cross-batch BO termination overlay — gates the BO source-stamp. */
     latestAuthoritativeBoOverlay?: LatestAuthoritativeBoOverlay;
+    /**
+     * L1 — BO snapshot coverage contract. When present, a policy-month that
+     * is `authoritatively_absent` from the governing carrier snapshot cannot
+     * be source-stamped from historical BO rows. `unknown` ⇒ unchanged.
+     */
+    boSnapshotCoverage?: BoSnapshotCoverageIndex;
   },
 ): MemberTimelineRow[] {
   const monthSet = new Set(monthList);
@@ -345,6 +368,19 @@ export function buildMemberTimeline(
       months_unpaid: 0,
     };
 
+    // L1 — canonical per-month BO presence (identical value to the
+    // classifier's). Stamped on every cell when the coverage contract is
+    // available; `unknown` ⇒ no behavior change.
+    const boPresenceByMonth = new Map<string, BoPresence>();
+    if (options?.boSnapshotCoverage) {
+      for (const m of monthList) {
+        const p = memberBoPresenceForMonth(recs, m, options.boSnapshotCoverage);
+        boPresenceByMonth.set(m, p);
+        cells[m].bo_presence = p;
+      }
+    }
+
+
     for (const r of recs) {
       const eligibleForDue = isDueEligibleRecord ? isDueEligibleRecord(r) : true;
       if (r.source_type === 'EDE') {
@@ -392,6 +428,9 @@ export function buildMemberTimeline(
           if (!isActiveBackOfficeRecord(r, smStart, smEnd)) continue;
           // Cross-batch supersession — later carrier file's term dates win.
           if (isPolicyIdentityTerminatedForMonth(r, smStart, options?.latestAuthoritativeBoOverlay)) continue;
+          // L1 — governing carrier snapshot authoritatively omits this
+          // policy for the month: historical BO rows cannot source-stamp it.
+          if (boPresenceByMonth.get(m) === 'authoritatively_absent') continue;
           if (!eligibleForDue) continue;
           cells[m].in_back_office = true;
           cells[m].due = true;

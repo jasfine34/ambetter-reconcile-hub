@@ -41,6 +41,7 @@
  * target cell is unpaid and not cross-entity-satisfied). The reason is
  * counted in diagnostics.unsupportedResolverReasons.
  */
+import type { BoSnapshotCoverageIndex } from './boSnapshotCoverage';
 import { buildBlockerFacts } from './blockerFacts';
 import { buildSourceEvidenceMap } from './estMissingEvidenceAdapter';
 import {
@@ -104,6 +105,8 @@ export interface AssembleDiagnoseRouteRowsArgs {
   /** Optional cross-batch clearing overlay (currently unused by the
    *  per-row resolve path; reserved for future PARTIAL_CLEARED feeds). */
   clearingOverlay?: ClearingOverlayMap;
+  /** L1 — BO snapshot coverage contract (read-side). Absent ⇒ unchanged. */
+  boSnapshotCoverage?: BoSnapshotCoverageIndex;
 }
 
 export interface AssembleDiagnoseRouteRowsDiagnostics {
@@ -335,6 +338,7 @@ function buildScopeContext(
       selectedAorScope: 'official',
       payEntity,
       latestAuthoritativeBoOverlay: overlay,
+      boSnapshotCoverage: args.boSnapshotCoverage,
     },
   ) as MemberTimelineRow[];
 
@@ -345,6 +349,7 @@ function buildScopeContext(
     {
       batchMonthByBatchId: batchMonthMap,
       latestAuthoritativeBoOverlay: overlay,
+      boSnapshotCoverage: args.boSnapshotCoverage,
     },
   );
 
@@ -606,6 +611,11 @@ export function assembleDiagnoseRouteRows(
 
         const mtRow = ctx.mtRowsByMember.get(memberKey);
         const crFlag = Boolean(mtRow?.cells?.[serviceMonth]?.carrier_recognition);
+        // L1 — identical BoPresence / typed fact as the classifier + MonthCell.
+        const boPresence = mtRow?.cells?.[serviceMonth]?.bo_presence;
+        const missingFromCarrierBo = Boolean(
+          ctx.classificationByMember.get(memberKey)?.cells?.[serviceMonth]?.missing_from_carrier_bo,
+        );
 
         const rowKey = `${scope}|${stableMemberKey}|${serviceMonth}`;
         rows.push({
@@ -617,6 +627,8 @@ export function assembleDiagnoseRouteRows(
           targetScope: scope,
           facts,
           crFlag,
+          boPresence,
+          missingFromCarrierBo,
           population,
         });
         // C2c additive — capture binding AT EMIT TIME (never reverse-derive).
